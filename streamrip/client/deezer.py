@@ -2,6 +2,7 @@ import asyncio
 import logging
 
 import deezer
+import requests
 
 from ..config import Config
 from ..exceptions import (
@@ -36,6 +37,17 @@ class DeezerClient(Client):
         self.client = deezer.Deezer()
         self.logged_in = False
         self.config = config.session.deezer
+
+        # Size the deezer-py requests session pool to match max_connections so
+        # urllib3 never needs to discard connections and logs no warnings.
+        max_conn = config.session.downloads.max_connections
+        adapter = requests.adapters.HTTPAdapter(
+            pool_connections=max_conn,
+            pool_maxsize=max_conn,
+            max_retries=0,
+        )
+        self.client.session.mount("https://", adapter)
+        self.client.session.mount("http://", adapter)
 
     async def login(self):
         # Used for track downloads
