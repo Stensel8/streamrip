@@ -84,3 +84,11 @@ class APIError(Exception):
 
     The message carries the service's own explanation where it gave one.
     """
+
+
+class TrackDownloadFailedError(Exception):
+    """Raised when a track fails to download after retrying.
+
+    Signals to Media.rip() that postprocess (tagging, marking downloaded)
+    must not run for this track.
+    """
