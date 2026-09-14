@@ -128,9 +128,16 @@ class TidalClient(Client):
                 # Most tracks simply have no lyrics. That is the expected
                 # answer, not a problem worth reporting.
                 logger.debug("No lyrics available for track %s", item_id)
-            except (NonStreamableError, TypeError) as e:
+            except (
+                NonStreamableError,
+                TypeError,
+                aiohttp.ClientError,
+                asyncio.TimeoutError,
+            ) as e:
                 # Lyrics that should have been there but could not be
-                # fetched -- worth knowing about.
+                # fetched -- worth knowing about, never worth the track. Any
+                # request failure counts: a 401 from the lyrics endpoint used
+                # to escape here and abort the whole download (#959).
                 logger.warning(f"Failed to get lyrics for {item_id}: {e}")
 
         logger.debug(item)
