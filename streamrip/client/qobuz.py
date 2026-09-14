@@ -11,6 +11,7 @@ import aiohttp
 
 from ..config import Config
 from ..exceptions import (
+    APIError,
     AuthenticationError,
     IneligibleError,
     InvalidAppIdError,
@@ -22,6 +23,15 @@ from .client import Client
 from .downloadable import BasicDownloadable, Downloadable
 
 logger = logging.getLogger("streamrip")
+
+# Qobuz takes credentials as URL query parameters, so they must be masked
+# anywhere params reach a log line or an exception message.
+_SENSITIVE_PARAMS = ("user_auth_token", "password", "email", "user_id", "request_sig")
+
+
+def _redacted(params: dict) -> dict:
+    """params with credentials masked, for logs and error messages."""
+    return {k: ("<redacted>" if k in _SENSITIVE_PARAMS else v) for k, v in params.items()}
 
 QOBUZ_BASE_URL = "https://www.qobuz.com/api.json/0.2"
 
@@ -195,14 +205,22 @@ class QobuzClient(Client):
                 "app_id": str(c.app_id),
             }
 
-        logger.debug("Request params %s", params)
+        logger.debug("Request params %s", _redacted(params))
         status, resp = await self._api_request("user/login", params)
-        logger.debug("Login resp: %s", resp)
+        # The response carries the user_auth_token and the account profile.
+        logger.debug("Login response keys: %s", sorted(resp))
 
         if status == 401:
-            raise AuthenticationError(f"Invalid credentials from params {params}")
+            raise AuthenticationError(
+                f"Invalid credentials from params {_redacted(params)}"
+            )
         elif status == 400:
-            raise InvalidAppIdError(f"Invalid app id from params {params}")
+            raise InvalidAppIdError(f"Invalid app id from params {_redacted(params)}")
+        elif status != 200:
+            raise APIError(
+                f"Qobuz login failed (HTTP {status}): "
+                f"{resp.get('message') or 'no message'}"
+            )
 
         logger.debug("Logged in to Qobuz")
 
@@ -346,6 +364,33 @@ class QobuzClient(Client):
             self.session, stream_url, "flac" if quality > 1 else "mp3", source="qobuz"
         )
 
+    async def _request_ok(self, epoint: str, params: dict) -> dict:
+        """_api_request that insists on HTTP 200, retrying once if Qobuz blips.
+
+        Qobuz's search backend fails intermittently -- a 400 reading
+        "Impossible to connect, please check your Algolia Application Id."
+        that succeeds moments later -- and its edge sometimes answers with a
+        502 HTML page. One short retry absorbs those; anything else is raised
+        with Qobuz's own message rather than a bare AssertionError.
+        """
+        for attempt in (1, 2):
+            status, page = await self._api_request(epoint, params)
+            if status == 200:
+                return page
+            message = (page.get("message") if isinstance(page, dict) else None) or ""
+            transient = status >= 500 or "Algolia" in message
+            if attempt == 1 and transient:
+                logger.warning(
+                    "Qobuz %s failed (HTTP %d: %s) -- retrying once",
+                    epoint,
+                    status,
+                    message or "no message",
+                )
+                await asyncio.sleep(3)
+                continue
+            break
+        raise APIError(f"Qobuz {epoint} failed (HTTP {status}): {message or 'no message'}")
+
     async def _paginate(
         self,
         epoint: str,
@@ -363,9 +408,8 @@ class QobuzClient(Client):
             Generator that yields (status code, response) tuples
         """
         params.update({"limit": limit})
-        status, page = await self._api_request(epoint, params)
-        assert status == 200, status
-        logger.debug("paginate: initial request made with status %d", status)
+        page = await self._request_ok(epoint, params)
+        logger.debug("paginate: initial request succeeded")
         # albums, tracks, etc.
         key = epoint.split("/")[0] + "s"
         items = page.get(key, {})
@@ -387,17 +431,13 @@ class QobuzClient(Client):
 
         pages = []
         requests = []
-        assert status == 200, status
         pages.append(page)
         while (offset + limit) < total:
             offset += limit
             params.update({"offset": offset})
-            requests.append(self._api_request(epoint, params.copy()))
+            requests.append(self._request_ok(epoint, params.copy()))
 
-        for status, resp in await asyncio.gather(*requests):
-            assert status == 200
-            pages.append(resp)
-
+        pages.extend(await asyncio.gather(*requests))
         return pages
 
     async def _get_app_id_and_secrets(self) -> tuple[str, list[str]]:
@@ -451,9 +491,17 @@ class QobuzClient(Client):
         returns: status code, json parsed response
         """
         url = f"{QOBUZ_BASE_URL}/{epoint}"
-        logger.debug("api_request: endpoint=%s, params=%s", epoint, params)
+        logger.debug("api_request: endpoint=%s, params=%s", epoint, _redacted(params))
         async with self.rate_limiter:
             async with self.session.get(url, params=params) as response:
+                if "json" not in (response.content_type or ""):
+                    # An HTML error page, such as a 502 from Qobuz's edge.
+                    # aiohttp's ContentTypeError would quote the full request
+                    # URL, which carries user_auth_token -- so report the
+                    # status instead of letting that propagate.
+                    return response.status, {
+                        "message": f"non-JSON response ({response.content_type})"
+                    }
                 return response.status, await response.json()
 
     @staticmethod

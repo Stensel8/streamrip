@@ -68,3 +68,10 @@ class NonStreamableError(Exception):
 
 class ConversionError(Exception):
     """ConversionError."""
+
+
+class APIError(Exception):
+    """A streaming service answered a request with an error.
+
+    The message carries the service's own explanation where it gave one.
+    """

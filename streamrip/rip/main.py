@@ -9,6 +9,7 @@ from .. import db
 from ..client import Client, DeezerClient, QobuzClient, SoundcloudClient, TidalClient
 from ..config import Config
 from ..console import console
+from ..exceptions import APIError
 from ..media import (
     Media,
     Pending,
@@ -187,7 +188,11 @@ class Main:
         client = await self.get_logged_in_client(source)
 
         with console.status(f"[bold]Searching {source}", spinner="dots"):
-            pages = await client.search(media_type, query, limit=100)
+            try:
+                pages = await client.search(media_type, query, limit=100)
+            except APIError as e:
+                console.print(f"[red]Search failed: {e}")
+                return
             if len(pages) == 0:
                 console.print(f"[red]No search results found for query {query}")
                 return
@@ -238,7 +243,11 @@ class Main:
     async def search_take_first(self, source: str, media_type: str, query: str):
         client = await self.get_logged_in_client(source)
         with console.status(f"[bold]Searching {source}", spinner="dots"):
-            pages = await client.search(media_type, query, limit=1)
+            try:
+                pages = await client.search(media_type, query, limit=1)
+            except APIError as e:
+                console.print(f"[red]Search failed: {e}")
+                return
 
         if len(pages) == 0:
             console.print(f"[red]No search results found for query {query}")
@@ -254,7 +263,11 @@ class Main:
     ):
         client = await self.get_logged_in_client(source)
         with console.status(f"[bold]Searching {source}", spinner="dots"):
-            pages = await client.search(media_type, query, limit=limit)
+            try:
+                pages = await client.search(media_type, query, limit=limit)
+            except APIError as e:
+                console.print(f"[red]Search failed: {e}")
+                return
 
         if len(pages) == 0:
             console.print(f"[red]No search results found for query {query}")
