@@ -48,7 +48,7 @@ class TidalConfig:
     refresh_token: str
     # Tokens last 1 week after refresh. This is the Unix timestamp of the expiration
     # time. If you haven't used streamrip in more than a week, you may have to log
-    # in again using `rip config --tidal`
+    # in again using `streamrip config --tidal`
     token_expiry: str
     # 0: 256kbps AAC, 1: 320kbps AAC, 2: 16/44.1 FLAC, 3: best available (24-bit
     # FLAC where the client id is allowed to stream it)
@@ -82,7 +82,7 @@ class DeezerConfig:
     # This allows for free 320kbps MP3 downloads from Deezer
     # If an arl is provided, deezloader is never used
     use_deezloader: bool
-    # This warns you when the paid deezer account is not logged in and rip falls
+    # This warns you when the paid deezer account is not logged in and streamrip falls
     # back to deezloader, which is unreliable
     deezloader_warnings: bool
 

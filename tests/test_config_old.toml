@@ -32,7 +32,7 @@ access_token = "old_accesstoken"
 refresh_token = "old_refreshtoken"
 # Tokens last 1 week after refresh. This is the Unix timestamp of the expiration
 # time. If you haven't used streamrip in more than a week, you may have to log
-# in again using `rip config --tidal`
+# in again using `streamrip config --tidal`
 token_expiry = "old_tokenexpiry"
 
 [deezer]
@@ -47,7 +47,7 @@ arl = "old_testarl"
 # This allows for free 320kbps MP3 downloads from Deezer
 # If an arl is provided, deezloader is never used
 use_deezloader = true
-# This warns you when the paid deezer account is not logged in and rip falls
+# This warns you when the paid deezer account is not logged in and streamrip falls
 # back to deezloader, which is unreliable
 deezloader_warnings = true
 
@@ -71,7 +71,7 @@ download_videos = false
 downloads_enabled = true
 # Path to the downloads database 
 downloads_path = "old_downloadspath"
-# If a download fails, the item ID is stored here. Then, `rip repair` can be
+# If a download fails, the item ID is stored here. Then, `streamrip repair` can be
 # called to retry the downloads
 failed_downloads_enabled = true
 failed_downloads_path = "old_faileddownloadspath"
