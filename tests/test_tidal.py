@@ -41,6 +41,14 @@ def test_default_client_is_the_lossless_one():
     assert _client().client_id == DEFAULT_CLIENT_ID
 
 
+def test_default_quality_is_lossless_not_hires():
+    # Regression guard: most catalogs mostly don't have a hi-res master, so
+    # defaulting to 3 (HI_RES) mainly just produces a warning-per-track for
+    # no benefit -- see the commit that changed this. A future template
+    # edit reverting to 3 should fail this test, not surface as log noise.
+    assert Config.defaults().session.tidal.quality == 2
+
+
 def test_hires_client_can_be_selected():
     cfg = Config.defaults()
     cfg.session.tidal.hires_client = True

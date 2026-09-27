@@ -50,8 +50,12 @@ secrets = []
 
 [tidal]
 # 0: 256kbps AAC, 1: 320kbps AAC, 2: 16/44.1 FLAC, 3: best available
-# (24-bit FLAC where the client below is allowed to stream it)
-quality = 3
+# (24-bit FLAC where the client below is allowed to stream it).
+# Default is 2, not 3: most tracks don't have a hi-res master, so requesting
+# 3 for everything mostly just downloads the same 16/44.1 FLAC anyway, with
+# a "no lossless master" warning logged per track that doesn't have one.
+# Set to 3 if you want hi-res where it exists.
+quality = 2
 # This will download videos included in Video Albums.
 download_videos = true
 # Tidal decides per OAuth client which formats it will stream. The default
