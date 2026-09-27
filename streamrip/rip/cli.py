@@ -37,7 +37,7 @@ def coro(f):
     def wrapper(*args, **kwargs):
         async def run():
             # Ctrl-C used to be ignored until whatever was in flight finished,
-            # so people force-killed rip -- which skips the cleanup in
+            # so people force-killed streamrip -- which skips the cleanup in
             # Main.__aexit__ and leaves __artwork directories behind. Cancel
             # the task instead so everything unwinds (upstream PR #1025).
             task = asyncio.current_task()
@@ -170,7 +170,7 @@ def rip(
     except Exception as e:
         console.print(
             f"Error loading config from [bold cyan]{config_path}[/bold cyan]: {e}\n"
-            "Try running [bold]rip config reset[/bold]",
+            "Try running [bold]streamrip config reset[/bold]",
         )
         ctx.obj["config"] = None
         return
@@ -259,7 +259,7 @@ async def file(ctx, path):
 
     Example usage:
 
-        rip file urls.txt
+        streamrip file urls.txt
     """
     if ctx.obj["config"] is None:
         return
@@ -524,7 +524,7 @@ async def repair(ctx, yes, flat):
         if len(repaired) < len(failed_items):
             console.print(
                 f"[yellow]{len(failed_items) - len(repaired)} item(s) failed again "
-                "and are still logged. Run [bold]rip repair[/bold] to try again."
+                "and are still logged. Run [bold]streamrip repair[/bold] to try again."
             )
 
 
@@ -558,7 +558,7 @@ async def search(ctx, first, output_file, num_results, source, media_type, query
 
     Example:
 
-        rip search qobuz album 'rumours'
+        streamrip search qobuz album 'rumours'
     """
     if ctx.obj["config"] is None:
         return

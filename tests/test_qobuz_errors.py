@@ -1,6 +1,6 @@
 """Qobuz failures should explain themselves, and never quote credentials.
 
-`rip search qobuz ...` crashed with a bare `AssertionError: 400`. The 400 was
+`streamrip search qobuz ...` crashed with a bare `AssertionError: 400`. The 400 was
 Qobuz's search backend failing transiently -- "Impossible to connect, please
 check your Algolia Application Id." -- and the same search succeeded seconds
 later. Separately, Qobuz takes credentials as URL query parameters, and both an

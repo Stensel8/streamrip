@@ -288,7 +288,7 @@ class DeezerClient(Client):
                 "No item id provided. This can happen when searching for fallback songs.",
             )
         # TODO: optimize such that all of the ids are requested at once
-        # Deezer only has qualities 0-2; `rip --quality 3/4` used to IndexError.
+        # Deezer only has qualities 0-2; `streamrip --quality 3/4` used to IndexError.
         quality = max(0, min(quality, self.max_quality))
         dl_info: dict = {"quality": quality, "id": item_id}
 

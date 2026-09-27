@@ -42,7 +42,7 @@ qobuz-login = ["playwright>=1.49"]
 ffmpeg = ["imageio-ffmpeg>=0.5"]
 
 [project.scripts]
-rip = "streamrip.rip:rip"
+streamrip = "streamrip.rip:rip"
 
 [project.urls]
 Homepage = "https://github.com/Stensel8/streamrip"

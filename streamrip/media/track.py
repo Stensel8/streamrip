@@ -173,7 +173,7 @@ class PendingTrack(Pending):
         source = self.client.source
         # Every failure below has to be recorded, not just logged. An unlogged
         # failure leaves no trace anywhere: no file, no downloads.db row, and
-        # nothing in the failed db for `rip repair` to retry -- the track just
+        # nothing in the failed db for `streamrip repair` to retry -- the track just
         # silently goes missing from the album.
         try:
             resp = await self.client.get_metadata(self.id, "track")
@@ -241,7 +241,7 @@ class PendingSingle(Pending):
             return None
 
         # As in PendingTrack.resolve: record every failure, so a track that
-        # dies here is retryable by `rip repair` instead of vanishing.
+        # dies here is retryable by `streamrip repair` instead of vanishing.
         try:
             resp = await self.client.get_metadata(self.id, "track")
         except NonStreamableError as e:
@@ -296,7 +296,7 @@ class PendingSingle(Pending):
 
         # Mirror PendingTrack: a track belonging to a multi-disc album lives in
         # that album's disc subfolder. Without this, downloading one track of a
-        # multi-disc album (`rip repair`, or any single-track URL) drops it
+        # multi-disc album (`streamrip repair`, or any single-track URL) drops it
         # beside the Disc folders rather than into the one it belongs to.
         # Only meaningful when we're actually building the album's folder --
         # otherwise this would create a bare "Disc N" in the download root.

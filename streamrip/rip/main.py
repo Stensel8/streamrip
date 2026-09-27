@@ -169,7 +169,7 @@ class Main:
         """Offer a fresh login after stored credentials stop working."""
         console.print(f"[yellow]{source.title()} login failed: {cause}")
 
-        # Never block on a prompt nobody is there to answer: rip is run from
+        # Never block on a prompt nobody is there to answer: streamrip is run from
         # cron and from scripts, where a hidden y/n means hanging forever
         # rather than failing.
         if not sys.stdin.isatty():
@@ -347,6 +347,6 @@ class Main:
         # close global progress bar manager
         clear_progress()
         # We remove artwork tempdirs here because multiple singles
-        # may be able to share downloaded artwork in the same `rip` session
+        # may be able to share downloaded artwork in the same `streamrip` session
         # We don't know that a cover will not be used again until end of execution
         remove_artwork_tempdirs()

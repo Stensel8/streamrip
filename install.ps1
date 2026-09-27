@@ -22,17 +22,17 @@ uv pip install --python .venv --upgrade `
     "streamrip[ffmpeg] @ git+https://github.com/Stensel8/streamrip.git"
 
 Write-Host ""
-$version = & .venv\Scripts\rip.exe --version 2>$null
+$version = & .venv\Scripts\streamrip.exe --version 2>$null
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "Done. $version is installed at .venv\Scripts\rip.exe."
+    Write-Host "Done. $version is installed at .venv\Scripts\streamrip.exe."
 } else {
-    Write-Host "Install finished, but .venv\Scripts\rip.exe --version failed -- something's wrong."
+    Write-Host "Install finished, but .venv\Scripts\streamrip.exe --version failed -- something's wrong."
     exit 1
 }
 Write-Host ""
-Write-Host "Activate the venv so plain 'rip' works, then use it normally:"
+Write-Host "Activate the venv so plain 'streamrip' works, then use it normally:"
 Write-Host "  .venv\Scripts\Activate.ps1"
 Write-Host ""
-Write-Host "If 'rip' then runs something else, an alias or function named rip"
-Write-Host "is shadowing it (check with 'Get-Command rip -All')."
-Write-Host ".venv\Scripts\rip.exe always works regardless of that, activated or not."
+Write-Host "If 'streamrip' then runs something else, an alias or function named"
+Write-Host "streamrip is shadowing it (check with 'Get-Command streamrip -All')."
+Write-Host ".venv\Scripts\streamrip.exe always works regardless of that, activated or not."

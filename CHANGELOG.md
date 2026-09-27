@@ -16,6 +16,8 @@ upstream issues and pull requests.
 - HTTP(S)_PROXY / ALL_PROXY environment variables are honoured ([#961](https://github.com/nathom/streamrip/issues/961)).
 - Install from GitHub; the update notice points at this fork instead of telling
   you to `pip install streamrip`, which would install upstream.
+- The CLI command is `streamrip`, not `rip`: short names like `rip` collide
+  with other tools and local shell aliases/functions too easily.
 
 ### Qobuz
 
@@ -85,7 +87,7 @@ upstream issues and pull requests.
 ### Downloads, conversion and tagging
 
 - Failed downloads are no longer marked as downloaded, resolve failures are
-  recorded, and `rip repair` retries everything in the failed database
+  recorded, and `streamrip repair` retries everything in the failed database
   ([PR #1023](https://github.com/nathom/streamrip/pull/1023)). A track skipped
   after a 403 (e.g. a geoblocked Deezer track in an otherwise public playlist)
   no longer leaves the run in a state where cleanup trips over the file it
