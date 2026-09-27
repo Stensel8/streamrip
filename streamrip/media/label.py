@@ -6,6 +6,7 @@ from streamrip.exceptions import NonStreamableError
 
 from ..client import Client
 from ..config import Config
+from ..console import console
 from ..db import Database
 from ..metadata import LabelMetadata
 from .album import PendingAlbum
@@ -27,10 +28,16 @@ class Label(Media):
         pass
 
     async def download(self):
-        # Resolve only 3 albums at a time to avoid
-        # initial latency of resolving ALL albums and tracks
-        # before any downloads
-        album_resolve_chunk_size = 10
+        # Fetching each album's tracklist happens a few at a time before the
+        # first progress bar appears, which for a label with a large
+        # catalog can take a while with nothing on screen to show for it.
+        console.print(
+            f"[bold]{self.name}[/bold]: found {len(self.albums)} release(s), "
+            "resolving and downloading..."
+        )
+        # Resolve only a few albums at a time to avoid the initial latency
+        # of resolving ALL albums and tracks before any downloads start.
+        album_resolve_chunk_size = 4
 
         async def _resolve_download(item: PendingAlbum):
             album = await item.resolve()

@@ -14,10 +14,11 @@ from .media import Media, Pending
 
 logger = logging.getLogger("streamrip")
 
-# Resolve only N albums at a time to avoid
-# initial latency of resolving ALL albums and tracks
-# before any downloads
-RESOLVE_CHUNK_SIZE = 10
+# Resolve only N albums at a time to avoid initial latency of resolving ALL
+# albums and tracks before any downloads, and to avoid bursting past the
+# streaming service's rate limit: resolving + starting downloads for many
+# albums at once fires many API calls almost simultaneously.
+RESOLVE_CHUNK_SIZE = 4
 
 
 @dataclass(slots=True)
@@ -33,6 +34,14 @@ class Artist(Media):
         pass
 
     async def download(self):
+        # Fetching each album's tracklist happens RESOLVE_CHUNK_SIZE at a
+        # time before the first progress bar appears, which for an artist
+        # with a large discography can take a while with nothing on screen
+        # to show for it -- so say up front what's queued.
+        console.print(
+            f"[bold]{self.name}[/bold]: found {len(self.albums)} release(s), "
+            "resolving and downloading..."
+        )
         filter_conf = self.config.session.qobuz_filters
         if filter_conf.repeats:
             console.log(
