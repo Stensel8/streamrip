@@ -1,0 +1,31 @@
+# Dependabot handles security updates; Renovate (renovate.json) handles the
+# regular version updates, SHA pinning and lock file maintenance. Keeping the
+# version updates in one tool avoids two PRs for every release.
+#
+# open-pull-requests-limit: 0 turns Dependabot's version updates off without
+# affecting security updates (enable "Dependabot security updates" in the
+# repository settings under Code security). Raise the limit to let Dependabot
+# open version updates as well.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: "/"
+    target-branch: dev
+    schedule:
+      interval: weekly
+      timezone: Europe/Amsterdam
+    open-pull-requests-limit: 0
+    labels: ["dependencies", "python"]
+    commit-message:
+      prefix: "fix(deps)"
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    target-branch: dev
+    schedule:
+      interval: weekly
+      timezone: Europe/Amsterdam
+    open-pull-requests-limit: 0
+    labels: ["dependencies", "github-actions"]
+    commit-message:
+      prefix: "ci(deps)"
