@@ -28,6 +28,24 @@ A scriptable stream downloader for Qobuz, Tidal, Deezer and SoundCloud.
 
 ## Installation
 
+The fastest way to get going: run the install script for your OS. It fetches
+Python 3.14 and ffmpeg for you (via [uv](https://docs.astral.sh/uv/)) and
+installs streamrip into a `.venv` in the current directory:
+
+```bash
+# Linux/macOS
+curl -LsSf https://raw.githubusercontent.com/Stensel8/streamrip/dev/install.sh | bash
+```
+
+```powershell
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/Stensel8/streamrip/dev/install.ps1 | iex
+```
+
+Then activate that venv and run `rip`, same as the manual steps below. Read
+on if you'd rather do each step yourself, or already have Python and ffmpeg
+set up.
+
 First, ensure [Python](https://www.python.org/downloads/) 3.14 or newer and
 [pip](https://pip.pypa.io/en/stable/installing/) are installed. You'll also
 need `ffmpeg` for conversion and Tidal hi-res downloads: either install it
