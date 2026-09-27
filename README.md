@@ -79,6 +79,13 @@ rip
 
 it should show the main help page. If you have no idea what these mean, or are having other issues installing, check out the [detailed installation instructions](https://github.com/nathom/streamrip/wiki#detailed-installation-instructions) in the upstream wiki.
 
+> [!TIP]
+> If `rip` runs something else entirely (not a streamrip help page), a shell
+> alias or function named `rip` is shadowing it — aliases and functions are
+> checked before `PATH`, venv or no venv. Run `command -v rip` (or, in fish,
+> `type rip`) to see what it actually resolves to. `command rip` bypasses the
+> alias/function and runs the real one from the active venv.
+
 > [!IMPORTANT]
 > `pip install streamrip` (PyPI), the AUR package and `brew install streamrip`
 > all install **upstream** streamrip, not this fork. Upstream's release pins
