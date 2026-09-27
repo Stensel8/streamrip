@@ -65,7 +65,11 @@ def coro(f):
 @click.option(
     "-c",
     "--codec",
-    help="Convert the downloaded files to an audio codec (ALAC, FLAC, MP3, AAC, or OGG)",
+    help="Convert the downloaded files to an audio codec "
+    "(ALAC, FLAC, AIFF, MP3, AAC, OGG, or OPUS)",
+    type=click.Choice(
+        ["ALAC", "FLAC", "AIFF", "MP3", "AAC", "OGG", "OPUS"], case_sensitive=False
+    ),
 )
 @click.option(
     "--no-progress",
@@ -152,7 +156,6 @@ def rip(
 
     if codec is not None:
         c.session.conversion.enabled = True
-        assert codec.upper() in ("ALAC", "FLAC", "OGG", "MP3", "AAC")
         c.session.conversion.codec = codec.upper()
 
     if no_progress:
@@ -247,7 +250,7 @@ async def file(ctx, path):
                     s = set(items)
                     if len(s) < len(items):
                         console.print(
-                            f"Found [orange]{len(items)-len(s)}[/orange] repeated URLs!"
+                            f"Found [orange]{len(items) - len(s)}[/orange] repeated URLs!"
                         )
                         items = list(s)
                     console.print(
@@ -433,9 +436,7 @@ async def repair(ctx, yes, flat):
             console.print("[green]No failed downloads to repair!")
             return
 
-        console.print(
-            f"Found [yellow]{len(failed_items)}[/yellow] failed download(s)."
-        )
+        console.print(f"Found [yellow]{len(failed_items)}[/yellow] failed download(s).")
         if not yes and not Confirm.ask("Retry them now?"):
             console.print("[green]Repair aborted")
             return
@@ -594,7 +595,7 @@ async def latest_streamrip_version(verify_ssl: bool = True) -> tuple[str, str | 
         **connector_kwargs, resolver=aiohttp.ThreadedResolver()
     )
 
-    async with aiohttp.ClientSession(connector=connector) as s:
+    async with aiohttp.ClientSession(connector=connector, trust_env=True) as s:
         async with s.get("https://pypi.org/pypi/streamrip/json") as resp:
             data = await resp.json()
         version = data["info"]["version"]

@@ -222,14 +222,18 @@ class TrackMetadata:
         raise Exception
 
     def format_track_path(self, format_string: str) -> str:
-        # Available keys: "tracknumber", "artist", "albumartist", "composer", "title",
-        # and "explicit", "albumcomposer"
+        # Available keys: "id", "tracknumber", "discnumber", "artist", "album",
+        # "albumartist", "composer", "title", "explicit", "albumcomposer"
         none_text = "Unknown"
         info = {
             "id": self.info.id,
             "title": self.title,
             "tracknumber": self.tracknumber,
+            "discnumber": self.discnumber,
             "artist": self.artist,
+            "album": self.album.album,
+            # Alias requested upstream (PR #826).
+            "albumtitle": self.album.album,
             "albumartist": self.album.albumartist,
             "albumcomposer": self.album.albumcomposer or none_text,
             "composer": self.composer or none_text,

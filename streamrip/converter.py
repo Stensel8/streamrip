@@ -2,10 +2,12 @@
 
 import asyncio
 import base64
+import functools
 import logging
 import os
 import shutil
 import subprocess
+import uuid
 from tempfile import gettempdir
 from typing import Final, Optional
 
@@ -60,7 +62,13 @@ class Converter:
 
         self.filename = filename
         self.final_fn = f"{os.path.splitext(filename)[0]}.{self.container}"
-        self.tempfile = os.path.join(gettempdir(), os.path.basename(self.final_fn))
+        # Unique per conversion: tracks from different albums often share a
+        # file name ("01. Intro"), and concurrent conversions used to
+        # overwrite each other's temp file.
+        self.tempfile = os.path.join(
+            gettempdir(),
+            f"__streamrip_{uuid.uuid4().hex}_{os.path.basename(self.final_fn)}",
+        )
         self.remove_source = remove_source
         self.sampling_rate = sampling_rate
         self.bit_depth = bit_depth
@@ -150,9 +158,11 @@ class Converter:
         try:
             if out_ext == ".ogg":
                 from mutagen.oggvorbis import OggVorbis
+
                 audio = OggVorbis(self.final_fn)
             elif out_ext == ".opus":
                 from mutagen.oggopus import OggOpus
+
                 audio = OggOpus(self.final_fn)
             else:
                 return
@@ -172,7 +182,7 @@ class Converter:
         if logger.getEffectiveLevel() != logging.DEBUG:
             command.extend(("-loglevel", "panic"))
 
-        command.extend(("-c:a", self.codec_lib))
+        command.extend(("-c:a", self.get_codec_lib()))
 
         if self.show_progress:
             command.append("-stats")
@@ -221,6 +231,10 @@ class Converter:
         logger.debug(command)
 
         return command
+
+    @classmethod
+    def get_codec_lib(cls) -> str:
+        return cls.codec_lib
 
     def _is_command_valid(self):
         # TODO: add error handling for lossy codecs
@@ -337,7 +351,11 @@ class OPUS(Converter):
 
 
 class AAC(Converter):
-    """Class for libfdk_aac converter.
+    """Class for AAC converter.
+
+    Uses libfdk_aac when ffmpeg was built with it, and ffmpeg's native aac
+    encoder otherwise; most ffmpeg builds lack libfdk_aac, which made every
+    AAC conversion fail (upstream #1010).
 
     Default ffmpeg_arg: `-b:a 256k`.
 
@@ -351,8 +369,45 @@ class AAC(Converter):
     default_ffmpeg_arg = "-b:a 256k"
 
     @classmethod
+    def get_codec_lib(cls) -> str:
+        return "libfdk_aac" if _ffmpeg_has_encoder("libfdk_aac") else "aac"
+
+    @classmethod
     def get_quality_arg(cls, rate: int) -> str:
         return f"-b:a {rate}k"
+
+
+class AIFF(Converter):
+    """Class for AIFF converter (uncompressed PCM, upstream PR #1006)."""
+
+    codec_name = "aiff"
+    codec_lib = "pcm_s24be"
+    container = "aiff"
+    lossless = True
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Keep 16-bit sources 16-bit instead of padding them to 24.
+        if self.bit_depth == 16:
+            self.codec_lib = "pcm_s16be"
+
+    def get_codec_lib(self) -> str:  # type: ignore[override]
+        return self.codec_lib
+
+
+@functools.cache
+def _ffmpeg_has_encoder(name: str) -> bool:
+    try:
+        result = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-encoders"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            stdin=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return name in result.stdout
 
 
 def get(codec: str) -> type[Converter]:
@@ -365,5 +420,6 @@ def get(codec: str) -> type[Converter]:
         "VORBIS": Vorbis,
         "AAC": AAC,
         "M4A": AAC,
+        "AIFF": AIFF,
     }
     return converter_classes[codec.upper()]

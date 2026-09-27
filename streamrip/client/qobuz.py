@@ -146,7 +146,7 @@ class QobuzSpoofer:
             **connector_kwargs, resolver=aiohttp.ThreadedResolver()
         )
 
-        self.session = aiohttp.ClientSession(connector=connector)
+        self.session = aiohttp.ClientSession(connector=connector, trust_env=True)
         return self
 
     async def __aexit__(self, *_):
