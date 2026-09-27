@@ -152,28 +152,35 @@ class TidalPrompter(CredentialPrompter):
 
     async def prompt_and_login(self):
         device_code, uri = await self.client._get_device_code()
-        login_link = f"https://{uri}"
+        login_link = uri if uri.startswith("http") else f"https://{uri}"
 
         console.print(
-            f"Go to [blue underline]{login_link}[/blue underline] to log into Tidal within 5 minutes.",
+            f"Go to [blue underline]{login_link}[/blue underline] to log into Tidal "
+            f"within {self.timeout_s // 60} minutes.",
         )
-        launch(login_link)
+        try:
+            launch(login_link)
+        except Exception:
+            # No browser available (e.g. over SSH); the link is printed above.
+            pass
 
         start = time.time()
-        elapsed = 0.0
-        info = {}
-        while elapsed < self.timeout_s:
-            elapsed = time.time() - start
+        info: dict = {}
+        while True:
+            if time.time() - start > self.timeout_s:
+                raise AuthenticationError("Timed out waiting for the Tidal login.")
             status, info = await self.client._get_auth_status(device_code)
             if status == 2:
                 # pending
                 await asyncio.sleep(4)
                 continue
-            elif status == 0:
+            if status == 0:
                 # successful
                 break
-            else:
-                raise Exception
+            raise AuthenticationError(
+                "Tidal rejected the device login. Try again, or check the "
+                "[tidal] client settings in the config."
+            )
 
         c = self.config.session.tidal
         c.user_id = info["user_id"]  # type: ignore
@@ -181,6 +188,7 @@ class TidalPrompter(CredentialPrompter):
         c.access_token = info["access_token"]  # type: ignore
         c.refresh_token = info["refresh_token"]  # type: ignore
         c.token_expiry = info["token_expiry"]  # type: ignore
+        c.token_client_id = self.client.client_id
 
         self.client._update_authorization_from_config()
         self.client.logged_in = True
@@ -198,6 +206,7 @@ class TidalPrompter(CredentialPrompter):
         cf.access_token = c.access_token
         cf.refresh_token = c.refresh_token
         cf.token_expiry = c.token_expiry
+        cf.token_client_id = c.token_client_id
         self.config.file.set_modified()
 
 

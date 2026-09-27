@@ -43,6 +43,9 @@ secrets = ['secret1', 'secret2']
 quality = 3
 # This will download videos included in Video Albums.
 download_videos = true
+hires_client = false
+client_id = ""
+client_secret = ""
 
 # Do not change any of the fields below
 user_id = "userid"
@@ -53,6 +56,7 @@ refresh_token = "refreshtoken"
 # time. If you haven't used streamrip in more than a week, you may have to log
 # in again using `rip config --tidal`
 token_expiry = "tokenexpiry"
+token_client_id = ""
 
 [deezer]
 # 0, 1, or 2

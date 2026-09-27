@@ -7,7 +7,7 @@ from typing import Optional
 
 from ..filepath_utils import clean_filename, clean_filepath
 from .covers import Covers
-from .util import get_quality_id, safe_get, typed
+from .util import get_quality_id, safe_get, tidal_quality_id, typed
 
 PHON_COPYRIGHT = "\u2117"
 COPYRIGHT = "\u00a9"
@@ -324,7 +324,7 @@ class AlbumMetadata:
         album = typed(resp.get("title", "Unknown Album"), str)
         tracktotal = typed(resp.get("numberOfTracks", 1), int)
         # genre not returned by API
-        date = typed(resp.get("releaseDate"), str)
+        date = typed(resp.get("releaseDate") or "Unknown", str)
         year = date[:4]
         _copyright = typed(resp.get("copyright", ""), str)
 
@@ -342,15 +342,7 @@ class AlbumMetadata:
         if covers is None:
             covers = Covers()
 
-        quality_map: dict[str, int] = {
-            "LOW": 0,
-            "HIGH": 1,
-            "LOSSLESS": 2,
-            "HI_RES": 3,
-        }
-
-        tidal_quality = resp.get("audioQuality", "LOW")
-        quality = quality_map[tidal_quality]
+        quality = tidal_quality_id(resp.get("audioQuality", "LOW"))
         if quality >= 2:
             sampling_rate = 44100
             if quality == 3:
@@ -426,15 +418,7 @@ class AlbumMetadata:
         if covers is None:
             covers = Covers()
 
-        quality_map: dict[str, int] = {
-            "LOW": 0,
-            "HIGH": 1,
-            "LOSSLESS": 2,
-            "HI_RES": 3,
-        }
-
-        tidal_quality = resp.get("audioQuality", "LOW")
-        quality = quality_map[tidal_quality]
+        quality = tidal_quality_id(resp.get("audioQuality", "LOW"))
         if quality >= 2:
             sampling_rate = 44100
             if quality == 3:
