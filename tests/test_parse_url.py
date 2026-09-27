@@ -73,6 +73,39 @@ class TestParseURL(unittest.TestCase):
                 self.assertEqual(groups[1], "album")  # media_type
                 self.assertEqual(groups[2], "152697662")  # item_id
 
+    def test_deezer_share_links(self):
+        """Old Firebase share links and the current link.deezer.com ones."""
+        for url in (
+            "https://deezer.page.link/qfomS8twgYA35mgQ7",
+            "https://dzr.page.link/qfomS8twgYA35mgQ7",
+            "https://link.deezer.com/s/30hqmqELWXacckhxPdGqX",
+        ):
+            with self.subTest(url=url):
+                result = parse_url(url)
+                self.assertIsInstance(result, DeezerDynamicURL)
+                self.assertEqual(result.source, "deezer")
+
+    def test_deezer_standard_link_regex(self):
+        """The id is read from the URL a share link redirects to."""
+        regex = DeezerDynamicURL.standard_link_re
+        for url, expected in (
+            ("https://www.deezer.com/en/track/4195713?host=0", ("track", "4195713")),
+            ("https://www.deezer.com/album/723513301", ("album", "723513301")),
+            (
+                "https://www.deezer.com/pt-br/playlist/908622995",
+                ("playlist", "908622995"),
+            ),
+        ):
+            with self.subTest(url=url):
+                self.assertEqual(regex.search(url).groups(), expected)
+
+    def test_deezer_loved_tracks_url(self):
+        from streamrip.rip.parse_url import DeezerFavoriteURL
+
+        result = parse_url("https://www.deezer.com/fr/profile/1234567/loved")
+        self.assertIsInstance(result, DeezerFavoriteURL)
+        self.assertEqual(result.match.group(1), "1234567")
+
     def test_deezer_track_url(self):
         """Test that Deezer track URLs are matched correctly."""
         url = "https://www.deezer.com/track/4195713"

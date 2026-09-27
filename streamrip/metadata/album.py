@@ -187,10 +187,15 @@ class AlbumMetadata:
     def from_deezer(cls, resp: dict) -> AlbumMetadata | None:
         album = resp.get("title", "Unknown Album")
         tracktotal = typed(resp.get("track_total", 0) or resp.get("nb_tracks", 0), int)
-        disctotal = typed(resp["tracks"][-1]["disk_number"], int) if resp["tracks"] else 1
-        genres = [typed(g["name"], str) for g in resp["genres"]["data"]]
+        disctotal = (
+            typed(resp["tracks"][-1]["disk_number"], int) if resp["tracks"] else 1
+        )
+        genres = [
+            typed(g["name"], str)
+            for g in safe_get(resp, "genres", "data", default=[]) or []
+        ]
 
-        date = typed(resp["release_date"], str)
+        date = typed(resp.get("release_date") or "Unknown", str)
         year = date[:4]
         _copyright = None
         description = None
@@ -469,9 +474,11 @@ class AlbumMetadata:
         album_id = album_resp["id"]
         album = album_resp["title"]
         covers = Covers.from_deezer(album_resp)
-        date = album_resp["release_date"]
+        date = album_resp.get("release_date") or "Unknown"
         year = date[:4]
-        albumartist = ", ".join(a["name"] for a in resp["contributors"])
+        albumartist = ", ".join(
+            a["name"] for a in resp.get("contributors") or []
+        ) or typed(safe_get(resp, "artist", "name", default="Unknown Artist"), str)
         explicit = resp.get("explicit_lyrics", False)
 
         info = AlbumInfo(

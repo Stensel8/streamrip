@@ -143,9 +143,13 @@ class QobuzInterpreterURL(URL):
 
 class DeezerDynamicURL(URL):
     standard_link_re = re.compile(
-        r"https://www\.deezer\.com/[a-z]{2}/(album|artist|playlist|track)/(\d+)"
+        r"https://www\.deezer\.com/(?:[a-z]{2}(?:-[a-z]{2})?/)?(album|artist|playlist|track)/(\d+)"
     )
-    dynamic_link_re = re.compile(r"https://(?:deezer|dzr)\.page\.link/\w+")
+    # Share links: the old Firebase ones (deezer.page.link / dzr.page.link)
+    # and the current link.deezer.com/s/... ones (upstream #865, #818).
+    dynamic_link_re = re.compile(
+        r"https://(?:(?:deezer|dzr)\.page\.link|link\.deezer\.com/s)/[\w-]+"
+    )
 
     @classmethod
     def from_str(cls, url: str) -> URL | None:
@@ -186,12 +190,17 @@ class DeezerDynamicURL(URL):
         :rtype: Tuple[str, str] (media type, item id)
         """
         async with client.session.get(url) as resp:
-            match = cls.standard_link_re.search(await resp.text())
+            # Share links redirect to the regular www.deezer.com URL, which is
+            # the most reliable place to read the id from; fall back to the
+            # page body for the older Firebase links.
+            match = cls.standard_link_re.search(str(resp.url))
+            if match is None:
+                match = cls.standard_link_re.search(await resp.text())
 
         if match:
             return match.group(1), match.group(2)
 
-        raise Exception("Unable to extract Deezer dynamic link.")
+        raise Exception(f"Unable to extract the Deezer item from {url}.")
 
 
 class DeezerFavoriteURL(URL):
