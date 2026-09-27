@@ -14,12 +14,11 @@ albums it has *purchased*. These tests verify that:
 All network calls are mocked; these run without Qobuz credentials.
 """
 
-import hashlib
 from unittest.mock import AsyncMock
 
 from util import arun
 
-from streamrip.client.qobuz import QobuzClient
+from streamrip.client.qobuz import QobuzClient, file_url_signature
 from streamrip.config import Config
 
 
@@ -119,13 +118,8 @@ def test_request_file_url_download_intent_when_download_only(monkeypatch):
     assert params["intent"] == "download"
     # 2. the signed preimage used intent=download too (reconstruct + md5 match)
     format_id = QobuzClient.get_quality(quality)
-    expected_preimage = (
-        f"trackgetFileUrlformat_id{format_id}intentdownload"
-        f"track_id{track_id}{params['request_ts']}{secret}"
-    )
-    assert (
-        hashlib.md5(expected_preimage.encode("utf-8")).hexdigest()
-        == params["request_sig"]
+    assert params["request_sig"] == file_url_signature(
+        format_id, "download", track_id, params["request_ts"], secret
     )
 
 
@@ -148,11 +142,14 @@ def test_request_file_url_stream_intent_when_subscriber(monkeypatch):
     params = captured["params"]
     assert params["intent"] == "stream"
     format_id = QobuzClient.get_quality(quality)
-    expected_preimage = (
-        f"trackgetFileUrlformat_id{format_id}intentstream"
-        f"track_id{track_id}{params['request_ts']}{secret}"
+    assert params["request_sig"] == file_url_signature(
+        format_id, "stream", track_id, params["request_ts"], secret
     )
+
+
+def test_file_url_signature_known_answer():
+    """Pin the signature format Qobuz expects (known-answer test)."""
     assert (
-        hashlib.md5(expected_preimage.encode("utf-8")).hexdigest()
-        == params["request_sig"]
+        file_url_signature(27, "stream", "19512574", 1700000000.5, "secret")
+        == "7e51324fbe3fb7a052f218264ed520f1"
     )

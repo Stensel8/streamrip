@@ -23,19 +23,24 @@ from .downloadable import BasicDownloadable, Downloadable
 
 logger = logging.getLogger("streamrip")
 
-# Qobuz takes credentials as URL query parameters, so they must be masked
-# anywhere params reach a log line or an exception message.
-_SENSITIVE_PARAMS = ("user_auth_token", "password", "email", "user_id", "request_sig")
-
-
-def _redacted(params: dict) -> dict:
-    """params with credentials masked, for logs and error messages."""
-    return {
-        k: ("<redacted>" if k in _SENSITIVE_PARAMS else v) for k, v in params.items()
-    }
-
-
 QOBUZ_BASE_URL = "https://www.qobuz.com/api.json/0.2"
+
+
+def file_url_signature(
+    format_id: int, intent: str, track_id: str, timestamp: float, secret: str
+) -> str:
+    """The request_sig Qobuz requires on track/getFileUrl.
+
+    MD5 is dictated by the Qobuz API: this is a request signature, not a way
+    of storing a secret, and Qobuz rejects anything else.
+    """
+    preimage = (
+        f"trackgetFileUrlformat_id{format_id}intent{intent}"
+        f"track_id{track_id}{timestamp}{secret}"
+    )
+    # codeql[py/weak-sensitive-data-hashing] Qobuz's API mandates MD5 here.
+    return hashlib.md5(preimage.encode("utf-8")).hexdigest()
+
 
 QOBUZ_FEATURED_KEYS = {
     "most-streamed",
@@ -240,7 +245,10 @@ class QobuzClient(Client):
                 "app_id": str(c.app_id),
             }
 
-        logger.debug("Request params %s", _redacted(params))
+        logger.debug(
+            "Logging into Qobuz with %s",
+            "a token" if c.use_auth_token else "a password",
+        )
         status, resp = await self._api_request("user/login", params)
         # The response carries the user_auth_token and the account profile.
         logger.debug("Login response keys: %s", sorted(resp))
@@ -257,7 +265,7 @@ class QobuzClient(Client):
                 "with a user id and user_auth_token instead."
             )
         elif status == 400:
-            raise InvalidAppIdError(f"Invalid app id from params {_redacted(params)}")
+            raise InvalidAppIdError(f"Qobuz rejected app id {c.app_id}")
         elif status != 200:
             raise APIError(
                 f"Qobuz login failed (HTTP {status}): "
@@ -582,13 +590,11 @@ class QobuzClient(Client):
         # accounts use intent=stream. The signed preimage and the params dict
         # MUST agree on the value or Qobuz rejects the request with HTTP 400.
         intent = "download" if self.download_only else "stream"
-        r_sig = f"trackgetFileUrlformat_id{quality}intent{intent}track_id{track_id}{unix_ts}{secret}"
-        logger.debug("Raw request signature: %s", r_sig)
-        r_sig_hashed = hashlib.md5(r_sig.encode("utf-8")).hexdigest()
-        logger.debug("Hashed request signature: %s", r_sig_hashed)
         params = {
             "request_ts": unix_ts,
-            "request_sig": r_sig_hashed,
+            "request_sig": file_url_signature(
+                quality, intent, track_id, unix_ts, secret
+            ),
             "track_id": track_id,
             "format_id": quality,
             "intent": intent,
@@ -600,7 +606,9 @@ class QobuzClient(Client):
         returns: status code, json parsed response
         """
         url = f"{QOBUZ_BASE_URL}/{epoint}"
-        logger.debug("api_request: endpoint=%s, params=%s", epoint, _redacted(params))
+        # Only the endpoint: params carry credentials (user_auth_token, password)
+        # and the request signature.
+        logger.debug("api_request: endpoint=%s", epoint)
         async with self.rate_limiter:
             async with self.session.get(url, params=params) as response:
                 if "json" not in (response.content_type or ""):
