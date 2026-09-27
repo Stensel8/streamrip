@@ -29,9 +29,11 @@ A scriptable stream downloader for Qobuz, Tidal, Deezer and SoundCloud.
 ## Installation
 
 First, ensure [Python](https://www.python.org/downloads/) 3.14 or newer and
-[pip](https://pip.pypa.io/en/stable/installing/) are installed. Then install
-[`ffmpeg`](https://ffmpeg.org/download.html). You may choose not to install it,
-but conversion and Tidal hi-res downloads need it.
+[pip](https://pip.pypa.io/en/stable/installing/) are installed. You'll also
+need `ffmpeg` for conversion and Tidal hi-res downloads: either install it
+yourself (e.g. `apt install ffmpeg`, `brew install ffmpeg`,
+[ffmpeg.org](https://ffmpeg.org/download.html) for Windows), or skip that and
+add the `ffmpeg` extra below to get a working one bundled with streamrip.
 
 Always install Python packages into a virtual environment, never into your
 system Python. Create one and activate it:
@@ -93,13 +95,26 @@ it should show the main help page. If you have no idea what these mean, or are h
 
 ### Optional extras
 
+Add the extra in brackets to the install command for whichever method you
+used above. With the venv method:
+
 ```bash
+# Bundle a working ffmpeg, so there's no separate OS-level install
+pip install "streamrip[ffmpeg] @ git+https://github.com/Stensel8/streamrip.git"
+
 # Use certifi's CA bundle instead of the system certificates
 pip install "streamrip[ssl] @ git+https://github.com/Stensel8/streamrip.git"
 
 # Let streamrip capture your Qobuz login token from a real browser
 pip install "streamrip[qobuz-login] @ git+https://github.com/Stensel8/streamrip.git"
 playwright install chromium
+```
+
+pipx and uv take the same `package[extra] @ url` spec, for example:
+
+```bash
+pipx install "streamrip[ffmpeg] @ git+https://github.com/Stensel8/streamrip.git"
+uv tool install "streamrip[ffmpeg] @ git+https://github.com/Stensel8/streamrip.git"
 ```
 
 ### Logging in
