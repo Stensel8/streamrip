@@ -3,15 +3,20 @@
 Qobuz's web login is behind OAuth/reCAPTCHA, so streamrip cannot log in with a
 password any more for most accounts. Instead, open a browser with Playwright,
 let the user log in normally, and read the token from the ``user/login``
-response. Playwright is an optional dependency: ``pip install
-'streamrip[qobuz-login]'`` followed by ``playwright install chromium``.
+response. Playwright itself is a normal dependency; the Chromium build it
+drives is fetched automatically, once, the first time it's actually needed
+(``playwright install`` downloads a real browser, which can't be bundled in
+the Python package).
 """
 
 import asyncio
 import importlib.util
 import logging
 import platform
+import sys
 import time
+
+from ..console import console
 
 logger = logging.getLogger("streamrip")
 
@@ -28,6 +33,34 @@ def playwright_available() -> bool:
     return importlib.util.find_spec("playwright") is not None
 
 
+async def _install_chromium() -> None:
+    """Download the Chromium build Playwright drives, once.
+
+    The Python package alone doesn't include a browser binary; Playwright
+    fetches one on first use instead of streamrip shipping it, and this
+    keeps that one-time fetch automatic instead of a documented manual step.
+    """
+    console.print(
+        "[cyan]First-time setup: downloading a browser for automatic Qobuz "
+        "login (about 150 MB, once only)..."
+    )
+    proc = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-m",
+        "playwright",
+        "install",
+        "chromium",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+    )
+    out, _ = await proc.communicate()
+    if proc.returncode != 0:
+        raise QobuzTokenCaptureError(
+            "Could not download the browser automatically "
+            f"(exit {proc.returncode}): {out.decode(errors='replace')[-500:]}"
+        )
+
+
 async def _capture_qobuz_auth_token_async(timeout_s: int = 300) -> tuple[str, str]:
     """Capture user id and auth token from Qobuz web login traffic.
 
@@ -38,9 +71,8 @@ async def _capture_qobuz_auth_token_async(timeout_s: int = 300) -> tuple[str, st
         from playwright.async_api import async_playwright
     except Exception as exc:  # pragma: no cover - import path only
         raise QobuzTokenCaptureError(
-            "Automatic browser capture requires Playwright. Install it with "
-            "`pip install 'streamrip[qobuz-login]'` and run "
-            "`playwright install chromium`, or enter the token manually."
+            "Automatic browser capture requires Playwright, which failed to "
+            "import. Reinstall streamrip, or enter the token manually."
         ) from exc
 
     result: dict[str, str] = {}
@@ -73,7 +105,13 @@ async def _capture_qobuz_auth_token_async(timeout_s: int = 300) -> tuple[str, st
 
     try:
         async with async_playwright() as playwright:
-            browser = await playwright.chromium.launch(headless=False)
+            try:
+                browser = await playwright.chromium.launch(headless=False)
+            except Exception as launch_exc:
+                if "playwright install" not in str(launch_exc):
+                    raise
+                await _install_chromium()
+                browser = await playwright.chromium.launch(headless=False)
             context = await browser.new_context()
             page = await context.new_page()
             page.on("response", handle_response)

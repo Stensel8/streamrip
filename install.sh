@@ -21,7 +21,7 @@ fi
 
 echo "Installing streamrip into .venv..."
 uv pip install --python .venv --upgrade \
-    "streamrip[ffmpeg] @ git+https://github.com/Stensel8/streamrip.git"
+    "streamrip @ git+https://github.com/Stensel8/streamrip.git"
 
 echo
 if .venv/bin/streamrip --version >/dev/null 2>&1; then

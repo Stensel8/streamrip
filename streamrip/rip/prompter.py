@@ -101,10 +101,10 @@ class QobuzPrompter(CredentialPrompter):
         self._set_session_creds(False, email, pwd)
 
     async def _try_browser_capture(self) -> bool:
-        """Grab the token from a real browser login if Playwright is installed.
+        """Grab the token from a real browser login, if Playwright is usable.
 
-        Install with ``pip install 'streamrip[qobuz-login]'`` and run
-        ``playwright install chromium`` once.
+        The Chromium build it needs downloads itself automatically the
+        first time this actually runs.
         """
         if not playwright_available():
             return False
