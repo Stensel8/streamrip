@@ -28,27 +28,33 @@ A scriptable stream downloader for Qobuz, Tidal, Deezer and SoundCloud.
 
 ## Installation
 
+The fastest way to get going: run the install script for your OS. It fetches
+Python 3.14 and ffmpeg for you (via [uv](https://docs.astral.sh/uv/)) and
+installs streamrip into a `.venv` in the current directory:
+
+```bash
+# Linux/macOS
+curl -LsSf https://raw.githubusercontent.com/Stensel8/streamrip/dev/install.sh | bash
+```
+
+```powershell
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/Stensel8/streamrip/dev/install.ps1 | iex
+```
+
+Then activate that venv and run `rip`, same as the manual steps below. Read
+on if you'd rather do each step yourself, or already have Python and ffmpeg
+set up.
+
 First, ensure [Python](https://www.python.org/downloads/) 3.14 or newer and
-[pip](https://pip.pypa.io/en/stable/installing/) are installed. Then install
-[`ffmpeg`](https://ffmpeg.org/download.html). You may choose not to install it,
-but conversion and Tidal hi-res downloads need it.
+[pip](https://pip.pypa.io/en/stable/installing/) are installed. You'll also
+need `ffmpeg` for conversion and Tidal hi-res downloads: either install it
+yourself (e.g. `apt install ffmpeg`, `brew install ffmpeg`,
+[ffmpeg.org](https://ffmpeg.org/download.html) for Windows), or skip that and
+add the `ffmpeg` extra below to get a working one bundled with streamrip.
 
-Install streamrip from this repository:
-
-```bash
-pip3 install --upgrade git+https://github.com/Stensel8/streamrip.git
-```
-
-or, to keep it separate from other Python packages, with
-[pipx](https://pipx.pypa.io/) or [uv](https://docs.astral.sh/uv/):
-
-```bash
-pipx install git+https://github.com/Stensel8/streamrip.git
-uv tool install git+https://github.com/Stensel8/streamrip.git
-```
-
-or in a plain virtual environment, which also works if you don't have pipx or
-uv and want `rip` and its dependencies kept out of your system Python:
+Always install Python packages into a virtual environment, never into your
+system Python. Create one and activate it:
 
 ```bash
 # bash/zsh
@@ -62,16 +68,25 @@ python3 -m venv .venv
 source .venv/bin/activate.fish
 ```
 
-then, with the venv active (your prompt shows `(.venv)`), install into it the
-same way as above:
+Then, with the venv active (your prompt shows `(.venv)`), install streamrip
+from this repository into it:
 
 ```bash
 pip install --upgrade git+https://github.com/Stensel8/streamrip.git
 ```
 
-`rip` is on `PATH` for as long as that venv is active. Leave it with
+`rip` is on `PATH` for as long as that venv stays active. Leave it with
 `deactivate`; come back to it later from the project directory with the same
-`source` command, no need to recreate it.
+`source` command, no need to recreate the venv.
+
+[pipx](https://pipx.pypa.io/) and [uv](https://docs.astral.sh/uv/) do the same
+per-tool venv isolation without the manual `activate` step, if you have either
+installed:
+
+```bash
+pipx install git+https://github.com/Stensel8/streamrip.git
+uv tool install git+https://github.com/Stensel8/streamrip.git
+```
 
 To install a specific branch or release, add `@<branch-or-tag>` to the URL, for example
 `git+https://github.com/Stensel8/streamrip.git@dev`.
@@ -84,6 +99,13 @@ rip
 
 it should show the main help page. If you have no idea what these mean, or are having other issues installing, check out the [detailed installation instructions](https://github.com/nathom/streamrip/wiki#detailed-installation-instructions) in the upstream wiki.
 
+> [!TIP]
+> If `rip` runs something else entirely (not a streamrip help page), a shell
+> alias or function named `rip` is shadowing it — aliases and functions are
+> checked before `PATH`, venv or no venv. Run `command -v rip` (or, in fish,
+> `type rip`) to see what it actually resolves to. `command rip` bypasses the
+> alias/function and runs the real one from the active venv.
+
 > [!IMPORTANT]
 > `pip install streamrip` (PyPI), the AUR package and `brew install streamrip`
 > all install **upstream** streamrip, not this fork. Upstream's release pins
@@ -91,13 +113,26 @@ it should show the main help page. If you have no idea what these mean, or are h
 
 ### Optional extras
 
+Add the extra in brackets to the install command for whichever method you
+used above. With the venv method:
+
 ```bash
+# Bundle a working ffmpeg, so there's no separate OS-level install
+pip install "streamrip[ffmpeg] @ git+https://github.com/Stensel8/streamrip.git"
+
 # Use certifi's CA bundle instead of the system certificates
-pip3 install "streamrip[ssl] @ git+https://github.com/Stensel8/streamrip.git"
+pip install "streamrip[ssl] @ git+https://github.com/Stensel8/streamrip.git"
 
 # Let streamrip capture your Qobuz login token from a real browser
-pip3 install "streamrip[qobuz-login] @ git+https://github.com/Stensel8/streamrip.git"
+pip install "streamrip[qobuz-login] @ git+https://github.com/Stensel8/streamrip.git"
 playwright install chromium
+```
+
+pipx and uv take the same `package[extra] @ url` spec, for example:
+
+```bash
+pipx install "streamrip[ffmpeg] @ git+https://github.com/Stensel8/streamrip.git"
+uv tool install "streamrip[ffmpeg] @ git+https://github.com/Stensel8/streamrip.git"
 ```
 
 ### Logging in
