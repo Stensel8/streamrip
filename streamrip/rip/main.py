@@ -2,13 +2,16 @@ import asyncio
 import json
 import logging
 import platform
+import sys
 
 import aiofiles
+from rich.prompt import Confirm
 
 from .. import db
 from ..client import Client, DeezerClient, QobuzClient, SoundcloudClient, TidalClient
 from ..config import Config
 from ..console import console
+from ..exceptions import APIError, AuthenticationError, MissingCredentialsError
 from ..media import (
     Media,
     Pending,
@@ -27,8 +30,10 @@ from .prompter import get_prompter
 
 logger = logging.getLogger("streamrip")
 
-if platform.system() == "Windows":
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+# Windows used to be forced onto the SelectorEventLoop because aiodns needed it,
+# but that loop cannot run subprocesses, so every ffmpeg conversion failed there.
+# aiodns is no longer used (connectors use aiohttp's ThreadedResolver), so the
+# default ProactorEventLoop is kept.
 
 
 class Main:
@@ -145,12 +150,39 @@ class Main:
                 await prompter.prompt_and_login()
                 prompter.save()
             else:
-                with console.status(f"[cyan]Logging into {source}", spinner="dots"):
-                    # Log into client using credentials from config
-                    await client.login()
+                try:
+                    with console.status(f"[cyan]Logging into {source}", spinner="dots"):
+                        # Log into client using credentials from config
+                        await client.login()
+                except (AuthenticationError, MissingCredentialsError) as e:
+                    # has_creds() only checks that something is *stored*, not
+                    # that it still works. Saved tokens expire, so the usual
+                    # way to discover a lapsed login is a failure here -- which
+                    # used to be a bare traceback, even though the prompter
+                    # that fixes it is already built and sitting right there.
+                    await self._reauthenticate(source, prompter, e)
 
         assert client.logged_in
         return client
+
+    async def _reauthenticate(self, source: str, prompter, cause: Exception):
+        """Offer a fresh login after stored credentials stop working."""
+        console.print(f"[yellow]{source.title()} login failed: {cause}")
+
+        # Never block on a prompt nobody is there to answer: rip is run from
+        # cron and from scripts, where a hidden y/n means hanging forever
+        # rather than failing.
+        if not sys.stdin.isatty():
+            raise AuthenticationError(
+                f"{source} needs authorising again. Re-run this from an "
+                f"interactive terminal and you will be prompted to log in."
+            ) from cause
+
+        if not Confirm.ask(f"Log into {source} again now?"):
+            raise cause
+
+        await prompter.prompt_and_login()
+        prompter.save()
 
     async def resolve(self):
         """Resolve all currently pending items."""
@@ -172,7 +204,9 @@ class Main:
         failed_items = 0
         for result in results:
             if isinstance(result, Exception):
-                logger.error(f"Error processing media item: {result}")
+                logger.error(
+                    f"Error processing media item: {type(result).__name__}: {result}"
+                )
                 failed_items += 1
 
         if failed_items > 0:
@@ -185,7 +219,11 @@ class Main:
         client = await self.get_logged_in_client(source)
 
         with console.status(f"[bold]Searching {source}", spinner="dots"):
-            pages = await client.search(media_type, query, limit=100)
+            try:
+                pages = await client.search(media_type, query, limit=100)
+            except APIError as e:
+                console.print(f"[red]Search failed: {e}")
+                return
             if len(pages) == 0:
                 console.print(f"[red]No search results found for query {query}")
                 return
@@ -236,7 +274,11 @@ class Main:
     async def search_take_first(self, source: str, media_type: str, query: str):
         client = await self.get_logged_in_client(source)
         with console.status(f"[bold]Searching {source}", spinner="dots"):
-            pages = await client.search(media_type, query, limit=1)
+            try:
+                pages = await client.search(media_type, query, limit=1)
+            except APIError as e:
+                console.print(f"[red]Search failed: {e}")
+                return
 
         if len(pages) == 0:
             console.print(f"[red]No search results found for query {query}")
@@ -252,7 +294,11 @@ class Main:
     ):
         client = await self.get_logged_in_client(source)
         with console.status(f"[bold]Searching {source}", spinner="dots"):
-            pages = await client.search(media_type, query, limit=limit)
+            try:
+                pages = await client.search(media_type, query, limit=limit)
+            except APIError as e:
+                console.print(f"[red]Search failed: {e}")
+                return
 
         if len(pages) == 0:
             console.print(f"[red]No search results found for query {query}")

@@ -20,6 +20,7 @@ logger = logging.getLogger("streamrip")
 URL_REGEX = re.compile(
     r"https?://(?:www|open|play|listen)?\.?(qobuz|tidal|deezer)\.com?(?:(?:/(album|artist|track|playlist|video|label))|(?:\/[-\w]+?))+\/([-\w]+)",
 )
+TIDAL_SHARE_SUFFIX_REGEX = re.compile(r"^(https?://[^/]*tidal\.com/.+?)/u/?$")
 SOUNDCLOUD_URL_REGEX = re.compile(r"https://soundcloud.com/[-\w:/]+")
 LASTFM_URL_REGEX = re.compile(r"https://www.last.fm/user/\w+/playlists/\w+")
 QOBUZ_INTERPRETER_URL_REGEX = re.compile(
@@ -54,6 +55,12 @@ class URL(ABC):
 class GenericURL(URL):
     @classmethod
     def from_str(cls, url: str) -> URL | None:
+        # Tidal's share sheet produces links ending in "/u". URL_REGEX takes
+        # the last path segment as the item id -- it has to, because Qobuz
+        # album urls look like /<locale>/album/<slug>/<id> -- so that suffix
+        # would be parsed as an id of "u" and the API would 404.
+        url = TIDAL_SHARE_SUFFIX_REGEX.sub(r"\1", url)
+
         generic_url = URL_REGEX.match(url)
         if generic_url is None:
             return None
@@ -136,9 +143,13 @@ class QobuzInterpreterURL(URL):
 
 class DeezerDynamicURL(URL):
     standard_link_re = re.compile(
-        r"https://www\.deezer\.com/[a-z]{2}/(album|artist|playlist|track)/(\d+)"
+        r"https://www\.deezer\.com/(?:[a-z]{2}(?:-[a-z]{2})?/)?(album|artist|playlist|track)/(\d+)"
     )
-    dynamic_link_re = re.compile(r"https://(?:deezer|dzr)\.page\.link/\w+")
+    # Share links: the old Firebase ones (deezer.page.link / dzr.page.link)
+    # and the current link.deezer.com/s/... ones (upstream #865, #818).
+    dynamic_link_re = re.compile(
+        r"https://(?:(?:deezer|dzr)\.page\.link|link\.deezer\.com/s)/[\w-]+"
+    )
 
     @classmethod
     def from_str(cls, url: str) -> URL | None:
@@ -179,12 +190,44 @@ class DeezerDynamicURL(URL):
         :rtype: Tuple[str, str] (media type, item id)
         """
         async with client.session.get(url) as resp:
-            match = cls.standard_link_re.search(await resp.text())
+            # Share links redirect to the regular www.deezer.com URL, which is
+            # the most reliable place to read the id from; fall back to the
+            # page body for the older Firebase links.
+            match = cls.standard_link_re.search(str(resp.url))
+            if match is None:
+                match = cls.standard_link_re.search(await resp.text())
 
         if match:
             return match.group(1), match.group(2)
 
-        raise Exception("Unable to extract Deezer dynamic link.")
+        raise Exception(f"Unable to extract the Deezer item from {url}.")
+
+
+class DeezerFavoriteURL(URL):
+    """Matches Deezer liked-tracks profile URLs.
+
+    Example: https://www.deezer.com/fr/profile/1234567/loved
+    """
+
+    favorite_re = re.compile(
+        r"https://(?:www\.)?deezer\.com/[a-z]{2}/profile/(\d+)/loved"
+    )
+
+    @classmethod
+    def from_str(cls, url: str) -> URL | None:
+        match = cls.favorite_re.match(url)
+        if match is None:
+            return None
+        return cls(match, "deezer")
+
+    async def into_pending(
+        self,
+        client: Client,
+        config: Config,
+        db: Database,
+    ) -> Pending:
+        user_id = self.match.group(1)
+        return PendingPlaylist(f"favorites:{user_id}", client, config, db)
 
 
 class SoundcloudURL(URL):
@@ -232,6 +275,7 @@ def parse_url(url: str) -> URL | None:
         QobuzInterpreterURL.from_str(url),
         SoundcloudURL.from_str(url),
         DeezerDynamicURL.from_str(url),
+        DeezerFavoriteURL.from_str(url),
         # TODO: the rest of the url types
     ]
     return next((u for u in parsed_urls if u is not None), None)

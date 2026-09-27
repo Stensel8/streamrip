@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from .album import AlbumMetadata
-from .util import safe_get, typed
+from .util import safe_get, tidal_quality_id, typed
 
 logger = logging.getLogger("streamrip")
 
@@ -37,7 +37,7 @@ class TrackMetadata:
     @classmethod
     def from_qobuz(cls, album: AlbumMetadata, resp: dict) -> TrackMetadata | None:
         title = typed(resp["title"].strip(), str)
-        isrc = typed(resp["isrc"], str)
+        isrc = typed(resp.get("isrc"), str | None)
         streamable = typed(resp.get("streamable", False), bool)
 
         if not streamable:
@@ -53,12 +53,12 @@ class TrackMetadata:
         composer = typed(resp.get("composer", {}).get("name"), str | None)
         tracknumber = typed(resp.get("track_number", 1), int)
         discnumber = typed(resp.get("media_number", 1), int)
+        # "performer" is missing on some tracks (upstream #668); fall back to
+        # the album artist rather than failing the whole track.
         artist = typed(
-            safe_get(
-                resp,
-                "performer",
-                "name",
-            ),
+            safe_get(resp, "performer", "name")
+            or safe_get(resp, "album", "artist", "name")
+            or album.albumartist,
             str,
         )
         track_id = str(resp["id"])
@@ -89,16 +89,20 @@ class TrackMetadata:
     @classmethod
     def from_deezer(cls, album: AlbumMetadata, resp) -> TrackMetadata | None:
         track_id = str(resp["id"])
-        isrc = typed(resp["isrc"], str)
+        isrc = typed(resp.get("isrc"), str | None)
         bit_depth = 16
         sampling_rate = 44.1
-        explicit = typed(resp["explicit_lyrics"], bool)
+        explicit = typed(resp.get("explicit_lyrics", False), bool)
         work = None
         title = typed(resp["title"], str)
-        artist = typed(resp["artist"]["name"], str)
+        contributors = resp.get("contributors", [])
+        artist = ", ".join(
+            c["name"] for c in contributors if c["type"] == "artist"
+        ) or typed(resp["artist"]["name"], str)
         tracknumber = typed(resp["track_position"], int)
         discnumber = typed(resp["disk_number"], int)
         composer = None
+        lyrics = resp.get("lyrics", "")
         info = TrackInfo(
             id=track_id,
             quality=album.info.quality,
@@ -116,6 +120,7 @@ class TrackMetadata:
             discnumber=discnumber,
             composer=composer,
             isrc=isrc,
+            lyrics=lyrics,
         )
 
     @classmethod
@@ -156,7 +161,7 @@ class TrackMetadata:
     def from_tidal(cls, album: AlbumMetadata, track) -> TrackMetadata:
         title = typed(track["title"], str).strip()
         item_id = str(track["id"])
-        isrc = typed(track["isrc"], str)
+        isrc = typed(track.get("isrc"), str | None)
         version = track.get("version")
         explicit = track.get("explicit", False)
         if version:
@@ -165,7 +170,7 @@ class TrackMetadata:
         tracknumber = typed(track.get("trackNumber", 1), int)
         discnumber = typed(track.get("volumeNumber", 1), int)
 
-        artists = track.get("artists")
+        artists = track.get("artists") or []
         if len(artists) > 0:
             artist = ", ".join(a["name"] for a in artists)
         else:
@@ -173,18 +178,7 @@ class TrackMetadata:
 
         lyrics = track.get("lyrics", "")
 
-        quality_map: dict[str, int] = {
-            "LOW": 0,
-            "HIGH": 1,
-            "LOSSLESS": 2,
-            "HI_RES": 3,
-        }
-
-        tidal_quality = track.get("audioQuality")
-        if tidal_quality is not None:
-            quality = quality_map[tidal_quality]
-        else:
-            quality = 0
+        quality = tidal_quality_id(track.get("audioQuality"))
 
         if quality >= 2:
             sampling_rate = 44100
@@ -228,14 +222,18 @@ class TrackMetadata:
         raise Exception
 
     def format_track_path(self, format_string: str) -> str:
-        # Available keys: "tracknumber", "artist", "albumartist", "composer", "title",
-        # and "explicit", "albumcomposer"
+        # Available keys: "id", "tracknumber", "discnumber", "artist", "album",
+        # "albumartist", "composer", "title", "explicit", "albumcomposer"
         none_text = "Unknown"
         info = {
             "id": self.info.id,
             "title": self.title,
             "tracknumber": self.tracknumber,
+            "discnumber": self.discnumber,
             "artist": self.artist,
+            "album": self.album.album,
+            # Alias requested upstream (PR #826).
+            "albumtitle": self.album.album,
             "albumartist": self.album.albumartist,
             "albumcomposer": self.album.albumcomposer or none_text,
             "composer": self.composer or none_text,

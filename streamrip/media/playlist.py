@@ -15,8 +15,8 @@ from ..client import Client
 from ..config import Config
 from ..console import console
 from ..db import Database
-from ..exceptions import NonStreamableError
-from ..filepath_utils import clean_filepath
+from ..exceptions import NonStreamableError, TrackDownloadFailedError
+from ..filepath_utils import clean_filename, clean_filepath
 from ..metadata import (
     AlbumMetadata,
     Covers,
@@ -126,8 +126,12 @@ class Playlist(Media):
                 if track is None:
                     return
                 await track.rip()
+            except TrackDownloadFailedError:
+                pass  # already logged and recorded by Track.download()
             except Exception as e:
-                logger.error(f"Error downloading track: {e}")
+                # Include the type: some exceptions have an empty message,
+                # which used to log as "Error downloading track: ''" (#938).
+                logger.error(f"Error downloading track: {type(e).__name__}: {e}")
 
         batches = self.batch(
             [_resolve_download(track) for track in self.tracks],
@@ -171,7 +175,7 @@ class PendingPlaylist(Pending):
             return None
         name = meta.name
         parent = self.config.session.downloads.folder
-        folder = os.path.join(parent, clean_filepath(name))
+        folder = os.path.join(parent, clean_filepath(clean_filename(name)))
         tracks = [
             PendingPlaylistTrack(
                 id,
@@ -243,12 +247,12 @@ class PendingLastfmPlaylist(Pending):
             results: list[tuple[str | None, bool]] = await asyncio.gather(*requests)
 
         parent = self.config.session.downloads.folder
-        folder = os.path.join(parent, clean_filepath(playlist_title))
+        folder = os.path.join(parent, clean_filepath(clean_filename(playlist_title)))
 
         pending_tracks = []
         for pos, (id, from_fallback) in enumerate(results, start=1):
             if id is None:
-                logger.warning(f"No results found for {titles_artists[pos-1]}")
+                logger.warning(f"No results found for {titles_artists[pos - 1]}")
                 continue
 
             if from_fallback:
@@ -361,9 +365,13 @@ class PendingLastfmPlaylist(Pending):
         # Create new session so we're not bound by rate limit
         verify_ssl = getattr(self.config.session.downloads, "verify_ssl", True)
         connector_kwargs = get_aiohttp_connector_kwargs(verify_ssl=verify_ssl)
-        connector = aiohttp.TCPConnector(**connector_kwargs)
+        connector = aiohttp.TCPConnector(
+            **connector_kwargs, resolver=aiohttp.ThreadedResolver()
+        )
 
-        async with aiohttp.ClientSession(connector=connector) as session:
+        async with aiohttp.ClientSession(
+            connector=connector, trust_env=True
+        ) as session:
             page = await fetch(session, playlist_url)
             playlist_title_match = re_playlist_title_match.search(page)
             if playlist_title_match is None:

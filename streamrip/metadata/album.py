@@ -7,7 +7,7 @@ from typing import Optional
 
 from ..filepath_utils import clean_filename, clean_filepath
 from .covers import Covers
-from .util import get_quality_id, safe_get, typed
+from .util import get_quality_id, safe_get, tidal_quality_id, typed
 
 PHON_COPYRIGHT = "\u2117"
 COPYRIGHT = "\u00a9"
@@ -50,6 +50,8 @@ class AlbumMetadata:
     grouping: str | None = None
     lyrics: str | None = None
     purchase_date: str | None = None
+    # Edition name, e.g. "Deluxe Edition". Only some sources provide one.
+    version: str | None = None
 
     def get_genres(self) -> str:
         return ", ".join(self.genre)
@@ -64,7 +66,11 @@ class AlbumMetadata:
 
     def format_folder_path(self, formatter: str) -> str:
         # Available keys: "albumartist", "title", "year", "bit_depth", "sampling_rate",
-        # "id", and "albumcomposer",
+        # "id", "albumcomposer", "container", "tracktotal", and "version".
+        #
+        # Two different editions of the same album can otherwise render to the
+        # same folder and get merged together -- "tracktotal" and "version"
+        # give a readable way to tell them apart without resorting to "id".
 
         none_str = "Unknown"
         info: dict[str, str | int | float] = {
@@ -76,15 +82,25 @@ class AlbumMetadata:
             "title": clean_filename(self.album),
             "year": self.year,
             "container": self.info.container,
+            "tracktotal": self.tracktotal,
+            "version": clean_filename(self.version or "") or none_str,
         }
 
         return clean_filepath(formatter.format(**info))
 
     @classmethod
     def from_qobuz(cls, resp: dict) -> AlbumMetadata:
-        album = resp.get("title", "Unknown Album")
+        album = (resp.get("title") or "Unknown Album").strip()
+        version = (resp.get("version") or "").strip() or None
+        # The edition is part of what the album *is* -- a standard and a deluxe
+        # release otherwise share a title, so they tag identically and collide
+        # in the same download folder. Fold it into the title (unless the title
+        # already says it) and keep it in `version` for tagging as well.
+        if version and version.lower() not in album.lower():
+            album = f"{album} ({version})"
         tracktotal = resp.get("tracks_count", 1)
-        genre = [safe_get(resp, "genre", "name")] or resp.get("genre") or []
+        genre_name = safe_get(resp, "genre", "name")
+        genre = [genre_name] if isinstance(genre_name, str) else []
         genres = list(set(genre_clean.findall("/".join(genre))))
         date = resp.get("release_date_original") or resp.get("release_date")
         year = date[:4] if date is not None else "Unknown"
@@ -94,7 +110,9 @@ class AlbumMetadata:
         if artists := resp.get("artists"):
             albumartist = ", ".join(a["name"] for a in artists)
         else:
-            albumartist = typed(safe_get(resp, "artist", "name"), str)
+            albumartist = typed(
+                safe_get(resp, "artist", "name") or "Unknown Artist", str
+            )
 
         albumcomposer = typed(safe_get(resp, "composer", "name", default=""), str)
         _label = resp.get("label")
@@ -103,7 +121,13 @@ class AlbumMetadata:
         label = typed(_label or "", str)
         description = typed(resp.get("description", ""), str)
         disctotal = typed(
-            max(
+            # "media_count" is authoritative and is present even when the album
+            # object is abbreviated. The track list is only embedded in a full
+            # album response, so deriving the disc count from it alone collapses
+            # to 1 for any album reached via a track (e.g. a single-track URL or
+            # `rip repair`), which then loses the "Disc N" subfolder.
+            resp.get("media_count")
+            or max(
                 track.get("media_number", 1)
                 for track in safe_get(resp, "tracks", "items", default=[{}])  # type: ignore
             )
@@ -156,20 +180,29 @@ class AlbumMetadata:
             lyrics=None,
             purchase_date=None,
             tracktotal=tracktotal,
+            version=version,
         )
 
     @classmethod
     def from_deezer(cls, resp: dict) -> AlbumMetadata | None:
         album = resp.get("title", "Unknown Album")
         tracktotal = typed(resp.get("track_total", 0) or resp.get("nb_tracks", 0), int)
-        disctotal = typed(resp["tracks"][-1]["disk_number"], int)
-        genres = [typed(g["name"], str) for g in resp["genres"]["data"]]
+        disctotal = (
+            typed(resp["tracks"][-1]["disk_number"], int) if resp["tracks"] else 1
+        )
+        genres = [
+            typed(g["name"], str)
+            for g in safe_get(resp, "genres", "data", default=[]) or []
+        ]
 
-        date = typed(resp["release_date"], str)
+        date = typed(resp.get("release_date") or "Unknown", str)
         year = date[:4]
         _copyright = None
         description = None
-        albumartist = typed(safe_get(resp, "artist", "name"), str)
+        contributors = resp.get("contributors", [])
+        albumartist = ", ".join(
+            c["name"] for c in contributors if c["type"] == "artist"
+        ) or typed(safe_get(resp, "artist", "name"), str)
         albumcomposer = None
         label = resp.get("label")
         booklets = None
@@ -299,7 +332,7 @@ class AlbumMetadata:
         album = typed(resp.get("title", "Unknown Album"), str)
         tracktotal = typed(resp.get("numberOfTracks", 1), int)
         # genre not returned by API
-        date = typed(resp.get("releaseDate"), str)
+        date = typed(resp.get("releaseDate") or "Unknown", str)
         year = date[:4]
         _copyright = typed(resp.get("copyright", ""), str)
 
@@ -317,15 +350,7 @@ class AlbumMetadata:
         if covers is None:
             covers = Covers()
 
-        quality_map: dict[str, int] = {
-            "LOW": 0,
-            "HIGH": 1,
-            "LOSSLESS": 2,
-            "HI_RES": 3,
-        }
-
-        tidal_quality = resp.get("audioQuality", "LOW")
-        quality = quality_map[tidal_quality]
+        quality = tidal_quality_id(resp.get("audioQuality", "LOW"))
         if quality >= 2:
             sampling_rate = 44100
             if quality == 3:
@@ -384,7 +409,7 @@ class AlbumMetadata:
         else:
             year = "Unknown Year"
 
-        _copyright = typed(resp.get("copyright", ""), str)
+        _copyright = typed(resp.get("copyright") or "", str)
         artists = typed(resp.get("artists", []), list)
         albumartist = ", ".join(a["name"] for a in artists)
         if not albumartist:
@@ -401,15 +426,7 @@ class AlbumMetadata:
         if covers is None:
             covers = Covers()
 
-        quality_map: dict[str, int] = {
-            "LOW": 0,
-            "HIGH": 1,
-            "LOSSLESS": 2,
-            "HI_RES": 3,
-        }
-
-        tidal_quality = resp.get("audioQuality", "LOW")
-        quality = quality_map[tidal_quality]
+        quality = tidal_quality_id(resp.get("audioQuality", "LOW"))
         if quality >= 2:
             sampling_rate = 44100
             if quality == 3:
@@ -457,9 +474,11 @@ class AlbumMetadata:
         album_id = album_resp["id"]
         album = album_resp["title"]
         covers = Covers.from_deezer(album_resp)
-        date = album_resp["release_date"]
+        date = album_resp.get("release_date") or "Unknown"
         year = date[:4]
-        albumartist = ", ".join(a["name"] for a in resp["contributors"])
+        albumartist = ", ".join(
+            a["name"] for a in resp.get("contributors") or []
+        ) or typed(safe_get(resp, "artist", "name", default="Unknown Artist"), str)
         explicit = resp.get("explicit_lyrics", False)
 
         info = AlbumInfo(

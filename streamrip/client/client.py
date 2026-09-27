@@ -58,9 +58,14 @@ class Client(ABC):
 
         # Get connector kwargs based on SSL verification setting
         connector_kwargs = get_aiohttp_connector_kwargs(verify_ssl=verify_ssl)
-        connector = aiohttp.TCPConnector(**connector_kwargs)
+        connector = aiohttp.TCPConnector(
+            **connector_kwargs, resolver=aiohttp.ThreadedResolver()
+        )
 
+        # trust_env: honour HTTP(S)_PROXY / ALL_PROXY like requests already
+        # does for the audio downloads (upstream #961).
         return aiohttp.ClientSession(
             headers={"User-Agent": DEFAULT_USER_AGENT} | headers,
             connector=connector,
+            trust_env=True,
         )

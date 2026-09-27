@@ -7,15 +7,19 @@ from .. import converter
 from ..client import Client, Downloadable
 from ..config import Config
 from ..db import Database
-from ..exceptions import NonStreamableError
-from ..filepath_utils import clean_filename
+from ..exceptions import NonStreamableError, TrackDownloadFailedError
+from ..filepath_utils import clean_filename, fit_filename
 from ..metadata import AlbumMetadata, Covers, TrackMetadata, tag_file
+from ..metadata.tagger import TAGGABLE_EXTENSIONS
 from ..progress import add_title, get_progress_callback, remove_title
 from .artwork import download_artwork
 from .media import Media, Pending
 from .semaphore import global_download_semaphore
 
 logger = logging.getLogger("streamrip")
+
+# One try plus three retries with exponential backoff.
+MAX_DOWNLOAD_ATTEMPTS = 4
 
 
 @dataclass(slots=True)
@@ -38,61 +42,99 @@ class Track(Media):
             add_title(self.meta.title)
 
     async def download(self):
-        # TODO: progress bar description
         async with global_download_semaphore(self.config.session.downloads):
-            with get_progress_callback(
-                self.config.session.cli.progress_bars,
-                await self.downloadable.size(),
-                f"Track {self.meta.tracknumber}",
-            ) as callback:
+            for attempt in range(1, MAX_DOWNLOAD_ATTEMPTS + 1):
+                # Retries continue the partial file instead of starting over,
+                # so a connection that keeps dropping near the end of a large
+                # FLAC still gets there (upstream #951, #1022).
+                self.downloadable.resume = attempt > 1
+                label = f"Track {self.meta.tracknumber}"
+                if attempt > 1:
+                    label += f" (retry {attempt - 1})"
                 try:
-                    await self.downloadable.download(self.download_path, callback)
-                    retry = False
+                    with get_progress_callback(
+                        self.config.session.cli.progress_bars,
+                        await self.downloadable.size(),
+                        label,
+                    ) as callback:
+                        await self.downloadable.download(self.download_path, callback)
+                    return
+                except asyncio.CancelledError:
+                    raise
                 except Exception as e:
-                    logger.error(
-                        f"Error downloading track '{self.meta.title}', retrying: {e}"
-                    )
-                    retry = True
+                    error = f"{type(e).__name__}: {e}"
+                    if attempt < MAX_DOWNLOAD_ATTEMPTS:
+                        delay = 2**attempt  # 2s, 4s, 8s
+                        logger.warning(
+                            f"Error downloading track '{self.meta.title}', "
+                            f"retrying in {delay}s: {error}"
+                        )
+                        await asyncio.sleep(delay)
+                        continue
 
-            if not retry:
-                return
-
-            with get_progress_callback(
-                self.config.session.cli.progress_bars,
-                await self.downloadable.size(),
-                f"Track {self.meta.tracknumber} (retry)",
-            ) as callback:
-                try:
-                    await self.downloadable.download(self.download_path, callback)
-                except Exception as e:
                     logger.error(
-                        f"Persistent error downloading track '{self.meta.title}', skipping: {e}"
+                        f"Persistent error downloading track '{self.meta.title}', "
+                        f"skipping: {error}"
                     )
                     self.db.set_failed(
                         self.downloadable.source, "track", self.meta.info.id
                     )
+                    if os.path.isfile(self.download_path):
+                        os.remove(self.download_path)
+                    # postprocess() normally does this, but raising below
+                    # skips it, which would leave a phantom title in the
+                    # progress display for the rest of the run.
+                    if self.is_single:
+                        remove_title(self.meta.title)
+                    raise TrackDownloadFailedError(
+                        f"{self.meta.title} ({self.meta.info.id})"
+                    ) from e
 
     async def postprocess(self):
         if self.is_single:
             remove_title(self.meta.title)
 
-        await tag_file(self.download_path, self.meta, self.cover_path)
+        exclude = self.config.session.metadata.exclude
+        await tag_file(self.download_path, self.meta, self.cover_path, exclude)
         if self.config.session.conversion.enabled:
-            await self._convert()
+            try:
+                await self._convert()
+            except Exception as e:
+                # The download itself is fine and fully tagged; keep it and
+                # still record it, instead of re-downloading it on every run
+                # (upstream #1010, e.g. ffmpeg without libfdk_aac).
+                logger.error(
+                    f"Could not convert '{self.meta.title}', keeping the "
+                    f"original file: {type(e).__name__}: {e}"
+                )
 
         self.db.set_downloaded(self.meta.info.id)
 
     async def _convert(self):
         c = self.config.session.conversion
         engine_class = converter.get(c.codec)
+        # Lossy codecs honour [conversion] lossy_bitrate (upstream #823).
+        ffmpeg_arg = None
+        if not engine_class.lossless:
+            ffmpeg_arg = engine_class.get_quality_arg(c.lossy_bitrate)
         engine = engine_class(
             filename=self.download_path,
+            ffmpeg_arg=ffmpeg_arg,
             sampling_rate=c.sampling_rate,
             bit_depth=c.bit_depth,
             remove_source=True,  # always going to delete the old file
         )
         await engine.convert()
         self.download_path = engine.final_fn  # because the extension changed
+        # ffmpeg does not reliably carry every tag into the new container, so
+        # re-tag the converted file where we know how to.
+        if self.download_path.rsplit(".", 1)[-1].lower() in TAGGABLE_EXTENSIONS:
+            await tag_file(
+                self.download_path,
+                self.meta,
+                self.cover_path,
+                self.config.session.metadata.exclude,
+            )
 
     def _set_download_path(self):
         c = self.config.session.filepaths
@@ -106,7 +148,7 @@ class Track(Media):
 
         self.download_path = os.path.join(
             self.folder,
-            f"{track_path}.{self.downloadable.extension}",
+            fit_filename(track_path, self.downloadable.extension),
         )
 
 
@@ -129,16 +171,22 @@ class PendingTrack(Pending):
             return None
 
         source = self.client.source
+        # Every failure below has to be recorded, not just logged. An unlogged
+        # failure leaves no trace anywhere: no file, no downloads.db row, and
+        # nothing in the failed db for `rip repair` to retry -- the track just
+        # silently goes missing from the album.
         try:
             resp = await self.client.get_metadata(self.id, "track")
         except NonStreamableError as e:
             logger.error(f"Track {self.id} not available for stream on {source}: {e}")
+            self.db.set_failed(source, "track", self.id)
             return None
 
         try:
             meta = TrackMetadata.from_resp(self.album, source, resp)
         except Exception as e:
             logger.error(f"Error building track metadata for {self.id}: {e}")
+            self.db.set_failed(source, "track", self.id)
             return None
 
         if meta is None:
@@ -153,6 +201,7 @@ class PendingTrack(Pending):
             logger.error(
                 f"Error getting downloadable data for track {meta.tracknumber} [{self.id}]: {e}"
             )
+            self.db.set_failed(source, "track", self.id)
             return None
 
         downloads_config = self.config.session.downloads
@@ -191,16 +240,20 @@ class PendingSingle(Pending):
             )
             return None
 
+        # As in PendingTrack.resolve: record every failure, so a track that
+        # dies here is retryable by `rip repair` instead of vanishing.
         try:
             resp = await self.client.get_metadata(self.id, "track")
         except NonStreamableError as e:
             logger.error(f"Error fetching track {self.id}: {e}")
+            self.db.set_failed(self.client.source, "track", self.id)
             return None
         # Patch for soundcloud
         try:
             album = AlbumMetadata.from_track_resp(resp, self.client.source)
         except Exception as e:
             logger.error(f"Error building album metadata for track {id=}: {e}")
+            self.db.set_failed(self.client.source, "track", self.id)
             return None
 
         if album is None:
@@ -214,6 +267,7 @@ class PendingSingle(Pending):
             meta = TrackMetadata.from_resp(album, self.client.source, resp)
         except Exception as e:
             logger.error(f"Error building track metadata for track {id=}: {e}")
+            self.db.set_failed(self.client.source, "track", self.id)
             return None
 
         if meta is None:
@@ -227,17 +281,34 @@ class PendingSingle(Pending):
         quality = getattr(config, self.client.source).quality
         assert isinstance(quality, int)
         parent = config.downloads.folder
-        if config.filepaths.add_singles_to_folder:
-            folder = self._format_folder(album)
+        in_album_folder = config.filepaths.add_singles_to_folder
+        if in_album_folder:
+            album_folder = self._format_folder(album)
         else:
-            folder = parent
+            album_folder = parent
 
-        os.makedirs(folder, exist_ok=True)
+        os.makedirs(album_folder, exist_ok=True)
 
         embedded_cover_path, downloadable = await asyncio.gather(
-            self._download_cover(album.covers, folder),
+            self._download_cover(album.covers, album_folder),
             self.client.get_downloadable(self.id, quality),
         )
+
+        # Mirror PendingTrack: a track belonging to a multi-disc album lives in
+        # that album's disc subfolder. Without this, downloading one track of a
+        # multi-disc album (`rip repair`, or any single-track URL) drops it
+        # beside the Disc folders rather than into the one it belongs to.
+        # Only meaningful when we're actually building the album's folder --
+        # otherwise this would create a bare "Disc N" in the download root.
+        folder = album_folder
+        if (
+            in_album_folder
+            and config.downloads.disc_subdirectories
+            and album.disctotal > 1
+        ):
+            folder = os.path.join(album_folder, f"Disc {meta.discnumber}")
+            os.makedirs(folder, exist_ok=True)
+
         return Track(
             meta,
             downloadable,

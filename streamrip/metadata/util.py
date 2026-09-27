@@ -3,6 +3,10 @@ from typing import Optional, Type, TypeVar
 
 
 def get_album_track_ids(source: str, resp) -> list[str]:
+    if source == "qobuz" and "tracks" not in resp:
+        # Qobuz's album/get stopped inlining "tracks" (July 2026); the client
+        # requests extra=track_ids instead.
+        return resp["track_ids"]
     tracklist = resp["tracks"]
     if source == "qobuz":
         tracklist = tracklist["items"]
@@ -23,6 +27,24 @@ T = TypeVar("T")
 def typed(thing, expected_type: Type[T]) -> T:
     assert isinstance(thing, expected_type)
     return thing
+
+
+# Tidal's audioQuality values mapped to streamrip's quality ids. HI_RES was MQA
+# (retired by Tidal); HI_RES_LOSSLESS is 24-bit FLAC.
+TIDAL_QUALITY_IDS: dict[str, int] = {
+    "LOW": 0,
+    "HIGH": 1,
+    "LOSSLESS": 2,
+    "HI_RES": 3,
+    "HI_RES_LOSSLESS": 3,
+}
+
+
+def tidal_quality_id(audio_quality: str | None) -> int:
+    """Quality id for a Tidal audioQuality value, tolerating unknown ones."""
+    if audio_quality is None:
+        return 0
+    return TIDAL_QUALITY_IDS.get(audio_quality, 2)
 
 
 def get_quality_id(

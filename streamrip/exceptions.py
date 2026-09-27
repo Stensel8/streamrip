@@ -66,5 +66,29 @@ class NonStreamableError(Exception):
         return " ".join(base_msg)
 
 
+class ItemNotFoundError(NonStreamableError):
+    """The API returned 404 for an item.
+
+    A subclass of NonStreamableError so existing handlers are unaffected, but
+    distinguishable for callers fetching something optional -- "this does not
+    exist" and "this failed to download" deserve different log levels.
+    """
+
+
 class ConversionError(Exception):
     """ConversionError."""
+
+
+class APIError(Exception):
+    """A streaming service answered a request with an error.
+
+    The message carries the service's own explanation where it gave one.
+    """
+
+
+class TrackDownloadFailedError(Exception):
+    """Raised when a track fails to download after retrying.
+
+    Signals to Media.rip() that postprocess (tagging, marking downloaded)
+    must not run for this track.
+    """

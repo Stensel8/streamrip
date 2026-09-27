@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 from .album import AlbumMetadata
 from .track import TrackMetadata
-from .util import typed
+from .util import safe_get, typed
 
 NON_STREAMABLE = "_non_streamable"
 ORIGINAL_DOWNLOAD = "_original_download"
@@ -50,14 +50,29 @@ class PlaylistMetadata:
         logger.debug(resp)
         name = typed(resp["name"], str)
         tracks = []
+        items = safe_get(resp, "tracks", "items", default=[]) or []
 
-        for i, track in enumerate(resp["tracks"]["items"]):
-            meta = TrackMetadata.from_qobuz(
-                AlbumMetadata.from_qobuz(track["album"]),
-                track,
-            )
+        track_ids = [str(i) for i in resp.get("track_ids") or []]
+        if len(track_ids) > len(items):
+            # The inline track list is capped at one page (500 tracks) and has
+            # been empty since Qobuz's July 2026 API change, while track_ids
+            # lists every track. Each id is resolved by PendingPlaylistTrack.
+            return cls(name, track_ids)
+
+        for i, track in enumerate(items):
+            try:
+                meta = TrackMetadata.from_qobuz(
+                    AlbumMetadata.from_qobuz(track["album"]),
+                    track,
+                )
+            except Exception as e:
+                # One malformed entry should not sink the whole playlist.
+                logger.error(f"Error reading track {i + 1} in playlist {name}: {e}")
+                continue
             if meta is None:
-                logger.error(f"Track {i+1} in playlist {name} not available for stream")
+                logger.error(
+                    f"Track {i + 1} in playlist {name} not available for stream"
+                )
                 continue
             tracks.append(meta)
 

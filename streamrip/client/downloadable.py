@@ -9,6 +9,7 @@ import os
 import re
 import shutil
 import tempfile
+import threading
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -37,29 +38,84 @@ def generate_temp_path(url: str):
     )
 
 
-async def fast_async_download(path, url, headers, callback):
-    """Synchronous download with yield for every 1MB read.
+def _plain_headers(headers) -> dict[str, str]:
+    """Copy (aiohttp multidict) headers into a plain str dict for requests.
 
-    Using aiofiles/aiohttp resulted in a yield to the event loop for every 1KB,
-    which made file downloads CPU-bound. This resulted in a ~10MB max total download
-    speed. This fixes the issue by only yielding to the event loop for every 1MB read.
+    requests rejects multidict's ``istr`` keys/values ("Header part ... must be
+    of type str or bytes", upstream #941).
     """
-    chunk_size: int = 2**17  # 131 KB
-    counter = 0
-    yield_every = 8  # 1 MB
-    with open(path, "wb") as file:  # noqa: ASYNC101
-        with requests.get(  # noqa: ASYNC100
-            url,
-            headers=headers,
-            allow_redirects=True,
-            stream=True,
-        ) as resp:
+    return {str(k): str(v) for k, v in dict(headers or {}).items()}
+
+
+def _blocking_download(path, url, headers, report, stop: threading.Event, resume: bool):
+    """Stream ``url`` into ``path`` with requests.
+
+    Runs in a worker thread. With ``resume``, a partial file left by an
+    earlier attempt that broke off (IncompleteRead, upstream #951/#1022) is
+    continued with a Range request instead of starting over. Resuming is
+    opt-in: appending to an unrelated existing file (a re-tagged track, a
+    downscaled cover.jpg) would corrupt it.
+    """
+    chunk_size = 2**17  # 131 KB
+    resume_pos = os.path.getsize(path) if resume and os.path.exists(path) else 0
+    req_headers = dict(headers)
+    if resume_pos > 0:
+        req_headers["Range"] = f"bytes={resume_pos}-"
+
+    with requests.get(
+        url, headers=req_headers, allow_redirects=True, stream=True, timeout=60
+    ) as resp:
+        if resume_pos > 0 and resp.status_code == 416:
+            # Range Not Satisfiable: the file is already complete.
+            report(resume_pos)
+            return
+        resp.raise_for_status()
+        # Only append if the server honoured the Range request (206). A 200
+        # means it is sending the whole file again, so start over.
+        if resume_pos > 0 and resp.status_code == 206:
+            mode = "ab"
+            report(resume_pos)
+        else:
+            mode = "wb"
+        with open(path, mode) as file:
             for chunk in resp.iter_content(chunk_size=chunk_size):
+                if stop.is_set():
+                    raise asyncio.CancelledError
                 file.write(chunk)
-                callback(len(chunk))
-                if counter % yield_every == 0:
-                    await asyncio.sleep(0)
-                counter += 1
+                report(len(chunk))
+
+
+async def fast_async_download(path, url, headers, callback, resume: bool = False):
+    """Download ``url`` to ``path`` without blocking the event loop.
+
+    requests with large chunks is much faster than aiohttp's 1KB reads, but
+    calling it on the event loop froze every other download while one
+    connection was active (upstream PR #982). Run it in a worker thread and
+    hand progress back to the loop, since rich's display is not thread-safe.
+    """
+    loop = asyncio.get_running_loop()
+    stop = threading.Event()
+
+    def report(n: int):
+        try:
+            loop.call_soon_threadsafe(callback, n)
+        except RuntimeError:
+            pass  # loop already closed (interpreter shutting down)
+
+    try:
+        await asyncio.to_thread(
+            _blocking_download,
+            path,
+            url,
+            _plain_headers(headers),
+            report,
+            stop,
+            resume,
+        )
+    except asyncio.CancelledError:
+        # The thread cannot be cancelled; tell it to stop at the next chunk.
+        stop.set()
+        raise
 
 
 @dataclass(slots=True)
@@ -69,6 +125,8 @@ class Downloadable(ABC):
     extension: str
     source: str = "Unknown"
     _size_base: Optional[int] = None
+    # Set by Track for retries: continue a partial file instead of restarting.
+    resume: bool = False
 
     async def download(self, path: str, callback: Callable[[int], Any]):
         await self._download(path, callback)
@@ -111,9 +169,12 @@ class BasicDownloadable(Downloadable):
         self.extension = extension
         self._size = None
         self.source: str = source or "Unknown"
+        self.resume = False
 
     async def _download(self, path: str, callback):
-        await fast_async_download(path, self.url, self.session.headers, callback)
+        await fast_async_download(
+            path, self.url, self.session.headers, callback, resume=self.resume
+        )
 
 
 class DeezerDownloadable(Downloadable):
@@ -160,7 +221,11 @@ class DeezerDownloadable(Downloadable):
             if self.is_encrypted.search(self.url) is None:
                 logger.debug(f"Deezer file at {self.url} not encrypted.")
                 await fast_async_download(
-                    path, self.url, self.session.headers, callback
+                    path,
+                    self.url,
+                    self.session.headers,
+                    callback,
+                    resume=getattr(self, "resume", False),
                 )
             else:
                 blowfish_key = self._generate_blowfish_key(self.id)
@@ -254,6 +319,7 @@ class TidalDownloadable(Downloadable):
         self.downloadable = BasicDownloadable(session, url, self.extension, "tidal")
 
     async def _download(self, path: str, callback):
+        self.downloadable.resume = getattr(self, "resume", False)
         await self.downloadable._download(path, callback)
         if self.enc_key is not None:
             dec_bytes = await self._decrypt_mqa_file(path, self.enc_key)
@@ -306,12 +372,108 @@ class TidalDownloadable(Downloadable):
             return dec_bytes
 
 
+class TidalDASHDownloadable(Downloadable):
+    """Tidal hi-res tracks served as an MPEG-DASH manifest (upstream PR #998).
+
+    The init segment and every media segment are fetched into a fragmented
+    MP4, which ffmpeg then remuxes (stream copy, bit-identical audio) into the
+    final container.
+    """
+
+    def __init__(
+        self,
+        session: aiohttp.ClientSession,
+        init_url: str,
+        segment_urls: list[str],
+        codec: str,
+    ):
+        self.session = session
+        self.source = "tidal"
+        self.url = init_url
+        self.init_url = init_url
+        self.segment_urls = segment_urls
+        self.extension = "flac" if codec.lower() in ("flac", "mqa") else "m4a"
+        self._size = None
+
+    async def size(self) -> int:
+        """Total size of the init segment plus every media segment.
+
+        HEAD-ing only self.url would report the size of the tiny init segment,
+        so the progress bar would jump past 100% immediately. Requests are
+        bounded: firing one per segment at once gets many of them refused.
+        """
+        if self._size is not None:
+            return self._size
+
+        sem = asyncio.Semaphore(8)
+
+        async def content_length(url: str) -> int | None:
+            async with sem:
+                try:
+                    async with self.session.head(url) as resp:
+                        resp.raise_for_status()
+                        return int(resp.headers.get("Content-Length", 0))
+                except Exception:
+                    return None
+
+        sizes = await asyncio.gather(
+            *(content_length(u) for u in (self.init_url, *self.segment_urls))
+        )
+        known = [s for s in sizes if s]
+        if not known:
+            self._size = 0
+            return 0
+        # Segments are near-uniform; estimate the ones that did not answer.
+        average = sum(known) // len(known)
+        self._size = sum(known) + (len(sizes) - len(known)) * average
+        return self._size
+
+    async def _download(self, path: str, callback):
+        if shutil.which("ffmpeg") is None:
+            raise NonStreamableError(
+                "FFmpeg is required to download Tidal hi-res (DASH) tracks."
+            )
+        tmp_path = path + ".dash.mp4"
+        try:
+            async with aiofiles.open(tmp_path, "wb") as f:
+                for url in (self.init_url, *self.segment_urls):
+                    async with self.session.get(url) as resp:
+                        resp.raise_for_status()
+                        chunk = await resp.read()
+                    await f.write(chunk)
+                    callback(len(chunk))
+
+            proc = await asyncio.create_subprocess_exec(
+                "ffmpeg",
+                "-i",
+                tmp_path,
+                "-c",
+                "copy",
+                "-y",
+                path,
+                stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            _, stderr = await proc.communicate()
+            if proc.returncode != 0 or not os.path.isfile(path):
+                # Without this a failed remux is silent and the track would be
+                # recorded as downloaded with nothing on disk.
+                raise NonStreamableError(
+                    f"ffmpeg failed to remux Tidal DASH stream (exit "
+                    f"{proc.returncode}): {stderr.decode(errors='replace')[-300:]}"
+                )
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+
+
 class SoundcloudDownloadable(Downloadable):
     def __init__(self, session, info: dict):
         self.session = session
         self.file_type = info["type"]
         self.source = "soundcloud"
-        if self.file_type == "mp3":
+        if self.file_type in ("mp3", "progressive"):
             self.extension = "mp3"
         elif self.file_type == "original":
             self.extension = "flac"
@@ -322,6 +484,10 @@ class SoundcloudDownloadable(Downloadable):
     async def _download(self, path, callback):
         if self.file_type == "mp3":
             await self._download_mp3(path, callback)
+        elif self.file_type == "progressive":
+            await BasicDownloadable(
+                self.session, self.url, "mp3", source="soundcloud"
+            ).download(path, callback)
         else:
             await self._download_original(path, callback)
 
@@ -396,7 +562,7 @@ async def concat_audio_files(paths: list[str], out: str, ext: str, max_files_ope
     outpaths = [
         os.path.join(
             tempdir,
-            f"__streamrip_ffmpeg_{hash(paths[i*max_files_open])}.{ext}",
+            f"__streamrip_ffmpeg_{hash(paths[i * max_files_open])}.{ext}",
         )
         for i in range(num_batches)
     ]
@@ -419,7 +585,9 @@ async def concat_audio_files(paths: list[str], out: str, ext: str, max_files_ope
             "warning",
             outpaths[i],
         )
-        fut = asyncio.create_subprocess_exec(*command, stderr=asyncio.subprocess.PIPE)
+        fut = asyncio.create_subprocess_exec(
+            *command, stdin=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE
+        )
         proc_futures.append(fut)
 
     # Create all processes concurrently
