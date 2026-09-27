@@ -2,7 +2,9 @@ import asyncio
 import json
 import logging
 import os
+import re
 import shutil
+import signal
 import subprocess
 from functools import wraps
 from typing import Any
@@ -22,11 +24,42 @@ from ..console import console
 from ..utils.ssl_utils import get_aiohttp_connector_kwargs
 from .main import Main
 
+logger = logging.getLogger("streamrip")
+
+
+# Where this build of streamrip comes from, for update checks and advice.
+REPOSITORY = "Stensel8/streamrip"
+UPGRADE_COMMAND = f"pip install --upgrade git+https://github.com/{REPOSITORY}.git"
+
 
 def coro(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
-        return asyncio.run(f(*args, **kwargs))
+        async def run():
+            # Ctrl-C used to be ignored until whatever was in flight finished,
+            # so people force-killed rip -- which skips the cleanup in
+            # Main.__aexit__ and leaves __artwork directories behind. Cancel
+            # the task instead so everything unwinds (upstream PR #1025).
+            task = asyncio.current_task()
+            loop = asyncio.get_running_loop()
+
+            def stop():
+                console.print("\n[yellow]Stopping... (Ctrl-C again to force)")
+                loop.remove_signal_handler(signal.SIGINT)
+                if task is not None:
+                    task.cancel()
+
+            try:
+                loop.add_signal_handler(signal.SIGINT, stop)
+            except (NotImplementedError, RuntimeError):
+                pass  # Windows: default KeyboardInterrupt behaviour
+
+            return await f(*args, **kwargs)
+
+        try:
+            return asyncio.run(run())
+        except (asyncio.CancelledError, KeyboardInterrupt):
+            console.print("[yellow]Stopped.")
 
     return wrapper
 
@@ -197,14 +230,14 @@ async def url(ctx, urls):
 
             if version_coro is not None:
                 latest_version, notes = await version_coro
-                if latest_version != __version__:
+                if is_newer_version(latest_version):
                     console.print(
-                        f"\n[green]A new version of streamrip [cyan]v{latest_version}[/cyan]"
-                        " is available! Run [white][bold]pip3 install streamrip --upgrade[/bold][/white]"
-                        " to update.[/green]\n"
+                        f"\n[green]A new version of streamrip [cyan]v{latest_version}"
+                        f"[/cyan] is available! Run [white][bold]{UPGRADE_COMMAND}"
+                        "[/bold][/white] to update.[/green]\n"
                     )
-
-                    console.print(Markdown(notes))
+                    if notes:
+                        console.print(Markdown(notes))
 
     except aiohttp.ClientConnectorCertificateError as e:
         from ..utils.ssl_utils import print_ssl_error_help
@@ -228,6 +261,8 @@ async def file(ctx, path):
 
         rip file urls.txt
     """
+    if ctx.obj["config"] is None:
+        return
     try:
         with ctx.obj["config"] as cfg:
             async with Main(cfg) as main:
@@ -525,6 +560,8 @@ async def search(ctx, first, output_file, num_results, source, media_type, query
 
         rip search qobuz album 'rumours'
     """
+    if ctx.obj["config"] is None:
+        return
     if first and output_file:
         console.print("Cannot choose --first and --output-file!")
         return
@@ -554,6 +591,8 @@ async def search(ctx, first, output_file, num_results, source, media_type, query
 @coro
 async def lastfm(ctx, source, fallback_source, url):
     """Download tracks from a last.fm playlist."""
+    if ctx.obj["config"] is None:
+        return
     config = ctx.obj["config"]
     if source is not None:
         config.session.lastfm.source = source
@@ -573,6 +612,8 @@ async def lastfm(ctx, source, fallback_source, url):
 @coro
 async def id(ctx, source, media_type, id):
     """Download an item by ID."""
+    if ctx.obj["config"] is None:
+        return
     with ctx.obj["config"] as cfg:
         async with Main(cfg) as main:
             await main.add_by_id(source, media_type, id)
@@ -580,8 +621,26 @@ async def id(ctx, source, media_type, id):
             await main.rip()
 
 
+def _version_tuple(version: str) -> tuple[int, ...]:
+    """Numeric version for comparisons: "2.10.0" > "2.9.1", "v2.3" == "2.3"."""
+    return tuple(int(n) for n in re.findall(r"\d+", version.split("+")[0])[:3])
+
+
+def is_newer_version(latest: str | None, current: str = __version__) -> bool:
+    if not latest:
+        return False
+    try:
+        return _version_tuple(latest) > _version_tuple(current)
+    except ValueError:
+        return False
+
+
 async def latest_streamrip_version(verify_ssl: bool = True) -> tuple[str, str | None]:
-    """Get the latest streamrip version from PyPI and release notes from GitHub.
+    """Get the latest version of this fork and its release notes from GitHub.
+
+    Uses the latest GitHub release, or the version in pyproject.toml on the
+    default branch when the repository has no releases. Network problems are
+    never fatal: the check is simply skipped (upstream PR #995).
 
     Args:
         verify_ssl: Whether to verify SSL certificates
@@ -589,26 +648,37 @@ async def latest_streamrip_version(verify_ssl: bool = True) -> tuple[str, str | 
     Returns:
         A tuple of (version, release_notes)
     """
-    # Create connector with appropriate SSL settings
-    connector_kwargs = get_aiohttp_connector_kwargs(verify_ssl=verify_ssl)
-    connector = aiohttp.TCPConnector(
-        **connector_kwargs, resolver=aiohttp.ThreadedResolver()
-    )
+    try:
+        connector_kwargs = get_aiohttp_connector_kwargs(verify_ssl=verify_ssl)
+        connector = aiohttp.TCPConnector(
+            **connector_kwargs, resolver=aiohttp.ThreadedResolver()
+        )
+        timeout = aiohttp.ClientTimeout(total=10)
+        async with aiohttp.ClientSession(
+            connector=connector, trust_env=True, timeout=timeout
+        ) as s:
+            async with s.get(
+                f"https://api.github.com/repos/{REPOSITORY}/releases/latest",
+                headers={"Accept": "application/vnd.github+json"},
+            ) as resp:
+                if resp.status == 200:
+                    release = await resp.json(content_type=None)
+                    tag = str(release.get("tag_name") or "").lstrip("vV")
+                    if tag:
+                        return tag, release.get("body")
 
-    async with aiohttp.ClientSession(connector=connector, trust_env=True) as s:
-        async with s.get("https://pypi.org/pypi/streamrip/json") as resp:
-            data = await resp.json()
-        version = data["info"]["version"]
-
-        if version == __version__:
-            return version, None
-
-        async with s.get(
-            "https://api.github.com/repos/nathom/streamrip/releases/latest"
-        ) as resp:
-            json = await resp.json()
-        notes = json["body"]
-    return version, notes
+            async with s.get(
+                f"https://raw.githubusercontent.com/{REPOSITORY}/HEAD/pyproject.toml"
+            ) as resp:
+                if resp.status == 200:
+                    match = re.search(
+                        r'^version\s*=\s*"([^"]+)"', await resp.text(), re.MULTILINE
+                    )
+                    if match:
+                        return match.group(1), None
+    except Exception as e:
+        logger.debug("Could not check for updates: %s", e)
+    return __version__, None
 
 
 if __name__ == "__main__":
