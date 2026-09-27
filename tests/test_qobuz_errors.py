@@ -95,11 +95,15 @@ async def test_failed_login_does_not_quote_the_token():
     q.app_id = "987654321"
     q.secrets = ["s1"]
     c._api_request = AsyncMock(return_value=(401, {}))
-    with patch.object(QobuzClient, "get_session", new=AsyncMock(return_value=MagicMock())):
+    session = MagicMock()
+    session.close = AsyncMock()
+    with patch.object(QobuzClient, "get_session", new=AsyncMock(return_value=session)):
         with pytest.raises(AuthenticationError) as err:
             await c.login()
     assert TOKEN not in str(err.value)
-    assert "<redacted>" in str(err.value)
+    assert "user_auth_token" in str(err.value)
+    # A failed login must not leave the aiohttp session open.
+    session.close.assert_awaited_once()
 
 
 @pytest.mark.asyncio

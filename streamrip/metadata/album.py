@@ -90,8 +90,8 @@ class AlbumMetadata:
 
     @classmethod
     def from_qobuz(cls, resp: dict) -> AlbumMetadata:
-        album = resp.get("title", "Unknown Album")
-        version = resp.get("version")
+        album = (resp.get("title") or "Unknown Album").strip()
+        version = (resp.get("version") or "").strip() or None
         # The edition is part of what the album *is* -- a standard and a deluxe
         # release otherwise share a title, so they tag identically and collide
         # in the same download folder. Fold it into the title (unless the title
@@ -99,7 +99,8 @@ class AlbumMetadata:
         if version and version.lower() not in album.lower():
             album = f"{album} ({version})"
         tracktotal = resp.get("tracks_count", 1)
-        genre = [safe_get(resp, "genre", "name")] or resp.get("genre") or []
+        genre_name = safe_get(resp, "genre", "name")
+        genre = [genre_name] if isinstance(genre_name, str) else []
         genres = list(set(genre_clean.findall("/".join(genre))))
         date = resp.get("release_date_original") or resp.get("release_date")
         year = date[:4] if date is not None else "Unknown"
@@ -109,7 +110,9 @@ class AlbumMetadata:
         if artists := resp.get("artists"):
             albumartist = ", ".join(a["name"] for a in artists)
         else:
-            albumartist = typed(safe_get(resp, "artist", "name"), str)
+            albumartist = typed(
+                safe_get(resp, "artist", "name") or "Unknown Artist", str
+            )
 
         albumcomposer = typed(safe_get(resp, "composer", "name", default=""), str)
         _label = resp.get("label")
@@ -177,7 +180,7 @@ class AlbumMetadata:
             lyrics=None,
             purchase_date=None,
             tracktotal=tracktotal,
-            version=resp.get("version"),
+            version=version,
         )
 
     @classmethod

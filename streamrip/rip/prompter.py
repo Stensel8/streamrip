@@ -5,12 +5,17 @@ import time
 from abc import ABC, abstractmethod
 
 from click import launch
-from rich.prompt import Prompt
+from rich.prompt import Confirm, Prompt
 
 from ..client import Client, DeezerClient, QobuzClient, SoundcloudClient, TidalClient
 from ..config import Config
 from ..console import console
 from ..exceptions import AuthenticationError, MissingCredentialsError
+from .qobuz_token_capture import (
+    QobuzTokenCaptureError,
+    capture_qobuz_auth_token,
+    playwright_available,
+)
 
 logger = logging.getLogger("streamrip")
 
@@ -52,35 +57,83 @@ class QobuzPrompter(CredentialPrompter):
 
     async def prompt_and_login(self):
         if not self.has_creds():
-            self._prompt_creds_and_set_session_config()
+            await self._prompt_creds_and_set_session_config()
 
         while True:
             try:
                 await self.client.login()
                 break
-            except AuthenticationError:
-                console.print("[yellow]Invalid credentials, try again.")
-                self._prompt_creds_and_set_session_config()
+            except AuthenticationError as e:
+                console.print(f"[yellow]{e}")
+                await self._prompt_creds_and_set_session_config()
             except MissingCredentialsError:
-                self._prompt_creds_and_set_session_config()
+                await self._prompt_creds_and_set_session_config()
 
-    def _prompt_creds_and_set_session_config(self):
+    async def _prompt_creds_and_set_session_config(self):
+        """Ask for a user id + user_auth_token (or, as a fallback, a password).
+
+        Qobuz moved its web login behind OAuth/reCAPTCHA, so the old
+        email/password flow fails for most accounts (upstream #954, #956).
+        The token from a logged-in browser session still works.
+        """
+        if await self._try_browser_capture():
+            return
+
+        console.print(
+            "\n[cyan]Qobuz now requires a token login.[/cyan]\n"
+            "  1. Log in at [blue underline]https://play.qobuz.com/login[/]\n"
+            "  2. Open your browser's DevTools -> Network tab\n"
+            "  3. Find the [bold]user/login[/bold] request and open its response\n"
+            "  4. Copy [bold]user.id[/bold] and [bold]user_auth_token[/bold]\n"
+            "Leave the user id empty to log in with email and password instead.\n"
+        )
+        user_id = Prompt.ask("Enter your Qobuz user id", default="").strip()
+        if user_id:
+            token = Prompt.ask(
+                "Enter your Qobuz user_auth_token (invisible)", password=True
+            ).strip()
+            self._set_session_creds(True, user_id, token)
+            return
+
         email = Prompt.ask("Enter your Qobuz email")
         pwd_input = Prompt.ask("Enter your Qobuz password (invisible)", password=True)
-
         pwd = hashlib.md5(pwd_input.encode("utf-8")).hexdigest()
-        console.print(
-            f"[green]Credentials saved to config file at [bold cyan]{self.config.path}",
-        )
+        self._set_session_creds(False, email, pwd)
+
+    async def _try_browser_capture(self) -> bool:
+        """Grab the token from a real browser login if Playwright is installed.
+
+        Install with ``pip install 'streamrip[qobuz-login]'`` and run
+        ``playwright install chromium`` once.
+        """
+        if not playwright_available():
+            return False
+        if not Confirm.ask(
+            "Open a browser window to log into Qobuz and capture the token?",
+            default=True,
+        ):
+            return False
+        try:
+            user_id, token = await capture_qobuz_auth_token(timeout_s=300)
+        except QobuzTokenCaptureError as e:
+            console.print(f"[yellow]{e}")
+            return False
+        self._set_session_creds(True, user_id, token)
+        return True
+
+    def _set_session_creds(self, use_auth_token: bool, user: str, secret: str):
         c = self.config.session.qobuz
-        c.use_auth_token = False
-        c.email_or_userid = email
-        c.password_or_token = pwd
+        c.use_auth_token = use_auth_token
+        c.email_or_userid = user
+        c.password_or_token = secret
+        console.print(
+            f"[green]Credentials will be saved to [bold cyan]{self.config.path}",
+        )
 
     def save(self):
         c = self.config.session.qobuz
         cf = self.config.file.qobuz
-        cf.use_auth_token = False
+        cf.use_auth_token = c.use_auth_token
         cf.email_or_userid = c.email_or_userid
         cf.password_or_token = c.password_or_token
         self.config.file.set_modified()
