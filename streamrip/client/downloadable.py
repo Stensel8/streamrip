@@ -407,7 +407,7 @@ class SoundcloudDownloadable(Downloadable):
         self.session = session
         self.file_type = info["type"]
         self.source = "soundcloud"
-        if self.file_type == "mp3":
+        if self.file_type in ("mp3", "progressive"):
             self.extension = "mp3"
         elif self.file_type == "original":
             self.extension = "flac"
@@ -418,6 +418,10 @@ class SoundcloudDownloadable(Downloadable):
     async def _download(self, path, callback):
         if self.file_type == "mp3":
             await self._download_mp3(path, callback)
+        elif self.file_type == "progressive":
+            await BasicDownloadable(
+                self.session, self.url, "mp3", source="soundcloud"
+            ).download(path, callback)
         else:
             await self._download_original(path, callback)
 
