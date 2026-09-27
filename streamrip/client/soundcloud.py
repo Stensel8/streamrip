@@ -40,7 +40,9 @@ class SoundcloudClient(Client):
             verify_ssl=self.global_config.session.downloads.verify_ssl
         )
         client_id, app_version = self.config.client_id, self.config.app_version
-        if not client_id or not app_version or not (await self._announce_success()):
+        # app_version is optional: SoundCloud does not always expose it, and
+        # requiring it made every run re-scrape the website.
+        if not client_id or not (await self._announce_success()):
             client_id, app_version = await self._refresh_tokens()
             # update file and session configs and save to disk
             cf = self.global_config.file.soundcloud
@@ -128,11 +130,15 @@ class SoundcloudClient(Client):
         if download_info == self.NOT_RESOLVED:
             raise NotImplementedError(item_info)
 
-        # download_info contains mp3 stream url
+        # download_info contains a transcoding url, which resolves to the
+        # actual (signed) media url
         resp_json, status = await self._request(download_info)
+        if status != 200 or "url" not in resp_json:
+            raise NonStreamableError(f"Could not resolve stream for track {item_id}")
+        file_type = "progressive" if "/progressive" in download_info else "mp3"
         return SoundcloudDownloadable(
             self.session,
-            {"url": resp_json["url"], "type": "mp3"},
+            {"url": resp_json["url"], "type": file_type},
         )
 
     async def resolve_url(self, url: str) -> dict:
@@ -214,27 +220,41 @@ class SoundcloudClient(Client):
         if resp["downloadable"] and resp["has_downloads_left"]:
             return f"{item_id}|{cls.ORIGINAL_DOWNLOAD}"
 
+        # Prefer the plain progressive MP3 (one file), then HLS MP3 segments.
+        # SoundCloud is phasing out MP3 HLS for many tracks, which used to trip
+        # an assertion here.
+        transcodings = resp["media"].get("transcodings") or []
         url = None
-        for tc in resp["media"]["transcodings"]:
-            fmt = tc["format"]
-            if fmt["protocol"] == "hls" and fmt["mime_type"] == "audio/mpeg":
-                url = tc["url"]
+        for protocol in ("progressive", "hls"):
+            for tc in transcodings:
+                fmt = tc.get("format") or {}
+                if (
+                    fmt.get("protocol") == protocol
+                    and fmt.get("mime_type") == "audio/mpeg"
+                    and not tc.get("snipped")
+                ):
+                    url = tc["url"]
+                    break
+            if url is not None:
                 break
 
-        assert url is not None
+        if url is None:
+            return f"{item_id}|{cls.NON_STREAMABLE}"
         return f"{item_id}|{url}"
+
+    def _auth_params(self) -> dict:
+        c = self.config
+        params = {"client_id": c.client_id, "app_locale": "en"}
+        if c.app_version:
+            params["app_version"] = c.app_version
+        return params
 
     async def _api_request(self, path, params=None, headers=None):
         url = f"{BASE}/{path}"
         return await self._request(url, params=params, headers=headers)
 
     async def _request(self, url, params=None, headers=None) -> tuple[dict, int]:
-        c = self.config
-        _params = {
-            "client_id": c.client_id,
-            "app_version": c.app_version,
-            "app_locale": "en",
-        }
+        _params = self._auth_params()
         if params is not None:
             _params.update(params)
 
@@ -243,12 +263,7 @@ class SoundcloudClient(Client):
             return await resp.json(), resp.status
 
     async def _request_body(self, url, params=None, headers=None):
-        c = self.config
-        _params = {
-            "client_id": c.client_id,
-            "app_version": c.app_version,
-            "app_locale": "en",
-        }
+        _params = self._auth_params()
         if params is not None:
             _params.update(params)
 
@@ -261,37 +276,56 @@ class SoundcloudClient(Client):
         return status == 200
 
     async def _refresh_tokens(self) -> tuple[str, str]:
-        """Return a valid client_id, app_version pair."""
+        """Return a valid client_id, app_version pair.
+
+        The client id is embedded in one of the JavaScript bundles loaded by
+        soundcloud.com. Rather than relying on the exact markup of the script
+        tags (which changed and broke this, upstream #1038), try every bundle,
+        newest last, the way yt-dlp does.
+        """
         async with self.session.get(STOCK_URL) as resp:
             page_text = await resp.text(encoding="utf-8")
 
-        *_, client_id_url_match = re.finditer(
-            r"<script\s+crossorigin\s+src=\"([^\"]+)\"",
-            page_text,
+        app_version_match = re.search(r'__sc_version\s*=\s*"(\d+)"', page_text)
+        app_version = app_version_match.group(1) if app_version_match else ""
+
+        script_urls = re.findall(r'<script[^>]+src="([^"]+)"', page_text)
+        for script_url in reversed(script_urls):
+            if script_url.startswith("//"):
+                script_url = "https:" + script_url
+            elif script_url.startswith("/"):
+                script_url = STOCK_URL.rstrip("/") + script_url
+            try:
+                async with self.session.get(script_url) as resp:
+                    script = await resp.text(encoding="utf-8")
+            except Exception as e:
+                logger.debug("Could not fetch %s: %s", script_url, e)
+                continue
+            client_id = _find_client_id(script)
+            if client_id is not None:
+                logger.debug(
+                    f"Refreshed soundcloud tokens as {client_id=} {app_version=}"
+                )
+                return client_id, app_version
+
+        raise Exception(
+            f"Could not find a SoundCloud client id in {len(script_urls)} scripts "
+            f"on {STOCK_URL}. SoundCloud may have changed its website."
         )
 
-        if client_id_url_match is None:
-            raise Exception("Could not find client ID in %s" % STOCK_URL)
 
-        client_id_url = client_id_url_match.group(1)
+CLIENT_ID_REGEXES = (
+    re.compile(r'client_id\s*:\s*"([0-9a-zA-Z]{32})"'),
+    re.compile(r"client_id=([0-9a-zA-Z]{32})"),
+)
 
-        app_version_match = re.search(
-            r'<script>window\.__sc_version="(\d+)"</script>',
-            page_text,
-        )
-        if app_version_match is None:
-            raise Exception("Could not find app version in %s" % client_id_url_match)
-        app_version = app_version_match.group(1)
 
-        async with self.session.get(client_id_url) as resp:
-            page_text2 = await resp.text(encoding="utf-8")
-
-        client_id_match = re.search(r'client_id:\s*"(\w+)"', page_text2)
-        assert client_id_match is not None
-        client_id = client_id_match.group(1)
-
-        logger.debug(f"Refreshed soundcloud tokens as {client_id=} {app_version=}")
-        return client_id, app_version
+def _find_client_id(script: str) -> str | None:
+    for regex in CLIENT_ID_REGEXES:
+        match = regex.search(script)
+        if match is not None:
+            return match.group(1)
+    return None
 
 
 def batched(iterable, n, fillvalue=None):
