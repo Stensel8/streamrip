@@ -27,8 +27,10 @@ from .prompter import get_prompter
 
 logger = logging.getLogger("streamrip")
 
-if platform.system() == "Windows":
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+# Windows used to be forced onto the SelectorEventLoop because aiodns needed it,
+# but that loop cannot run subprocesses, so every ffmpeg conversion failed there.
+# aiodns is no longer used (connectors use aiohttp's ThreadedResolver), so the
+# default ProactorEventLoop is kept.
 
 
 class Main:

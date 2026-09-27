@@ -105,7 +105,7 @@ def test_get_aiohttp_connector_kwargs_without_verification():
     kwargs = get_aiohttp_connector_kwargs(verify_ssl=False)
 
     # It should return kwargs with verify_ssl=False
-    assert kwargs == {"verify_ssl": False}
+    assert kwargs == {"ssl": False}
 
 
 def test_client_get_session_supports_verify_ssl():
@@ -139,7 +139,7 @@ async def test_client_get_session_creates_connector():
         patch("aiohttp.ClientSession") as mock_client_session,
         patch("aiohttp.TCPConnector") as mock_connector,
     ):
-        mock_get_kwargs.return_value = {"verify_ssl": False}
+        mock_get_kwargs.return_value = {"ssl": False}
         mock_connector.return_value = MagicMock()
         mock_client_session.return_value = AsyncMock()
 
@@ -183,7 +183,7 @@ async def test_latest_streamrip_version_creates_session():
         patch("aiohttp.ClientSession") as mock_client_session,
         patch("aiohttp.TCPConnector") as mock_connector,
     ):
-        mock_get_kwargs.return_value = {"verify_ssl": False}
+        mock_get_kwargs.return_value = {"ssl": False}
         mock_connector.return_value = MagicMock()
 
         # Setup mock responses for API calls
@@ -274,7 +274,7 @@ async def test_lastfm_playlist_session_creation(mock_client_session):
         with patch(
             "streamrip.utils.ssl_utils.get_aiohttp_connector_kwargs"
         ) as mock_get_kwargs:
-            mock_get_kwargs.return_value = {"verify_ssl": False}
+            mock_get_kwargs.return_value = {"ssl": False}
 
             # Try to parse the playlist
             with pytest.raises(Exception):

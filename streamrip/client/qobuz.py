@@ -130,7 +130,9 @@ class QobuzSpoofer:
 
         # For the spoofer, always use SSL verification
         connector_kwargs = get_aiohttp_connector_kwargs(verify_ssl=True)
-        connector = aiohttp.TCPConnector(**connector_kwargs)
+        connector = aiohttp.TCPConnector(
+            **connector_kwargs, resolver=aiohttp.ThreadedResolver()
+        )
 
         self.session = aiohttp.ClientSession(connector=connector)
         return self

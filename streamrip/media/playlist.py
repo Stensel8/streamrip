@@ -361,7 +361,9 @@ class PendingLastfmPlaylist(Pending):
         # Create new session so we're not bound by rate limit
         verify_ssl = getattr(self.config.session.downloads, "verify_ssl", True)
         connector_kwargs = get_aiohttp_connector_kwargs(verify_ssl=verify_ssl)
-        connector = aiohttp.TCPConnector(**connector_kwargs)
+        connector = aiohttp.TCPConnector(
+            **connector_kwargs, resolver=aiohttp.ThreadedResolver()
+        )
 
         async with aiohttp.ClientSession(connector=connector) as session:
             page = await fetch(session, playlist_url)
