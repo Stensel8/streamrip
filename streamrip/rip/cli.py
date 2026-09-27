@@ -459,7 +459,9 @@ async def latest_streamrip_version(verify_ssl: bool = True) -> tuple[str, str | 
     """
     # Create connector with appropriate SSL settings
     connector_kwargs = get_aiohttp_connector_kwargs(verify_ssl=verify_ssl)
-    connector = aiohttp.TCPConnector(**connector_kwargs)
+    connector = aiohttp.TCPConnector(
+        **connector_kwargs, resolver=aiohttp.ThreadedResolver()
+    )
 
     async with aiohttp.ClientSession(connector=connector) as s:
         async with s.get("https://pypi.org/pypi/streamrip/json") as resp:
