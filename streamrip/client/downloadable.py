@@ -24,6 +24,7 @@ from Cryptodome.Util import Counter
 
 from .. import converter
 from ..exceptions import NonStreamableError
+from ..utils.ffmpeg_utils import find_ffmpeg
 
 logger = logging.getLogger("streamrip")
 
@@ -429,9 +430,11 @@ class TidalDASHDownloadable(Downloadable):
         return self._size
 
     async def _download(self, path: str, callback):
-        if shutil.which("ffmpeg") is None:
+        ffmpeg_path = find_ffmpeg()
+        if ffmpeg_path is None:
             raise NonStreamableError(
-                "FFmpeg is required to download Tidal hi-res (DASH) tracks."
+                "FFmpeg is required to download Tidal hi-res (DASH) tracks. "
+                "Install it, or install streamrip's ffmpeg extra."
             )
         tmp_path = path + ".dash.mp4"
         try:
@@ -444,7 +447,7 @@ class TidalDASHDownloadable(Downloadable):
                     callback(len(chunk))
 
             proc = await asyncio.create_subprocess_exec(
-                "ffmpeg",
+                ffmpeg_path,
                 "-i",
                 tmp_path,
                 "-c",
@@ -546,8 +549,11 @@ async def concat_audio_files(paths: list[str], out: str, ext: str, max_files_ope
 
     Recurses log_{max_file_open}(len(paths)) times.
     """
-    if shutil.which("ffmpeg") is None:
-        raise Exception("FFmpeg must be installed.")
+    ffmpeg_path = find_ffmpeg()
+    if ffmpeg_path is None:
+        raise Exception(
+            "FFmpeg is required. Install it, or install streamrip's ffmpeg extra."
+        )
 
     # Base case
     if len(paths) == 1:
@@ -576,7 +582,7 @@ async def concat_audio_files(paths: list[str], out: str, ext: str, max_files_ope
     proc_futures = []
     for i in range(num_batches):
         command = (
-            "ffmpeg",
+            ffmpeg_path,
             "-i",
             f"concat:{'|'.join(itertools.islice(it, max_files_open))}",
             "-acodec",

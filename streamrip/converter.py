@@ -12,6 +12,7 @@ from tempfile import gettempdir
 from typing import Final, Optional
 
 from .exceptions import ConversionError
+from .utils.ffmpeg_utils import find_ffmpeg
 
 logger = logging.getLogger("streamrip")
 
@@ -55,9 +56,11 @@ class Converter:
         :param remove_source: Remove the source file after conversion.
         :type remove_source: bool
         """
-        if shutil.which("ffmpeg") is None:
+        self.ffmpeg_path = find_ffmpeg()
+        if self.ffmpeg_path is None:
             raise Exception(
-                "Could not find FFMPEG executable. Install it to convert audio files.",
+                "Could not find FFmpeg. Install it, or install streamrip's "
+                "ffmpeg extra, to convert audio files.",
             )
 
         self.filename = filename
@@ -174,7 +177,7 @@ class Converter:
 
     def _gen_command(self):
         command = [
-            "ffmpeg",
+            self.ffmpeg_path,
             "-i",
             self.filename,
         ]
@@ -397,9 +400,12 @@ class AIFF(Converter):
 
 @functools.cache
 def _ffmpeg_has_encoder(name: str) -> bool:
+    ffmpeg_path = find_ffmpeg()
+    if ffmpeg_path is None:
+        return False
     try:
         result = subprocess.run(
-            ["ffmpeg", "-hide_banner", "-encoders"],
+            [ffmpeg_path, "-hide_banner", "-encoders"],
             capture_output=True,
             text=True,
             timeout=10,
