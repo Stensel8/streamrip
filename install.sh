@@ -24,7 +24,17 @@ uv pip install --python .venv --upgrade \
     "streamrip[ffmpeg] @ git+https://github.com/Stensel8/streamrip.git"
 
 echo
-echo "Done. Activate the venv, then run rip:"
+if .venv/bin/rip --version >/dev/null 2>&1; then
+    echo "Done. $(.venv/bin/rip --version) is installed at .venv/bin/rip."
+else
+    echo "Install finished, but .venv/bin/rip --version failed -- something's wrong."
+    exit 1
+fi
+echo
+echo "Activate the venv so plain 'rip' works, then use it normally:"
 echo "  source .venv/bin/activate       # bash/zsh"
 echo "  source .venv/bin/activate.fish  # fish"
-echo "  rip --help"
+echo
+echo "If 'rip' then runs something else, a shell alias or function named rip"
+echo "is shadowing it (check with 'command -v rip', or 'type rip' in fish)."
+echo ".venv/bin/rip always works regardless of that, activated or not."
