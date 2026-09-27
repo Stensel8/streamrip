@@ -7,10 +7,13 @@
 A scriptable stream downloader for Qobuz, Tidal, Deezer and SoundCloud.
 
 > [!NOTE]
-> This is a maintained fork of [nathom/streamrip](https://github.com/nathom/streamrip).
-> It targets current Python (3.14+) and fixes a large part of the open
-> upstream issues and pull requests; see [CHANGELOG.md](CHANGELOG.md) for what
-> changed and which upstream issues are addressed.
+> This is a fork of [nathom/streamrip](https://github.com/nathom/streamrip)
+> that gets it working again: current Python (3.14+), and a large part of the
+> open upstream issues and pull requests worked through, so downloads across
+> all four sources work again for now; see [CHANGELOG.md](CHANGELOG.md) for
+> what changed. Streaming services change their APIs without notice and this
+> will need upkeep to keep working — there's no promise it stays maintained
+> forever, just that it does right now.
 
 ![downloading an album](https://github.com/Stensel8/streamrip/blob/dev/demo/download_album.png?raw=true)
 
@@ -29,8 +32,10 @@ A scriptable stream downloader for Qobuz, Tidal, Deezer and SoundCloud.
 ## Installation
 
 The fastest way to get going: run the install script for your OS. It fetches
-Python 3.14 and ffmpeg for you (via [uv](https://docs.astral.sh/uv/)) and
-installs streamrip into a `.venv` in the current directory:
+Python 3.14 for you (via [uv](https://docs.astral.sh/uv/)) and installs
+streamrip into a `.venv` in the current directory. Install
+[`ffmpeg`](https://ffmpeg.org/download.html) yourself first if you'll need
+conversion or Tidal hi-res downloads:
 
 ```bash
 # Linux/macOS
@@ -46,12 +51,11 @@ Then activate that venv and run `streamrip`, same as the manual steps below. Rea
 on if you'd rather do each step yourself, or already have Python and ffmpeg
 set up.
 
-First, ensure [Python](https://www.python.org/downloads/) 3.14 or newer and
-[pip](https://pip.pypa.io/en/stable/installing/) are installed. You'll also
-need `ffmpeg` for conversion and Tidal hi-res downloads: either install it
-yourself (e.g. `apt install ffmpeg`, `brew install ffmpeg`,
-[ffmpeg.org](https://ffmpeg.org/download.html) for Windows), or skip that and
-add the `ffmpeg` extra below to get a working one bundled with streamrip.
+First, ensure [Python](https://www.python.org/downloads/) 3.14 or newer,
+[pip](https://pip.pypa.io/en/stable/installing/), and
+[`ffmpeg`](https://ffmpeg.org/download.html) are installed (e.g.
+`apt install ffmpeg`, `brew install ffmpeg`). `ffmpeg` is needed for
+conversion and Tidal hi-res downloads.
 
 Always install Python packages into a virtual environment, never into your
 system Python. Create one and activate it:
@@ -99,42 +103,10 @@ streamrip
 
 it should show the main help page. If you have no idea what these mean, or are having other issues installing, check out the [detailed installation instructions](https://github.com/nathom/streamrip/wiki#detailed-installation-instructions) in the upstream wiki.
 
-> [!TIP]
-> If `streamrip` runs something else entirely (not a streamrip help page), a
-> shell alias or function named `streamrip` is shadowing it — aliases and
-> functions are checked before `PATH`, venv or no venv. Run
-> `command -v streamrip` (or, in fish, `type streamrip`) to see what it
-> actually resolves to. `command streamrip` bypasses the alias/function and
-> runs the real one from the active venv.
-
 > [!IMPORTANT]
 > `pip install streamrip` (PyPI), the AUR package and `brew install streamrip`
 > all install **upstream** streamrip, not this fork. Upstream's release pins
 > `Pillow<11`, which has no wheels for Python 3.14 and fails to build.
-
-### Optional extras
-
-Add the extra in brackets to the install command for whichever method you
-used above. With the venv method:
-
-```bash
-# Bundle a working ffmpeg, so there's no separate OS-level install
-pip install "streamrip[ffmpeg] @ git+https://github.com/Stensel8/streamrip.git"
-
-# Use certifi's CA bundle instead of the system certificates
-pip install "streamrip[ssl] @ git+https://github.com/Stensel8/streamrip.git"
-
-# Let streamrip capture your Qobuz login token from a real browser
-pip install "streamrip[qobuz-login] @ git+https://github.com/Stensel8/streamrip.git"
-playwright install chromium
-```
-
-pipx and uv take the same `package[extra] @ url` spec, for example:
-
-```bash
-pipx install "streamrip[ffmpeg] @ git+https://github.com/Stensel8/streamrip.git"
-uv tool install "streamrip[ffmpeg] @ git+https://github.com/Stensel8/streamrip.git"
-```
 
 ### Logging in
 
@@ -270,6 +242,7 @@ Thanks to Vitiko98, Sorrow446, and DashLt for their contributions to this projec
 
 `streamrip` was inspired by:
 
+- [rip](https://github.com/nathom/streamrip)
 - [qobuz-dl](https://github.com/vitiko98/qobuz-dl)
 - [Qo-DL Reborn](https://github.com/badumbass/Qo-DL-Reborn)
 - [Tidal-Media-Downloader](https://github.com/yaronzz/Tidal-Media-Downloader)

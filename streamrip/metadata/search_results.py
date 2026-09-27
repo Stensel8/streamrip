@@ -33,7 +33,7 @@ class Summary(ABC):
 class ArtistSummary(Summary):
     id: str
     name: str
-    num_albums: str
+    num_albums: str | None
 
     def media_type(self):
         return "artist"
@@ -42,6 +42,11 @@ class ArtistSummary(Summary):
         return clean(self.name)
 
     def preview(self) -> str:
+        # Not every source's artist search includes an album count (Tidal's
+        # doesn't at all), so don't print a made-up "Unknown Albums" -- just
+        # leave the line out rather than claim something we don't know.
+        if self.num_albums is None:
+            return f"ID: {self.id}"
         return f"{self.num_albums} Albums\n\nID: {self.id}"
 
     @classmethod
@@ -58,7 +63,7 @@ class ArtistSummary(Summary):
             )
             or "Unknown"
         )
-        num_albums = item.get("albums_count") or "Unknown"
+        num_albums = item.get("albums_count")
         return cls(id, name, num_albums)
 
 

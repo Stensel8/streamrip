@@ -19,7 +19,7 @@ if (-not (Test-Path .venv)) {
 
 Write-Host "Installing streamrip into .venv..."
 uv pip install --python .venv --upgrade `
-    "streamrip[ffmpeg] @ git+https://github.com/Stensel8/streamrip.git"
+    "streamrip @ git+https://github.com/Stensel8/streamrip.git"
 
 Write-Host ""
 $version = & .venv\Scripts\streamrip.exe --version 2>$null

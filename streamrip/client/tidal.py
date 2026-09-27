@@ -57,6 +57,19 @@ QUALITY_MAP = {
     3: "HI_RES",  # Best available: 24-bit FLAC (DASH) where the client may
 }
 
+# Tidal decides what it actually serves per track/client, independent of what
+# was requested (e.g. no lossless master for that particular track), and
+# says so in the response's own "audioQuality" -- not always the same string
+# as what was requested (HI_RES_LOSSLESS in the response vs. HI_RES in the
+# request).
+_AUDIO_QUALITY_TIER = {
+    "LOW": 0,
+    "HIGH": 1,
+    "LOSSLESS": 2,
+    "HI_RES": 3,
+    "HI_RES_LOSSLESS": 3,
+}
+
 
 class TidalClient(Client):
     """TidalClient."""
@@ -231,6 +244,15 @@ class TidalClient(Client):
         if "manifest" not in resp:
             raise NonStreamableError(
                 resp.get("userMessage") or f"No stream available for track {track_id}"
+            )
+
+        actual_quality = resp.get("audioQuality")
+        actual_tier = _AUDIO_QUALITY_TIER.get(actual_quality)
+        if actual_tier is not None and actual_tier < quality:
+            logger.warning(
+                f"Track {track_id}: requested {QUALITY_MAP[quality]} but Tidal "
+                f"only has {actual_quality} for it (most likely no lossless "
+                "master for this specific track)."
             )
 
         # Hi-res (HI_RES_LOSSLESS) tracks are served as an MPEG-DASH manifest

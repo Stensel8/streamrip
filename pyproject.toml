@@ -31,13 +31,15 @@ dependencies = [
   "click>=8.1,<9",
   "click-help-colors>=0.9.4,<0.10",
   "requests>=2.32,<3",
+  # Captures the Qobuz user_auth_token from a real browser login so users
+  # never have to dig it out of DevTools by hand. The Chromium build it
+  # drives downloads itself automatically the first time it's needed.
+  "playwright>=1.49",
 ]
 
 [project.optional-dependencies]
 # Use certifi's CA bundle instead of the system certificates.
 ssl = ["certifi>=2024.7.4"]
-# Capture the Qobuz user_auth_token from a real browser login.
-qobuz-login = ["playwright>=1.49"]
 # A prebuilt ffmpeg, for when there's no system ffmpeg (or none on PATH).
 ffmpeg = ["imageio-ffmpeg>=0.5"]
 

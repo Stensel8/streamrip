@@ -15,8 +15,11 @@ concurrency = true
 # Set to -1 for no limit
 max_connections = 6
 # Max number of API requests per source to handle per minute
-# Set to -1 for no limit
-requests_per_minute = 60
+# Set to -1 for no limit. Downloading many albums at once (e.g. an artist's
+# full discography) can burst past a higher limit and get 429 "Too Many
+# Requests" errors from the streaming service; lower this further if that
+# still happens.
+requests_per_minute = 40
 # Verify SSL certificates for API connections
 # Set to false if you encounter SSL certificate verification errors (not recommended)
 verify_ssl = true
@@ -33,7 +36,8 @@ download_booklets = true
 # Qobuz moved its web login behind a captcha, so token login is recommended:
 # log in at play.qobuz.com, open DevTools -> Network, find the user/login
 # request and copy user.id and user_auth_token from its response.
-# `pip install 'streamrip[qobuz-login]'` lets streamrip capture them for you.
+# streamrip can capture these for you instead: it'll offer to open a
+# browser and log in normally the next time login is needed.
 use_auth_token = false
 # Enter your userid if the above use_auth_token is set to true, else enter your email
 email_or_userid = ""
