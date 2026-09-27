@@ -306,6 +306,102 @@ class TidalDownloadable(Downloadable):
             return dec_bytes
 
 
+class TidalDASHDownloadable(Downloadable):
+    """Tidal hi-res tracks served as an MPEG-DASH manifest (upstream PR #998).
+
+    The init segment and every media segment are fetched into a fragmented
+    MP4, which ffmpeg then remuxes (stream copy, bit-identical audio) into the
+    final container.
+    """
+
+    def __init__(
+        self,
+        session: aiohttp.ClientSession,
+        init_url: str,
+        segment_urls: list[str],
+        codec: str,
+    ):
+        self.session = session
+        self.source = "tidal"
+        self.url = init_url
+        self.init_url = init_url
+        self.segment_urls = segment_urls
+        self.extension = "flac" if codec.lower() in ("flac", "mqa") else "m4a"
+        self._size = None
+
+    async def size(self) -> int:
+        """Total size of the init segment plus every media segment.
+
+        HEAD-ing only self.url would report the size of the tiny init segment,
+        so the progress bar would jump past 100% immediately. Requests are
+        bounded: firing one per segment at once gets many of them refused.
+        """
+        if self._size is not None:
+            return self._size
+
+        sem = asyncio.Semaphore(8)
+
+        async def content_length(url: str) -> int | None:
+            async with sem:
+                try:
+                    async with self.session.head(url) as resp:
+                        resp.raise_for_status()
+                        return int(resp.headers.get("Content-Length", 0))
+                except Exception:
+                    return None
+
+        sizes = await asyncio.gather(
+            *(content_length(u) for u in (self.init_url, *self.segment_urls))
+        )
+        known = [s for s in sizes if s]
+        if not known:
+            self._size = 0
+            return 0
+        # Segments are near-uniform; estimate the ones that did not answer.
+        average = sum(known) // len(known)
+        self._size = sum(known) + (len(sizes) - len(known)) * average
+        return self._size
+
+    async def _download(self, path: str, callback):
+        if shutil.which("ffmpeg") is None:
+            raise NonStreamableError(
+                "FFmpeg is required to download Tidal hi-res (DASH) tracks."
+            )
+        tmp_path = path + ".dash.mp4"
+        try:
+            async with aiofiles.open(tmp_path, "wb") as f:
+                for url in (self.init_url, *self.segment_urls):
+                    async with self.session.get(url) as resp:
+                        resp.raise_for_status()
+                        chunk = await resp.read()
+                    await f.write(chunk)
+                    callback(len(chunk))
+
+            proc = await asyncio.create_subprocess_exec(
+                "ffmpeg",
+                "-i",
+                tmp_path,
+                "-c",
+                "copy",
+                "-y",
+                path,
+                stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            _, stderr = await proc.communicate()
+            if proc.returncode != 0 or not os.path.isfile(path):
+                # Without this a failed remux is silent and the track would be
+                # recorded as downloaded with nothing on disk.
+                raise NonStreamableError(
+                    f"ffmpeg failed to remux Tidal DASH stream (exit "
+                    f"{proc.returncode}): {stderr.decode(errors='replace')[-300:]}"
+                )
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+
+
 class SoundcloudDownloadable(Downloadable):
     def __init__(self, session, info: dict):
         self.session = session
@@ -396,7 +492,7 @@ async def concat_audio_files(paths: list[str], out: str, ext: str, max_files_ope
     outpaths = [
         os.path.join(
             tempdir,
-            f"__streamrip_ffmpeg_{hash(paths[i*max_files_open])}.{ext}",
+            f"__streamrip_ffmpeg_{hash(paths[i * max_files_open])}.{ext}",
         )
         for i in range(num_batches)
     ]

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from .album import AlbumMetadata
-from .util import safe_get, typed
+from .util import safe_get, tidal_quality_id, typed
 
 logger = logging.getLogger("streamrip")
 
@@ -156,7 +156,7 @@ class TrackMetadata:
     def from_tidal(cls, album: AlbumMetadata, track) -> TrackMetadata:
         title = typed(track["title"], str).strip()
         item_id = str(track["id"])
-        isrc = typed(track["isrc"], str)
+        isrc = typed(track.get("isrc"), str | None)
         version = track.get("version")
         explicit = track.get("explicit", False)
         if version:
@@ -165,7 +165,7 @@ class TrackMetadata:
         tracknumber = typed(track.get("trackNumber", 1), int)
         discnumber = typed(track.get("volumeNumber", 1), int)
 
-        artists = track.get("artists")
+        artists = track.get("artists") or []
         if len(artists) > 0:
             artist = ", ".join(a["name"] for a in artists)
         else:
@@ -173,18 +173,7 @@ class TrackMetadata:
 
         lyrics = track.get("lyrics", "")
 
-        quality_map: dict[str, int] = {
-            "LOW": 0,
-            "HIGH": 1,
-            "LOSSLESS": 2,
-            "HI_RES": 3,
-        }
-
-        tidal_quality = track.get("audioQuality")
-        if tidal_quality is not None:
-            quality = quality_map[tidal_quality]
-        else:
-            quality = 0
+        quality = tidal_quality_id(track.get("audioQuality"))
 
         if quality >= 2:
             sampling_rate = 44100

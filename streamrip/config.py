@@ -50,10 +50,21 @@ class TidalConfig:
     # time. If you haven't used streamrip in more than a week, you may have to log
     # in again using `rip config --tidal`
     token_expiry: str
-    # 0: 256kbps AAC, 1: 320kbps AAC, 2: 16/44.1 "HiFi" FLAC, 3: 24/44.1 "MQA" FLAC
+    # 0: 256kbps AAC, 1: 320kbps AAC, 2: 16/44.1 FLAC, 3: best available (24-bit
+    # FLAC where the client id is allowed to stream it)
     quality: int
     # This will download videos included in Video Albums.
     download_videos: bool
+    # Use the OAuth client that is served 24-bit hi-res FLAC. It gets AAC for
+    # ordinary lossless releases, so the default client (FLAC 16/44.1 for
+    # everything) is usually the better choice. Changing it requires logging in
+    # again.
+    hires_client: bool = False
+    # Override the OAuth client id/secret entirely (empty = built-in client).
+    client_id: str = ""
+    client_secret: str = ""
+    # The client id the saved tokens were issued to. Do not change.
+    token_client_id: str = ""
 
 
 @dataclass(slots=True)
