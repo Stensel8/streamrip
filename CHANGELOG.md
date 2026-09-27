@@ -41,8 +41,10 @@ upstream issues and pull requests.
 ### Tidal
 
 - Lossless tracks download as FLAC again instead of AAC 320 ([#966](https://github.com/nathom/streamrip/issues/966),
+  [#897](https://github.com/nathom/streamrip/issues/897), [#968](https://github.com/nathom/streamrip/issues/968),
   [PR #1017](https://github.com/nathom/streamrip/pull/1017)); optional hi-res client via `hires_client = true`, and hi-res tracks
-  served as MPEG-DASH are downloaded and remuxed ([PR #998](https://github.com/nathom/streamrip/pull/998)). Changing
+  served as MPEG-DASH are downloaded and remuxed instead of silently downgrading to AAC
+  ([#974](https://github.com/nathom/streamrip/issues/974), [PR #998](https://github.com/nathom/streamrip/pull/998)). Changing
   the client asks for a new login once.
 - Tracks without lyrics are no longer dropped, and lyrics errors never abort a
   track ([#983](https://github.com/nathom/streamrip/issues/983), [#959](https://github.com/nathom/streamrip/issues/959), [#866](https://github.com/nathom/streamrip/issues/866), [PR #1036](https://github.com/nathom/streamrip/pull/1036), [PR #1024](https://github.com/nathom/streamrip/pull/1024)).
@@ -76,12 +78,18 @@ upstream issues and pull requests.
 
 - The client id is found again ([#1038](https://github.com/nathom/streamrip/issues/1038)); tracks without an MP3 HLS stream use
   the progressive stream or are skipped instead of crashing.
+- HLS segments are reassembled in their original order regardless of which one
+  finishes downloading first; concurrent, out-of-order completion produced
+  skips and reordered audio ([#848](https://github.com/nathom/streamrip/issues/848), [#633](https://github.com/nathom/streamrip/issues/633)).
 
 ### Downloads, conversion and tagging
 
 - Failed downloads are no longer marked as downloaded, resolve failures are
   recorded, and `rip repair` retries everything in the failed database
-  ([PR #1023](https://github.com/nathom/streamrip/pull/1023)).
+  ([PR #1023](https://github.com/nathom/streamrip/pull/1023)). A track skipped
+  after a 403 (e.g. a geoblocked Deezer track in an otherwise public playlist)
+  no longer leaves the run in a state where cleanup trips over the file it
+  never wrote ([#677](https://github.com/nathom/streamrip/issues/677), [#701](https://github.com/nathom/streamrip/issues/701)).
 - Up to four attempts with backoff; retries resume the partial file
   ([#951](https://github.com/nathom/streamrip/issues/951), [#1022](https://github.com/nathom/streamrip/issues/1022), [PR #1009](https://github.com/nathom/streamrip/pull/1009)). Downloads run in a worker thread so they no
   longer block each other ([PR #982](https://github.com/nathom/streamrip/pull/982)).
