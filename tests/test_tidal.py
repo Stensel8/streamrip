@@ -109,6 +109,43 @@ async def test_missing_manifest_is_non_streamable():
 
 
 @pytest.mark.asyncio
+async def test_warns_when_served_quality_is_lower_than_requested(caplog):
+    c = _client()
+    c.session = MagicMock()
+    manifest = (
+        '{"urls": ["https://x/y.flac"], "codecs": "flac", "encryptionType": "NONE"}'
+    )
+    c._api_request = AsyncMock(
+        return_value={
+            "audioQuality": "LOSSLESS",
+            "manifestMimeType": "application/vnd.tidal.bts",
+            "manifest": base64.b64encode(manifest.encode()).decode(),
+        }
+    )
+    await c.get_downloadable("1", 3)  # requested HI_RES, only LOSSLESS available
+    assert "requested HI_RES but Tidal only has LOSSLESS" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_no_warning_when_served_quality_matches_or_exceeds_request():
+    c = _client()
+    c.session = MagicMock()
+    manifest = (
+        '{"urls": ["https://x/y.flac"], "codecs": "flac", "encryptionType": "NONE"}'
+    )
+    c._api_request = AsyncMock(
+        return_value={
+            "audioQuality": "LOSSLESS",
+            "manifestMimeType": "application/vnd.tidal.bts",
+            "manifest": base64.b64encode(manifest.encode()).decode(),
+        }
+    )
+    # Should not raise or warn: got exactly what was requested.
+    dl = await c.get_downloadable("1", 2)
+    assert isinstance(dl, TidalDownloadable)
+
+
+@pytest.mark.asyncio
 async def test_single_search_hit_is_returned():
     c = _client()
     c._api_request = AsyncMock(return_value={"items": [{"id": 1}]})
