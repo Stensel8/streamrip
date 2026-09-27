@@ -38,6 +38,8 @@ dependencies = [
 ssl = ["certifi>=2024.7.4"]
 # Capture the Qobuz user_auth_token from a real browser login.
 qobuz-login = ["playwright>=1.49"]
+# A prebuilt ffmpeg, for when there's no system ffmpeg (or none on PATH).
+ffmpeg = ["imageio-ffmpeg>=0.5"]
 
 [project.scripts]
 rip = "streamrip.rip:rip"
