@@ -33,22 +33,8 @@ First, ensure [Python](https://www.python.org/downloads/) 3.14 or newer and
 [`ffmpeg`](https://ffmpeg.org/download.html). You may choose not to install it,
 but conversion and Tidal hi-res downloads need it.
 
-Install streamrip from this repository:
-
-```bash
-pip3 install --upgrade git+https://github.com/Stensel8/streamrip.git
-```
-
-or, to keep it separate from other Python packages, with
-[pipx](https://pipx.pypa.io/) or [uv](https://docs.astral.sh/uv/):
-
-```bash
-pipx install git+https://github.com/Stensel8/streamrip.git
-uv tool install git+https://github.com/Stensel8/streamrip.git
-```
-
-or in a plain virtual environment, which also works if you don't have pipx or
-uv and want `rip` and its dependencies kept out of your system Python:
+Always install Python packages into a virtual environment, never into your
+system Python. Create one and activate it:
 
 ```bash
 # bash/zsh
@@ -62,16 +48,25 @@ python3 -m venv .venv
 source .venv/bin/activate.fish
 ```
 
-then, with the venv active (your prompt shows `(.venv)`), install into it the
-same way as above:
+Then, with the venv active (your prompt shows `(.venv)`), install streamrip
+from this repository into it:
 
 ```bash
 pip install --upgrade git+https://github.com/Stensel8/streamrip.git
 ```
 
-`rip` is on `PATH` for as long as that venv is active. Leave it with
+`rip` is on `PATH` for as long as that venv stays active. Leave it with
 `deactivate`; come back to it later from the project directory with the same
-`source` command, no need to recreate it.
+`source` command, no need to recreate the venv.
+
+[pipx](https://pipx.pypa.io/) and [uv](https://docs.astral.sh/uv/) do the same
+per-tool venv isolation without the manual `activate` step, if you have either
+installed:
+
+```bash
+pipx install git+https://github.com/Stensel8/streamrip.git
+uv tool install git+https://github.com/Stensel8/streamrip.git
+```
 
 To install a specific branch or release, add `@<branch-or-tag>` to the URL, for example
 `git+https://github.com/Stensel8/streamrip.git@dev`.
@@ -93,10 +88,10 @@ it should show the main help page. If you have no idea what these mean, or are h
 
 ```bash
 # Use certifi's CA bundle instead of the system certificates
-pip3 install "streamrip[ssl] @ git+https://github.com/Stensel8/streamrip.git"
+pip install "streamrip[ssl] @ git+https://github.com/Stensel8/streamrip.git"
 
 # Let streamrip capture your Qobuz login token from a real browser
-pip3 install "streamrip[qobuz-login] @ git+https://github.com/Stensel8/streamrip.git"
+pip install "streamrip[qobuz-login] @ git+https://github.com/Stensel8/streamrip.git"
 playwright install chromium
 ```
 
