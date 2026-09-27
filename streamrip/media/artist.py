@@ -58,12 +58,18 @@ class Artist(Media):
         """Resolve all artist albums, then download.
 
         This is used if the repeat filter is turned on, since we need the titles
-        of all albums to remove repeated items.
+        of all albums to remove repeated items. Resolving still needs every
+        album's title before filtering can happen, but that doesn't mean
+        firing every resolve request at once -- chunk it the same as the
+        download phase below, so this path doesn't burst past the streaming
+        service's rate limit either.
         """
-        resolved_or_none: list[Album | None] = await asyncio.gather(
-            *[album.resolve() for album in self.albums]
-        )
-        resolved = [a for a in resolved_or_none if a is not None]
+        resolved: list[Album] = []
+        for chunk in self.batch(self.albums, RESOLVE_CHUNK_SIZE):
+            resolved_or_none: list[Album | None] = await asyncio.gather(
+                *[album.resolve() for album in chunk]
+            )
+            resolved.extend(a for a in resolved_or_none if a is not None)
         filtered_albums = self._apply_filters(resolved, filters)
         batches = self.batch([a.rip() for a in filtered_albums], RESOLVE_CHUNK_SIZE)
         for batch in batches:

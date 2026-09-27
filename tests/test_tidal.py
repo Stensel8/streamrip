@@ -127,7 +127,7 @@ async def test_warns_when_served_quality_is_lower_than_requested(caplog):
 
 
 @pytest.mark.asyncio
-async def test_no_warning_when_served_quality_matches_or_exceeds_request():
+async def test_no_warning_when_served_quality_matches_or_exceeds_request(caplog):
     c = _client()
     c.session = MagicMock()
     manifest = (
@@ -142,6 +142,7 @@ async def test_no_warning_when_served_quality_matches_or_exceeds_request():
     )
     # Should not raise or warn: got exactly what was requested.
     dl = await c.get_downloadable("1", 2)
+    assert "requested" not in caplog.text
     assert isinstance(dl, TidalDownloadable)
 
 
