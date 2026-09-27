@@ -20,7 +20,7 @@ A scriptable stream downloader for Qobuz, Tidal, Deezer and SoundCloud.
 - Downloads tracks, albums, playlists, discographies, and labels from Qobuz, Tidal, Deezer, and SoundCloud
 - Supports downloads of Spotify and Apple Music playlists through [last.fm](https://www.last.fm)
 - Automatically converts files to a preferred format
-- Has a database that stores the downloaded tracks' IDs so that repeats are avoided, and `rip repair` to retry the ones that failed
+- Has a database that stores the downloaded tracks' IDs so that repeats are avoided, and `streamrip repair` to retry the ones that failed
 - Resumes interrupted downloads and retries with backoff
 - Concurrency and rate limiting
 - Interactive search for all sources
@@ -42,7 +42,7 @@ curl -LsSf https://raw.githubusercontent.com/Stensel8/streamrip/dev/install.sh |
 irm https://raw.githubusercontent.com/Stensel8/streamrip/dev/install.ps1 | iex
 ```
 
-Then activate that venv and run `rip`, same as the manual steps below. Read
+Then activate that venv and run `streamrip`, same as the manual steps below. Read
 on if you'd rather do each step yourself, or already have Python and ffmpeg
 set up.
 
@@ -75,7 +75,7 @@ from this repository into it:
 pip install --upgrade git+https://github.com/Stensel8/streamrip.git
 ```
 
-`rip` is on `PATH` for as long as that venv stays active. Leave it with
+`streamrip` is on `PATH` for as long as that venv stays active. Leave it with
 `deactivate`; come back to it later from the project directory with the same
 `source` command, no need to recreate the venv.
 
@@ -94,17 +94,18 @@ To install a specific branch or release, add `@<branch-or-tag>` to the URL, for 
 When you type
 
 ```bash
-rip
+streamrip
 ```
 
 it should show the main help page. If you have no idea what these mean, or are having other issues installing, check out the [detailed installation instructions](https://github.com/nathom/streamrip/wiki#detailed-installation-instructions) in the upstream wiki.
 
 > [!TIP]
-> If `rip` runs something else entirely (not a streamrip help page), a shell
-> alias or function named `rip` is shadowing it — aliases and functions are
-> checked before `PATH`, venv or no venv. Run `command -v rip` (or, in fish,
-> `type rip`) to see what it actually resolves to. `command rip` bypasses the
-> alias/function and runs the real one from the active venv.
+> If `streamrip` runs something else entirely (not a streamrip help page), a
+> shell alias or function named `streamrip` is shadowing it — aliases and
+> functions are checked before `PATH`, venv or no venv. Run
+> `command -v streamrip` (or, in fish, `type streamrip`) to see what it
+> actually resolves to. `command streamrip` bypasses the alias/function and
+> runs the real one from the active venv.
 
 > [!IMPORTANT]
 > `pip install streamrip` (PyPI), the AUR package and `brew install streamrip`
@@ -163,19 +164,19 @@ If a saved login stops working, streamrip offers to log in again.
 Download an album from Qobuz
 
 ```bash
-rip url https://www.qobuz.com/us-en/album/rumours-fleetwood-mac/0603497941032
+streamrip url https://www.qobuz.com/us-en/album/rumours-fleetwood-mac/0603497941032
 ```
 
 Download multiple albums from Qobuz
 
 ```bash
-rip url https://www.qobuz.com/us-en/album/back-in-black-ac-dc/0886444889841 https://www.qobuz.com/us-en/album/blue-train-john-coltrane/0060253764852
+streamrip url https://www.qobuz.com/us-en/album/back-in-black-ac-dc/0886444889841 https://www.qobuz.com/us-en/album/blue-train-john-coltrane/0060253764852
 ```
 
 Download the album and convert it to `mp3`
 
 ```bash
-rip --codec mp3 url https://open.qobuz.com/album/0060253780968
+streamrip --codec mp3 url https://open.qobuz.com/album/0060253780968
 ```
 
 To set the maximum quality, use the `--quality` option to `0, 1, 2, 3, 4`:
@@ -189,7 +190,7 @@ To set the maximum quality, use the `--quality` option to `0, 1, 2, 3, 4`:
 | 4          | 24 bit, ≤ 192 kHz     | Qobuz                                        |
 
 ```bash
-rip --quality 3 url https://tidal.com/browse/album/147569387
+streamrip --quality 3 url https://tidal.com/browse/album/147569387
 ```
 
 > Using `4` is generally a waste of space. It is impossible for humans to perceive the difference between sampling rates higher than 44.1 kHz. It may be useful if you're processing/slowing down the audio.
@@ -197,7 +198,7 @@ rip --quality 3 url https://tidal.com/browse/album/147569387
 Search for playlists matching `rap` on Tidal
 
 ```bash
-rip search tidal playlist 'rap'
+streamrip search tidal playlist 'rap'
 ```
 
 ![streamrip interactive search](https://github.com/Stensel8/streamrip/blob/dev/demo/playlist_search.png?raw=true)
@@ -205,25 +206,25 @@ rip search tidal playlist 'rap'
 Search for *Rumours* on Tidal, and download it
 
 ```bash
-rip search tidal album 'fleetwood mac rumours'
+streamrip search tidal album 'fleetwood mac rumours'
 ```
 
 Download a last.fm playlist using the lastfm command
 
 ```
-rip lastfm https://www.last.fm/user/nathan3895/playlists/12126195
+streamrip lastfm https://www.last.fm/user/nathan3895/playlists/12126195
 ```
 
 For more customization, see the config file
 
 ```
-rip config open
+streamrip config open
 ```
 
-If you're confused about anything, see the help pages. The main help pages can be accessed by typing `rip` by itself in the command line. The help pages for each command can be accessed with the `--help` flag. For example, to see the help page for the `url` command, type
+If you're confused about anything, see the help pages. The main help pages can be accessed by typing `streamrip` by itself in the command line. The help pages for each command can be accessed with the `--help` flag. For example, to see the help page for the `url` command, type
 
 ```
-rip url --help
+streamrip url --help
 ```
 
 ![example_help_page.png](https://github.com/Stensel8/streamrip/blob/dev/demo/example_help_page.png?raw=true)

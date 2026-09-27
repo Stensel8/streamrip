@@ -125,7 +125,7 @@ class AlbumMetadata:
             # object is abbreviated. The track list is only embedded in a full
             # album response, so deriving the disc count from it alone collapses
             # to 1 for any album reached via a track (e.g. a single-track URL or
-            # `rip repair`), which then loses the "Disc N" subfolder.
+            # `streamrip repair`), which then loses the "Disc N" subfolder.
             resp.get("media_count")
             or max(
                 track.get("media_number", 1)

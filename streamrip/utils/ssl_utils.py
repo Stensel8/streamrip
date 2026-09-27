@@ -64,7 +64,7 @@ def print_ssl_error_help():
     print("Options:")
     print("  1. Run again with the --no-ssl-verify flag (less secure)")
     print(
-        '     Example: rip --no-ssl-verify url "https://tidal.com/browse/playlist/..."'
+        '     Example: streamrip --no-ssl-verify url "https://tidal.com/browse/playlist/..."'
     )
     print()
     print("  2. Install certifi for better certificate handling:")

@@ -62,7 +62,7 @@ async def test_propagates_when_user_declines():
 
 @pytest.mark.asyncio
 async def test_never_prompts_without_a_terminal():
-    """rip runs from cron and from scripts, where a hidden y/n hangs forever."""
+    """streamrip runs from cron and from scripts, where a hidden y/n hangs forever."""
     main, _, prompter = _main_with_expired_token()
     with _patches(prompter, isatty=False, confirm=True):
         with pytest.raises(AuthenticationError, match="interactive terminal"):

@@ -433,7 +433,7 @@ class QobuzClient(Client):
     async def get_downloadable(self, item: str, quality: int) -> Downloadable:
         assert self.secret is not None and self.logged_in
         # Qobuz has no quality 0 (128 kbps); clamp instead of asserting so
-        # `rip --quality 0` still works for mixed-source downloads.
+        # `streamrip --quality 0` still works for mixed-source downloads.
         quality = max(1, min(quality, self.max_quality))
         status, resp_json = await self._request_file_url(item, quality, self.secret)
         if status != 200:

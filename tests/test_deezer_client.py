@@ -53,7 +53,7 @@ async def test_clamp_can_be_disabled():
 
 @pytest.mark.asyncio
 async def test_out_of_range_quality_does_not_crash():
-    """`rip --quality 4` used to raise IndexError for Deezer."""
+    """`streamrip --quality 4` used to raise IndexError for Deezer."""
     client = _client(can_stream_hq=True, can_stream_lossless=True)
     dl = await client.get_downloadable("1", quality=4)
     assert dl.quality == 2 and dl.extension == "flac"
