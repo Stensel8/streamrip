@@ -405,7 +405,7 @@ def _ffmpeg_has_encoder(name: str) -> bool:
             timeout=10,
             stdin=subprocess.DEVNULL,
         )
-    except (OSError, subprocess.SubprocessError):
+    except OSError, subprocess.SubprocessError:
         return False
     return name in result.stdout
 

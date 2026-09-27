@@ -7,7 +7,7 @@ upstream issues and pull requests.
 
 ### Installation and dependencies
 
-- Installs on Python 3.10 through 3.14: every dependency is on a current
+- Targets current Python (3.14+) only; every dependency is on a current
   release with wheels for 3.14. Pillow was capped below 11, which has no 3.14
   wheels and failed to build ([#1032](https://github.com/nathom/streamrip/issues/1032), [#953](https://github.com/nathom/streamrip/issues/953), [#904](https://github.com/nathom/streamrip/issues/904)).
 - `pyproject.toml` uses PEP 621 metadata (Poetry 2).
@@ -101,6 +101,6 @@ upstream issues and pull requests.
 
 ### Development
 
-- CI on Python 3.10–3.14, install smoke test on Linux, Windows and macOS,
+- CI on Python 3.14, install smoke test on Linux, Windows and macOS,
   CodeQL on the right branch; all actions pinned to SHAs.
 - Renovate keeps dependencies current; Dependabot handles security updates.

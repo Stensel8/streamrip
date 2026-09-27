@@ -51,14 +51,14 @@ def coro(f):
 
             try:
                 loop.add_signal_handler(signal.SIGINT, stop)
-            except (NotImplementedError, RuntimeError):
+            except NotImplementedError, RuntimeError:
                 pass  # Windows: default KeyboardInterrupt behaviour
 
             return await f(*args, **kwargs)
 
         try:
             return asyncio.run(run())
-        except (asyncio.CancelledError, KeyboardInterrupt):
+        except asyncio.CancelledError, KeyboardInterrupt:
             console.print("[yellow]Stopped.")
 
     return wrapper

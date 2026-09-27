@@ -279,7 +279,7 @@ async def test_lastfm_playlist_session_creation(mock_client_session):
             # Try to parse the playlist
             with pytest.raises(Exception):
                 await pending_playlist._parse_lastfm_playlist()
-    except (AttributeError, TypeError):
+    except AttributeError, TypeError:
         pytest.skip(
             "verify_ssl not used in PendingLastfmPlaylist._parse_lastfm_playlist yet"
         )
@@ -313,7 +313,7 @@ async def test_client_uses_config_settings():
                     call_kwargs = mock_get_session.call_args.kwargs
                     assert "verify_ssl" in call_kwargs
                     assert call_kwargs["verify_ssl"] is False
-                except (AttributeError, AssertionError):
+                except AttributeError, AssertionError:
                     pytest.skip("verify_ssl not used in TidalClient.login yet")
         except Exception as e:
             pytest.skip(f"Could not test TidalClient: {e}")
