@@ -68,7 +68,7 @@ async def test_resume_with_range_support(tmp_path):
             await fast_async_download(path, url, {}, lambda n: None, resume=attempt > 0)
             last_exc = None
             break
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             last_exc = e
 
     srv.shutdown()
@@ -119,7 +119,7 @@ async def test_resume_falls_back_when_range_ignored(tmp_path):
         try:
             await fast_async_download(path, url, {}, lambda n: None, resume=attempt > 0)
             break
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
 
     srv.shutdown()
