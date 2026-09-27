@@ -222,7 +222,7 @@ async def test_qobuz_spoofer_initialization(mock_client_session):
         with patch(
             "streamrip.utils.ssl_utils.get_aiohttp_connector_kwargs"
         ) as mock_get_kwargs:
-            mock_get_kwargs.return_value = {"verify_ssl": True}
+            mock_get_kwargs.return_value = {"ssl": True}
 
             spoofer = QobuzSpoofer(verify_ssl=True)
             assert spoofer is not None

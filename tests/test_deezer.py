@@ -1,6 +1,7 @@
 import os
-import pytest
 from unittest.mock import Mock, patch
+
+import pytest
 from util import arun
 
 from streamrip.client.deezer import DeezerClient

@@ -4,7 +4,7 @@ from contextlib import nullcontext
 from ..config import DownloadsConfig
 
 _unlimited = nullcontext()
-_global_semaphore: None | tuple[int, asyncio.Semaphore] = None
+_global_semaphore: tuple[int, asyncio.Semaphore] | None = None
 
 
 def global_download_semaphore(c: DownloadsConfig) -> asyncio.Semaphore | nullcontext:
