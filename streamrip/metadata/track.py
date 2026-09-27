@@ -89,10 +89,10 @@ class TrackMetadata:
     @classmethod
     def from_deezer(cls, album: AlbumMetadata, resp) -> TrackMetadata | None:
         track_id = str(resp["id"])
-        isrc = typed(resp["isrc"], str)
+        isrc = typed(resp.get("isrc"), str | None)
         bit_depth = 16
         sampling_rate = 44.1
-        explicit = typed(resp["explicit_lyrics"], bool)
+        explicit = typed(resp.get("explicit_lyrics", False), bool)
         work = None
         title = typed(resp["title"], str)
         contributors = resp.get("contributors", [])
