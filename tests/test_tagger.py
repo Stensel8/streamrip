@@ -109,3 +109,16 @@ def test_tag_flac_cover(sample_metadata):
         assert file.pictures[0].data == img.read()
     assert "purchase_date" not in file, file["purchase_date"]
     os.remove(TEST_FLAC_COPY)
+
+
+def test_tag_flac_multiple_artists(sample_metadata):
+    # Tracks with several credited artists (Tidal, Deezer) must land as
+    # separate ARTIST fields, not one "A, B" string a player has to
+    # re-split on its own.
+    sample_metadata.artists = ["The Kid LAROI", "Lil Mosey"]
+    shutil.copy(TEST_FLAC_ORIGINAL, TEST_FLAC_COPY)
+    wipe_test_flac()
+    arun(tag_file(TEST_FLAC_COPY, sample_metadata, None))
+    file = FLAC(TEST_FLAC_COPY)
+    assert list(file["artist"]) == ["The Kid LAROI", "Lil Mosey"]
+    os.remove(TEST_FLAC_COPY)

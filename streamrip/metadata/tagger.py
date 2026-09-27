@@ -146,6 +146,13 @@ class Container(Enum):
     def _tag_flac(self, meta: TrackMetadata) -> list[tuple]:
         out = []
         for k, v in FLAC_KEY.items():
+            if k == "artist" and meta.artists and len(meta.artists) > 1:
+                # Multiple separate ARTIST fields (Vorbis comments support
+                # repeated keys) instead of one "A, B" string, so players
+                # don't have to guess where to split it.
+                out.append((v, meta.artists))
+                continue
+
             tag = self._attr_from_meta(meta, k)
             if tag:
                 if k in {
@@ -166,6 +173,12 @@ class Container(Enum):
                 text = f"{meta.tracknumber}/{meta.album.tracktotal}"
             elif k == "discnumber":
                 text = f"{meta.discnumber}/{meta.album.disctotal}"
+            elif k == "artist" and meta.artists and len(meta.artists) > 1:
+                # A real multi-value TPE1; save_audio()'s update_to_v23() +
+                # v2_version=3 joins these with "/" (the separator players
+                # actually recognize), instead of us baking in ", " which
+                # is indistinguishable from a comma inside one artist's name.
+                text = meta.artists
             else:
                 text = self._attr_from_meta(meta, k)
 
@@ -185,6 +198,9 @@ class Container(Enum):
                 # we have to pass in the actual bytes to mutagen
                 # See mutagen.MP4Tags.__render_freeform
                 text = meta.isrc.encode("utf-8")
+            elif k == "artist" and meta.artists and len(meta.artists) > 1:
+                # Multiple values under \xa9ART instead of one joined string.
+                text = meta.artists
             else:
                 text = self._attr_from_meta(meta, k)
 

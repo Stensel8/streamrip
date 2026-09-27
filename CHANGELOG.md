@@ -108,6 +108,10 @@ upstream issues and pull requests.
 - Error messages include the exception type ([#938](https://github.com/nathom/streamrip/issues/938)); Ctrl-C stops cleanly and
   removes temporary artwork ([PR #1025](https://github.com/nathom/streamrip/pull/1025)).
 - CDNs sending more than 100 headers no longer break downloads ([PR #1033](https://github.com/nathom/streamrip/pull/1033)).
+- Tracks with multiple credited artists (Tidal, Deezer) get a real
+  multi-valued ARTIST tag (separate FLAC/Vorbis fields, a proper multi-value
+  MP4 atom, "/"-joined for ID3v2.3) instead of one "A, B" string that players
+  had to re-split themselves, and often got wrong.
 
 ### Development
 
