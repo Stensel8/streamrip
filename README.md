@@ -1,11 +1,18 @@
-![streamrip logo](https://github.com/nathom/streamrip/blob/dev/demo/logo.svg?raw=true)
+![streamrip logo](https://github.com/Stensel8/streamrip/blob/dev/demo/logo.svg?raw=true)
 
-[![Downloads](https://pepy.tech/badge/streamrip)](https://pepy.tech/project/streamrip)
-[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/python/black)
+[![CI](https://github.com/Stensel8/streamrip/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/Stensel8/streamrip/actions/workflows/ci.yml)
+[![Python 3.10–3.14](https://img.shields.io/badge/python-3.10%E2%80%933.14-blue)](https://github.com/Stensel8/streamrip/blob/dev/pyproject.toml)
+[![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 
 A scriptable stream downloader for Qobuz, Tidal, Deezer and SoundCloud.
 
-![downloading an album](https://github.com/nathom/streamrip/blob/dev/demo/download_album.png?raw=true)
+> [!NOTE]
+> This is a maintained fork of [nathom/streamrip](https://github.com/nathom/streamrip).
+> It installs on Python 3.10 through 3.14 and fixes a large part of the open
+> upstream issues and pull requests; see [CHANGELOG.md](CHANGELOG.md) for what
+> changed and which upstream issues are addressed.
+
+![downloading an album](https://github.com/Stensel8/streamrip/blob/dev/demo/download_album.png?raw=true)
 
 ## Features
 
@@ -13,25 +20,35 @@ A scriptable stream downloader for Qobuz, Tidal, Deezer and SoundCloud.
 - Downloads tracks, albums, playlists, discographies, and labels from Qobuz, Tidal, Deezer, and SoundCloud
 - Supports downloads of Spotify and Apple Music playlists through [last.fm](https://www.last.fm)
 - Automatically converts files to a preferred format
-- Has a database that stores the downloaded tracks' IDs so that repeats are avoided
+- Has a database that stores the downloaded tracks' IDs so that repeats are avoided, and `rip repair` to retry the ones that failed
+- Resumes interrupted downloads and retries with backoff
 - Concurrency and rate limiting
 - Interactive search for all sources
 - Highly customizable through the config file
-- Integration with `youtube-dl`
 
 ## Installation
 
-First, ensure [Python](https://www.python.org/downloads/) (version 3.10 or greater) and [pip](https://pip.pypa.io/en/stable/installing/) are installed. Then install `ffmpeg`. You may choose not to install this, but some functionality will be limited.
+First, ensure [Python](https://www.python.org/downloads/) (3.10 to 3.14) and
+[pip](https://pip.pypa.io/en/stable/installing/) are installed. Then install
+[`ffmpeg`](https://ffmpeg.org/download.html). You may choose not to install it,
+but conversion and Tidal hi-res downloads need it.
+
+Install streamrip from this repository:
 
 ```bash
-pip3 install streamrip --upgrade
+pip3 install --upgrade git+https://github.com/Stensel8/streamrip.git
 ```
 
-If you run into issues, try installing directly from the `dev` branch:
+or, to keep it separate from other Python packages, with
+[pipx](https://pipx.pypa.io/) or [uv](https://docs.astral.sh/uv/):
 
 ```bash
-pip3 install git+https://github.com/nathom/streamrip.git@dev
+pipx install git+https://github.com/Stensel8/streamrip.git
+uv tool install git+https://github.com/Stensel8/streamrip.git
 ```
+
+To install a specific branch or release, add `@<branch-or-tag>` to the URL, for example
+`git+https://github.com/Stensel8/streamrip.git@dev`.
 
 When you type
 
@@ -39,32 +56,44 @@ When you type
 rip
 ```
 
-it should show the main help page. If you have no idea what these mean, or are having other issues installing, check out the [detailed installation instructions](https://github.com/nathom/streamrip/wiki#detailed-installation-instructions).
+it should show the main help page. If you have no idea what these mean, or are having other issues installing, check out the [detailed installation instructions](https://github.com/nathom/streamrip/wiki#detailed-installation-instructions) in the upstream wiki.
 
-For Arch Linux users, an AUR package exists. Make sure to install required packages from the AUR before using `makepkg` or use an AUR helper to automatically resolve them.
-```
-git clone https://aur.archlinux.org/streamrip.git
-cd streamrip
-makepkg -si
-```
- or
- ```
-paru -S streamrip
-```
+> [!IMPORTANT]
+> `pip install streamrip` (PyPI), the AUR package and `brew install streamrip`
+> all install **upstream** streamrip, not this fork. Upstream's release pins
+> `Pillow<11`, which has no wheels for Python 3.14 and fails to build.
 
-Alternatively, for users of Homebrew, you can install streamrip through brew.
-```
-brew install streamrip
-```
-
-### Streamrip beta
-
-If you want to get access to the latest and greatest features without waiting for a new release, install
-from the `dev` branch with the following command
+### Optional extras
 
 ```bash
-pip3 install git+https://github.com/nathom/streamrip.git@dev
+# Use certifi's CA bundle instead of the system certificates
+pip3 install "streamrip[ssl] @ git+https://github.com/Stensel8/streamrip.git"
+
+# Let streamrip capture your Qobuz login token from a real browser
+pip3 install "streamrip[qobuz-login] @ git+https://github.com/Stensel8/streamrip.git"
+playwright install chromium
 ```
+
+### Logging in
+
+- **Qobuz** moved its web login behind a captcha, so email/password login no
+  longer works for most accounts. When asked, enter your Qobuz **user id** and
+  **user_auth_token**: log in at [play.qobuz.com](https://play.qobuz.com/login),
+  open your browser's DevTools → Network, find the `user/login` request and
+  copy `user.id` and `user_auth_token` from its response. With the
+  `qobuz-login` extra installed, streamrip opens a browser and does this for you.
+  Accounts without a streaming subscription can download albums they bought.
+- **Tidal** logs in through your browser (device login). Tidal decides per app
+  which formats it will stream; by default streamrip uses one that gets FLAC
+  16/44.1 for every lossless release. Set `hires_client = true` in the `[tidal]`
+  section of the config to prefer 24-bit hi-res FLAC instead (ordinary lossless
+  releases then come as AAC). No developer account or client id is needed.
+- **Deezer** needs the `arl` cookie of a logged-in session, see
+  [Finding your Deezer ARL cookie](https://github.com/nathom/streamrip/wiki/Finding-Your-Deezer-ARL-Cookie).
+  The download quality is limited to what your subscription allows.
+- **SoundCloud** needs no login.
+
+If a saved login stops working, streamrip offers to log in again.
 
 ## Example Usage
 
@@ -95,7 +124,7 @@ To set the maximum quality, use the `--quality` option to `0, 1, 2, 3, 4`:
 | 0          | 128 kbps MP3 or AAC   | Deezer, Tidal, SoundCloud (most of the time) |
 | 1          | 320 kbps MP3 or AAC   | Deezer, Tidal, Qobuz, SoundCloud (rarely)    |
 | 2          | 16 bit, 44.1 kHz (CD) | Deezer, Tidal, Qobuz, SoundCloud (rarely)    |
-| 3          | 24 bit, ≤ 96 kHz      | Tidal (MQA), Qobuz, SoundCloud (rarely)      |
+| 3          | 24 bit, ≤ 96 kHz      | Tidal (hi-res FLAC), Qobuz, SoundCloud (rarely) |
 | 4          | 24 bit, ≤ 192 kHz     | Qobuz                                        |
 
 ```bash
@@ -110,7 +139,7 @@ Search for playlists matching `rap` on Tidal
 rip search tidal playlist 'rap'
 ```
 
-![streamrip interactive search](https://github.com/nathom/streamrip/blob/dev/demo/playlist_search.png?raw=true)
+![streamrip interactive search](https://github.com/Stensel8/streamrip/blob/dev/demo/playlist_search.png?raw=true)
 
 Search for *Rumours* on Tidal, and download it
 
@@ -136,11 +165,11 @@ If you're confused about anything, see the help pages. The main help pages can b
 rip url --help
 ```
 
-![example_help_page.png](https://github.com/nathom/streamrip/blob/dev/demo/example_help_page.png?raw=true)
+![example_help_page.png](https://github.com/Stensel8/streamrip/blob/dev/demo/example_help_page.png?raw=true)
 
 ## Other information
 
-For more in-depth information about `streamrip`, see the help pages and the [wiki](https://github.com/nathom/streamrip/wiki/).
+For more in-depth information about `streamrip`, see the help pages and the [upstream wiki](https://github.com/nathom/streamrip/wiki/).
 
 ## Contributions
 
@@ -149,20 +178,20 @@ or by submitting code.
 
 ### Issues
 
-If you're opening an issue **use the Feature Request or Bug Report templates properly**. This ensures
-that I have all of the information necessary to debug the issue. If you do not follow the templates,
-**I will silently close the issue** and you'll have to deal with it yourself.
+Report problems with this fork in its [issue tracker](https://github.com/Stensel8/streamrip/issues) and
+**use the Feature Request or Bug Report templates**, so all the information
+needed to debug the issue is there.
 
 ### Code
 
-If you're new to Git, follow these steps to open your first Pull Request (PR):
-
-- Fork this repository
-- Clone the new repository
-- Commit your changes
+- Fork this repository and clone it
+- `poetry install --all-extras` sets up a development environment
+- `poetry run pytest` and `poetry run ruff check . && poetry run ruff format .`
+  should pass before you commit
 - Open a pull request to the `dev` branch
 
-Please document any functions or obscure lines of code.
+Please document any functions or obscure lines of code. Dependencies are kept up
+to date by Renovate; Dependabot handles security updates.
 
 ### The Wiki
 
@@ -170,6 +199,10 @@ To help out `streamrip` users that may be having trouble, consider contributing 
 Nothing is too obvious and everything is appreciated.
 
 ## Acknowledgements
+
+streamrip was written by [nathom](https://github.com/nathom); this fork builds
+on the work of everyone who sent fixes upstream, whose pull requests are
+credited in the commit history and [CHANGELOG.md](CHANGELOG.md).
 
 Thanks to Vitiko98, Sorrow446, and DashLt for their contributions to this project, and the previous projects that made this one possible.
 
@@ -186,4 +219,5 @@ I will not be responsible for how **you** use `streamrip`. By using `streamrip`,
 
 ## Sponsorship
 
-Consider becoming a Github sponsor for me if you enjoy my open source software.
+Consider [sponsoring nathom](https://github.com/sponsors/nathom), the original
+author of streamrip, if you enjoy it.
