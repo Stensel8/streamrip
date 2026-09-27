@@ -30,8 +30,9 @@ if ($LASTEXITCODE -eq 0) {
     exit 1
 }
 Write-Host ""
-Write-Host "Activate the venv so plain 'streamrip' works, then use it normally:"
+Write-Host "Activate the venv so plain 'streamrip' works:"
 Write-Host "  .venv\Scripts\Activate.ps1"
+Write-Host "Leave it again with 'deactivate'."
 Write-Host ""
 Write-Host "If 'streamrip' then runs something else, an alias or function named"
 Write-Host "streamrip is shadowing it (check with 'Get-Command streamrip -All')."
