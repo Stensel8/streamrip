@@ -47,6 +47,32 @@ pipx install git+https://github.com/Stensel8/streamrip.git
 uv tool install git+https://github.com/Stensel8/streamrip.git
 ```
 
+or in a plain virtual environment, which also works if you don't have pipx or
+uv and want `rip` and its dependencies kept out of your system Python:
+
+```bash
+# bash/zsh
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+```fish
+# fish
+python3 -m venv .venv
+source .venv/bin/activate.fish
+```
+
+then, with the venv active (your prompt shows `(.venv)`), install into it the
+same way as above:
+
+```bash
+pip install --upgrade git+https://github.com/Stensel8/streamrip.git
+```
+
+`rip` is on `PATH` for as long as that venv is active. Leave it with
+`deactivate`; come back to it later from the project directory with the same
+`source` command, no need to recreate it.
+
 To install a specific branch or release, add `@<branch-or-tag>` to the URL, for example
 `git+https://github.com/Stensel8/streamrip.git@dev`.
 
