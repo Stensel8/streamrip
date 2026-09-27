@@ -31,9 +31,20 @@ else
     exit 1
 fi
 echo
-echo "Activate the venv so plain 'streamrip' works, then use it normally:"
-echo "  source .venv/bin/activate       # bash/zsh"
-echo "  source .venv/bin/activate.fish  # fish"
+# A script run via `bash` or `curl | bash` executes in a child process, so it
+# cannot activate a venv in the shell you're typing into -- that one command
+# is unavoidable. $SHELL is your *login* shell, not necessarily the one
+# running this, so it's not reliable here (e.g. login shell zsh, actually
+# running fish); the parent process is.
+parent_shell=$(ps -o comm= -p "$PPID" 2>/dev/null || true)
+echo "Activate the venv so plain 'streamrip' works:"
+if [ "$parent_shell" = "fish" ]; then
+    echo "  source .venv/bin/activate.fish"
+else
+    echo "  source .venv/bin/activate       # bash/zsh"
+    echo "  source .venv/bin/activate.fish  # fish"
+fi
+echo "Leave it again with 'deactivate'."
 echo
 echo "If 'streamrip' then runs something else, a shell alias or function named"
 echo "streamrip is shadowing it (check with 'command -v streamrip', or 'type"
