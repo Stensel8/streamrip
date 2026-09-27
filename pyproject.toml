@@ -6,15 +6,11 @@ authors = [{ name = "nathom", email = "nathanthomas707@gmail.com" }]
 maintainers = [{ name = "Stensel8" }]
 license = "GPL-3.0-only"
 readme = "README.md"
-requires-python = ">=3.10,<4.0"
+requires-python = ">=3.14,<4.0"
 keywords = ["hi-res", "free", "music", "download"]
 classifiers = [
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.10",
-  "Programming Language :: Python :: 3.11",
-  "Programming Language :: Python :: 3.12",
-  "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
 ]
 dependencies = [
@@ -76,7 +72,7 @@ requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.ruff]
-target-version = "py310"
+target-version = "py314"
 
 [tool.ruff.lint]
 # Enable Pyflakes (`F`) and a subset of the pycodestyle (`E`)  codes by default.

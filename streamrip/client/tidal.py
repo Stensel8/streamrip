@@ -108,7 +108,7 @@ class TidalClient(Client):
 
         try:
             self.token_expiry = float(c.token_expiry)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             self.token_expiry = 0.0
         self.refresh_token = c.refresh_token
 
@@ -241,7 +241,7 @@ class TidalClient(Client):
 
         try:
             manifest = json.loads(base64.b64decode(resp["manifest"]).decode("utf-8"))
-        except (JSONDecodeError, UnicodeDecodeError, ValueError):
+        except JSONDecodeError, UnicodeDecodeError, ValueError:
             if quality <= 0:
                 raise NonStreamableError(f"Could not read manifest for {track_id}")
             logger.warning(

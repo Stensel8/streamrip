@@ -1,14 +1,14 @@
 ![streamrip logo](https://github.com/Stensel8/streamrip/blob/dev/demo/logo.svg?raw=true)
 
 [![CI](https://github.com/Stensel8/streamrip/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/Stensel8/streamrip/actions/workflows/ci.yml)
-[![Python 3.10–3.14](https://img.shields.io/badge/python-3.10%E2%80%933.14-blue)](https://github.com/Stensel8/streamrip/blob/dev/pyproject.toml)
+[![Python 3.14+](https://img.shields.io/badge/python-3.14%2B-blue)](https://github.com/Stensel8/streamrip/blob/dev/pyproject.toml)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 
 A scriptable stream downloader for Qobuz, Tidal, Deezer and SoundCloud.
 
 > [!NOTE]
 > This is a maintained fork of [nathom/streamrip](https://github.com/nathom/streamrip).
-> It installs on Python 3.10 through 3.14 and fixes a large part of the open
+> It targets current Python (3.14+) and fixes a large part of the open
 > upstream issues and pull requests; see [CHANGELOG.md](CHANGELOG.md) for what
 > changed and which upstream issues are addressed.
 
@@ -28,7 +28,7 @@ A scriptable stream downloader for Qobuz, Tidal, Deezer and SoundCloud.
 
 ## Installation
 
-First, ensure [Python](https://www.python.org/downloads/) (3.10 to 3.14) and
+First, ensure [Python](https://www.python.org/downloads/) 3.14 or newer and
 [pip](https://pip.pypa.io/en/stable/installing/) are installed. Then install
 [`ffmpeg`](https://ffmpeg.org/download.html). You may choose not to install it,
 but conversion and Tidal hi-res downloads need it.
