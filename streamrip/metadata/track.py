@@ -37,7 +37,7 @@ class TrackMetadata:
     @classmethod
     def from_qobuz(cls, album: AlbumMetadata, resp: dict) -> TrackMetadata | None:
         title = typed(resp["title"].strip(), str)
-        isrc = typed(resp["isrc"], str)
+        isrc = typed(resp.get("isrc"), str | None)
         streamable = typed(resp.get("streamable", False), bool)
 
         if not streamable:
@@ -53,12 +53,12 @@ class TrackMetadata:
         composer = typed(resp.get("composer", {}).get("name"), str | None)
         tracknumber = typed(resp.get("track_number", 1), int)
         discnumber = typed(resp.get("media_number", 1), int)
+        # "performer" is missing on some tracks (upstream #668); fall back to
+        # the album artist rather than failing the whole track.
         artist = typed(
-            safe_get(
-                resp,
-                "performer",
-                "name",
-            ),
+            safe_get(resp, "performer", "name")
+            or safe_get(resp, "album", "artist", "name")
+            or album.albumartist,
             str,
         )
         track_id = str(resp["id"])

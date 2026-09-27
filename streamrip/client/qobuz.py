@@ -13,7 +13,6 @@ from ..config import Config
 from ..exceptions import (
     APIError,
     AuthenticationError,
-    IneligibleError,
     InvalidAppIdError,
     InvalidAppSecretError,
     MissingCredentialsError,
@@ -31,7 +30,10 @@ _SENSITIVE_PARAMS = ("user_auth_token", "password", "email", "user_id", "request
 
 def _redacted(params: dict) -> dict:
     """params with credentials masked, for logs and error messages."""
-    return {k: ("<redacted>" if k in _SENSITIVE_PARAMS else v) for k, v in params.items()}
+    return {
+        k: ("<redacted>" if k in _SENSITIVE_PARAMS else v) for k, v in params.items()
+    }
+
 
 QOBUZ_BASE_URL = "https://www.qobuz.com/api.json/0.2"
 
@@ -164,17 +166,30 @@ class QobuzClient(Client):
             config.session.downloads.requests_per_minute,
         )
         self.secret: Optional[str] = None
+        # True for a free account (no streaming subscription) that can still
+        # download content it has *purchased* from the Qobuz download store.
+        # When set, file-url requests use intent=download instead of stream.
+        self.download_only: bool = False
 
     async def login(self):
-        self.session = await self.get_session(
-            verify_ssl=self.config.session.downloads.verify_ssl
-        )
         """User credentials require either a user token OR a user email & password.
 
         A hash of the password is stored in self.config.qobuz.password_or_token.
         This data as well as the app_id is passed to self._get_user_auth_token() to get
         the actual credentials for the user.
         """
+        self.session = await self.get_session(
+            verify_ssl=self.config.session.downloads.verify_ssl
+        )
+        try:
+            await self._login()
+        except BaseException:
+            # Close the session so a failed login does not leave an unclosed
+            # connector behind (and a re-login attempt starts from scratch).
+            await self.session.close()
+            raise
+
+    async def _login(self):
         c = self.config.session.qobuz
         if not c.email_or_userid or not c.password_or_token:
             raise MissingCredentialsError
@@ -231,8 +246,15 @@ class QobuzClient(Client):
         logger.debug("Login response keys: %s", sorted(resp))
 
         if status == 401:
+            if c.use_auth_token:
+                raise AuthenticationError(
+                    "Invalid Qobuz user id or user_auth_token. The token may have "
+                    "expired; log in again to get a fresh one."
+                )
             raise AuthenticationError(
-                f"Invalid credentials from params {_redacted(params)}"
+                "Invalid Qobuz email or password. Qobuz has moved its web login "
+                "behind a captcha, so password login may no longer work; log in "
+                "with a user id and user_auth_token instead."
             )
         elif status == 400:
             raise InvalidAppIdError(f"Invalid app id from params {_redacted(params)}")
@@ -244,8 +266,16 @@ class QobuzClient(Client):
 
         logger.debug("Logged in to Qobuz")
 
+        # An empty credential.parameters means the account has no active
+        # streaming subscription. Such a (free) account cannot stream, but it
+        # CAN still download albums it has purchased from the Qobuz download
+        # store, so flag the client as download-only instead of refusing.
         if not resp["user"]["credential"]["parameters"]:
-            raise IneligibleError("Free accounts are not eligible to download tracks.")
+            self.download_only = True
+            logger.warning(
+                "Free Qobuz account detected (no streaming subscription): only "
+                "purchased download-store content can be downloaded."
+            )
 
         uat = resp["user_auth_token"]
         self.session.headers.update({"X-User-Auth-Token": uat})
@@ -287,10 +317,40 @@ class QobuzClient(Client):
 
         if status != 200:
             raise NonStreamableError(
-                f'Error fetching metadata. Message: "{resp["message"]}"',
+                f'Error fetching metadata. Message: "{resp.get("message")}"',
             )
 
+        if media_type == "playlist":
+            await self._fetch_remaining_playlist_tracks(epoint, params, resp)
+
         return resp
+
+    async def _fetch_remaining_playlist_tracks(
+        self, epoint: str, params: dict, resp: dict
+    ):
+        """Page through playlists longer than one response (500 tracks).
+
+        Only needed when Qobuz did not return the complete ``track_ids`` list,
+        which PlaylistMetadata prefers when present.
+        """
+        if resp.get("track_ids"):
+            return
+        tracks = resp.get("tracks") or {}
+        items = tracks.get("items") or []
+        total = int(tracks.get("total") or resp.get("tracks_count") or 0)
+        if not items or total <= len(items):
+            return
+
+        limit = int(params.get("limit", 500))
+        pages = await asyncio.gather(
+            *[
+                self._request_ok(epoint, {**params, "offset": offset})
+                for offset in range(len(items), total, limit)
+            ]
+        )
+        for page in pages:
+            items.extend((page.get("tracks") or {}).get("items") or [])
+        logger.debug("Fetched %d/%d playlist tracks", len(items), total)
 
     async def get_label(self, label_id: str) -> dict:
         c = self.config.session.qobuz
@@ -363,16 +423,41 @@ class QobuzClient(Client):
         return await self._paginate(epoint, {}, limit=limit)
 
     async def get_downloadable(self, item: str, quality: int) -> Downloadable:
-        assert self.secret is not None and self.logged_in and 1 <= quality <= 4
+        assert self.secret is not None and self.logged_in
+        # Qobuz has no quality 0 (128 kbps); clamp instead of asserting so
+        # `rip --quality 0` still works for mixed-source downloads.
+        quality = max(1, min(quality, self.max_quality))
         status, resp_json = await self._request_file_url(item, quality, self.secret)
-        assert status == 200
+        if status != 200:
+            raise NonStreamableError(
+                f"Could not get a download URL (HTTP {status}): "
+                f"{resp_json.get('message') or 'no message'}"
+            )
         stream_url = resp_json.get("url")
 
         if stream_url is None:
-            restrictions = resp_json["restrictions"]
+            restrictions = resp_json.get("restrictions")
             if restrictions:
+                code = restrictions[0]["code"]
+                # Purchased (download-only) content is sold in exactly one
+                # format and Qobuz offers no automatic fallback: requesting a
+                # higher tier than the purchased one fails with
+                # FormatRestrictedByFormatAvailability. Step down one tier.
+                if (
+                    self.download_only
+                    and quality > 1
+                    and code == "FormatRestrictedByFormatAvailability"
+                ):
+                    logger.warning(
+                        "Quality %d unavailable for purchased track %s; "
+                        "retrying at quality %d.",
+                        quality,
+                        item,
+                        quality - 1,
+                    )
+                    return await self.get_downloadable(item, quality - 1)
                 # Turn CamelCase code into a readable sentence
-                words = re.findall(r"([A-Z][a-z]+)", restrictions[0]["code"])
+                words = re.findall(r"([A-Z][a-z]+)", code)
                 raise NonStreamableError(
                     words[0] + " " + " ".join(map(str.lower, words[1:])) + ".",
                 )
@@ -407,7 +492,9 @@ class QobuzClient(Client):
                 await asyncio.sleep(3)
                 continue
             break
-        raise APIError(f"Qobuz {epoint} failed (HTTP {status}): {message or 'no message'}")
+        raise APIError(
+            f"Qobuz {epoint} failed (HTTP {status}): {message or 'no message'}"
+        )
 
     async def _paginate(
         self,
@@ -491,7 +578,11 @@ class QobuzClient(Client):
     ) -> tuple[int, dict]:
         quality = self.get_quality(quality)
         unix_ts = time.time()
-        r_sig = f"trackgetFileUrlformat_id{quality}intentstreamtrack_id{track_id}{unix_ts}{secret}"
+        # Owned-only (free) accounts must request intent=download; streaming
+        # accounts use intent=stream. The signed preimage and the params dict
+        # MUST agree on the value or Qobuz rejects the request with HTTP 400.
+        intent = "download" if self.download_only else "stream"
+        r_sig = f"trackgetFileUrlformat_id{quality}intent{intent}track_id{track_id}{unix_ts}{secret}"
         logger.debug("Raw request signature: %s", r_sig)
         r_sig_hashed = hashlib.md5(r_sig.encode("utf-8")).hexdigest()
         logger.debug("Hashed request signature: %s", r_sig_hashed)
@@ -500,7 +591,7 @@ class QobuzClient(Client):
             "request_sig": r_sig_hashed,
             "track_id": track_id,
             "format_id": quality,
-            "intent": "stream",
+            "intent": intent,
         }
         return await self._api_request("track/getFileUrl", params)
 

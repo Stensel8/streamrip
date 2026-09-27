@@ -28,6 +28,10 @@ quality = 3
 download_booklets = true
 
 # Authenticate to Qobuz using auth token? Value can be true/false only
+# Qobuz moved its web login behind a captcha, so token login is recommended:
+# log in at play.qobuz.com, open DevTools -> Network, find the user/login
+# request and copy user.id and user_auth_token from its response.
+# `pip install 'streamrip[qobuz-login]'` lets streamrip capture them for you.
 use_auth_token = false
 # Enter your userid if the above use_auth_token is set to true, else enter your email
 email_or_userid = ""

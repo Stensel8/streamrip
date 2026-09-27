@@ -21,7 +21,9 @@ def test_album_metadata_qobuz():
     assert info.bit_depth == 24
     assert info.booklets is None
 
-    assert m.album == "Rumours"
+    # The edition ("version") is kept in the title so editions do not collide.
+    assert m.album == "Rumours (2001 Remaster)"
+    assert m.version == "2001 Remaster"
     assert m.albumartist == "Fleetwood Mac"
     assert m.year == "1977"
     assert "Pop" in m.genre
