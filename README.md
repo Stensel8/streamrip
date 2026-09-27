@@ -7,10 +7,13 @@
 A scriptable stream downloader for Qobuz, Tidal, Deezer and SoundCloud.
 
 > [!NOTE]
-> This is a maintained fork of [nathom/streamrip](https://github.com/nathom/streamrip).
-> It targets current Python (3.14+) and fixes a large part of the open
-> upstream issues and pull requests; see [CHANGELOG.md](CHANGELOG.md) for what
-> changed and which upstream issues are addressed.
+> This is a fork of [nathom/streamrip](https://github.com/nathom/streamrip)
+> that gets it working again: current Python (3.14+), and a large part of the
+> open upstream issues and pull requests worked through, so downloads across
+> all four sources work again for now; see [CHANGELOG.md](CHANGELOG.md) for
+> what changed. Streaming services change their APIs without notice and this
+> will need upkeep to keep working — there's no promise it stays maintained
+> forever, just that it does right now.
 
 ![downloading an album](https://github.com/Stensel8/streamrip/blob/dev/demo/download_album.png?raw=true)
 
@@ -29,8 +32,10 @@ A scriptable stream downloader for Qobuz, Tidal, Deezer and SoundCloud.
 ## Installation
 
 The fastest way to get going: run the install script for your OS. It fetches
-Python 3.14 and ffmpeg for you (via [uv](https://docs.astral.sh/uv/)) and
-installs streamrip into a `.venv` in the current directory:
+Python 3.14 for you (via [uv](https://docs.astral.sh/uv/)) and installs
+streamrip into a `.venv` in the current directory. Install
+[`ffmpeg`](https://ffmpeg.org/download.html) yourself first if you'll need
+conversion or Tidal hi-res downloads:
 
 ```bash
 # Linux/macOS
