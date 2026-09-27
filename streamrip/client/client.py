@@ -62,7 +62,10 @@ class Client(ABC):
             **connector_kwargs, resolver=aiohttp.ThreadedResolver()
         )
 
+        # trust_env: honour HTTP(S)_PROXY / ALL_PROXY like requests already
+        # does for the audio downloads (upstream #961).
         return aiohttp.ClientSession(
             headers={"User-Agent": DEFAULT_USER_AGENT} | headers,
             connector=connector,
+            trust_env=True,
         )

@@ -15,7 +15,7 @@ from ..client import Client
 from ..config import Config
 from ..console import console
 from ..db import Database
-from ..exceptions import NonStreamableError
+from ..exceptions import NonStreamableError, TrackDownloadFailedError
 from ..filepath_utils import clean_filename, clean_filepath
 from ..metadata import (
     AlbumMetadata,
@@ -126,8 +126,12 @@ class Playlist(Media):
                 if track is None:
                     return
                 await track.rip()
+            except TrackDownloadFailedError:
+                pass  # already logged and recorded by Track.download()
             except Exception as e:
-                logger.error(f"Error downloading track: {e}")
+                # Include the type: some exceptions have an empty message,
+                # which used to log as "Error downloading track: ''" (#938).
+                logger.error(f"Error downloading track: {type(e).__name__}: {e}")
 
         batches = self.batch(
             [_resolve_download(track) for track in self.tracks],
@@ -248,7 +252,7 @@ class PendingLastfmPlaylist(Pending):
         pending_tracks = []
         for pos, (id, from_fallback) in enumerate(results, start=1):
             if id is None:
-                logger.warning(f"No results found for {titles_artists[pos-1]}")
+                logger.warning(f"No results found for {titles_artists[pos - 1]}")
                 continue
 
             if from_fallback:
@@ -365,7 +369,9 @@ class PendingLastfmPlaylist(Pending):
             **connector_kwargs, resolver=aiohttp.ThreadedResolver()
         )
 
-        async with aiohttp.ClientSession(connector=connector) as session:
+        async with aiohttp.ClientSession(
+            connector=connector, trust_env=True
+        ) as session:
             page = await fetch(session, playlist_url)
             playlist_title_match = re_playlist_title_match.search(page)
             if playlist_title_match is None:

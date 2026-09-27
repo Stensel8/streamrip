@@ -7,7 +7,7 @@ from .. import progress
 from ..client import Client
 from ..config import Config
 from ..db import Database
-from ..exceptions import NonStreamableError
+from ..exceptions import NonStreamableError, TrackDownloadFailedError
 from ..filepath_utils import clean_filepath
 from ..metadata import AlbumMetadata
 from ..metadata.util import get_album_track_ids
@@ -37,8 +37,12 @@ class Album(Media):
                 if track is None:
                     return
                 await track.rip()
+            except TrackDownloadFailedError:
+                pass  # already logged and recorded by Track.download()
             except Exception as e:
-                logger.error(f"Error downloading track: {e}")
+                # Include the type: some exceptions have an empty message,
+                # which used to log as "Error downloading track: ''" (#938).
+                logger.error(f"Error downloading track: {type(e).__name__}: {e}")
 
         results = await asyncio.gather(
             *[_resolve_and_download(p) for p in self.tracks], return_exceptions=True

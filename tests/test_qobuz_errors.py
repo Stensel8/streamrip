@@ -15,7 +15,9 @@ import pytest
 from streamrip.client.qobuz import QobuzClient
 from streamrip.exceptions import APIError, AuthenticationError
 
-ALGOLIA = {"message": "Impossible to connect, please check your Algolia Application Id."}
+ALGOLIA = {
+    "message": "Impossible to connect, please check your Algolia Application Id."
+}
 TOKEN = "SECRET-TOKEN-abcdefghij"
 
 

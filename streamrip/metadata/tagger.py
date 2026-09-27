@@ -4,6 +4,7 @@ from enum import Enum
 
 import aiofiles
 from mutagen import id3
+from mutagen.aiff import AIFF
 from mutagen.flac import FLAC, Picture
 from mutagen.id3 import (
     APIC,  # type: ignore
@@ -105,6 +106,7 @@ class Container(Enum):
     FLAC = 1
     AAC = 2
     MP3 = 3
+    AIFF = 4
 
     def get_mutagen_class(self, path: str):
         if self == Container.FLAC:
@@ -116,18 +118,30 @@ class Container(Enum):
                 return ID3(path)
             except ID3NoHeaderError:
                 return ID3()
+        elif self == Container.AIFF:
+            audio = AIFF(path)
+            if audio.tags is None:
+                audio.add_tags()
+            return audio.tags
         # unreachable
         return {}
 
-    def get_tag_pairs(self, meta) -> list[tuple]:
+    def get_tag_pairs(self, meta, exclude=()) -> list[tuple]:
         if self == Container.FLAC:
-            return self._tag_flac(meta)
-        elif self == Container.MP3:
-            return self._tag_mp3(meta)
+            pairs = self._tag_flac(meta)
+            key_map = FLAC_KEY
+        elif self in (Container.MP3, Container.AIFF):
+            pairs = self._tag_mp3(meta)
+            key_map = {k: v.__name__ for k, v in MP3_KEY.items() if v is not None}
         elif self == Container.AAC:
-            return self._tag_mp4(meta)
-        # unreachable
-        return []
+            pairs = self._tag_mp4(meta)
+            key_map = MP4_KEY
+        else:
+            return []
+        # [metadata] exclude lists streamrip's own tag names ("genre",
+        # "albumartist", ...); it used to be ignored entirely (upstream #850).
+        excluded = {key_map[name] for name in exclude or () if key_map.get(name)}
+        return [(k, v) for k, v in pairs if k not in excluded]
 
     def _tag_flac(self, meta: TrackMetadata) -> list[tuple]:
         out = []
@@ -222,7 +236,7 @@ class Container(Enum):
             async with aiofiles.open(cover_path, "rb") as img:
                 cover.data = await img.read()
             audio.add_picture(cover)
-        elif self == Container.MP3:
+        elif self in (Container.MP3, Container.AIFF):
             cover = APIC()
             cover.type = 3
             cover.mime = "image/jpeg"
@@ -240,24 +254,40 @@ class Container(Enum):
         elif self == Container.AAC:
             audio.save()
         elif self == Container.MP3:
-            audio.save(path, "v2_version=3")
+            # ID3v2.3 for the widest player support. This used to pass the
+            # string "v2_version=3" as the v1 argument, so it never applied.
+            audio.update_to_v23()
+            audio.save(path, v2_version=3)
+        elif self == Container.AIFF:
+            audio.save(path)
 
 
-async def tag_file(path: str, meta: TrackMetadata, cover_path: str | None):
+EXTENSION_CONTAINERS = {
+    "flac": Container.FLAC,
+    "m4a": Container.AAC,
+    "mp3": Container.MP3,
+    "aiff": Container.AIFF,
+    "aif": Container.AIFF,
+}
+# Extensions tag_file() can write to (others keep what ffmpeg copied).
+TAGGABLE_EXTENSIONS = frozenset(EXTENSION_CONTAINERS)
+
+
+async def tag_file(
+    path: str,
+    meta: TrackMetadata,
+    cover_path: str | None,
+    exclude: list[str] | tuple[str, ...] = (),
+):
     ext = path.split(".")[-1].lower()
-    if ext == "flac":
-        container = Container.FLAC
-    elif ext == "m4a":
-        container = Container.AAC
-    elif ext == "mp3":
-        container = Container.MP3
-    else:
+    container = EXTENSION_CONTAINERS.get(ext)
+    if container is None:
         raise Exception(f"Invalid extension {ext}")
 
     audio = container.get_mutagen_class(path)
-    tags = container.get_tag_pairs(meta)
+    tags = container.get_tag_pairs(meta, exclude)
     logger.debug("Tagging with %s", tags)
     container.tag_audio(audio, tags)
-    if cover_path is not None:
+    if cover_path is not None and "cover" not in (exclude or ()):
         await container.embed_cover(audio, cover_path)
     container.save_audio(audio, path)

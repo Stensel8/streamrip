@@ -151,9 +151,7 @@ class Main:
                 prompter.save()
             else:
                 try:
-                    with console.status(
-                        f"[cyan]Logging into {source}", spinner="dots"
-                    ):
+                    with console.status(f"[cyan]Logging into {source}", spinner="dots"):
                         # Log into client using credentials from config
                         await client.login()
                 except (AuthenticationError, MissingCredentialsError) as e:
@@ -206,7 +204,9 @@ class Main:
         failed_items = 0
         for result in results:
             if isinstance(result, Exception):
-                logger.error(f"Error processing media item: {result}")
+                logger.error(
+                    f"Error processing media item: {type(result).__name__}: {result}"
+                )
                 failed_items += 1
 
         if failed_items > 0:

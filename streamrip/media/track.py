@@ -8,14 +8,18 @@ from ..client import Client, Downloadable
 from ..config import Config
 from ..db import Database
 from ..exceptions import NonStreamableError, TrackDownloadFailedError
-from ..filepath_utils import clean_filename
+from ..filepath_utils import clean_filename, fit_filename
 from ..metadata import AlbumMetadata, Covers, TrackMetadata, tag_file
+from ..metadata.tagger import TAGGABLE_EXTENSIONS
 from ..progress import add_title, get_progress_callback, remove_title
 from .artwork import download_artwork
 from .media import Media, Pending
 from .semaphore import global_download_semaphore
 
 logger = logging.getLogger("streamrip")
+
+# One try plus three retries with exponential backoff.
+MAX_DOWNLOAD_ATTEMPTS = 4
 
 
 @dataclass(slots=True)
@@ -38,35 +42,39 @@ class Track(Media):
             add_title(self.meta.title)
 
     async def download(self):
-        # TODO: progress bar description
         async with global_download_semaphore(self.config.session.downloads):
-            with get_progress_callback(
-                self.config.session.cli.progress_bars,
-                await self.downloadable.size(),
-                f"Track {self.meta.tracknumber}",
-            ) as callback:
+            for attempt in range(1, MAX_DOWNLOAD_ATTEMPTS + 1):
+                # Retries continue the partial file instead of starting over,
+                # so a connection that keeps dropping near the end of a large
+                # FLAC still gets there (upstream #951, #1022).
+                self.downloadable.resume = attempt > 1
+                label = f"Track {self.meta.tracknumber}"
+                if attempt > 1:
+                    label += f" (retry {attempt - 1})"
                 try:
-                    await self.downloadable.download(self.download_path, callback)
-                    retry = False
+                    with get_progress_callback(
+                        self.config.session.cli.progress_bars,
+                        await self.downloadable.size(),
+                        label,
+                    ) as callback:
+                        await self.downloadable.download(self.download_path, callback)
+                    return
+                except asyncio.CancelledError:
+                    raise
                 except Exception as e:
-                    logger.error(
-                        f"Error downloading track '{self.meta.title}', retrying: {e}"
-                    )
-                    retry = True
+                    error = f"{type(e).__name__}: {e}"
+                    if attempt < MAX_DOWNLOAD_ATTEMPTS:
+                        delay = 2**attempt  # 2s, 4s, 8s
+                        logger.warning(
+                            f"Error downloading track '{self.meta.title}', "
+                            f"retrying in {delay}s: {error}"
+                        )
+                        await asyncio.sleep(delay)
+                        continue
 
-            if not retry:
-                return
-
-            with get_progress_callback(
-                self.config.session.cli.progress_bars,
-                await self.downloadable.size(),
-                f"Track {self.meta.tracknumber} (retry)",
-            ) as callback:
-                try:
-                    await self.downloadable.download(self.download_path, callback)
-                except Exception as e:
                     logger.error(
-                        f"Persistent error downloading track '{self.meta.title}', skipping: {e}"
+                        f"Persistent error downloading track '{self.meta.title}', "
+                        f"skipping: {error}"
                     )
                     self.db.set_failed(
                         self.downloadable.source, "track", self.meta.info.id
@@ -86,19 +94,29 @@ class Track(Media):
         if self.is_single:
             remove_title(self.meta.title)
 
-        await tag_file(self.download_path, self.meta, self.cover_path)
+        exclude = self.config.session.metadata.exclude
+        await tag_file(self.download_path, self.meta, self.cover_path, exclude)
         if self.config.session.conversion.enabled:
-            await self._convert()
+            try:
+                await self._convert()
+            except Exception as e:
+                # The download itself is fine and fully tagged; keep it and
+                # still record it, instead of re-downloading it on every run
+                # (upstream #1010, e.g. ffmpeg without libfdk_aac).
+                logger.error(
+                    f"Could not convert '{self.meta.title}', keeping the "
+                    f"original file: {type(e).__name__}: {e}"
+                )
 
         self.db.set_downloaded(self.meta.info.id)
 
     async def _convert(self):
         c = self.config.session.conversion
         engine_class = converter.get(c.codec)
+        # Lossy codecs honour [conversion] lossy_bitrate (upstream #823).
         ffmpeg_arg = None
         if not engine_class.lossless:
             ffmpeg_arg = engine_class.get_quality_arg(c.lossy_bitrate)
-
         engine = engine_class(
             filename=self.download_path,
             ffmpeg_arg=ffmpeg_arg,
@@ -108,6 +126,15 @@ class Track(Media):
         )
         await engine.convert()
         self.download_path = engine.final_fn  # because the extension changed
+        # ffmpeg does not reliably carry every tag into the new container, so
+        # re-tag the converted file where we know how to.
+        if self.download_path.rsplit(".", 1)[-1].lower() in TAGGABLE_EXTENSIONS:
+            await tag_file(
+                self.download_path,
+                self.meta,
+                self.cover_path,
+                self.config.session.metadata.exclude,
+            )
 
     def _set_download_path(self):
         c = self.config.session.filepaths
@@ -121,7 +148,7 @@ class Track(Media):
 
         self.download_path = os.path.join(
             self.folder,
-            f"{track_path}.{self.downloadable.extension}",
+            fit_filename(track_path, self.downloadable.extension),
         )
 
 

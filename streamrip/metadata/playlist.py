@@ -67,10 +67,12 @@ class PlaylistMetadata:
                 )
             except Exception as e:
                 # One malformed entry should not sink the whole playlist.
-                logger.error(f"Error reading track {i+1} in playlist {name}: {e}")
+                logger.error(f"Error reading track {i + 1} in playlist {name}: {e}")
                 continue
             if meta is None:
-                logger.error(f"Track {i+1} in playlist {name} not available for stream")
+                logger.error(
+                    f"Track {i + 1} in playlist {name} not available for stream"
+                )
                 continue
             tracks.append(meta)
 

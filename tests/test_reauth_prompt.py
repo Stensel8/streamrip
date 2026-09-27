@@ -35,13 +35,9 @@ def _main_with_expired_token():
 
 def _patches(prompter, *, isatty: bool, confirm: bool):
     stack = ExitStack()
-    stack.enter_context(
-        patch("streamrip.rip.main.get_prompter", return_value=prompter)
-    )
+    stack.enter_context(patch("streamrip.rip.main.get_prompter", return_value=prompter))
     stack.enter_context(patch("sys.stdin.isatty", return_value=isatty))
-    stack.enter_context(
-        patch("streamrip.rip.main.Confirm.ask", return_value=confirm)
-    )
+    stack.enter_context(patch("streamrip.rip.main.Confirm.ask", return_value=confirm))
     return stack
 
 
