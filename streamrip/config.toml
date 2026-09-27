@@ -15,8 +15,11 @@ concurrency = true
 # Set to -1 for no limit
 max_connections = 6
 # Max number of API requests per source to handle per minute
-# Set to -1 for no limit
-requests_per_minute = 60
+# Set to -1 for no limit. Downloading many albums at once (e.g. an artist's
+# full discography) can burst past a higher limit and get 429 "Too Many
+# Requests" errors from the streaming service; lower this further if that
+# still happens.
+requests_per_minute = 40
 # Verify SSL certificates for API connections
 # Set to false if you encounter SSL certificate verification errors (not recommended)
 verify_ssl = true
