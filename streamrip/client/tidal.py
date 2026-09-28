@@ -2,6 +2,7 @@ import asyncio
 import base64
 import json
 import logging
+import random
 import re
 import time
 from json import JSONDecodeError
@@ -69,6 +70,21 @@ _AUDIO_QUALITY_TIER = {
     "HI_RES": 3,
     "HI_RES_LOSSLESS": 3,
 }
+LOSSLESS_TIER = _AUDIO_QUALITY_TIER["LOSSLESS"]
+
+# Rate limiting and server errors are worth another attempt; other 4xx are not.
+RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
+MAX_API_ATTEMPTS = 4
+MAX_RETRY_DELAY = 60
+RATE_LIMIT_PAUSE = 10  # seconds per attempt when a 429 has no Retry-After
+
+
+def _retry_after(resp, attempt: int) -> float:
+    try:
+        seconds = max(float(resp.headers["Retry-After"]), 1.0)
+    except KeyError, ValueError:
+        seconds = RATE_LIMIT_PAUSE * attempt
+    return min(seconds, MAX_RETRY_DELAY)
 
 
 class TidalClient(Client):
@@ -76,6 +92,8 @@ class TidalClient(Client):
 
     source = "tidal"
     max_quality = 3
+    # time.monotonic() before which no request is sent (set by a 429)
+    _retry_at = 0.0
 
     def __init__(self, config: Config):
         self.logged_in = False
@@ -248,12 +266,15 @@ class TidalClient(Client):
 
         actual_quality = resp.get("audioQuality")
         actual_tier = _AUDIO_QUALITY_TIER.get(actual_quality)
-        if actual_tier is not None and actual_tier < quality:
+        if actual_tier is not None and actual_tier < min(quality, LOSSLESS_TIER):
             logger.warning(
                 f"Track {track_id}: requested {QUALITY_MAP[quality]} but Tidal "
                 f"only has {actual_quality} for it (most likely no lossless "
                 "master for this specific track)."
             )
+        elif actual_tier is not None and actual_tier < quality:
+            # Quality 3 is "best available": LOSSLESS back for it is normal.
+            logger.debug(f"Track {track_id}: no hi-res master, got {actual_quality}")
 
         # Hi-res (HI_RES_LOSSLESS) tracks are served as an MPEG-DASH manifest
         # rather than the usual base64 JSON; handle it instead of silently
@@ -507,6 +528,9 @@ class TidalClient(Client):
     async def _api_request(self, path: str, params=None, base: str = BASE) -> dict:
         """Handle Tidal API requests.
 
+        Connection errors, timeouts, 5xx and 429 are retried with backoff. A 429
+        holds back every request, since the rate limit belongs to the account.
+
         :param path:
         :type path: str
         :param params:
@@ -518,13 +542,59 @@ class TidalClient(Client):
         params["countryCode"] = self.config.country_code
         params.setdefault("limit", 100)
 
-        async with self.rate_limiter:
-            async with self.session.get(f"{base}/{path}", params=params) as resp:
-                if resp.status == 404:
-                    # Logged at debug, not warning: some callers ask for
-                    # optional things (lyrics) where a 404 is the normal
-                    # answer. Callers that do care log it themselves.
-                    logger.debug("TIDAL: item not found (404): %s", resp.url)
-                    raise ItemNotFoundError(f"TIDAL: item not found: {resp.url}")
-                resp.raise_for_status()
-                return await resp.json()
+        attempt = 0
+        while True:
+            attempt += 1
+            if (pause := self._retry_at - time.monotonic()) > 0:
+                await asyncio.sleep(pause)
+
+            delay = 0.0
+            try:
+                async with self.rate_limiter:
+                    async with self.session.get(
+                        f"{base}/{path}", params=params
+                    ) as resp:
+                        if resp.status == 404:
+                            # Logged at debug, not warning: some callers ask for
+                            # optional things (lyrics) where a 404 is the normal
+                            # answer. Callers that do care log it themselves.
+                            logger.debug("TIDAL: item not found (404): %s", resp.url)
+                            raise ItemNotFoundError(
+                                f"TIDAL: item not found: {resp.url}"
+                            )
+                        if resp.status == 429:
+                            self._pause_requests(_retry_after(resp, attempt))
+                        if (
+                            resp.status not in RETRY_STATUSES
+                            or attempt == MAX_API_ATTEMPTS
+                        ):
+                            resp.raise_for_status()
+                            return await resp.json()
+                        if resp.status != 429:
+                            reason = f"HTTP {resp.status}"
+                            delay = 2**attempt + random.random()
+            except aiohttp.ClientSSLError:
+                raise
+            except (
+                aiohttp.ClientConnectionError,
+                aiohttp.ClientPayloadError,
+                asyncio.TimeoutError,
+            ) as e:
+                if attempt == MAX_API_ATTEMPTS:
+                    raise
+                reason = type(e).__name__
+                delay = 2**attempt + random.random()
+
+            if delay:
+                logger.warning(
+                    f"Tidal request failed ({reason}), retrying in {delay:.0f}s"
+                )
+                await asyncio.sleep(delay)
+
+    def _pause_requests(self, seconds: float):
+        now = time.monotonic()
+        if self._retry_at <= now:
+            logger.warning(
+                f"Tidal is rate limiting us (HTTP 429); pausing for {seconds:.0f}s"
+            )
+        self._retry_at = max(self._retry_at, now + seconds)

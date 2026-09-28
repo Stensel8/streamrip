@@ -1,4 +1,5 @@
 import base64
+import logging
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -117,7 +118,26 @@ async def test_missing_manifest_is_non_streamable():
 
 
 @pytest.mark.asyncio
-async def test_warns_when_served_quality_is_lower_than_requested(caplog):
+async def test_warns_when_lossless_is_requested_but_lossy_is_served(caplog):
+    c = _client()
+    c.session = MagicMock()
+    manifest = (
+        '{"urls": ["https://x/y.m4a"], "codecs": "mp4a.40.2", "encryptionType": "NONE"}'
+    )
+    c._api_request = AsyncMock(
+        return_value={
+            "audioQuality": "HIGH",
+            "manifestMimeType": "application/vnd.tidal.bts",
+            "manifest": base64.b64encode(manifest.encode()).decode(),
+        }
+    )
+    await c.get_downloadable("1", 2)  # requested LOSSLESS, only AAC available
+    assert "requested LOSSLESS but Tidal only has HIGH" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_hires_request_served_lossless_is_not_a_warning(caplog):
+    """Quality 3 is "best available", so most tracks legitimately get LOSSLESS."""
     c = _client()
     c.session = MagicMock()
     manifest = (
@@ -130,8 +150,10 @@ async def test_warns_when_served_quality_is_lower_than_requested(caplog):
             "manifest": base64.b64encode(manifest.encode()).decode(),
         }
     )
-    await c.get_downloadable("1", 3)  # requested HI_RES, only LOSSLESS available
-    assert "requested HI_RES but Tidal only has LOSSLESS" in caplog.text
+    with caplog.at_level(logging.DEBUG, logger="streamrip"):
+        await c.get_downloadable("1", 3)
+    assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
+    assert "no hi-res master" in caplog.text
 
 
 @pytest.mark.asyncio

@@ -399,6 +399,61 @@ def database_browse(ctx, table):
         )
 
 
+@database.command("clear")
+@click.argument(
+    "table",
+    type=click.Choice(["downloads", "failed", "all"], case_sensitive=False),
+)
+@click.option("-y", "--yes", help="Don't ask for confirmation.", is_flag=True)
+@click.pass_context
+def database_clear(ctx, table, yes):
+    """Forget what was downloaded, so it is downloaded again.
+
+    streamrip skips every track in the downloads database, even after its file
+    was deleted. Clear the database to download those tracks again.
+
+    Tables:
+
+        * downloads: the tracks streamrip has downloaded
+
+        * failed: the failures kept for `streamrip repair`
+
+        * all: both
+    """
+    cfg: Config | None = ctx.obj["config"]
+    if cfg is None:
+        return
+
+    tables = []
+    if table in ("downloads", "all"):
+        tables.append(
+            ("downloaded track(s)", db.Downloads(cfg.session.database.downloads_path))
+        )
+    if table in ("failed", "all"):
+        tables.append(
+            (
+                "failed download(s)",
+                db.Failed(cfg.session.database.failed_downloads_path),
+            )
+        )
+
+    counts = [len(t.all()) for _, t in tables]
+    if sum(counts) == 0:
+        console.print("[green]Nothing to clear.")
+        return
+
+    summary = " and ".join(
+        f"[yellow]{n}[/yellow] {label}" for n, (label, _) in zip(counts, tables)
+    )
+    if not yes and not Confirm.ask(f"Forget {summary}? They will be downloaded again."):
+        console.print("[green]Clear aborted")
+        return
+
+    for _, t in tables:
+        t.clear()
+    console.print(f"[green]Cleared {summary}.")
+
+
 async def _albums_for(main, failed_items):
     """Map failed tracks onto the albums that contain them.
 

@@ -145,6 +145,13 @@ class DatabaseBase(DatabaseInterface):
             logger.debug(command)
             conn.execute(command, tuple(items.values()))
 
+    def clear(self) -> int:
+        """Delete every row of the table. Returns how many there were."""
+        with sqlite3.connect(self.path) as conn:
+            count = conn.execute(f"SELECT COUNT(*) FROM {self.name}").fetchone()[0]
+            conn.execute(f"DELETE FROM {self.name}")
+        return count
+
     def all(self):
         """Iterate through the rows of the table."""
         with sqlite3.connect(self.path) as conn:

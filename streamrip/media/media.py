@@ -1,4 +1,7 @@
+import logging
 from abc import ABC, abstractmethod
+
+logger = logging.getLogger("streamrip")
 
 
 class Media(ABC):
@@ -30,6 +33,15 @@ class Pending(ABC):
     async def resolve(self) -> Media | None:
         """Fetch metadata and resolve into a downloadable `Media` object."""
         raise NotImplementedError
+
+
+async def resolve_or_none(pending: Pending) -> Media | None:
+    """Resolve one item; a failure is logged and costs only that item."""
+    try:
+        return await pending.resolve()
+    except Exception as e:
+        logger.error(f"Error resolving track: {type(e).__name__}: {e}")
+        return None
 
 
 def filter_prefer_explicit(tracks: list) -> list:

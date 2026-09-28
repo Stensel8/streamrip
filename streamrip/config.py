@@ -57,8 +57,8 @@ class TidalConfig:
     download_videos: bool
     # Use the OAuth client that is served 24-bit hi-res FLAC. It gets AAC for
     # ordinary lossless releases, so the default client (FLAC 16/44.1 for
-    # everything) is usually the better choice. Changing it requires logging in
-    # again.
+    # everything) is usually the better choice. Only matters with quality = 3.
+    # Changing it requires logging in again.
     hires_client: bool = False
     # Override the OAuth client id/secret entirely (empty = built-in client).
     client_id: str = ""

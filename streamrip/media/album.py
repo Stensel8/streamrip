@@ -12,10 +12,13 @@ from ..filepath_utils import clean_filepath
 from ..metadata import AlbumMetadata
 from ..metadata.util import get_album_track_ids
 from .artwork import download_artwork
-from .media import Media, Pending, filter_prefer_explicit
+from .media import Media, Pending, filter_prefer_explicit, resolve_or_none
 from .track import PendingTrack
 
 logger = logging.getLogger("streamrip")
+
+# Tracks of an album resolved at once; more only delays the first download.
+RESOLVE_CONCURRENCY = 4
 
 
 @dataclass(slots=True)
@@ -35,9 +38,12 @@ class Album(Media):
             await self._resolve_then_download()
             return
 
+        resolve_slots = asyncio.Semaphore(RESOLVE_CONCURRENCY)
+
         async def _resolve_and_download(pending: Pending):
             try:
-                track = await pending.resolve()
+                async with resolve_slots:
+                    track = await pending.resolve()
                 if track is None:
                     return
                 await track.rip()
@@ -62,7 +68,13 @@ class Album(Media):
         (see [metadata] prefer_explicit). Costs one extra API call per track
         compared to the default resolve-and-download-immediately path.
         """
-        resolved = await asyncio.gather(*[p.resolve() for p in self.tracks])
+        resolve_slots = asyncio.Semaphore(RESOLVE_CONCURRENCY)
+
+        async def _resolve(pending: Pending):
+            async with resolve_slots:
+                return await resolve_or_none(pending)
+
+        resolved = await asyncio.gather(*[_resolve(p) for p in self.tracks])
         tracks = filter_prefer_explicit([t for t in resolved if t is not None])
 
         async def _download(track):
@@ -113,8 +125,22 @@ class PendingAlbum(Pending):
             return None
 
         tracklist = get_album_track_ids(self.client.source, resp)
+        # Tracks already in the database would each be skipped, and logged, one
+        # by one. Say so once for the album instead, and don't fetch a cover or
+        # make a folder for an album with nothing left to download.
+        todo = [track_id for track_id in tracklist if not self.db.downloaded(track_id)]
+        done = len(tracklist) - len(todo)
+        if tracklist and not todo:
+            logger.info(f"{meta.album}: all {done} tracks already downloaded, skipping")
+        elif done:
+            logger.info(
+                f"{meta.album}: skipping {done} of {len(tracklist)} tracks "
+                "already downloaded"
+            )
         folder = self.config.session.downloads.folder
         album_folder = self._album_folder(folder, meta)
+        if tracklist and not todo:
+            return Album(meta, [], self.config, album_folder, self.db)
         os.makedirs(album_folder, exist_ok=True)
         embed_cover, _ = await download_artwork(
             self.client.session,
@@ -125,7 +151,7 @@ class PendingAlbum(Pending):
         )
         pending_tracks = [
             PendingTrack(
-                id,
+                track_id,
                 album=meta,
                 client=self.client,
                 config=self.config,
@@ -133,7 +159,7 @@ class PendingAlbum(Pending):
                 db=self.db,
                 cover_path=embed_cover,
             )
-            for id in tracklist
+            for track_id in todo
         ]
         logger.debug("Pending tracks: %s", pending_tracks)
         return Album(meta, pending_tracks, self.config, album_folder, self.db)

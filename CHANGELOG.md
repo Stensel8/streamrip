@@ -57,6 +57,13 @@ upstream issues and pull requests.
   (`HI_RES_LOSSLESS`) no longer raise `KeyError`.
 - Search returned nothing when there was exactly one hit, which broke last.fm
   playlists on Tidal.
+- The "requested HI_RES but Tidal only has LOSSLESS" warning no longer appears
+  for `quality = 3`, which means "best available": it is only shown when
+  lossless was requested and a lossy stream came back. `hires_client` only
+  matters together with `quality = 3`.
+- API requests retry connection errors, timeouts, 5xx and 429 (up to four
+  attempts with backoff) instead of dropping the track. A 429 pauses every
+  request and honours `Retry-After`.
 
 ### Deezer
 
@@ -123,6 +130,18 @@ upstream issues and pull requests.
   them download, instead of as each one resolves, so it costs an extra API
   call per track). Also fixed: Qobuz tracks were never marked explicit
   (`parental_warning` was ignored), which this option depends on.
+- A connection that goes quiet for 30 seconds times out (all sources) instead
+  of holding its album for aiohttp's default of five minutes.
+- Artist downloads keep four albums in flight with a sliding window instead of
+  waiting for the slowest album of every batch of four, and one failing album no
+  longer aborts the rest. At most four tracks of an album are resolved at once,
+  so downloads start after the first few tracks instead of after the metadata,
+  lyrics and stream lookups of every track.
+- An album whose tracks are all in the database is skipped without fetching a
+  cover or creating a folder, and skipped tracks are reported once per album
+  instead of once per track.
+- New `streamrip database clear downloads|failed|all` forgets what was
+  downloaded, for when you deleted the files and want them again.
 
 ### Development
 
