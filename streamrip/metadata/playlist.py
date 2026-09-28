@@ -72,7 +72,15 @@ class PlaylistMetadata:
     @classmethod
     def from_deezer(cls, resp: dict):
         name = typed(resp["title"], str)
-        tracks = [str(track["id"]) for track in resp["tracks"]]
+        ids = [str(track["id"]) for track in resp["tracks"]]
+        # Tracks you uploaded to Deezer yourself have negative ids and no album
+        # to tag them with; they're your own files anyway (upstream PR #832).
+        tracks = [i for i in ids if not i.startswith("-")]
+        if len(tracks) < len(ids):
+            logger.info(
+                f"{name}: skipping {len(ids) - len(tracks)} track(s) you uploaded "
+                "to Deezer yourself"
+            )
         return cls(name, tracks)
 
     @classmethod

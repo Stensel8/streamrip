@@ -45,6 +45,8 @@ class PendingPlaylistTrack(Pending):
     playlist_name: str
     position: int
     db: Database
+    # Number of tracks in the playlist, for the track total when renumbering.
+    total: int = 0
 
     async def resolve(self) -> Track | None:
         if self.db.downloaded(self.id):
@@ -78,9 +80,17 @@ class PendingPlaylistTrack(Pending):
 
         c = self.config.session.metadata
         if c.renumber_playlist_tracks:
-            meta.tracknumber = self.position
+            # Disc and total come from the track's own album; left alone, a
+            # disc-2 track sorts after the rest and "5/12" in a 50-track list.
+            meta.tracknumber, meta.discnumber = self.position, 1
+            album.tracktotal, album.disctotal = self.total or album.tracktotal, 1
         if c.set_playlist_to_album:
+            # Music servers group albums by album artist as well, so each
+            # track's own would split the playlist into one album per artist
+            # (upstream PR #738).
             album.album = self.playlist_name
+            album.albumartist = "Various Artists"
+            album.compilation = "1"
 
         quality = self.config.session.get_source(self.client.source).quality
         try:
@@ -158,6 +168,7 @@ class PendingPlaylist(Pending):
         name = meta.name
         parent = self.config.session.downloads.folder
         folder = os.path.join(parent, clean_filepath(clean_filename(name)))
+        ids = meta.ids()
         tracks = [
             PendingPlaylistTrack(
                 id,
@@ -165,10 +176,11 @@ class PendingPlaylist(Pending):
                 self.config,
                 folder,
                 name,
-                position + 1,
+                position,
                 self.db,
+                total=len(ids),
             )
-            for position, id in enumerate(meta.ids())
+            for position, id in enumerate(ids, start=1)
         ]
         return Playlist(name, self.config, self.client, tracks)
 
@@ -245,6 +257,7 @@ class PendingLastfmPlaylist(Pending):
                     playlist_title,
                     pos,
                     self.db,
+                    total=len(results),
                 ),
             )
 

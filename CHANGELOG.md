@@ -87,6 +87,8 @@ upstream issues and pull requests.
   longer crash parsing ([PR #944](https://github.com/nathom/streamrip/pull/944)).
 - Connection pool warnings are gone ([PR #997](https://github.com/nathom/streamrip/pull/997)); album metadata is cached
   ([PR #1000](https://github.com/nathom/streamrip/pull/1000)); blocking calls no longer stall other downloads.
+- Tracks you uploaded to Deezer yourself (negative ids, no album) are skipped
+  in playlists and loved tracks instead of each failing ([PR #832](https://github.com/nathom/streamrip/pull/832)).
 - Encrypted tracks are decrypted as they arrive instead of being held in memory
   whole, and written in large chunks instead of 6 KB at a time; logging in no
   longer fetches the account's profile a second time.
@@ -163,6 +165,11 @@ upstream issues and pull requests.
   waited for their slowest track. A playlist track that fails is recorded for
   `streamrip repair` like an album track. For last.fm playlists, one search
   error no longer aborts the playlist, and falls back to the fallback source.
+- A playlist downloaded with `set_playlist_to_album` shows up as one album in
+  Navidrome, Plex and the like: its tracks share the album artist "Various
+  Artists" and are marked as a compilation, instead of splitting into one
+  album per artist ([PR #738](https://github.com/nathom/streamrip/pull/738)). With `renumber_playlist_tracks`, the disc number
+  and track total follow the playlist too.
 - One URL that fails to resolve no longer stops the others; `streamrip file`
   keeps the order of its URLs; `search --first` with no results no longer
   crashes; `database browse failed` lines its columns up with the headers.

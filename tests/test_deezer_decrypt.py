@@ -72,3 +72,47 @@ async def test_encrypted_stream_decrypts_to_the_original(tmp_path, length):
 
     assert (tmp_path / "t.flac").read_bytes() == plain
     assert sum(received) == length
+
+
+class _SmallResp(_Resp):
+    def __init__(self, body: bytes):
+        super().__init__(body)
+        self.raw = body
+
+    async def json(self, content_type=None):
+        import json
+
+        return json.loads(self.raw)
+
+
+class _SmallSession:
+    def __init__(self, body: bytes):
+        self.body = body
+
+    def get(self, _url, **_):
+        return _SmallResp(self.body)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "body, message",
+    [
+        (b'{"error": "RIGHTS", "message": "Not available"}', "RIGHTS - Not available"),
+        (b"<html>gone</html>", "File not found."),
+    ],
+)
+async def test_an_error_body_instead_of_audio_is_non_streamable(
+    tmp_path, body, message
+):
+    from streamrip.exceptions import NonStreamableError
+
+    info = {
+        "url": "https://cdn.example/mobile/1/track",
+        "quality_to_size": [0, 0, 5_000_000],
+        "quality": 2,
+        "id": "1",
+    }
+    downloadable = DeezerDownloadable(_SmallSession(body), info)
+
+    with pytest.raises(NonStreamableError, match=message):
+        await downloadable._download(str(tmp_path / "t.flac"), lambda _: None)

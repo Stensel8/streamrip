@@ -3,7 +3,6 @@ import base64
 import functools
 import hashlib
 import itertools
-import json
 import logging
 import os
 import re
@@ -205,21 +204,17 @@ class DeezerDownloadable(Downloadable):
         self.id = str(info["id"])
 
     async def _download(self, path: str, callback):
-        # with requests.Session().get(self.url, allow_redirects=True) as resp:
         async with self.session.get(self.url, allow_redirects=True) as resp:
             resp.raise_for_status()
             self._size = int(resp.headers.get("Content-Length", 0))
-            if self._size < 20000 and not self.url.endswith(".jpg"):
+            if self._size < 20000:
+                # Too small to be audio: an error message in its place.
                 try:
-                    info = await resp.json()
-                    try:
-                        # Usually happens with deezloader downloads
-                        raise NonStreamableError(f"{info['error']} - {info['message']}")
-                    except KeyError:
-                        raise NonStreamableError(info)
-
-                except json.JSONDecodeError:
-                    raise NonStreamableError("File not found.")
+                    info = await resp.json(content_type=None)
+                    message = f"{info['error']} - {info['message']}"
+                except ValueError, KeyError, TypeError:
+                    message = "File not found."
+                raise NonStreamableError(message)
 
             if self.is_encrypted.search(self.url) is None:
                 logger.debug(f"Deezer file at {self.url} not encrypted.")
