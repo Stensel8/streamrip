@@ -4,255 +4,118 @@
 [![Python 3.14+](https://img.shields.io/badge/python-3.14%2B-blue)](https://github.com/Stensel8/streamrip/blob/dev/pyproject.toml)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 
-A scriptable stream downloader for Qobuz, Tidal, Deezer and SoundCloud.
+A scriptable music downloader for Qobuz, Tidal, Deezer and SoundCloud.
 
 > [!NOTE]
-> This is a fork of [nathom/streamrip](https://github.com/nathom/streamrip)
-> that gets it working again: current Python (3.14+), and a large part of the
-> open upstream issues and pull requests worked through, so downloads across
-> all four sources work again for now; see [CHANGELOG.md](CHANGELOG.md) for
-> what changed. Streaming services change their APIs without notice and this
-> will need upkeep to keep working — there's no promise it stays maintained
-> forever, just that it does right now.
+> A fork of [nathom/streamrip](https://github.com/nathom/streamrip) that works
+> again: Python 3.14+, with most open upstream issues and pull requests worked
+> through (see [CHANGELOG.md](CHANGELOG.md)). Streaming services change their
+> APIs without notice, so it needs upkeep to keep working.
 
 ![downloading an album](https://github.com/Stensel8/streamrip/blob/dev/demo/download_album.png?raw=true)
 
-## Features
-
-- Fast, concurrent downloads powered by `aiohttp`
-- Downloads tracks, albums, playlists, discographies, and labels from Qobuz, Tidal, Deezer, and SoundCloud
-- Supports downloads of Spotify and Apple Music playlists through [last.fm](https://www.last.fm)
-- Automatically converts files to a preferred format
-- Has a database that stores the downloaded tracks' IDs so that repeats are avoided, and `streamrip repair` to retry the ones that failed
-- Resumes interrupted downloads and retries with backoff
-- Concurrency and rate limiting
-- Interactive search for all sources
-- Highly customizable through the config file
+- Tracks, albums, playlists, discographies and labels, several at once
+- Spotify and Apple Music playlists through [last.fm](https://www.last.fm)
+- Tagged, with cover art, and converted to FLAC, ALAC, AIFF, MP3, AAC, OGG or Opus if you like
+- Remembers what it downloaded; `streamrip repair` retries what failed
+- Interactive search on every source
 
 ## Installation
 
-The fastest way to get going: run the install script for your OS. It fetches
-Python 3.14 for you (via [uv](https://docs.astral.sh/uv/)) and installs
-streamrip into a `.venv` in the current directory. Install
-[`ffmpeg`](https://ffmpeg.org/download.html) yourself first if you'll need
-conversion or Tidal hi-res downloads:
+The install script fetches Python 3.14 (with [uv](https://docs.astral.sh/uv/))
+and installs streamrip into a `.venv` in the current directory:
 
 ```bash
-# Linux/macOS
-curl -LsSf https://raw.githubusercontent.com/Stensel8/streamrip/dev/install.sh | bash
+curl -LsSf https://raw.githubusercontent.com/Stensel8/streamrip/dev/install.sh | bash  # Linux/macOS
 ```
 
 ```powershell
-# Windows (PowerShell)
-irm https://raw.githubusercontent.com/Stensel8/streamrip/dev/install.ps1 | iex
+irm https://raw.githubusercontent.com/Stensel8/streamrip/dev/install.ps1 | iex  # Windows
 ```
 
-Then activate that venv and run `streamrip`, same as the manual steps below. Read
-on if you'd rather do each step yourself, or already have Python and ffmpeg
-set up.
-
-First, ensure [Python](https://www.python.org/downloads/) 3.14 or newer,
-[pip](https://pip.pypa.io/en/stable/installing/), and
-[`ffmpeg`](https://ffmpeg.org/download.html) are installed (e.g.
-`apt install ffmpeg`, `brew install ffmpeg`). `ffmpeg` is needed for
-conversion and Tidal hi-res downloads.
-
-Always install Python packages into a virtual environment, never into your
-system Python. Create one and activate it:
+With Python 3.14 already there, install it into a venv of your own, or with
+[pipx](https://pipx.pypa.io/) or uv:
 
 ```bash
-# bash/zsh
-python3 -m venv .venv
-source .venv/bin/activate
-```
+python3 -m venv .venv && source .venv/bin/activate  # fish: activate.fish
+pip install git+https://github.com/Stensel8/streamrip.git
 
-```fish
-# fish
-python3 -m venv .venv
-source .venv/bin/activate.fish
-```
-
-Then, with the venv active (your prompt shows `(.venv)`), install streamrip
-from this repository into it:
-
-```bash
-pip install --upgrade git+https://github.com/Stensel8/streamrip.git
-```
-
-`streamrip` is on `PATH` for as long as that venv stays active. Leave it with
-`deactivate`; come back to it later from the project directory with the same
-`source` command, no need to recreate the venv.
-
-[pipx](https://pipx.pypa.io/) and [uv](https://docs.astral.sh/uv/) do the same
-per-tool venv isolation without the manual `activate` step, if you have either
-installed:
-
-```bash
 pipx install git+https://github.com/Stensel8/streamrip.git
 uv tool install git+https://github.com/Stensel8/streamrip.git
 ```
 
-To install a specific branch or release, add `@<branch-or-tag>` to the URL, for example
-`git+https://github.com/Stensel8/streamrip.git@dev`.
-
-When you type
-
-```bash
-streamrip
-```
-
-it should show the main help page. If you have no idea what these mean, or are having other issues installing, check out the [detailed installation instructions](https://github.com/nathom/streamrip/wiki#detailed-installation-instructions) in the upstream wiki.
+Add `@<branch-or-tag>` to the URL for a specific version. Conversion and Tidal
+hi-res downloads need [ffmpeg](https://ffmpeg.org/download.html)
+(`apt install ffmpeg`, `brew install ffmpeg`).
 
 > [!IMPORTANT]
-> `pip install streamrip` (PyPI), the AUR package and `brew install streamrip`
-> all install **upstream** streamrip, not this fork. Upstream's release pins
-> `Pillow<11`, which has no wheels for Python 3.14 and fails to build.
+> `pip install streamrip`, the AUR package and `brew install streamrip` install
+> **upstream** streamrip, whose last release doesn't install on Python 3.14.
 
-### Logging in
+## Logging in
 
-- **Qobuz** moved its web login behind a captcha, so email/password login no
-  longer works for most accounts. When asked, enter your Qobuz **user id** and
-  **user_auth_token**: log in at [play.qobuz.com](https://play.qobuz.com/login),
-  open your browser's DevTools → Network, find the `user/login` request and
-  copy `user.id` and `user_auth_token` from its response. With the
-  `qobuz-login` extra installed, streamrip opens a browser and does this for you.
-  Accounts without a streaming subscription can download albums they bought.
-- **Tidal** logs in through your browser (device login). Tidal decides per app
-  which formats it will stream; by default streamrip uses one that gets FLAC
-  16/44.1 for every lossless release. Set `hires_client = true` in the `[tidal]`
-  section of the config to prefer 24-bit hi-res FLAC instead (ordinary lossless
-  releases then come as AAC). No developer account or client id is needed.
-- **Deezer** needs the `arl` cookie of a logged-in session, see
-  [Finding your Deezer ARL cookie](https://github.com/nathom/streamrip/wiki/Finding-Your-Deezer-ARL-Cookie).
-  The download quality is limited to what your subscription allows.
-- **SoundCloud** needs no login.
+streamrip asks for what it needs the first time you use a source, and saves it
+in the config. A login that stops working is asked for again.
 
-If a saved login stops working, streamrip offers to log in again.
+- **Qobuz** needs a subscription, or downloads the albums you bought. Its login
+  page has a captcha, so streamrip offers to open a browser and take the token
+  from your login there. Without a desktop, enter your user id and
+  `user_auth_token` yourself: log in at [play.qobuz.com](https://play.qobuz.com/login)
+  and copy both from the `user/login` response in DevTools → Network.
+- **Tidal** needs a subscription. streamrip shows a link to log in with on any
+  device. It gets 16-bit FLAC for every lossless release; `hires_client = true`
+  in `[tidal]` gets 24-bit instead, and AAC for releases that aren't hi-res.
+- **Deezer** needs the `arl` cookie of a logged-in session
+  ([how to find it](https://github.com/nathom/streamrip/wiki/Finding-Your-Deezer-ARL-Cookie));
+  the quality follows your subscription.
+- **SoundCloud** needs nothing.
 
-## Example Usage
-
-**For Tidal and Qobuz, you NEED a premium subscription.**
-
-Download an album from Qobuz
+## Usage
 
 ```bash
-streamrip url https://www.qobuz.com/us-en/album/rumours-fleetwood-mac/0603497941032
-```
-
-Download multiple albums from Qobuz
-
-```bash
-streamrip url https://www.qobuz.com/us-en/album/back-in-black-ac-dc/0886444889841 https://www.qobuz.com/us-en/album/blue-train-john-coltrane/0060253764852
-```
-
-Download the album and convert it to `mp3`
-
-```bash
-streamrip --codec mp3 url https://open.qobuz.com/album/0060253780968
-```
-
-To set the maximum quality, use the `--quality` option to `0, 1, 2, 3, 4`:
-
-| Quality ID | Audio Quality         | Available Sources                            |
-| ---------- | --------------------- | -------------------------------------------- |
-| 0          | 128 kbps MP3 or AAC   | Deezer, Tidal, SoundCloud (most of the time) |
-| 1          | 320 kbps MP3 or AAC   | Deezer, Tidal, Qobuz, SoundCloud (rarely)    |
-| 2          | 16 bit, 44.1 kHz (CD) | Deezer, Tidal, Qobuz, SoundCloud (rarely)    |
-| 3          | 24 bit, ≤ 96 kHz      | Tidal (hi-res FLAC), Qobuz, SoundCloud (rarely) |
-| 4          | 24 bit, ≤ 192 kHz     | Qobuz                                        |
-
-```bash
+streamrip url https://www.qobuz.com/us-en/album/rumours-fleetwood-mac/0603497941032  # one or more URLs
+streamrip file urls.txt                                      # the URLs in a file
+streamrip --codec mp3 url https://tidal.com/browse/album/147569387
 streamrip --quality 3 url https://tidal.com/browse/album/147569387
+streamrip search tidal album 'fleetwood mac rumours'         # pick from the results
+streamrip lastfm https://www.last.fm/user/nathan3895/playlists/12126195
+streamrip repair                                             # retry what failed
+streamrip config open                                        # every option, explained
 ```
 
-> Using `4` is generally a waste of space. It is impossible for humans to perceive the difference between sampling rates higher than 44.1 kHz. It may be useful if you're processing/slowing down the audio.
+`--quality` is the highest quality to download (SoundCloud has one per track):
 
-Search for playlists matching `rap` on Tidal
+| Quality | Audio                 | Sources              |
+| ------- | --------------------- | -------------------- |
+| 0       | 128 kbps MP3 or AAC   | Deezer, Tidal        |
+| 1       | 320 kbps MP3 or AAC   | Deezer, Tidal, Qobuz |
+| 2       | 16 bit, 44.1 kHz (CD) | Deezer, Tidal, Qobuz |
+| 3       | 24 bit, ≤ 96 kHz      | Tidal, Qobuz         |
+| 4       | 24 bit, ≤ 192 kHz     | Qobuz                |
 
-```bash
-streamrip search tidal playlist 'rap'
-```
+Every command has a `--help`.
 
 ![streamrip interactive search](https://github.com/Stensel8/streamrip/blob/dev/demo/playlist_search.png?raw=true)
 
-Search for *Rumours* on Tidal, and download it
+## Contributing
 
-```bash
-streamrip search tidal album 'fleetwood mac rumours'
-```
-
-Download a last.fm playlist using the lastfm command
-
-```
-streamrip lastfm https://www.last.fm/user/nathan3895/playlists/12126195
-```
-
-For more customization, see the config file
-
-```
-streamrip config open
-```
-
-If you're confused about anything, see the help pages. The main help pages can be accessed by typing `streamrip` by itself in the command line. The help pages for each command can be accessed with the `--help` flag. For example, to see the help page for the `url` command, type
-
-```
-streamrip url --help
-```
-
-![example_help_page.png](https://github.com/Stensel8/streamrip/blob/dev/demo/example_help_page.png?raw=true)
-
-## Other information
-
-For more in-depth information about `streamrip`, see the help pages and the [upstream wiki](https://github.com/nathom/streamrip/wiki/).
-
-## Contributions
-
-All contributions are appreciated! You can help out the project by opening an issue
-or by submitting code.
-
-### Issues
-
-Report problems with this fork in its [issue tracker](https://github.com/Stensel8/streamrip/issues) and
-**use the Feature Request or Bug Report templates**, so all the information
-needed to debug the issue is there.
-
-### Code
-
-- Fork this repository and clone it
-- `poetry install --all-extras` sets up a development environment
-- `poetry run pytest` and `poetry run ruff check . && poetry run ruff format .`
-  should pass before you commit
-- Open a pull request to the `dev` branch
-
-Please document any functions or obscure lines of code. Dependencies are kept up
-to date by Renovate; Dependabot handles security updates.
-
-### The Wiki
-
-To help out `streamrip` users that may be having trouble, consider contributing some information to the wiki.
-Nothing is too obvious and everything is appreciated.
+Report problems in the [issue tracker](https://github.com/Stensel8/streamrip/issues),
+with the Bug Report or Feature Request template. For code, `poetry install --all-extras`
+sets things up; `poetry run pytest` and `poetry run ruff check . && poetry run ruff format .`
+should pass before you open a pull request to `dev`.
 
 ## Acknowledgements
 
-streamrip was written by [nathom](https://github.com/nathom); this fork builds
-on the work of everyone who sent fixes upstream, whose pull requests are
-credited in the commit history and [CHANGELOG.md](CHANGELOG.md).
-
-Thanks to Vitiko98, Sorrow446, and DashLt for their contributions to this project, and the previous projects that made this one possible.
-
-`streamrip` was inspired by:
-
-- [rip](https://github.com/nathom/streamrip)
-- [qobuz-dl](https://github.com/vitiko98/qobuz-dl)
-- [Qo-DL Reborn](https://github.com/badumbass/Qo-DL-Reborn)
-- [Tidal-Media-Downloader](https://github.com/yaronzz/Tidal-Media-Downloader)
-- [scdl](https://github.com/flyingrub/scdl)
+streamrip was written by [nathom](https://github.com/nathom) (consider
+[sponsoring nathom](https://github.com/sponsors/nathom)); this fork builds on
+everyone who sent fixes upstream, credited in [CHANGELOG.md](CHANGELOG.md).
+Thanks to Vitiko98, Sorrow446 and DashLt, and to the projects streamrip grew
+from: [qobuz-dl](https://github.com/vitiko98/qobuz-dl),
+[Qo-DL Reborn](https://github.com/badumbass/Qo-DL-Reborn),
+[Tidal-Media-Downloader](https://github.com/yaronzz/Tidal-Media-Downloader)
+and [scdl](https://github.com/flyingrub/scdl).
 
 ## Disclaimer
 
-I will not be responsible for how **you** use `streamrip`. By using `streamrip`, you agree to the terms and conditions of the Qobuz, Tidal, and Deezer APIs.
-
-## Sponsorship
-
-Consider [sponsoring nathom](https://github.com/sponsors/nathom), the original
-author of streamrip, if you enjoy it.
+I will not be responsible for how **you** use streamrip. By using streamrip, you
+agree to the terms and conditions of the Qobuz, Tidal, and Deezer APIs.

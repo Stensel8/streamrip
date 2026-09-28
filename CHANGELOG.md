@@ -30,8 +30,8 @@ upstream issues and pull requests.
   `album/get` and `playlist/get` ([#1012](https://github.com/nathom/streamrip/issues/1012), [PR #1013](https://github.com/nathom/streamrip/pull/1013)).
 - Token login: the prompt asks for a user id and `user_auth_token` because the
   password login is behind a captcha now ([#954](https://github.com/nathom/streamrip/issues/954), [#956](https://github.com/nathom/streamrip/issues/956), [#899](https://github.com/nathom/streamrip/issues/899),
-  [#854](https://github.com/nathom/streamrip/issues/854)); optional browser capture with `pip install 'streamrip[qobuz-login]'`
-  ([PR #955](https://github.com/nathom/streamrip/pull/955)).
+  [#854](https://github.com/nathom/streamrip/issues/854)), or streamrip opens a browser and takes them from your login
+  there ([PR #955](https://github.com/nathom/streamrip/pull/955)).
 - A stale app id/secret is re-fetched automatically ([PR #1031](https://github.com/nathom/streamrip/pull/1031)); failed logins
   close their session ([PR #1005](https://github.com/nathom/streamrip/pull/1005)); credentials are kept out of logs and errors
   ([PR #1037](https://github.com/nathom/streamrip/pull/1037)).

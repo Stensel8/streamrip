@@ -542,10 +542,9 @@ async def repair(ctx, yes, flat):
             await main.rip()
 
         # Nothing in the download pipeline removes rows from the failed db, so
-        # success can't be detected by diffing it. Instead rely on the
-        # invariant this patch establishes: set_downloaded() is only reached
-        # via postprocess(), which a failed download never gets to. So an item
-        # present in the downloads db now is one that just succeeded.
+        # success can't be detected by diffing it. But set_downloaded() is
+        # only reached via postprocess(), which a failed download never gets
+        # to, so an item in the downloads db now is one that just succeeded.
         repaired = [
             item_id
             for _, _, item_id in failed_items
