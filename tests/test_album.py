@@ -81,7 +81,7 @@ def _pending_album(monkeypatch, tmp_path, tracklist, downloaded):
     )
     monkeypatch.setattr(album_module, "download_artwork", artwork)
     monkeypatch.setattr(
-        PendingAlbum, "_album_folder", lambda self, parent, m: str(tmp_path / "Encore")
+        album_module, "album_folder", lambda config, source, m: str(tmp_path / "Encore")
     )
     return PendingAlbum("1", client, config, db), artwork
 

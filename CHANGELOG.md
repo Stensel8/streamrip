@@ -110,7 +110,8 @@ upstream issues and pull requests.
 ### Downloads, conversion and tagging
 
 - Failed downloads are no longer marked as downloaded, resolve failures are
-  recorded, and `streamrip repair` retries everything in the failed database
+  recorded (whatever the error, for single tracks too), and `streamrip repair`
+  retries everything in the failed database
   ([PR #1023](https://github.com/nathom/streamrip/pull/1023)). A track skipped
   after a 403 (e.g. a geoblocked Deezer track in an otherwise public playlist)
   no longer leaves the run in a state where cleanup trips over the file it
@@ -127,6 +128,9 @@ upstream issues and pull requests.
   M4A files get their composer tag (it was written to the year's atom and
   lost), and MP3s no longer get the album description as their grouping
   (TIT1) or an empty lyrics frame.
+- `restrict_characters` applies to every folder streamrip names: a single
+  track saved with `add_singles_to_folder` lands in its album's folder
+  instead of one beside it, and playlist folders follow it too.
 - Long titles no longer fail with "File name too long" ([#856](https://github.com/nathom/streamrip/issues/856), [#859](https://github.com/nathom/streamrip/issues/859),
   [PR #860](https://github.com/nathom/streamrip/pull/860)); playlist names with `/` no longer create folders ([PR #1004](https://github.com/nathom/streamrip/pull/1004)).
 - Artwork downloads work with current aiohttp headers ([#941](https://github.com/nathom/streamrip/issues/941)).

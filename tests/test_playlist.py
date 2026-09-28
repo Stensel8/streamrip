@@ -2,8 +2,13 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from streamrip.config import Config
 from streamrip.exceptions import NonStreamableError
-from streamrip.media.playlist import PendingLastfmPlaylist, PendingPlaylistTrack
+from streamrip.media.playlist import (
+    PendingLastfmPlaylist,
+    PendingPlaylistTrack,
+    _playlist_folder,
+)
 
 
 def _search_client(source, search):
@@ -84,8 +89,6 @@ def _deezer_track(position, disc):
 
 @pytest.mark.asyncio
 async def test_playlist_track_is_tagged_as_part_of_one_album(monkeypatch):
-    from streamrip.config import Config
-
     monkeypatch.setattr(
         "streamrip.media.playlist.download_artwork",
         AsyncMock(return_value=(None, None)),
@@ -118,3 +121,11 @@ def test_tracks_uploaded_to_deezer_are_left_out_of_a_playlist():
 
     resp = {"title": "Mix", "tracks": [{"id": 1}, {"id": -5}, {"id": "2"}]}
     assert PlaylistMetadata.from_deezer(resp).ids() == ["1", "2"]
+
+
+def test_playlist_folder_is_one_folder_and_follows_restrict_characters():
+    config = Config.defaults()
+    config.session.downloads.folder = "/music"
+    assert _playlist_folder(config, "Café / Mix") == "/music/Café  Mix"
+    config.session.filepaths.restrict_characters = True
+    assert _playlist_folder(config, "Café / Mix") == "/music/Caf  Mix"

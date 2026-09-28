@@ -1,5 +1,6 @@
 import os
 import shutil
+from unittest.mock import AsyncMock, MagicMock
 
 import mutagen
 import pytest
@@ -9,7 +10,8 @@ import streamrip.db as db
 from streamrip.client.downloadable import Downloadable
 from streamrip.client.qobuz import QobuzClient
 from streamrip.config import Config
-from streamrip.media.track import PendingSingle, Track
+from streamrip.exceptions import NonStreamableError
+from streamrip.media.track import PendingSingle, Track, album_folder
 from streamrip.metadata import (
     AlbumInfo,
     AlbumMetadata,
@@ -180,3 +182,54 @@ def test_lossy_copy_removed_after_lossless_conversion(tmp_path, monkeypatch):
 
     assert (tmp_path / "Song.flac").exists()
     assert not (tmp_path / "Song.m4a").exists()
+
+
+@pytest.mark.asyncio
+async def test_single_without_download_info_is_kept_for_repair(tmp_path, monkeypatch):
+    # This used to escape resolve() and never reach the failed database.
+    monkeypatch.setattr(
+        "streamrip.media.track.download_artwork", AsyncMock(return_value=(None, None))
+    )
+    config = Config.defaults()
+    config.session.downloads.folder = str(tmp_path)
+    client = MagicMock()
+    client.source = "deezer"
+    client.get_metadata = AsyncMock(
+        return_value={
+            "id": 7,
+            "title": "Song",
+            "artist": {"name": "Artist"},
+            "track_position": 1,
+            "disk_number": 1,
+            "album": {
+                "id": 70,
+                "title": "Album",
+                **{f"cover_{s}": "u" for s in ("xl", "big", "medium", "small")},
+            },
+        }
+    )
+    client.get_downloadable = AsyncMock(side_effect=NonStreamableError("geoblocked"))
+    database = MagicMock()
+    database.downloaded.return_value = False
+
+    assert await PendingSingle("7", client, config, database).resolve() is None
+    database.set_failed.assert_called_once_with("deezer", "track", "7")
+
+
+@pytest.mark.parametrize("restrict", [False, True])
+def test_album_folder_follows_restrict_characters(restrict):
+    # Singles built their album folder without restrict_characters, so with
+    # it on they landed beside their album instead of in it.
+    config = Config.defaults()
+    config.session.downloads.folder = "/music"
+    config.session.filepaths.folder_format = "{albumartist} - {title}"
+    config.session.filepaths.restrict_characters = restrict
+    album = AlbumMetadata(
+        AlbumInfo("1", 2, "FLAC"), "Homogénic", "Björk", "1997", [], Covers(), 10
+    )
+
+    folder = album_folder(config, "qobuz", album)
+
+    assert folder == (
+        "/music/Bjrk - Homognic" if restrict else "/music/Björk - Homogénic"
+    )

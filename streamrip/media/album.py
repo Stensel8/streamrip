@@ -7,12 +7,12 @@ from ..client import BasicDownloadable, Client
 from ..config import Config
 from ..db import Database
 from ..exceptions import NonStreamableError
-from ..filepath_utils import clean_filename, clean_filepath
+from ..filepath_utils import clean_filename
 from ..metadata import AlbumMetadata
 from ..metadata.util import get_album_track_ids
 from .artwork import download_artwork
 from .media import Media, Pending, rip_tracks
-from .track import PendingTrack
+from .track import PendingTrack, album_folder
 
 logger = logging.getLogger("streamrip")
 
@@ -105,45 +105,31 @@ class PendingAlbum(Pending):
                 f"{meta.album}: skipping {done} of {len(tracklist)} tracks "
                 "already downloaded"
             )
-        folder = self.config.session.downloads.folder
-        album_folder = self._album_folder(folder, meta)
+        folder = album_folder(self.config, self.client.source, meta)
         if tracklist and not todo:
-            return Album(meta, [], self.config, album_folder, self.db)
-        os.makedirs(album_folder, exist_ok=True)
+            return Album(meta, [], self.config, folder, self.db)
+        os.makedirs(folder, exist_ok=True)
         embed_cover, _ = await download_artwork(
             self.client.session,
-            album_folder,
+            folder,
             meta.covers,
             self.config.session.artwork,
             for_playlist=False,
         )
         # Only Qobuz albums have booklets.
         if meta.info.booklets and self.config.session.qobuz.download_booklets:
-            await download_booklets(
-                self.client.session, meta.info.booklets, album_folder
-            )
+            await download_booklets(self.client.session, meta.info.booklets, folder)
         pending_tracks = [
             PendingTrack(
                 track_id,
                 album=meta,
                 client=self.client,
                 config=self.config,
-                folder=album_folder,
+                folder=folder,
                 db=self.db,
                 cover_path=embed_cover,
             )
             for track_id in todo
         ]
         logger.debug("Pending tracks: %s", pending_tracks)
-        return Album(meta, pending_tracks, self.config, album_folder, self.db)
-
-    def _album_folder(self, parent: str, meta: AlbumMetadata) -> str:
-        config = self.config.session
-        if config.downloads.source_subdirectories:
-            parent = os.path.join(parent, self.client.source.capitalize())
-        formatter = config.filepaths.folder_format
-        folder = clean_filepath(
-            meta.format_folder_path(formatter), config.filepaths.restrict_characters
-        )
-
-        return os.path.join(parent, folder)
+        return Album(meta, pending_tracks, self.config, folder, self.db)

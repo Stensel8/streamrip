@@ -15,18 +15,12 @@ from ..config import Config
 from ..console import console
 from ..db import Database
 from ..exceptions import NonStreamableError
-from ..filepath_utils import clean_filename, clean_filepath
-from ..metadata import (
-    AlbumMetadata,
-    Covers,
-    PlaylistMetadata,
-    SearchResults,
-    TrackMetadata,
-)
+from ..filepath_utils import clean_filename
+from ..metadata import PlaylistMetadata, SearchResults
 from ..utils.ssl_utils import get_aiohttp_connector_kwargs
 from .artwork import download_artwork
 from .media import Media, Pending, rip_tracks
-from .track import Track
+from .track import Track, fetch_downloadable, fetch_track_meta
 
 logger = logging.getLogger("streamrip")
 
@@ -34,6 +28,12 @@ logger = logging.getLogger("streamrip")
 # albums, so each resolve also fetches a cover; more than this only delays
 # the first download.
 RESOLVE_CONCURRENCY = 20
+
+
+def _playlist_folder(config: Config, name: str) -> str:
+    c = config.session
+    folder = clean_filename(name, c.filepaths.restrict_characters)
+    return os.path.join(c.downloads.folder, folder)
 
 
 @dataclass(slots=True)
@@ -49,42 +49,16 @@ class PendingPlaylistTrack(Pending):
     total: int = 0
 
     async def resolve(self) -> Track | None:
-        if self.db.downloaded(self.id):
-            logger.info(f"Track ({self.id}) already logged in database. Skipping.")
-            return None
-
-        source = self.client.source
-        # As in PendingTrack.resolve: record every failure, so a track that
-        # dies here is retryable by `streamrip repair` instead of vanishing.
-        try:
-            resp = await self.client.get_metadata(self.id, "track")
-        except NonStreamableError as e:
-            logger.error(f"Could not stream track {self.id}: {e}")
-            self.db.set_failed(source, "track", self.id)
-            return None
-
-        meta = None
-        try:
-            album = AlbumMetadata.from_track_resp(resp, source)
-            if album is not None:
-                meta = TrackMetadata.from_resp(album, source, resp)
-        except Exception as e:
-            logger.error(f"Error building track metadata for {self.id}: {e}")
-            self.db.set_failed(source, "track", self.id)
-            return None
-
+        meta = await fetch_track_meta(self.client, self.db, self.id)
         if meta is None:
-            logger.error(f"Track ({self.id}) not available for stream on {source}")
-            self.db.set_failed(source, "track", self.id)
             return None
-
-        c = self.config.session.metadata
-        if c.renumber_playlist_tracks:
+        album, c = meta.album, self.config.session
+        if c.metadata.renumber_playlist_tracks:
             # Disc and total come from the track's own album; left alone, a
             # disc-2 track sorts after the rest and "5/12" in a 50-track list.
             meta.tracknumber, meta.discnumber = self.position, 1
             album.tracktotal, album.disctotal = self.total or album.tracktotal, 1
-        if c.set_playlist_to_album:
+        if c.metadata.set_playlist_to_album:
             # Music servers group albums by album artist as well, so each
             # track's own would split the playlist into one album per artist
             # (upstream PR #738).
@@ -92,35 +66,19 @@ class PendingPlaylistTrack(Pending):
             album.albumartist = "Various Artists"
             album.compilation = "1"
 
-        quality = self.config.session.get_source(self.client.source).quality
-        try:
-            embedded_cover_path, downloadable = await asyncio.gather(
-                self._download_cover(album.covers, self.folder),
-                self.client.get_downloadable(self.id, quality),
-            )
-        except NonStreamableError as e:
-            logger.error(f"Error fetching download info for track {self.id}: {e}")
-            self.db.set_failed(self.client.source, "track", self.id)
+        (cover_path, _), downloadable = await asyncio.gather(
+            download_artwork(
+                self.client.session,
+                self.folder,
+                album.covers,
+                c.artwork,
+                for_playlist=True,
+            ),
+            fetch_downloadable(self.client, self.config, self.db, self.id),
+        )
+        if downloadable is None:
             return None
-
-        return Track(
-            meta,
-            downloadable,
-            self.config,
-            self.folder,
-            embedded_cover_path,
-            self.db,
-        )
-
-    async def _download_cover(self, covers: Covers, folder: str) -> str | None:
-        embed_path, _ = await download_artwork(
-            self.client.session,
-            folder,
-            covers,
-            self.config.session.artwork,
-            for_playlist=True,
-        )
-        return embed_path
+        return Track(meta, downloadable, self.config, self.folder, cover_path, self.db)
 
 
 @dataclass(slots=True)
@@ -166,8 +124,7 @@ class PendingPlaylist(Pending):
             logger.error(f"Error creating playlist: {e}")
             return None
         name = meta.name
-        parent = self.config.session.downloads.folder
-        folder = os.path.join(parent, clean_filepath(clean_filename(name)))
+        folder = _playlist_folder(self.config, name)
         ids = meta.ids()
         tracks = [
             PendingPlaylistTrack(
@@ -233,8 +190,7 @@ class PendingLastfmPlaylist(Pending):
                 *(self._make_query(f"{t} {a}", s, callback) for t, a in titles_artists)
             )
 
-        parent = self.config.session.downloads.folder
-        folder = os.path.join(parent, clean_filepath(clean_filename(playlist_title)))
+        folder = _playlist_folder(self.config, playlist_title)
 
         pending_tracks = []
         for pos, (id, from_fallback) in enumerate(results, start=1):
