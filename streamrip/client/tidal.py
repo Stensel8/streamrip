@@ -69,6 +69,7 @@ _AUDIO_QUALITY_TIER = {
     "HI_RES": 3,
     "HI_RES_LOSSLESS": 3,
 }
+LOSSLESS_TIER = _AUDIO_QUALITY_TIER["LOSSLESS"]
 
 
 class TidalClient(Client):
@@ -248,12 +249,15 @@ class TidalClient(Client):
 
         actual_quality = resp.get("audioQuality")
         actual_tier = _AUDIO_QUALITY_TIER.get(actual_quality)
-        if actual_tier is not None and actual_tier < quality:
+        if actual_tier is not None and actual_tier < min(quality, LOSSLESS_TIER):
             logger.warning(
                 f"Track {track_id}: requested {QUALITY_MAP[quality]} but Tidal "
                 f"only has {actual_quality} for it (most likely no lossless "
                 "master for this specific track)."
             )
+        elif actual_tier is not None and actual_tier < quality:
+            # Quality 3 is "best available": LOSSLESS back for it is normal.
+            logger.debug(f"Track {track_id}: no hi-res master, got {actual_quality}")
 
         # Hi-res (HI_RES_LOSSLESS) tracks are served as an MPEG-DASH manifest
         # rather than the usual base64 JSON; handle it instead of silently
