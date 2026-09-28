@@ -330,7 +330,9 @@ class Main:
     async def __aexit__(self, *_):
         # Ensure all client sessions are closed
         for client in self.clients.values():
-            if hasattr(client, "session"):
+            if isinstance(client, TidalClient):
+                await client.close()  # both of its logins have a session
+            elif hasattr(client, "session"):
                 await client.session.close()
 
         # close global progress bar manager

@@ -64,8 +64,10 @@ in the config. A login that stops working is asked for again.
   `user_auth_token` yourself: log in at [play.qobuz.com](https://play.qobuz.com/login)
   and copy both from the `user/login` response in DevTools → Network.
 - **Tidal** needs a subscription. streamrip shows a link to log in with on any
-  device. It gets 16-bit FLAC for every lossless release; `hires_client = true`
-  in `[tidal]` gets 24-bit instead, and AAC for releases that aren't hi-res.
+  device, twice: Tidal serves hi-res (up to 24-bit, 192 kHz) and CD quality
+  through two separate logins. Each track is asked for in hi-res first and falls
+  back to 16-bit FLAC when Tidal has no hi-res master. `hires_client = false` in
+  `[tidal]` skips the hi-res login and gets 16-bit FLAC only.
 - **Deezer** needs the `arl` cookie of a logged-in session
   ([how to find it](https://github.com/nathom/streamrip/wiki/Finding-Your-Deezer-ARL-Cookie));
   the quality follows your subscription.
@@ -84,7 +86,9 @@ streamrip repair                                             # retry what failed
 streamrip config open                                        # every option, explained
 ```
 
-`--quality` is the highest quality to download (SoundCloud has one per track):
+By default streamrip asks every source for its highest quality and steps down,
+one level at a time, when a track doesn't have it. `--quality` is the highest
+quality to download (SoundCloud has one per track):
 
 | Quality | Audio                 | Sources              |
 | ------- | --------------------- | -------------------- |

@@ -133,7 +133,7 @@ def test_config_file_update():
     assert toml["downloads"]["requests_per_minute"] == 60  # type: ignore
     assert toml["cli"]["progress_bars"] is True  # type: ignore
     assert toml["cli"]["max_search_results"] == 100  # type: ignore
-    assert toml["misc"]["version"] == "2.3.2"  # type: ignore
+    assert toml["misc"]["version"] == "2.3.3"  # type: ignore
     # Options that no longer exist don't survive the update.
     assert "youtube" not in toml
     assert "text_output" not in toml["cli"]  # type: ignore
@@ -315,3 +315,45 @@ def test_merged_options_carry_over_on_update(tmp_path):
     assert "qobuz_filters" not in new
     assert new["artist_filters"]["extras"] is True  # type: ignore
     assert new["artist_filters"]["repeats"] is True  # type: ignore
+
+
+def _update_with_tidal_login(tmp_path, hires_client: bool):
+    old = tomlkit.parse(open(OLD_CONFIG).read())
+    tidal = old["tidal"]  # type: ignore
+    tidal["hires_client"] = hires_client
+    tidal["client_id"] = ""
+    tidal["access_token"] = "tok"
+    tidal["refresh_token"] = "ref"
+    tidal["token_expiry"] = "1"
+    tidal["token_client_id"] = "some-client"
+    path = tmp_path / "config.toml"
+    path.write_text(tomlkit.dumps(old))
+
+    Config.update_file(str(path))
+    return tomlkit.parse(path.read_text())["tidal"]  # type: ignore
+
+
+def test_hires_login_moves_to_its_own_fields_on_update(tmp_path):
+    # Before there was a second login, hires_client = true replaced the default
+    # client and its tokens lived in the ordinary fields.
+    tidal = _update_with_tidal_login(tmp_path, hires_client=True)
+    assert tidal["hires_access_token"] == "tok"
+    assert tidal["hires_refresh_token"] == "ref"
+    assert tidal["hires_token_expiry"] == "1"
+    assert tidal["hires_token_client_id"] == "some-client"
+    assert tidal["access_token"] == ""
+    assert tidal["token_client_id"] == ""
+
+
+def test_default_client_login_stays_put_on_update(tmp_path):
+    tidal = _update_with_tidal_login(tmp_path, hires_client=False)
+    assert tidal["access_token"] == "tok"
+    assert tidal["token_client_id"] == "some-client"
+    assert tidal["hires_access_token"] == ""
+
+
+def test_default_quality_is_the_highest_of_every_source():
+    session = Config.defaults().session
+    assert session.qobuz.quality == 4  # 24-bit, up to 192 kHz
+    assert session.tidal.quality == 3  # best available, hi-res where there is one
+    assert session.deezer.quality == 2  # FLAC

@@ -93,6 +93,25 @@ def test_tidal_album_folder_details_match_other_sources():
     assert (m.tracktotal, m.disctotal) == (9, 2)
 
 
+def test_tidal_hires_album_folder_shows_the_real_stream_format():
+    # The album itself only says LOSSLESS; the client adds what the stream is.
+    m = AlbumMetadata.from_tidal(
+        _tidal_album(streamQuality={"bitDepth": 24, "sampleRate": 96000})
+    )
+    assert (m.info.quality, m.info.bit_depth, m.info.sampling_rate) == (3, 24, 96)
+    folder = m.format_folder_path(
+        "{title} [{container}] [{bit_depth}B-{sampling_rate}kHz]"
+    )
+    assert folder == "Album [FLAC] [24B-96kHz]"
+
+
+def test_tidal_hires_album_keeps_fractional_khz():
+    m = AlbumMetadata.from_tidal(
+        _tidal_album(streamQuality={"bitDepth": 24, "sampleRate": 88200})
+    )
+    assert m.info.sampling_rate == 88.2
+
+
 def test_tidal_track_response_gives_its_album():
     track = {
         "id": 99,

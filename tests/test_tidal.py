@@ -13,6 +13,7 @@ from streamrip.client.tidal import (
 from streamrip.config import Config
 from streamrip.exceptions import MissingCredentialsError, NonStreamableError
 from streamrip.metadata.util import tidal_quality_id
+from streamrip.rip.prompter import TidalPrompter
 
 MPD = """<?xml version="1.0" encoding="UTF-8"?>
 <MPD xmlns="urn:mpeg:dash:schema:mpd:2011" profiles="urn:mpeg:dash:profile:isoff-main:2011">
@@ -34,26 +35,44 @@ MPD = """<?xml version="1.0" encoding="UTF-8"?>
 """
 
 
-def _client() -> TidalClient:
-    return TidalClient(Config.defaults())
-
-
-def test_default_client_is_the_lossless_one():
-    assert _client().client_id == DEFAULT_CLIENT_ID
-
-
-def test_default_quality_is_lossless_not_hires():
-    # Regression guard: most catalogs mostly don't have a hi-res master, so
-    # defaulting to 3 (HI_RES) mainly just produces a warning-per-track for
-    # no benefit -- see the commit that changed this. A future template
-    # edit reverting to 3 should fail this test, not surface as log noise.
-    assert Config.defaults().session.tidal.quality == 2
-
-
-def test_hires_client_can_be_selected():
+def _client(hires: bool = False) -> TidalClient:
+    """One lane (the lossless client) unless `hires`, like a config with
+    hires_client = false."""
     cfg = Config.defaults()
-    cfg.session.tidal.hires_client = True
-    assert TidalClient(cfg).client_id == HIRES_CLIENT_ID
+    cfg.session.tidal.hires_client = hires
+    return TidalClient(cfg)
+
+
+def test_default_quality_is_the_highest():
+    tidal = Config.defaults().session.tidal
+    assert tidal.quality == 3
+    assert tidal.hires_client is True
+
+
+def test_defaults_ask_the_hires_client_first_and_the_lossless_one_second():
+    client = TidalClient(Config.defaults())
+    assert client.client_id == DEFAULT_CLIENT_ID
+    assert client.hires_lane.client_id == HIRES_CLIENT_ID
+    assert client.lanes() == [client, client.hires_lane]
+
+
+def test_no_hires_lane_without_hires_client():
+    client = _client()
+    assert client.hires_lane is None
+    assert client.lanes() == [client]
+
+
+def test_no_hires_login_when_hires_is_not_asked_for():
+    cfg = Config.defaults()
+    cfg.session.tidal.quality = 2  # e.g. `streamrip --quality 2`
+    assert TidalClient(cfg).hires_lane is None
+
+
+def test_each_lane_keeps_its_own_tokens():
+    c = _client(hires=True)
+    c.tokens.access_token = "lossless"
+    c.hires_lane.tokens.access_token = "hires"
+    assert (c.config.access_token, c.config.hires_access_token) == ("lossless", "hires")
 
 
 def test_explicit_client_override_wins():
@@ -176,6 +195,169 @@ async def test_no_warning_when_served_quality_matches_or_exceeds_request(caplog)
     assert isinstance(dl, TidalDownloadable)
 
 
+def _bts(quality: str, codec: str = "flac") -> dict:
+    manifest = (
+        f'{{"urls": ["https://x/y"], "codecs": "{codec}", "encryptionType": "NONE"}}'
+    )
+    return {
+        "audioQuality": quality,
+        "manifestMimeType": "application/vnd.tidal.bts",
+        "manifest": base64.b64encode(manifest.encode()).decode(),
+    }
+
+
+def _two_lanes(hires_reply, lossless_reply) -> TidalClient:
+    c = _client(hires=True)
+    c.session = c.hires_lane.session = MagicMock()
+    for lane, reply in ((c.hires_lane, hires_reply), (c, lossless_reply)):
+        if isinstance(reply, Exception):
+            lane._api_request = AsyncMock(side_effect=reply)
+        else:
+            lane._api_request = AsyncMock(return_value=reply)
+    return c
+
+
+@pytest.mark.asyncio
+async def test_hires_is_taken_when_tidal_has_it():
+    hires = {
+        "audioQuality": "HI_RES_LOSSLESS",
+        "manifestMimeType": "application/dash+xml",
+        "manifest": base64.b64encode(MPD.encode()).decode(),
+    }
+    c = _two_lanes(hires, AssertionError("the lossless client must not be asked"))
+    assert isinstance(await c.get_downloadable("1", 3), TidalDASHDownloadable)
+
+
+@pytest.mark.asyncio
+async def test_no_hires_master_steps_down_to_the_lossless_client():
+    # The hi-res client is only ever served AAC for such a track.
+    c = _two_lanes(_bts("HIGH", "mp4a.40.2"), _bts("LOSSLESS"))
+    dl = await c.get_downloadable("1", 3)
+    assert isinstance(dl, TidalDownloadable)
+    assert dl.extension == "flac"
+    c.hires_lane._api_request.assert_awaited_once()
+    c._api_request.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_failed_hires_request_falls_back_and_says_so(caplog):
+    c = _two_lanes(RuntimeError("boom"), _bts("LOSSLESS"))
+    dl = await c.get_downloadable("1", 3)
+    assert dl.extension == "flac"
+    assert "hi-res request failed (boom); using lossless" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_hires_client_is_not_asked_below_quality_3():
+    c = _two_lanes(AssertionError("not for CD quality"), _bts("LOSSLESS"))
+    assert (await c.get_downloadable("1", 2)).extension == "flac"
+    c.hires_lane._api_request.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_track_without_the_hires_tag_never_asks_the_hires_client():
+    c = _two_lanes(AssertionError("no hi-res master, so not asked"), _bts("LOSSLESS"))
+    c._note_hires_tags([{"id": 1, "mediaMetadata": {"tags": ["LOSSLESS"]}}])
+    assert (await c.get_downloadable("1", 3)).extension == "flac"
+    c.hires_lane._api_request.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "track",
+    [
+        {"id": 1, "mediaMetadata": {"tags": ["LOSSLESS", "HIRES_LOSSLESS"]}},
+        {"id": 1},  # no tag data: still asked, so hi-res is never missed
+    ],
+)
+async def test_hires_tagged_or_untagged_tracks_are_asked(track):
+    c = _two_lanes(_bts("HIGH", "mp4a.40.2"), _bts("LOSSLESS"))
+    c._note_hires_tags([track])
+    await c.get_downloadable("1", 3)
+    c.hires_lane._api_request.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_album_items_teach_which_tracks_have_no_hires_master():
+    c = _client(hires=True)
+    tagged = {"id": 7, "mediaMetadata": {"tags": ["LOSSLESS"]}}
+    c._api_request = AsyncMock(
+        return_value={
+            "totalNumberOfItems": 2,
+            "items": [
+                {"type": "track", "item": tagged},
+                {"type": "track", "item": {"id": 8}},
+            ],
+        }
+    )
+    await c._get_tracks("albums/1")
+    assert c._no_hires == {"7"}
+
+
+def _album_replies(tags: list[str]):
+    """An album with two tracks, as `_api_request` would answer for it."""
+    album = {"id": 1, "mediaMetadata": {"tags": tags}}
+    items = {
+        "totalNumberOfItems": 2,
+        "items": [{"type": "track", "item": {"id": i}} for i in (11, 12)],
+    }
+
+    async def reply(path, *_, **__):
+        return items if path.endswith("/items") else dict(album)
+
+    return reply
+
+
+def _hires_stream(rate: int) -> dict:
+    return {
+        "audioQuality": "HI_RES_LOSSLESS",
+        "bitDepth": 24,
+        "sampleRate": rate,
+        "manifestMimeType": "application/dash+xml",
+        "manifest": base64.b64encode(MPD.encode()).decode(),
+    }
+
+
+@pytest.mark.asyncio
+async def test_hires_album_reports_its_real_format_for_the_folder_name():
+    c = _client(hires=True)
+    c._api_request = _album_replies(["LOSSLESS", "HIRES_LOSSLESS"])
+    c.hires_lane._api_request = AsyncMock(return_value=_hires_stream(96000))
+    album = await c.get_metadata("1", "album")
+    assert album["streamQuality"] == {"bitDepth": 24, "sampleRate": 96000}
+    c.hires_lane._api_request.assert_awaited_once()  # one request for the album
+
+
+@pytest.mark.asyncio
+async def test_ordinary_album_costs_no_extra_request_and_keeps_its_label():
+    c = _client(hires=True)
+    c._api_request = _album_replies(["LOSSLESS"])
+    c.hires_lane._api_request = AsyncMock(side_effect=AssertionError("not hi-res"))
+    assert "streamQuality" not in await c.get_metadata("1", "album")
+
+
+@pytest.mark.asyncio
+async def test_album_format_lookup_failure_only_leaves_the_default_label():
+    c = _client(hires=True)
+    c._api_request = _album_replies(["LOSSLESS", "HIRES_LOSSLESS"])
+    c.hires_lane._api_request = AsyncMock(side_effect=RuntimeError("429"))
+    assert "streamQuality" not in await c.get_metadata("1", "album")
+
+
+@pytest.mark.asyncio
+async def test_no_format_lookup_without_the_hires_client():
+    c = _client()
+    c._api_request = _album_replies(["LOSSLESS", "HIRES_LOSSLESS"])
+    assert "streamQuality" not in await c.get_metadata("1", "album")
+
+
+@pytest.mark.asyncio
+async def test_nothing_streamable_anywhere_still_raises():
+    c = _two_lanes({"userMessage": "Asset is not ready"}, {"userMessage": "nope"})
+    with pytest.raises(NonStreamableError, match="nope"):
+        await c.get_downloadable("1", 3)
+
+
 @pytest.mark.asyncio
 async def test_single_search_hit_is_returned():
     c = _client()
@@ -213,3 +395,67 @@ async def test_album_items_are_paged_and_videos_left_out():
     assert [t["id"] for t in album["tracks"]] == [n for n in range(total) if n != 5]
     # The album, then one request per page of 100 -- no empty page past the end.
     assert c._api_request.await_count == 1 + 3
+
+
+def _mock_login(lane: TidalClient) -> None:
+    lane.session = MagicMock()
+    lane._get_device_code = AsyncMock(return_value=("code", "link.tidal.com/X"))
+    lane._get_auth_status = AsyncMock(
+        return_value=(
+            0,
+            {
+                "user_id": 1,
+                "country_code": "NL",
+                "access_token": f"at-{lane.client_id}",
+                "refresh_token": f"rt-{lane.client_id}",
+                "token_expiry": 123.0,
+            },
+        )
+    )
+
+
+@pytest.mark.asyncio
+async def test_prompter_logs_both_lanes_in_and_saves_them(monkeypatch):
+    monkeypatch.setattr("streamrip.rip.prompter.launch", lambda *_: None)
+    monkeypatch.setattr("streamrip.rip.prompter.console", MagicMock())
+    cfg = Config.defaults()
+    client = TidalClient(cfg)
+    for lane in client.lanes():
+        _mock_login(lane)
+    prompter = TidalPrompter(cfg, client)
+    assert not prompter.has_creds()
+
+    await prompter.prompt_and_login()
+
+    assert prompter.has_creds()
+    t = cfg.session.tidal
+    assert (t.access_token, t.token_client_id) == (
+        f"at-{DEFAULT_CLIENT_ID}",
+        DEFAULT_CLIENT_ID,
+    )
+    assert (t.hires_access_token, t.hires_token_client_id) == (
+        f"at-{HIRES_CLIENT_ID}",
+        HIRES_CLIENT_ID,
+    )
+    saved = cfg.file.tidal  # what gets written to config.toml
+    assert saved.access_token == t.access_token
+    assert saved.hires_access_token == t.hires_access_token
+    assert saved.user_id == 1
+
+
+@pytest.mark.asyncio
+async def test_prompter_leaves_a_working_login_alone(monkeypatch):
+    monkeypatch.setattr("streamrip.rip.prompter.launch", lambda *_: None)
+    monkeypatch.setattr("streamrip.rip.prompter.console", MagicMock())
+    cfg = Config.defaults()
+    client = TidalClient(cfg)
+    _mock_login(client)
+    client.hires_lane.tokens.access_token = "still-good"
+    client.hires_lane._login_lane = AsyncMock()  # its saved login works
+    client.hires_lane._get_device_code = AsyncMock()
+
+    await TidalPrompter(cfg, client).prompt_and_login()
+
+    client.hires_lane._get_device_code.assert_not_called()
+    assert cfg.session.tidal.hires_access_token == "still-good"
+    assert cfg.session.tidal.access_token == f"at-{DEFAULT_CLIENT_ID}"

@@ -230,6 +230,18 @@ class AlbumMetadata:
             return None
         quality = tidal_quality_id(resp.get("audioQuality", "LOW"))
         lossless = quality >= 2
+        # The album only says LOSSLESS. For a hi-res one the client adds what
+        # its stream really is (bit depth, and sample rate in Hz).
+        stream = resp.get("streamQuality") or {}
+        if stream.get("bitDepth") and stream.get("sampleRate"):
+            quality, lossless = 3, True
+            bit_depth = stream["bitDepth"]
+            khz = stream["sampleRate"] / 1000
+            sampling_rate = int(khz) if khz.is_integer() else khz
+        else:
+            # Tidal doesn't say; this is its lossless tier.
+            bit_depth = (24 if quality == 3 else 16) if lossless else None
+            sampling_rate = 44.1 if lossless else None
         date = resp.get("releaseDate")
         artists = ", ".join(a["name"] for a in resp.get("artists") or [])
         info = AlbumInfo(
@@ -237,9 +249,8 @@ class AlbumMetadata:
             quality=quality,
             container="FLAC" if lossless else "AAC",
             explicit=bool(resp.get("explicit")),
-            # Tidal doesn't say; this is its lossless tier.
-            sampling_rate=44.1 if lossless else None,
-            bit_depth=(24 if quality == 3 else 16) if lossless else None,
+            sampling_rate=sampling_rate,
+            bit_depth=bit_depth,
         )
         return cls(
             info,

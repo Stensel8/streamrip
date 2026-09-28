@@ -51,10 +51,23 @@ upstream issues and pull requests.
 
 - Lossless tracks download as FLAC again instead of AAC 320 ([#966](https://github.com/nathom/streamrip/issues/966),
   [#897](https://github.com/nathom/streamrip/issues/897), [#968](https://github.com/nathom/streamrip/issues/968),
-  [PR #1017](https://github.com/nathom/streamrip/pull/1017)); optional hi-res client via `hires_client = true`, and hi-res tracks
+  [PR #1017](https://github.com/nathom/streamrip/pull/1017)), and hi-res tracks
   served as MPEG-DASH are downloaded and remuxed instead of silently downgrading to AAC
-  ([#974](https://github.com/nathom/streamrip/issues/974), [PR #998](https://github.com/nathom/streamrip/pull/998)). Changing
-  the client asks for a new login once.
+  ([#974](https://github.com/nathom/streamrip/issues/974), [PR #998](https://github.com/nathom/streamrip/pull/998)).
+- Highest quality first, then one step down at a time. Since late April 2026 no
+  single Tidal client is served everything ([#966](https://github.com/nathom/streamrip/issues/966)): the default one gets FLAC
+  16/44.1 for every lossless release but never hi-res; the hi-res one gets 24-bit
+  FLAC (measured up to 192 kHz) for hi-res releases but only AAC 320 for the rest.
+  streamrip logs in with both (`hires_client`, now on by default: a second login,
+  asked for once) and asks the hi-res client first for every track Tidal doesn't
+  mark as lacking a hi-res master (the `HIRES_LOSSLESS` tag), then the default one.
+  A hi-res login from before is moved to its own config fields. It is only used
+  with `quality = 3`, so `--quality 2` needs no second login.
+- New defaults ask for the best each source has: Tidal `quality = 3`, Qobuz
+  `quality = 4` (Deezer was already at FLAC). Existing configs keep their values.
+- Folder names of hi-res albums show the real format (`[24B-96kHz]`) instead of
+  always `[16B-44.1kHz]`: Tidal's album data only says LOSSLESS, so the format is
+  read from the playback info of one track (one extra request per hi-res album).
 - Tracks without lyrics are no longer dropped, and lyrics errors never abort a
   track ([#983](https://github.com/nathom/streamrip/issues/983), [#959](https://github.com/nathom/streamrip/issues/959), [#866](https://github.com/nathom/streamrip/issues/866), [PR #1036](https://github.com/nathom/streamrip/pull/1036), [PR #1024](https://github.com/nathom/streamrip/pull/1024)).
 - Share links ending in `/u` work ([PR #911](https://github.com/nathom/streamrip/pull/911)).

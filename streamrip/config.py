@@ -18,7 +18,7 @@ logger = logging.getLogger("streamrip")
 APP_DIR = click.get_app_dir("streamrip")
 os.makedirs(APP_DIR, exist_ok=True)
 DEFAULT_CONFIG_PATH = os.path.join(APP_DIR, "config.toml")
-CURRENT_CONFIG_VERSION = "2.3.2"
+CURRENT_CONFIG_VERSION = "2.3.3"
 
 
 class OutdatedConfigError(Exception):
@@ -52,6 +52,11 @@ class TidalConfig:
     client_id: str = ""
     client_secret: str = ""
     token_client_id: str = ""
+    # The hi-res client's own login, next to the tokens above.
+    hires_access_token: str = ""
+    hires_refresh_token: str = ""
+    hires_token_expiry: str = ""
+    hires_token_client_id: str = ""
 
 
 @dataclass(slots=True)
@@ -338,6 +343,24 @@ def _carry_over_merged_options(old: dict):
         if filters.get("non_studio_albums"):
             filters["extras"] = True
         old["artist_filters"] = filters
+
+    tidal = old.get("tidal", {})
+    # Before the hi-res client got a login of its own, `hires_client = true`
+    # replaced the default client and its tokens were kept in the same fields.
+    if (
+        tidal.get("hires_client")
+        and not tidal.get("client_id")
+        and tidal.get("access_token")
+        and not tidal.get("hires_access_token")
+    ):
+        for name in (
+            "access_token",
+            "refresh_token",
+            "token_expiry",
+            "token_client_id",
+        ):
+            tidal["hires_" + name] = tidal.get(name, "")
+            tidal[name] = ""
 
 
 def update_config(old_with_data: dict, new_without_data: dict):
