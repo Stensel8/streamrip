@@ -43,6 +43,72 @@ NO_FILTERS = QobuzDiscographyFilterConfig(
 
 
 @pytest.mark.asyncio
+async def test_next_album_starts_as_soon_as_a_slot_frees_up():
+    """One slow album must not hold back the albums queued behind it."""
+    fast = RESOLVE_CHUNK_SIZE * 3
+    finished = 0
+    release = asyncio.Event()
+
+    class Album:
+        def __init__(self, slow):
+            self.slow = slow
+
+        async def rip(self):
+            nonlocal finished
+            if self.slow:
+                # Only finishes once every fast album has, which can't happen
+                # if the ones behind it wait for it in batches.
+                await release.wait()
+                return
+            finished += 1
+            if finished == fast:
+                release.set()
+
+    class Pending:
+        def __init__(self, slow):
+            self.slow = slow
+
+        async def resolve(self):
+            return Album(self.slow)
+
+    albums = [Pending(True)] + [Pending(False) for _ in range(fast)]
+    artist = Artist(name="Test Artist", albums=albums, client=None, config=None)
+
+    await asyncio.wait_for(artist._download_async(NO_FILTERS), 5)
+
+    assert finished == fast
+
+
+@pytest.mark.asyncio
+async def test_a_failing_album_does_not_stop_the_others(caplog):
+    ripped = []
+
+    class Album:
+        def __init__(self, n):
+            self.n = n
+
+        async def rip(self):
+            ripped.append(self.n)
+
+    class Pending:
+        def __init__(self, n, fail=False):
+            self.n, self.fail = n, fail
+
+        async def resolve(self):
+            if self.fail:
+                raise ConnectionError("boom")
+            return Album(self.n)
+
+    albums = [Pending(1), Pending(2, fail=True), Pending(3)]
+    artist = Artist(name="Test Artist", albums=albums, client=None, config=None)
+
+    await artist._download_async(NO_FILTERS)
+
+    assert sorted(ripped) == [1, 3]
+    assert "Error downloading album: ConnectionError: boom" in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_resolve_then_download_chunks_the_resolve_phase():
     """Used when qobuz_filters.repeats is on: resolving every album's title
     upfront is required, but that shouldn't mean firing them all at once.
