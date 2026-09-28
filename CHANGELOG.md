@@ -3,6 +3,14 @@
 All notable changes in this fork of [nathom/streamrip](https://github.com/nathom/streamrip). Numbers refer to
 upstream issues and pull requests.
 
+## 2.4.1
+
+- `[metadata] prefer_explicit` is on by default: when an album or playlist
+  lists both a clean and an explicit copy of the same track, only the
+  explicit one is downloaded. Costs no extra API calls, only a later start
+  (every track is resolved before any of them download, instead of as each
+  one resolves). Set it to `false` in an existing config to keep both.
+
 ## 2.4.0
 
 ### Installation and dependencies

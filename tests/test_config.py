@@ -275,8 +275,8 @@ def test_config_dont_update_without_set_modified():
     assert conf2.session.downloads.folder == "test_folder"
 
 
-def test_prefer_explicit_defaults_false():
-    assert Config.defaults().session.metadata.prefer_explicit is False
+def test_prefer_explicit_defaults_true():
+    assert Config.defaults().session.metadata.prefer_explicit is True
 
 
 def test_prefer_explicit_missing_from_toml_still_loads():
@@ -284,10 +284,10 @@ def test_prefer_explicit_missing_from_toml_still_loads():
     # in [metadata] at all; MetadataConfig's default must cover it so those
     # configs keep loading without a version bump.
     with open("streamrip/config.toml") as f:
-        toml_str = f.read().replace("\nprefer_explicit = false\n", "\n")
+        toml_str = f.read().replace("\nprefer_explicit = true\n", "\n")
     assert "prefer_explicit" not in toml_str
     data = ConfigData.from_toml(toml_str)
-    assert data.metadata.prefer_explicit is False
+    assert data.metadata.prefer_explicit is True
 
 
 # Other tests for the Config class can be added as needed

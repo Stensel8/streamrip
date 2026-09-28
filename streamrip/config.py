@@ -114,7 +114,7 @@ class MetadataConfig:
     set_playlist_to_album: bool
     renumber_playlist_tracks: bool
     exclude: list[str]
-    prefer_explicit: bool = False
+    prefer_explicit: bool = True
 
 
 @dataclass(slots=True)
