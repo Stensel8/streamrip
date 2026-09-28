@@ -187,3 +187,29 @@ def test_unknown_tidal_quality_does_not_crash():
     assert tidal_quality_id("HI_RES_LOSSLESS") == 3
     assert tidal_quality_id("SOMETHING_NEW") == 2
     assert tidal_quality_id(None) == 0
+
+
+@pytest.mark.asyncio
+async def test_album_items_are_paged_and_videos_left_out():
+    total = 250
+
+    async def api(path, params=None):
+        if path == "albums/1":
+            return {"id": 1, "numberOfTracks": total - 1, "numberOfVideos": 1}
+        offset = (params or {}).get("offset", 0)
+        return {
+            "totalNumberOfItems": total,
+            "items": [
+                {"type": "video" if n == 5 else "track", "item": {"id": n}}
+                for n in range(offset, min(offset + 100, total))
+            ],
+        }
+
+    c = _client()
+    c._api_request = AsyncMock(side_effect=api)
+
+    album = await c.get_metadata("1", "album")
+
+    assert [t["id"] for t in album["tracks"]] == [n for n in range(total) if n != 5]
+    # The album, then one request per page of 100 -- no empty page past the end.
+    assert c._api_request.await_count == 1 + 3

@@ -170,20 +170,7 @@ class TidalClient(Client):
         url = f"{media_type}s/{item_id}"
         item = await self._api_request(url)
         if media_type in ("playlist", "album"):
-            # TODO: move into new method and make concurrent
-            resp = await self._api_request(f"{url}/items")
-            tracks_left = item["numberOfTracks"]
-            if tracks_left > 100:
-                offset = 0
-                while tracks_left > 0:
-                    offset += 100
-                    tracks_left -= 100
-                    items_resp = await self._api_request(
-                        f"{url}/items", {"offset": offset}
-                    )
-                    resp["items"].extend(items_resp["items"])
-
-            item["tracks"] = [item["item"] for item in resp["items"]]
+            item["tracks"] = await self._get_tracks(url)
         elif media_type == "artist":
             logger.debug("filtering eps")
             album_resp, ep_resp = await asyncio.gather(
@@ -225,6 +212,26 @@ class TidalClient(Client):
 
         logger.debug(item)
         return item
+
+    async def _get_tracks(self, url: str) -> list[dict]:
+        """The tracks of an album or playlist, fetched 100 at a time.
+
+        Its items can include music videos, which can't be downloaded as
+        tracks; they're left out rather than failing (and being retried by
+        `streamrip repair`) one by one.
+        """
+        first = await self._api_request(f"{url}/items")
+        pages = await asyncio.gather(
+            *(
+                self._api_request(f"{url}/items", {"offset": offset})
+                for offset in range(100, first.get("totalNumberOfItems", 0), 100)
+            )
+        )
+        items = [i for page in (first, *pages) for i in page["items"]]
+        tracks = [i["item"] for i in items if i.get("type", "track") == "track"]
+        if len(tracks) < len(items):
+            logger.info(f"Skipping {len(items) - len(tracks)} video(s) in {url}")
+        return tracks
 
     async def search(self, media_type: str, query: str, limit: int = 100) -> list[dict]:
         """Search for a query.
