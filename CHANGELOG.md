@@ -3,6 +3,19 @@
 All notable changes in this fork of [nathom/streamrip](https://github.com/nathom/streamrip). Numbers refer to
 upstream issues and pull requests.
 
+## 2.4.2
+
+- Albums and playlists download one at a time, with a spinner and status
+  line while a large one is still resolving. Track progress no longer mixes
+  two releases together, each track/album shows its format and quality
+  (`[FLAC 24B-96kHz]`), and the doubled-up, corrupted terminal output during
+  a long run is fixed.
+- Tidal: an album it lists more than once under one artist -- a clean/explicit
+  pair, two quality tiers, or a "(Deluxe)"/"[Deluxe]" spelling of the same
+  edition -- downloads only its best copy instead of every copy.
+- Tidal: requests held back together by a rate limit no longer all retry in
+  the same instant and immediately re-trip it.
+
 ## 2.4.1
 
 - `[metadata] prefer_explicit` is on by default: when an album or playlist

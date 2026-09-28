@@ -136,7 +136,7 @@ def rip(
         level="INFO",
         format="%(message)s",
         datefmt="[%X]",
-        handlers=[RichHandler()],
+        handlers=[RichHandler(console=console)],
     )
     logger = logging.getLogger("streamrip")
     if verbose:

@@ -15,6 +15,7 @@ from ..exceptions import TrackDownloadFailedError
 from ..filepath_utils import clean_filename, clean_filepath, fit_filename
 from ..metadata import AlbumMetadata, TrackMetadata, tag_file
 from ..metadata.tagger import TAGGABLE_EXTENSIONS
+from ..metadata.util import format_quality
 from ..progress import add_title, get_progress_callback, remove_title
 from .artwork import download_artwork
 from .media import Media, Pending
@@ -79,18 +80,23 @@ class Track(Media):
             )
             return
         if self.is_single:
-            add_title(self.meta.title)
+            add_title(id(self), self.meta.title, self.config.session.cli.progress_bars)
 
     async def download(self):
         if self._skip_lossy_duplicate:
             return
+        quality = format_quality(
+            self.meta.album.info.container,
+            self.meta.album.info.bit_depth,
+            self.meta.album.info.sampling_rate,
+        )
         async with global_download_semaphore(self.config.session.downloads):
             for attempt in range(1, MAX_DOWNLOAD_ATTEMPTS + 1):
                 # Retries continue the partial file instead of starting over,
                 # so a connection that keeps dropping near the end of a large
                 # FLAC still gets there (upstream #951, #1022).
                 self.downloadable.resume = attempt > 1
-                label = f"Track {self.meta.tracknumber}"
+                label = f"Track {self.meta.tracknumber} {quality}"
                 if attempt > 1:
                     label += f" (retry {attempt - 1})"
                 try:
@@ -127,7 +133,7 @@ class Track(Media):
                     # skips it, which would leave a phantom title in the
                     # progress display for the rest of the run.
                     if self.is_single:
-                        remove_title(self.meta.title)
+                        remove_title(id(self), self.config.session.cli.progress_bars)
                     raise TrackDownloadFailedError(
                         f"{self.meta.title} ({self.meta.info.id})"
                     ) from e
@@ -138,7 +144,7 @@ class Track(Media):
             return
 
         if self.is_single:
-            remove_title(self.meta.title)
+            remove_title(id(self), self.config.session.cli.progress_bars)
 
         exclude = self.config.session.metadata.exclude
         await tag_file(self.download_path, self.meta, self.cover_path, exclude)

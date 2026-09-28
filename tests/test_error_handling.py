@@ -48,6 +48,9 @@ class TestErrorHandling:
         mock_config.session.metadata.prefer_explicit = prefer_explicit
         mock_db = MagicMock()
         mock_meta = MagicMock()
+        mock_meta.info.container = "FLAC"
+        mock_meta.info.bit_depth = None
+        mock_meta.info.sampling_rate = None
 
         # Create a list of mock tracks - one will succeed, one will fail
         mock_track_success = MagicMock()

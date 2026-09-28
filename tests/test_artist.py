@@ -43,40 +43,32 @@ NO_FILTERS = ArtistFilterConfig(
 
 
 @pytest.mark.asyncio
-async def test_next_album_starts_as_soon_as_a_slot_frees_up():
-    """One slow album must not hold back the albums queued behind it."""
-    fast = RESOLVE_CHUNK_SIZE * 3
-    finished = 0
-    release = asyncio.Event()
+async def test_albums_rip_strictly_one_at_a_time():
+    """RESOLVE_CHUNK_SIZE == 1: no album's tracks start until the last
+    album's are done downloading, so the progress display never shows two
+    albums' tracks at once.
+    """
+    concurrent = 0
+    max_concurrent = 0
 
     class Album:
-        def __init__(self, slow):
-            self.slow = slow
-
         async def rip(self):
-            nonlocal finished
-            if self.slow:
-                # Only finishes once every fast album has, which can't happen
-                # if the ones behind it wait for it in batches.
-                await release.wait()
-                return
-            finished += 1
-            if finished == fast:
-                release.set()
+            nonlocal concurrent, max_concurrent
+            concurrent += 1
+            max_concurrent = max(max_concurrent, concurrent)
+            await asyncio.sleep(0)
+            concurrent -= 1
 
     class Pending:
-        def __init__(self, slow):
-            self.slow = slow
-
         async def resolve(self):
-            return Album(self.slow)
+            return Album()
 
-    albums = [Pending(True)] + [Pending(False) for _ in range(fast)]
+    albums = [Pending() for _ in range(RESOLVE_CHUNK_SIZE * 3 + 1)]
     artist = Artist(name="Test Artist", albums=albums, client=None, config=None)
 
     await asyncio.wait_for(artist._download_async(NO_FILTERS), 5)
 
-    assert finished == fast
+    assert max_concurrent == 1
 
 
 @pytest.mark.asyncio

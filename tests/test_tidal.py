@@ -365,6 +365,109 @@ async def test_single_search_hit_is_returned():
     assert await c.search("track", "q", limit=1) == [{"items": [{"id": 1}]}]
 
 
+def _artist_replies(albums, eps=None):
+    """Tidal splits an artist's discography across two endpoints; both are
+    plain {"items": [...]} lists of album summaries."""
+
+    async def reply(path, params=None, **_):
+        if path.endswith("/albums"):
+            is_eps = params and params.get("filter") == "EPSANDSINGLES"
+            return {"items": (eps or []) if is_eps else albums}
+        return {"name": "Test Artist"}
+
+    return reply
+
+
+@pytest.mark.asyncio
+async def test_artist_albums_drop_the_clean_copy_of_an_explicit_duplicate():
+    """Tidal sometimes lists one album twice: once clean, once explicit."""
+    albums = [
+        {"id": "1", "title": "STANS", "numberOfTracks": 12, "explicit": False},
+        {"id": "2", "title": "STANS", "numberOfTracks": 12, "explicit": True},
+    ]
+    c = _client()
+    c._api_request = AsyncMock(side_effect=_artist_replies(albums))
+    artist = await c.get_metadata("1", "artist")
+    assert [a["id"] for a in artist["albums"]] == ["2"]
+
+
+@pytest.mark.asyncio
+async def test_artist_albums_keep_the_higher_quality_copy_when_both_explicit():
+    """Tidal also lists the same explicit master at two quality tiers."""
+    albums = [
+        {
+            "id": "1",
+            "title": "Coup De Grâce",
+            "numberOfTracks": 19,
+            "explicit": True,
+            "audioQuality": "LOSSLESS",
+        },
+        {
+            "id": "2",
+            "title": "Coup De Grâce",
+            "numberOfTracks": 19,
+            "explicit": True,
+            "audioQuality": "HI_RES_LOSSLESS",
+        },
+    ]
+    c = _client()
+    c._api_request = AsyncMock(side_effect=_artist_replies(albums))
+    artist = await c.get_metadata("1", "artist")
+    assert [a["id"] for a in artist["albums"]] == ["2"]
+
+
+@pytest.mark.asyncio
+async def test_artist_albums_ignore_bracket_style_when_matching_titles():
+    """Tidal tags the same edition "(Deluxe Edition)" on one release and
+    "[Deluxe Edition]" on another -- still the same album.
+    """
+    albums = [
+        {
+            "id": "1",
+            "title": "Recovery (Deluxe Edition)",
+            "numberOfTracks": 19,
+            "explicit": False,
+        },
+        {
+            "id": "2",
+            "title": "Recovery [Deluxe Edition]",
+            "numberOfTracks": 19,
+            "explicit": True,
+        },
+    ]
+    c = _client()
+    c._api_request = AsyncMock(side_effect=_artist_replies(albums))
+    artist = await c.get_metadata("1", "artist")
+    assert [a["id"] for a in artist["albums"]] == ["2"]
+
+
+@pytest.mark.asyncio
+async def test_artist_albums_with_different_track_counts_are_not_merged():
+    """A single sharing a title with an album isn't the same release."""
+    albums = [
+        {"id": "1", "title": "Houdini", "numberOfTracks": 1, "explicit": True},
+        {"id": "2", "title": "Houdini", "numberOfTracks": 12, "explicit": True},
+    ]
+    c = _client()
+    c._api_request = AsyncMock(side_effect=_artist_replies(albums))
+    artist = await c.get_metadata("1", "artist")
+    assert {a["id"] for a in artist["albums"]} == {"1", "2"}
+
+
+@pytest.mark.asyncio
+async def test_artist_album_duplicates_kept_when_prefer_explicit_is_off():
+    albums = [
+        {"id": "1", "title": "STANS", "numberOfTracks": 12, "explicit": False},
+        {"id": "2", "title": "STANS", "numberOfTracks": 12, "explicit": True},
+    ]
+    cfg = Config.defaults()
+    cfg.session.metadata.prefer_explicit = False
+    c = TidalClient(cfg)
+    c._api_request = AsyncMock(side_effect=_artist_replies(albums))
+    artist = await c.get_metadata("1", "artist")
+    assert [a["id"] for a in artist["albums"]] == ["1", "2"]
+
+
 def test_unknown_tidal_quality_does_not_crash():
     assert tidal_quality_id("HI_RES_LOSSLESS") == 3
     assert tidal_quality_id("SOMETHING_NEW") == 2
