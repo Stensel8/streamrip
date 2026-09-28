@@ -3,6 +3,8 @@ import shutil
 
 import pytest
 from mutagen.flac import FLAC
+from mutagen.id3 import ID3
+from mutagen.mp4 import MP4
 from util import arun
 
 from streamrip.metadata import (
@@ -16,6 +18,7 @@ from streamrip.metadata import (
 
 TEST_FLAC_ORIGINAL = "tests/silence.flac"
 TEST_FLAC_COPY = "tests/silence_copy.flac"
+TEST_M4A = "tests/silence.m4a"
 test_cover = "tests/1x1_pixel.jpg"
 
 
@@ -45,23 +48,18 @@ def sample_metadata() -> TrackMetadata:
             "1999",
             ["rock", "pop"],
             Covers(),
-            14,
-            3,
-            "testalbumcomposer",
-            "testcomment",
-            compilation="testcompilation",
+            tracktotal=14,
+            disctotal=3,
+            albumcomposer="testalbumcomposer",
             copyright="(c) stuff (p) other stuff",
             date="1998-02-13",
             description="testdesc",
-            encoder="ffmpeg",
-            grouping="testgroup",
-            lyrics="ye ye ye",
-            purchase_date=None,
         ),
         "testartist",
         3,
         1,
         "testcomposer",
+        isrc="USABC1234567",
     )
 
 
@@ -73,7 +71,6 @@ def test_tag_flac_no_cover(sample_metadata):
     assert file["title"][0] == "testtitle"
     assert file["album"][0] == "testalbum"
     assert file["composer"][0] == "testcomposer"
-    assert file["comment"][0] == "testcomment"
     assert file["artist"][0] == "testartist"
     assert file["albumartist"][0] == "testalbumartist"
     assert file["year"][0] == "1999"
@@ -83,7 +80,10 @@ def test_tag_flac_no_cover(sample_metadata):
     assert file["copyright"][0] == "© stuff ℗ other stuff"
     assert file["tracktotal"][0] == "14"
     assert file["date"][0] == "1998-02-13"
-    assert "purchase_date" not in file, file["purchase_date"]
+    assert file["description"][0] == "testdesc"
+    assert file["isrc"][0] == "USABC1234567"
+    # Empty lyrics (the default) are left out, not written as "".
+    assert "lyrics" not in file
     os.remove(TEST_FLAC_COPY)
 
 
@@ -93,21 +93,8 @@ def test_tag_flac_cover(sample_metadata):
     arun(tag_file(TEST_FLAC_COPY, sample_metadata, test_cover))
     file = FLAC(TEST_FLAC_COPY)
     assert file["title"][0] == "testtitle"
-    assert file["album"][0] == "testalbum"
-    assert file["composer"][0] == "testcomposer"
-    assert file["comment"][0] == "testcomment"
-    assert file["artist"][0] == "testartist"
-    assert file["albumartist"][0] == "testalbumartist"
-    assert file["year"][0] == "1999"
-    assert file["genre"][0] == "rock, pop"
-    assert file["tracknumber"][0] == "03"
-    assert file["discnumber"][0] == "01"
-    assert file["copyright"][0] == "© stuff ℗ other stuff"
-    assert file["tracktotal"][0] == "14"
-    assert file["date"][0] == "1998-02-13"
     with open(test_cover, "rb") as img:
         assert file.pictures[0].data == img.read()
-    assert "purchase_date" not in file, file["purchase_date"]
     os.remove(TEST_FLAC_COPY)
 
 
@@ -122,3 +109,60 @@ def test_tag_flac_multiple_artists(sample_metadata):
     file = FLAC(TEST_FLAC_COPY)
     assert list(file["artist"]) == ["The Kid LAROI", "Lil Mosey"]
     os.remove(TEST_FLAC_COPY)
+
+
+def test_tag_m4a(sample_metadata, tmp_path):
+    path = str(tmp_path / "track.m4a")
+    shutil.copy(TEST_M4A, path)
+    sample_metadata.artists = ["A", "B"]
+    arun(tag_file(path, sample_metadata, test_cover))
+    tags = MP4(path).tags
+    assert tags["\xa9nam"] == ["testtitle"]
+    assert tags["\xa9ART"] == ["A", "B"]
+    assert tags["aART"] == ["testalbumartist"]
+    # The composer used to be mapped onto the year's atom and lost.
+    assert tags["\xa9wrt"] == ["testcomposer"]
+    assert tags["\xa9day"] == ["1999"]
+    assert tags["trkn"] == [(3, 14)]
+    assert tags["disk"] == [(1, 3)]
+    assert tags["cprt"] == ["© stuff ℗ other stuff"]
+    assert tags["desc"] == ["testdesc"]
+    assert bytes(tags["----:com.apple.iTunes:ISRC"][0]) == b"USABC1234567"
+    assert "cpil" not in tags
+    assert "\xa9lyr" not in tags
+    assert len(tags["covr"]) == 1
+
+
+def test_tag_mp3(sample_metadata, tmp_path):
+    path = str(tmp_path / "track.mp3")
+    open(path, "wb").close()  # an ID3 tag doesn't need an audio stream
+    sample_metadata.artists = ["A", "B"]
+    sample_metadata.album.compilation = "1"
+    arun(tag_file(path, sample_metadata, None))
+    tags = ID3(path, translate=False)  # as written, not upgraded to v2.4
+    assert tags.version[:2] == (2, 3)
+    assert tags["TIT2"].text == ["testtitle"]
+    # ID3v2.3 has no multi-value text frames; "/" is its separator.
+    assert tags["TPE1"].text == ["A/B"]
+    assert tags["TCOM"].text == ["testcomposer"]
+    assert tags["TYER"].text == ["1999"]
+    assert tags["TRCK"].text == ["3/14"]
+    assert tags["TPOS"].text == ["1/3"]
+    assert tags["TSRC"].text == ["USABC1234567"]
+    assert tags["TCMP"].text == ["1"]
+    # The album description used to land in TIT1 (grouping), and empty
+    # lyrics in an empty USLT frame.
+    assert "TIT1" not in tags
+    assert not tags.getall("USLT")
+
+
+def test_exclude_only_drops_the_named_tag(sample_metadata, tmp_path):
+    # Excluding the composer used to drop the year from M4A files too, as
+    # both were mapped onto the same atom.
+    path = str(tmp_path / "track.m4a")
+    shutil.copy(TEST_M4A, path)
+    arun(tag_file(path, sample_metadata, test_cover, exclude=["composer", "cover"]))
+    tags = MP4(path).tags
+    assert "\xa9wrt" not in tags
+    assert "covr" not in tags
+    assert tags["\xa9day"] == ["1999"]

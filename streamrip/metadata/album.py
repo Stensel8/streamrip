@@ -53,15 +53,11 @@ class AlbumMetadata:
     tracktotal: int
     disctotal: int = 1
     albumcomposer: str | None = None
-    comment: str | None = None
+    # Set on the tracks of a playlist downloaded as one album.
     compilation: str | None = None
     copyright: str | None = None
     date: str | None = None
     description: str | None = None
-    encoder: str | None = None
-    grouping: str | None = None
-    lyrics: str | None = None
-    purchase_date: str | None = None
     # Edition name, e.g. "Deluxe Edition". Only some sources provide one.
     version: str | None = None
 

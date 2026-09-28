@@ -31,7 +31,6 @@ def test_album_metadata_qobuz():
     assert not m.covers.empty()
 
     assert m.albumcomposer == "Various Composers"
-    assert m.comment is None
     assert m.compilation is None
     assert (
         m.copyright
@@ -40,10 +39,6 @@ def test_album_metadata_qobuz():
     assert m.date == "1977-02-04"
     assert m.description == ""
     assert m.disctotal == 1
-    assert m.encoder is None
-    assert m.grouping is None
-    assert m.lyrics is None
-    assert m.purchase_date is None
     assert m.tracktotal == 11
 
 

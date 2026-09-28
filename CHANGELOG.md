@@ -122,7 +122,10 @@ upstream issues and pull requests.
   conversions honour `lossy_bitrate` ([#823](https://github.com/nathom/streamrip/issues/823), [PR #960](https://github.com/nathom/streamrip/pull/960)); OGG/Opus
   keep cover art ([PR #992](https://github.com/nathom/streamrip/pull/992)); new AIFF target ([PR #1006](https://github.com/nathom/streamrip/pull/1006)); ffmpeg can no longer
   break the terminal ([PR #996](https://github.com/nathom/streamrip/pull/996)).
-- `[metadata] exclude` works ([#850](https://github.com/nathom/streamrip/issues/850)); MP3s are written as ID3v2.3 as intended.
+- `[metadata] exclude` works ([#850](https://github.com/nathom/streamrip/issues/850)) and drops only the tags it names; MP3s are written as ID3v2.3 as intended.
+  M4A files get their composer tag (it was written to the year's atom and
+  lost), and MP3s no longer get the album description as their grouping
+  (TIT1) or an empty lyrics frame.
 - Long titles no longer fail with "File name too long" ([#856](https://github.com/nathom/streamrip/issues/856), [#859](https://github.com/nathom/streamrip/issues/859),
   [PR #860](https://github.com/nathom/streamrip/pull/860)); playlist names with `/` no longer create folders ([PR #1004](https://github.com/nathom/streamrip/pull/1004)).
 - Artwork downloads work with current aiohttp headers ([#941](https://github.com/nathom/streamrip/issues/941)).
