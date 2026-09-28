@@ -120,21 +120,24 @@ async def test_rate_limit_waits_for_retry_after_and_pauses_later_requests(sleeps
     # This one never saw a 429 itself, but the account is still rate limited.
     await c._api_request("tracks/2")
     assert c.session.calls == 3
-    assert sleeps == [pytest.approx(7, abs=0.5), pytest.approx(7, abs=0.5)]
+    # +0-2s jitter, so concurrent requests don't all wake and re-trip it together.
+    assert all(7 <= s < 9 for s in sleeps)
 
 
 @pytest.mark.asyncio
 async def test_rate_limit_without_retry_after_uses_a_default_pause(sleeps):
     c = _client(_Response(429), _Response())
     await c._api_request("tracks/1")
-    assert sleeps == [pytest.approx(RATE_LIMIT_PAUSE, abs=0.5)]
+    assert len(sleeps) == 1
+    assert RATE_LIMIT_PAUSE <= sleeps[0] < RATE_LIMIT_PAUSE + 2
 
 
 @pytest.mark.asyncio
 async def test_absurd_retry_after_is_capped(sleeps):
     c = _client(_Response(429, headers={"Retry-After": "3600"}), _Response())
     await c._api_request("tracks/1")
-    assert sleeps == [pytest.approx(MAX_RETRY_DELAY, abs=0.5)]
+    assert len(sleeps) == 1
+    assert MAX_RETRY_DELAY <= sleeps[0] < MAX_RETRY_DELAY + 2
 
 
 @pytest.mark.asyncio

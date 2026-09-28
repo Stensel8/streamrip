@@ -14,7 +14,7 @@ max_connections = 6
 # full discography) can burst past a higher limit and get 429 "Too Many
 # Requests" errors from the streaming service; lower this further if that
 # still happens.
-requests_per_minute = 40
+requests_per_minute = 35
 # Verify SSL certificates for API connections
 # Set to false if you encounter SSL certificate verification errors (not recommended)
 verify_ssl = true

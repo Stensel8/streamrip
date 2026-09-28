@@ -15,11 +15,10 @@ from .media import Media, Pending
 
 logger = logging.getLogger("streamrip")
 
-# Resolve only N albums at a time to avoid initial latency of resolving ALL
-# albums and tracks before any downloads, and to avoid bursting past the
-# streaming service's rate limit: resolving + starting downloads for many
-# albums at once fires many API calls almost simultaneously.
-RESOLVE_CHUNK_SIZE = 4
+# One album at a time: downloading several concurrently interleaves their
+# tracks in the progress display with no way to tell which track is from
+# which album, and it invites the streaming service's rate limit besides.
+RESOLVE_CHUNK_SIZE = 1
 
 
 async def rip_albums(

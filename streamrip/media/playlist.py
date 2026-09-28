@@ -88,17 +88,24 @@ class Playlist(Media):
     tracks: list[PendingPlaylistTrack]
 
     async def preprocess(self):
-        progress.add_title(self.name)
+        progress.add_title(id(self), self.name, self.config.session.cli.progress_bars)
 
     async def postprocess(self):
-        progress.remove_title(self.name)
+        progress.remove_title(id(self), self.config.session.cli.progress_bars)
 
     async def download(self):
-        await rip_tracks(
-            self.tracks,
-            RESOLVE_CONCURRENCY,
-            self.config.session.metadata.prefer_explicit,
-        )
+        big = len(self.tracks) > RESOLVE_CONCURRENCY
+        if big:
+            console.log(f"Resolving {len(self.tracks)} tracks: {self.name}")
+        enabled = big and self.config.session.cli.progress_bars
+        with progress.get_resolve_callback(
+            enabled, f"Obtaining playlist info: {self.name}"
+        ):
+            await rip_tracks(
+                self.tracks,
+                RESOLVE_CONCURRENCY,
+                self.config.session.metadata.prefer_explicit,
+            )
 
 
 @dataclass(slots=True)

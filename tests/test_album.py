@@ -10,11 +10,20 @@ from streamrip.media import album as album_module
 from streamrip.media.album import RESOLVE_CONCURRENCY, Album, PendingAlbum
 
 
+def _meta(album="Album"):
+    meta = MagicMock()
+    meta.album = album
+    meta.info.container = "FLAC"
+    meta.info.bit_depth = None
+    meta.info.sampling_rate = None
+    return meta
+
+
 def _album(tracks):
     config = MagicMock()
     config.session.metadata.prefer_explicit = False
     return Album(
-        meta=MagicMock(), tracks=tracks, config=config, folder="/x", db=MagicMock()
+        meta=_meta(), tracks=tracks, config=config, folder="/x", db=MagicMock()
     )
 
 
@@ -63,8 +72,7 @@ async def test_a_downloading_track_does_not_hold_a_resolve_slot():
 
 
 def _pending_album(monkeypatch, tmp_path, tracklist, downloaded):
-    meta = MagicMock()
-    meta.album = "Encore"
+    meta = _meta("Encore")
     client = MagicMock()
     client.source = "tidal"
     client.get_metadata = AsyncMock(return_value={})
