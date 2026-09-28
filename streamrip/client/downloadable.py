@@ -30,6 +30,8 @@ logger = logging.getLogger("streamrip")
 
 
 BLOWFISH_SECRET = "g4el58wc0zvf9na1"
+# Deezer encrypts the first 2048 bytes of every stripe of this many.
+DEEZER_STRIPE = 3 * 2048
 
 
 def generate_temp_path(url: str):
@@ -237,24 +239,30 @@ class DeezerDownloadable(Downloadable):
                     blowfish_key,
                 )
 
-                buf = bytearray()
-                async for data, _ in resp.content.iter_chunks():
-                    buf += data
-                    callback(len(data))
-
-                encrypt_chunk_size = 3 * 2048
+                # Decrypt as it arrives rather than holding the whole file in
+                # memory: only an incomplete stripe is ever kept back.
+                pending = bytearray()
                 async with aiofiles.open(path, "wb") as audio:
-                    buflen = len(buf)
-                    for i in range(0, buflen, encrypt_chunk_size):
-                        data = buf[i : min(i + encrypt_chunk_size, buflen)]
-                        if len(data) >= 2048:
-                            decrypted_chunk = (
-                                self._decrypt_chunk(blowfish_key, data[:2048])
-                                + data[2048:]
-                            )
-                        else:
-                            decrypted_chunk = data
-                        await audio.write(decrypted_chunk)
+                    async for data in resp.content.iter_chunked(2**17):
+                        callback(len(data))
+                        pending += data
+                        whole = len(pending) - len(pending) % DEEZER_STRIPE
+                        if whole:
+                            chunk = pending[:whole]
+                            del pending[:whole]
+                            await audio.write(self._decrypt(blowfish_key, chunk))
+                    await audio.write(self._decrypt(blowfish_key, pending))
+
+    @classmethod
+    def _decrypt(cls, key, data: bytearray) -> bytearray:
+        """Decrypt stripes from the start of the stream (or right after the
+        previous whole stripe): of every 3 * 2048 bytes, only the first 2048
+        are encrypted.
+        """
+        for i in range(0, len(data), DEEZER_STRIPE):
+            if len(data) - i >= 2048:
+                data[i : i + 2048] = cls._decrypt_chunk(key, data[i : i + 2048])
+        return data
 
     @staticmethod
     def _decrypt_chunk(key, data):
@@ -499,7 +507,6 @@ class SoundcloudDownloadable(Downloadable):
             self.session, self.url, "flac", source="soundcloud"
         )
         await downloader.download(path, callback)
-        self.size = downloader.size
         engine = converter.FLAC(path)
         await engine.convert(path)
 
@@ -510,29 +517,33 @@ class SoundcloudDownloadable(Downloadable):
 
         parsed_m3u = m3u8.loads(content)
         self._size = len(parsed_m3u.segments)
-        segment_count = len(parsed_m3u.segments)
+        # Segments finish in any order; each has its own path, so they're
+        # concatenated in playlist order, and all removed afterwards -- also
+        # when one fails, or they pile up in the temp dir.
+        segment_paths = [generate_temp_path(s.uri) for s in parsed_m3u.segments]
         tasks = [
-            asyncio.create_task(self._download_segment(i, segment.uri))
-            for i, segment in enumerate(parsed_m3u.segments)
+            asyncio.create_task(self._download_segment(segment.uri, tmp, callback))
+            for segment, tmp in zip(parsed_m3u.segments, segment_paths)
         ]
+        try:
+            await asyncio.gather(*tasks)
+            await concat_audio_files(segment_paths, path, "mp3")
+        finally:
+            for task in tasks:
+                task.cancel()
+            # Let cancelled downloads finish unwinding before deleting their
+            # files, or one could still create its file afterwards.
+            await asyncio.gather(*tasks, return_exceptions=True)
+            for tmp in segment_paths:
+                if os.path.exists(tmp):
+                    os.remove(tmp)
 
-        segment_paths: dict[int, str] = {}
-        for coro in asyncio.as_completed(tasks):
-            index, downloaded_path = await coro
-            segment_paths[index] = downloaded_path
-            callback(1)
-
-        ordered_paths = [segment_paths[i] for i in range(segment_count)]
-        await concat_audio_files(ordered_paths, path, "mp3")
-
-    async def _download_segment(self, index: int, segment_uri: str) -> tuple[int, str]:
-        tmp = generate_temp_path(segment_uri)
+    async def _download_segment(self, segment_uri: str, tmp: str, callback):
         async with self.session.get(segment_uri) as resp:
             resp.raise_for_status()
             async with aiofiles.open(tmp, "wb") as file:
-                content = await resp.content.read()
-                await file.write(content)
-        return index, tmp
+                await file.write(await resp.content.read())
+        callback(1)
 
     async def size(self) -> int:
         if self.file_type == "mp3":
@@ -600,12 +611,19 @@ async def concat_audio_files(paths: list[str], out: str, ext: str, max_files_ope
     processes = await asyncio.gather(*proc_futures)
 
     # wait for all of them to finish
-    await asyncio.gather(*[p.communicate() for p in processes])
-    for proc in processes:
-        if proc.returncode != 0:
-            raise Exception(
-                f"FFMPEG returned with status code {proc.returncode} error: {proc.stderr} output: {proc.stdout}",
-            )
+    results = await asyncio.gather(*[p.communicate() for p in processes])
+    try:
+        for proc, (_, stderr) in zip(processes, results):
+            if proc.returncode != 0:
+                raise Exception(
+                    f"FFMPEG returned with status code {proc.returncode}: "
+                    f"{stderr.decode(errors='replace')[-300:]}"
+                )
 
-    # Recurse on remaining batches
-    await concat_audio_files(outpaths, out, ext)
+        # Recurse on remaining batches
+        await concat_audio_files(outpaths, out, ext)
+    finally:
+        # The last one was moved into place; the rest are intermediates.
+        for p in outpaths:
+            if os.path.exists(p):
+                os.remove(p)
