@@ -11,9 +11,11 @@ class TestErrorHandling:
     """Test error handling in playlist and album downloads."""
 
     @pytest.mark.asyncio
-    async def test_playlist_handles_failed_track(self):
+    @pytest.mark.parametrize("prefer_explicit", [False, True])
+    async def test_playlist_handles_failed_track(self, prefer_explicit):
         """Test that a playlist download continues even if one track fails."""
         mock_config = MagicMock()
+        mock_config.session.metadata.prefer_explicit = prefer_explicit
         mock_client = MagicMock()
 
         mock_track_success = MagicMock()
@@ -39,9 +41,11 @@ class TestErrorHandling:
         mock_track_failure.resolve.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_album_handles_failed_track(self):
+    @pytest.mark.parametrize("prefer_explicit", [False, True])
+    async def test_album_handles_failed_track(self, prefer_explicit):
         """Test that an album download continues even if one track fails."""
         mock_config = MagicMock()
+        mock_config.session.metadata.prefer_explicit = prefer_explicit
         mock_db = MagicMock()
         mock_meta = MagicMock()
 
