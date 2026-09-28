@@ -21,6 +21,11 @@ logger = logging.getLogger("streamrip")
 # One try plus three retries with exponential backoff.
 MAX_DOWNLOAD_ATTEMPTS = 4
 
+# FLAC is always preferred over a lossy container for the same track: if one
+# is already on disk, there's no reason to also keep (or fetch) the other.
+LOSSLESS_EXTENSIONS = {"flac", "aiff", "aif"}
+LOSSY_EXTENSIONS = {"m4a", "mp3"}
+
 
 @dataclass(slots=True)
 class Track(Media):
@@ -34,14 +39,30 @@ class Track(Media):
     # change?
     download_path: str = ""
     is_single: bool = False
+    # Base name (no extension) `download_path` is built from; kept around to
+    # find a sibling file that only differs by extension.
+    _path_stem: str = ""
+    # Set in preprocess() when a lossless copy of this track already exists,
+    # so download()/postprocess() skip it instead of fetching a redundant
+    # lossy copy.
+    _skip_lossy_duplicate: bool = False
 
     async def preprocess(self):
         self._set_download_path()
         os.makedirs(self.folder, exist_ok=True)
+        if self._lossless_duplicate_exists():
+            self._skip_lossy_duplicate = True
+            logger.info(
+                f"Skipping '{self.meta.title}': a lossless copy already exists, "
+                f"not downloading the .{self.downloadable.extension} version."
+            )
+            return
         if self.is_single:
             add_title(self.meta.title)
 
     async def download(self):
+        if self._skip_lossy_duplicate:
+            return
         async with global_download_semaphore(self.config.session.downloads):
             for attempt in range(1, MAX_DOWNLOAD_ATTEMPTS + 1):
                 # Retries continue the partial file instead of starting over,
@@ -91,6 +112,10 @@ class Track(Media):
                     ) from e
 
     async def postprocess(self):
+        if self._skip_lossy_duplicate:
+            self.db.set_downloaded(self.meta.info.id)
+            return
+
         if self.is_single:
             remove_title(self.meta.title)
 
@@ -107,6 +132,12 @@ class Track(Media):
                     f"Could not convert '{self.meta.title}', keeping the "
                     f"original file: {type(e).__name__}: {e}"
                 )
+        else:
+            # Conversion picks its own target codec for every track, so a
+            # mismatched sibling from a previous run doesn't mean anything
+            # there; only clean up when this file's own format is the one on
+            # disk.
+            self._remove_lossy_duplicates()
 
         self.db.set_downloaded(self.meta.info.id)
 
@@ -146,10 +177,32 @@ class Track(Media):
         if c.truncate_to > 0 and len(track_path) > c.truncate_to:
             track_path = track_path[: c.truncate_to]
 
+        self._path_stem = track_path
         self.download_path = os.path.join(
             self.folder,
             fit_filename(track_path, self.downloadable.extension),
         )
+
+    def _sibling_path(self, extension: str) -> str:
+        """Path this track would have on disk with a different extension."""
+        return os.path.join(self.folder, fit_filename(self._path_stem, extension))
+
+    def _lossless_duplicate_exists(self) -> bool:
+        if self.downloadable.extension.lower() not in LOSSY_EXTENSIONS:
+            return False
+        return any(
+            os.path.isfile(self._sibling_path(ext)) for ext in LOSSLESS_EXTENSIONS
+        )
+
+    def _remove_lossy_duplicates(self):
+        final_ext = self.download_path.rsplit(".", 1)[-1].lower()
+        if final_ext not in LOSSLESS_EXTENSIONS:
+            return
+        for ext in LOSSY_EXTENSIONS:
+            sibling = self._sibling_path(ext)
+            if os.path.isfile(sibling):
+                logger.info(f"Removing lower-quality duplicate: {sibling}")
+                os.remove(sibling)
 
 
 @dataclass(slots=True)

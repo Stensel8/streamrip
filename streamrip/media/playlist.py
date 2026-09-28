@@ -26,7 +26,7 @@ from ..metadata import (
 )
 from ..utils.ssl_utils import get_aiohttp_connector_kwargs
 from .artwork import download_artwork
-from .media import Media, Pending
+from .media import Media, Pending, filter_prefer_explicit
 from .track import Track
 
 logger = logging.getLogger("streamrip")
@@ -118,6 +118,10 @@ class Playlist(Media):
         progress.remove_title(self.name)
 
     async def download(self):
+        if self.config.session.metadata.prefer_explicit:
+            await self._resolve_then_download()
+            return
+
         track_resolve_chunk_size = 20
 
         async def _resolve_download(item: PendingPlaylistTrack):
@@ -141,6 +145,36 @@ class Playlist(Media):
         for batch in batches:
             results = await asyncio.gather(*batch, return_exceptions=True)
 
+            for result in results:
+                if isinstance(result, Exception):
+                    logger.error(f"Batch processing error: {result}")
+
+    async def _resolve_then_download(self):
+        """Resolve every track before downloading any of them, so a clean
+        copy can be dropped in favor of an explicit one once both are known
+        (see [metadata] prefer_explicit). Costs one extra API call per track
+        compared to the default resolve-and-download-immediately path.
+        """
+        track_resolve_chunk_size = 20
+        resolved = []
+        for chunk in self.batch(self.tracks, track_resolve_chunk_size):
+            resolved_or_none = await asyncio.gather(*[t.resolve() for t in chunk])
+            resolved.extend(t for t in resolved_or_none if t is not None)
+
+        tracks = filter_prefer_explicit(resolved)
+
+        async def _download(track):
+            try:
+                await track.rip()
+            except TrackDownloadFailedError:
+                pass
+            except Exception as e:
+                logger.error(f"Error downloading track: {type(e).__name__}: {e}")
+
+        for chunk in self.batch(tracks, track_resolve_chunk_size):
+            results = await asyncio.gather(
+                *[_download(t) for t in chunk], return_exceptions=True
+            )
             for result in results:
                 if isinstance(result, Exception):
                     logger.error(f"Batch processing error: {result}")

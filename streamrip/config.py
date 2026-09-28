@@ -174,6 +174,12 @@ class MetadataConfig:
     # The following metadata tags won't be applied
     # See https://github.com/nathom/streamrip/wiki/Metadata-Tag-Names for more info
     exclude: list[str]
+    # When an album or playlist contains both a clean and an explicit copy of
+    # the same track (same title and artist), skip the clean one and keep
+    # only the explicit copy. Off by default since it costs an extra API call
+    # per track (every track has to be resolved before any of them download,
+    # instead of downloading as each one resolves).
+    prefer_explicit: bool = False
 
 
 @dataclass(slots=True)

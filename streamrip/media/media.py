@@ -30,3 +30,25 @@ class Pending(ABC):
     async def resolve(self) -> Media | None:
         """Fetch metadata and resolve into a downloadable `Media` object."""
         raise NotImplementedError
+
+
+def filter_prefer_explicit(tracks: list) -> list:
+    """Drop the clean copy of any track that also has an explicit copy.
+
+    Tracks are grouped by (title, artist); within a group that has both an
+    explicit and a non-explicit entry, only the explicit one(s) are kept. A
+    group that's all-explicit or all-clean is left untouched -- there's
+    nothing to prefer against. Used by Album/Playlist when [metadata]
+    prefer_explicit is set, so a catalog that lists both editions of the
+    same song doesn't turn into two downloads of it.
+    """
+    groups: dict[tuple[str, str], list] = {}
+    for track in tracks:
+        key = (track.meta.title.strip().lower(), track.meta.artist.strip().lower())
+        groups.setdefault(key, []).append(track)
+
+    kept = []
+    for group in groups.values():
+        explicit = [t for t in group if t.meta.info.explicit]
+        kept.extend(explicit if 0 < len(explicit) < len(group) else group)
+    return kept
