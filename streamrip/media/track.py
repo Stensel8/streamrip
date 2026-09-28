@@ -3,6 +3,10 @@ import logging
 import os
 from dataclasses import dataclass
 
+import mutagen
+from mutagen.aiff import AIFF
+from mutagen.flac import FLAC
+
 from .. import converter
 from ..client import Client, Downloadable
 from ..config import Config
@@ -21,10 +25,26 @@ logger = logging.getLogger("streamrip")
 # One try plus three retries with exponential backoff.
 MAX_DOWNLOAD_ATTEMPTS = 4
 
-# FLAC is always preferred over a lossy container for the same track: if one
-# is already on disk, there's no reason to also keep (or fetch) the other.
-LOSSLESS_EXTENSIONS = {"flac", "aiff", "aif"}
-LOSSY_EXTENSIONS = {"m4a", "mp3"}
+# Formats a track is downloaded in. A lossless copy of a track makes a lossy
+# copy of the same track redundant, so only one of them is kept.
+DEDUP_EXTENSIONS = ("flac", "m4a", "mp3")
+
+
+def _open_audio(path: str):
+    """`path` as a mutagen file with format-independent tag names, or None."""
+    try:
+        return mutagen.File(path, easy=True)
+    except Exception:
+        return None
+
+
+def _is_lossless(audio) -> bool:
+    # ALAC and AAC share the .m4a extension, so this has to look at the codec.
+    return isinstance(audio, FLAC | AIFF) or getattr(audio.info, "codec", "") == "alac"
+
+
+def _first_tag(audio, key: str) -> str:
+    return str((audio.tags.get(key) or [""])[0]).strip().casefold()
 
 
 @dataclass(slots=True)
@@ -50,7 +70,9 @@ class Track(Media):
     async def preprocess(self):
         self._set_download_path()
         os.makedirs(self.folder, exist_ok=True)
-        if self._lossless_duplicate_exists():
+        if self.downloadable.extension != "flac" and self._copies_on_disk(
+            lossless=True
+        ):
             self._skip_lossy_duplicate = True
             logger.info(
                 f"Skipping '{self.meta.title}': a lossless copy already exists, "
@@ -132,13 +154,8 @@ class Track(Media):
                     f"Could not convert '{self.meta.title}', keeping the "
                     f"original file: {type(e).__name__}: {e}"
                 )
-        else:
-            # Conversion picks its own target codec for every track, so a
-            # mismatched sibling from a previous run doesn't mean anything
-            # there; only clean up when this file's own format is the one on
-            # disk.
-            self._remove_lossy_duplicates()
 
+        self._remove_lossy_copies()
         self.db.set_downloaded(self.meta.info.id)
 
     async def _convert(self):
@@ -187,22 +204,43 @@ class Track(Media):
         """Path this track would have on disk with a different extension."""
         return os.path.join(self.folder, fit_filename(self._path_stem, extension))
 
-    def _lossless_duplicate_exists(self) -> bool:
-        if self.downloadable.extension.lower() not in LOSSY_EXTENSIONS:
-            return False
-        return any(
-            os.path.isfile(self._sibling_path(ext)) for ext in LOSSLESS_EXTENSIONS
-        )
+    def _copies_on_disk(self, lossless: bool) -> list[str]:
+        """Lossless (or lossy) files of this same track under another extension.
 
-    def _remove_lossy_duplicates(self):
-        final_ext = self.download_path.rsplit(".", 1)[-1].lower()
-        if final_ext not in LOSSLESS_EXTENSIONS:
+        A matching filename stem alone doesn't prove it's the same track: a
+        single and an album can share one. So a file only counts if its title
+        and album tags match this track's too.
+        """
+        want = (
+            self.meta.title.strip().casefold(),
+            self.meta.album.album.strip().casefold(),
+        )
+        copies = []
+        for ext in DEDUP_EXTENSIONS:
+            path = self._sibling_path(ext)
+            if path == self.download_path or not os.path.isfile(path):
+                continue
+            audio = _open_audio(path)
+            if (
+                audio is not None
+                and audio.tags
+                and _is_lossless(audio) == lossless
+                and (_first_tag(audio, "title"), _first_tag(audio, "album")) == want
+            ):
+                copies.append(path)
+        return copies
+
+    def _remove_lossy_copies(self):
+        # A lossy download converted to FLAC is no better than the copy it would
+        # replace; only a genuinely lossless download supersedes the others.
+        if self.downloadable.extension != "flac":
             return
-        for ext in LOSSY_EXTENSIONS:
-            sibling = self._sibling_path(ext)
-            if os.path.isfile(sibling):
-                logger.info(f"Removing lower-quality duplicate: {sibling}")
-                os.remove(sibling)
+        final = _open_audio(self.download_path)
+        if final is None or not _is_lossless(final):
+            return
+        for path in self._copies_on_disk(lossless=False):
+            logger.info(f"Removing lower-quality copy: {path}")
+            os.remove(path)
 
 
 @dataclass(slots=True)

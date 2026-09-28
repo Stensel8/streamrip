@@ -65,8 +65,7 @@ class Album(Media):
     async def _resolve_then_download(self):
         """Resolve every track before downloading any of them, so a clean
         copy can be dropped in favor of an explicit one once both are known
-        (see [metadata] prefer_explicit). Costs one extra API call per track
-        compared to the default resolve-and-download-immediately path.
+        (see [metadata] prefer_explicit).
         """
         resolve_slots = asyncio.Semaphore(RESOLVE_CONCURRENCY)
 

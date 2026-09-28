@@ -1,6 +1,7 @@
 import os
 import shutil
 
+import mutagen
 import pytest
 from util import arun
 
@@ -40,23 +41,35 @@ def test_pending_resolve(qobuz_client: QobuzClient):
     shutil.rmtree(dir)
 
 
+FIXTURES = {
+    "flac": "tests/silence.flac",
+    "m4a": "tests/silence.m4a",
+    "alac": "tests/silence_alac.m4a",
+}
+
+
 class FakeDownloadable(Downloadable):
-    """A Downloadable that just writes some bytes, for exercising Track's
-    file-placement logic without hitting the network.
-    """
+    """Copies a real audio fixture into place, so Track can tag it afterwards."""
 
     def __init__(self, extension: str):
         self.extension = extension
         self.source = "test"
 
     async def _download(self, path, callback):
-        data = b"fake audio bytes"
-        with open(path, "wb") as f:
-            f.write(data)
-        callback(len(data))
+        shutil.copy(FIXTURES[self.extension], path)
+        callback(os.path.getsize(path))
 
     async def size(self):
-        return 17
+        return os.path.getsize(FIXTURES[self.extension])
+
+
+def _place_copy(path, fixture: str, album: str = "Test Album"):
+    """An earlier download of a track: real audio, tagged like streamrip does."""
+    shutil.copy(FIXTURES[fixture], path)
+    audio = mutagen.File(path, easy=True)
+    audio["title"] = "Song"
+    audio["album"] = album
+    audio.save()
 
 
 def _make_track(folder: str, extension: str) -> Track:
@@ -94,35 +107,76 @@ def _make_track(folder: str, extension: str) -> Track:
 
 
 def test_lossy_download_skipped_when_lossless_copy_exists(tmp_path):
-    (tmp_path / "Song.flac").write_bytes(b"pretend flac bytes")
+    _place_copy(tmp_path / "Song.flac", "flac")
 
-    t = _make_track(str(tmp_path), "m4a")
-    arun(t.preprocess())
-    assert t._skip_lossy_duplicate is True
+    arun(_make_track(str(tmp_path), "m4a").rip())
 
-    arun(t.download())
     assert not (tmp_path / "Song.m4a").exists()
+    assert (tmp_path / "Song.flac").exists()
 
 
-def test_lossy_download_proceeds_without_a_lossless_copy(tmp_path):
-    t = _make_track(str(tmp_path), "m4a")
-    arun(t.preprocess())
-    assert t._skip_lossy_duplicate is False
+def test_lossless_copy_of_another_release_does_not_skip(tmp_path):
+    # Same filename stem, different album: not the same track.
+    _place_copy(tmp_path / "Song.flac", "flac", album="Some Single")
 
-    arun(t.download())
+    arun(_make_track(str(tmp_path), "m4a").rip())
+
     assert (tmp_path / "Song.m4a").exists()
 
 
-def test_stale_lossy_sibling_removed_once_lossless_copy_lands(tmp_path):
-    (tmp_path / "Song.m4a").write_bytes(b"stale aac copy")
+def test_lossy_download_proceeds_without_a_lossless_copy(tmp_path):
+    arun(_make_track(str(tmp_path), "m4a").rip())
 
-    t = _make_track(str(tmp_path), "flac")
-    arun(t.preprocess())
-    assert t._skip_lossy_duplicate is False
+    assert (tmp_path / "Song.m4a").exists()
 
-    arun(t.download())
+
+def test_lossy_copy_removed_once_lossless_copy_lands(tmp_path):
+    _place_copy(tmp_path / "Song.m4a", "m4a")
+
+    arun(_make_track(str(tmp_path), "flac").rip())
+
     assert (tmp_path / "Song.flac").exists()
-    assert (tmp_path / "Song.m4a").exists()  # not cleaned up until postprocess
+    assert not (tmp_path / "Song.m4a").exists()
 
-    t._remove_lossy_duplicates()
+
+def test_lossy_copy_of_another_release_is_kept(tmp_path):
+    _place_copy(tmp_path / "Song.m4a", "m4a", album="Some Single")
+
+    arun(_make_track(str(tmp_path), "flac").rip())
+
+    assert (tmp_path / "Song.m4a").exists()
+
+
+def test_alac_copy_is_never_treated_as_lossy(tmp_path):
+    # ALAC is lossless but shares the .m4a extension with AAC.
+    _place_copy(tmp_path / "Song.m4a", "alac")
+
+    arun(_make_track(str(tmp_path), "flac").rip())
+
+    assert (tmp_path / "Song.m4a").exists()
+
+
+class FlacToFlacConverter:
+    """Stands in for a lossless conversion that keeps the format (downsampling)."""
+
+    lossless = True
+
+    def __init__(self, filename, **_):
+        self.final_fn = filename
+
+    async def convert(self):
+        pass
+
+
+def test_lossy_copy_removed_after_lossless_conversion(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "streamrip.media.track.converter.get", lambda _: FlacToFlacConverter
+    )
+    _place_copy(tmp_path / "Song.m4a", "m4a")
+    t = _make_track(str(tmp_path), "flac")
+    t.config.session.conversion.enabled = True
+
+    arun(t.rip())
+
+    assert (tmp_path / "Song.flac").exists()
     assert not (tmp_path / "Song.m4a").exists()

@@ -176,9 +176,8 @@ class MetadataConfig:
     exclude: list[str]
     # When an album or playlist contains both a clean and an explicit copy of
     # the same track (same title and artist), skip the clean one and keep
-    # only the explicit copy. Off by default since it costs an extra API call
-    # per track (every track has to be resolved before any of them download,
-    # instead of downloading as each one resolves).
+    # only the explicit copy. Every track is then resolved before the first
+    # one downloads, so downloads start a bit later.
     prefer_explicit: bool = False
 
 

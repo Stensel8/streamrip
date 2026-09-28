@@ -152,8 +152,7 @@ class Playlist(Media):
     async def _resolve_then_download(self):
         """Resolve every track before downloading any of them, so a clean
         copy can be dropped in favor of an explicit one once both are known
-        (see [metadata] prefer_explicit). Costs one extra API call per track
-        compared to the default resolve-and-download-immediately path.
+        (see [metadata] prefer_explicit).
         """
         track_resolve_chunk_size = 20
         resolved = []

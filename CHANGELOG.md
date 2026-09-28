@@ -119,17 +119,19 @@ upstream issues and pull requests.
   multi-valued ARTIST tag (separate FLAC/Vorbis fields, a proper multi-value
   MP4 atom, "/"-joined for ID3v2.3) instead of one "A, B" string that players
   had to re-split themselves, and often got wrong.
-- If a lossless copy of a track (FLAC/AIFF) is already on disk, a lossy
-  (M4A/MP3) copy of it is no longer downloaded; if the lossy copy already
-  exists and a lossless one lands afterwards, the lossy one is removed.
-  Avoids ending up with both a FLAC and an AAC copy of the same track after
-  a quality setting change or a re-run.
+- If a lossless copy of a track is already on disk, a lossy (AAC/MP3) copy
+  of it is no longer downloaded; if the lossy copy already exists and a
+  lossless one lands afterwards (also after a lossless conversion), the lossy
+  one is removed. Avoids ending up with both a FLAC and an AAC copy of the
+  same track after a quality setting change or a re-run. A file only counts
+  as a copy when its title and album tags match, not just its name, and ALAC
+  `.m4a` files are recognised as lossless.
 - New `[metadata] prefer_explicit`: when an album or playlist lists both a
   clean and an explicit copy of the same track, only the explicit one is
-  downloaded. Off by default (every track has to be resolved before any of
-  them download, instead of as each one resolves, so it costs an extra API
-  call per track). Also fixed: Qobuz tracks were never marked explicit
-  (`parental_warning` was ignored), which this option depends on.
+  downloaded. Off by default. With it on, every track is resolved before the
+  first one starts downloading, so downloads start a bit later; the number
+  of API calls stays the same. Also fixed: Qobuz tracks were never marked
+  explicit (`parental_warning` was ignored), which this option depends on.
 - A connection that goes quiet for 30 seconds times out (all sources) instead
   of holding its album for aiohttp's default of five minutes.
 - Artist downloads keep four albums in flight with a sliding window instead of
