@@ -21,7 +21,6 @@ from streamrip.config import (
     QobuzDiscographyFilterConfig,
     SoundcloudConfig,
     TidalConfig,
-    YoutubeConfig,
     _get_dict_keys_r,
     _nested_set,
     update_config,
@@ -133,12 +132,12 @@ def test_config_file_update():
     assert toml["downloads"]["concurrency"] is True  # type: ignore
     assert toml["downloads"]["max_connections"] == 6  # type: ignore
     assert toml["downloads"]["requests_per_minute"] == 60  # type: ignore
-    assert toml["cli"]["text_output"] is True  # type: ignore
     assert toml["cli"]["progress_bars"] is True  # type: ignore
     assert toml["cli"]["max_search_results"] == 100  # type: ignore
-    assert toml["misc"]["version"] == "2.3.0"  # type: ignore
-    assert "YouTubeVideos" in str(toml["youtube"]["video_downloads_folder"])
-    # type: ignore
+    assert toml["misc"]["version"] == "2.3.1"  # type: ignore
+    # Options that no longer exist don't survive the update.
+    assert "youtube" not in toml
+    assert "text_output" not in toml["cli"]  # type: ignore
     os.remove("tests/test_config_old2.toml")
 
 
@@ -182,24 +181,16 @@ def test_sample_config_data_fields(sample_config_data):
             refresh_token="refreshtoken",
             token_expiry="tokenexpiry",
             quality=3,
-            download_videos=True,
         ),
         deezer=DeezerConfig(
             arl="testarl",
             quality=2,
             lower_quality_if_not_available=True,
-            use_deezloader=True,
-            deezloader_warnings=True,
         ),
         soundcloud=SoundcloudConfig(
             client_id="clientid",
             app_version="appversion",
             quality=0,
-        ),
-        youtube=YoutubeConfig(
-            video_downloads_folder="videodownloadsfolder",
-            quality=0,
-            download_videos=False,
         ),
         lastfm=LastFmConfig(source="qobuz", fallback_source=""),
         filepaths=FilepathsConfig(
@@ -230,7 +221,6 @@ def test_sample_config_data_fields(sample_config_data):
             non_remaster=False,
         ),
         cli=CliConfig(
-            text_output=False,
             progress_bars=False,
             max_search_results=100,
         ),
@@ -255,7 +245,6 @@ def test_sample_config_data_fields(sample_config_data):
     assert sample_config_data.tidal == test_config.tidal
     assert sample_config_data.deezer == test_config.deezer
     assert sample_config_data.soundcloud == test_config.soundcloud
-    assert sample_config_data.youtube == test_config.youtube
     assert sample_config_data.lastfm == test_config.lastfm
     assert sample_config_data.artwork == test_config.artwork
     assert sample_config_data.filepaths == test_config.filepaths

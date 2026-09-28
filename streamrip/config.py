@@ -17,7 +17,7 @@ logger = logging.getLogger("streamrip")
 APP_DIR = click.get_app_dir("streamrip")
 os.makedirs(APP_DIR, exist_ok=True)
 DEFAULT_CONFIG_PATH = os.path.join(APP_DIR, "config.toml")
-CURRENT_CONFIG_VERSION = "2.3.0"
+CURRENT_CONFIG_VERSION = "2.3.1"
 
 
 class OutdatedConfigError(Exception):
@@ -47,14 +47,12 @@ class TidalConfig:
     access_token: str
     refresh_token: str
     # Tokens last 1 week after refresh. This is the Unix timestamp of the expiration
-    # time. If you haven't used streamrip in more than a week, you may have to log
-    # in again using `streamrip config --tidal`
+    # time. If you haven't used streamrip in more than a week, you may be asked to
+    # log in again.
     token_expiry: str
     # 0: 256kbps AAC, 1: 320kbps AAC, 2: 16/44.1 FLAC, 3: best available (24-bit
     # FLAC where the client id is allowed to stream it)
     quality: int
-    # This will download videos included in Video Albums.
-    download_videos: bool
     # Use the OAuth client that is served 24-bit hi-res FLAC. It gets AAC for
     # ordinary lossless releases, so the default client (FLAC 16/44.1 for
     # everything) is usually the better choice. Only matters with quality = 3.
@@ -73,18 +71,11 @@ class DeezerConfig:
     # See https://github.com/nathom/streamrip/wiki/Finding-Your-Deezer-ARL-Cookie
     # for instructions on how to find this
     arl: str
-    # 0, 1, or 2
-    # This only applies to paid Deezer subscriptions. Those using deezloader
-    # are automatically limited to quality = 1
+    # 0: 128kbps MP3, 1: 320kbps MP3, 2: FLAC. Limited to what the account's
+    # subscription allows.
     quality: int
     # If the target quality is not available, fallback to best quality available
     lower_quality_if_not_available: bool
-    # This allows for free 320kbps MP3 downloads from Deezer
-    # If an arl is provided, deezloader is never used
-    use_deezloader: bool
-    # This warns you when the paid deezer account is not logged in and streamrip falls
-    # back to deezloader, which is unreliable
-    deezloader_warnings: bool
 
 
 @dataclass(slots=True)
@@ -94,16 +85,6 @@ class SoundcloudConfig:
     app_version: str
     # Only 0 is available for now
     quality: int
-
-
-@dataclass(slots=True)
-class YoutubeConfig:
-    # The path to download the videos to
-    video_downloads_folder: str
-    # Only 0 is available for now
-    quality: int
-    # Download the video along with the audio
-    download_videos: bool
 
 
 @dataclass(slots=True)
@@ -235,8 +216,6 @@ class LastFmConfig:
 
 @dataclass(slots=True)
 class CliConfig:
-    # Print "Downloading {Album name}" etc. to screen
-    text_output: bool
     # Show resolve, download progress bars
     progress_bars: bool
     # The maximum number of search results to show in the interactive menu
@@ -253,10 +232,6 @@ HOME = Path.home()
 DEFAULT_DOWNLOADS_FOLDER = os.path.join(HOME, "StreamripDownloads")
 DEFAULT_DOWNLOADS_DB_PATH = os.path.join(APP_DIR, "downloads.db")
 DEFAULT_FAILED_DOWNLOADS_DB_PATH = os.path.join(APP_DIR, "failed_downloads.db")
-DEFAULT_YOUTUBE_VIDEO_DOWNLOADS_FOLDER = os.path.join(
-    DEFAULT_DOWNLOADS_FOLDER,
-    "YouTubeVideos",
-)
 BLANK_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.toml")
 assert os.path.isfile(BLANK_CONFIG_PATH), "Template config not found"
 
@@ -270,7 +245,6 @@ class ConfigData:
     tidal: TidalConfig
     deezer: DeezerConfig
     soundcloud: SoundcloudConfig
-    youtube: YoutubeConfig
     lastfm: LastFmConfig
 
     filepaths: FilepathsConfig
@@ -300,7 +274,6 @@ class ConfigData:
         tidal = TidalConfig(**toml["tidal"])  # type: ignore
         deezer = DeezerConfig(**toml["deezer"])  # type: ignore
         soundcloud = SoundcloudConfig(**toml["soundcloud"])  # type: ignore
-        youtube = YoutubeConfig(**toml["youtube"])  # type: ignore
         lastfm = LastFmConfig(**toml["lastfm"])  # type: ignore
         artwork = ArtworkConfig(**toml["artwork"])  # type: ignore
         filepaths = FilepathsConfig(**toml["filepaths"])  # type: ignore
@@ -318,7 +291,6 @@ class ConfigData:
             tidal=tidal,
             deezer=deezer,
             soundcloud=soundcloud,
-            youtube=youtube,
             lastfm=lastfm,
             artwork=artwork,
             filepaths=filepaths,
@@ -348,7 +320,6 @@ class ConfigData:
         update_toml_section_from_config(self.toml["tidal"], self.tidal)
         update_toml_section_from_config(self.toml["deezer"], self.deezer)
         update_toml_section_from_config(self.toml["soundcloud"], self.soundcloud)
-        update_toml_section_from_config(self.toml["youtube"], self.youtube)
         update_toml_section_from_config(self.toml["lastfm"], self.lastfm)
         update_toml_section_from_config(self.toml["artwork"], self.artwork)
         update_toml_section_from_config(self.toml["filepaths"], self.filepaths)
@@ -444,7 +415,6 @@ def toml_set_user_defaults(toml: TOMLDocument):
     toml["downloads"]["folder"] = DEFAULT_DOWNLOADS_FOLDER  # type: ignore
     toml["database"]["downloads_path"] = DEFAULT_DOWNLOADS_DB_PATH  # type: ignore
     toml["database"]["failed_downloads_path"] = DEFAULT_FAILED_DOWNLOADS_DB_PATH  # type: ignore
-    toml["youtube"]["video_downloads_folder"] = DEFAULT_YOUTUBE_VIDEO_DOWNLOADS_FOLDER  # type: ignore
 
 
 def _get_dict_keys_r(d: dict) -> set[tuple]:

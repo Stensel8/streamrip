@@ -43,8 +43,6 @@ secrets = ['secret1', 'secret2']
 [tidal]
 # 0: 256kbps AAC, 1: 320kbps AAC, 2: 16/44.1 "HiFi" FLAC, 3: 24/44.1 "MQA" FLAC
 quality = 3
-# This will download videos included in Video Albums.
-download_videos = true
 hires_client = false
 client_id = ""
 client_secret = ""
@@ -61,9 +59,8 @@ token_expiry = "tokenexpiry"
 token_client_id = ""
 
 [deezer]
-# 0, 1, or 2
-# This only applies to paid Deezer subscriptions. Those using deezloader
-# are automatically limited to quality = 1
+# 0: 128kbps MP3, 1: 320kbps MP3, 2: FLAC. Limited to what the account's
+# subscription allows.
 quality = 2
 # If the target quality is not available, fallback to best quality available
 lower_quality_if_not_available = true
@@ -71,12 +68,6 @@ lower_quality_if_not_available = true
 # See https://github.com/nathom/streamrip/wiki/Finding-Your-Deezer-ARL-Cookie
 # for instructions on how to find this
 arl = "testarl"
-# This allows for free 320kbps MP3 downloads from Deezer
-# If an arl is provided, deezloader is never used
-use_deezloader = true
-# This warns you when the paid deezer account is not logged in and streamrip falls
-# back to deezloader, which is unreliable
-deezloader_warnings = true
 
 [soundcloud]
 # Only 0 is available for now
@@ -84,14 +75,6 @@ quality = 0
 # This changes periodically, so it needs to be updated
 client_id = "clientid"
 app_version = "appversion"
-
-[youtube]
-# Only 0 is available for now
-quality = 0
-# Download the video along with the audio
-download_videos = false
-# The path to download the videos to
-video_downloads_folder = "videodownloadsfolder"
 
 [database]
 # Create a database that contains all the track IDs downloaded so far
@@ -191,8 +174,6 @@ source = "qobuz"
 fallback_source = ""
 
 [cli]
-# Print "Downloading {Album name}" etc. to screen
-text_output = true
 # Show resolve, download progress bars
 progress_bars = true
 # The maximum number of search results to show in the interactive menu
@@ -200,5 +181,5 @@ max_search_results = 100
 
 [misc]
 # Metadata to identify this config file. Do not change.
-version = "2.3.0"
+version = "2.3.1"
 check_for_updates = true

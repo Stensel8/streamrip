@@ -64,6 +64,9 @@ upstream issues and pull requests.
 - API requests retry connection errors, timeouts, 5xx and 429 (up to four
   attempts with backoff) instead of dropping the track. A 429 pauses every
   request and honours `Retry-After`.
+- Music videos in albums and playlists are left out instead of each failing as
+  a track (and being retried by `streamrip repair` forever); a playlist with
+  videos no longer loses its last tracks when paging.
 
 ### Deezer
 
@@ -82,6 +85,9 @@ upstream issues and pull requests.
   longer crash parsing ([PR #944](https://github.com/nathom/streamrip/pull/944)).
 - Connection pool warnings are gone ([PR #997](https://github.com/nathom/streamrip/pull/997)); album metadata is cached
   ([PR #1000](https://github.com/nathom/streamrip/pull/1000)); blocking calls no longer stall other downloads.
+- Encrypted tracks are decrypted as they arrive instead of being held in memory
+  whole, and written in large chunks instead of 6 KB at a time; logging in no
+  longer fetches the account's profile a second time.
 
 ### SoundCloud
 
@@ -90,6 +96,8 @@ upstream issues and pull requests.
 - HLS segments are reassembled in their original order regardless of which one
   finishes downloading first; concurrent, out-of-order completion produced
   skips and reordered audio ([#848](https://github.com/nathom/streamrip/issues/848), [#633](https://github.com/nathom/streamrip/issues/633)).
+- Those segments are removed from the temp dir afterwards (also when one
+  fails) instead of piling up, and a failed join shows ffmpeg's error.
 
 ### Downloads, conversion and tagging
 
@@ -144,6 +152,27 @@ upstream issues and pull requests.
   instead of once per track.
 - New `streamrip database clear downloads|failed|all` forgets what was
   downloaded, for when you deleted the files and want them again.
+- The repeats filter no longer crashes an artist download on an album whose
+  title starts with a bracket, e.g. "(What's the Story) Morning Glory?";
+  `[qobuz_filters] non_albums` now actually skips single-track releases.
+- Label downloads use the same sliding window as artists, and one failing album
+  no longer aborts the label.
+- Playlists resolve through a sliding window too, instead of batches of 20 that
+  waited for their slowest track. A playlist track that fails is recorded for
+  `streamrip repair` like an album track. For last.fm playlists, one search
+  error no longer aborts the playlist, and falls back to the fallback source.
+- One URL that fails to resolve no longer stops the others; `streamrip file`
+  keeps the order of its URLs; `search --first` with no results no longer
+  crashes; `database browse failed` lines its columns up with the headers.
+
+### Configuration
+
+- Options that never did anything are gone: `[tidal] download_videos`,
+  `[deezer] use_deezloader` and `deezloader_warnings`, the `[youtube]` section
+  and `[cli] text_output`. The config version is 2.3.1: an existing config is
+  updated automatically on the next run, keeping your settings.
+- `[cli] max_search_results` is used (it was ignored): it's the default for
+  `search --num-results`, in the interactive menu too.
 
 ### Development
 
