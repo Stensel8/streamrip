@@ -56,7 +56,6 @@ class Track(Media):
     # Is None if a cover doesn't exist for the track
     cover_path: str | None
     db: Database
-    # change?
     download_path: str = ""
     is_single: bool = False
     # Base name (no extension) `download_path` is built from; kept around to
