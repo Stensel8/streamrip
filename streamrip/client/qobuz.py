@@ -42,25 +42,6 @@ def file_url_signature(
     return hashlib.md5(preimage.encode("utf-8")).hexdigest()
 
 
-QOBUZ_FEATURED_KEYS = {
-    "most-streamed",
-    "recent-releases",
-    "best-sellers",
-    "press-awards",
-    "ideal-discography",
-    "editor-picks",
-    "most-featured",
-    "qobuzissims",
-    "new-releases",
-    "new-releases-full",
-    "harmonia-mundi",
-    "universal-classic",
-    "universal-jazz",
-    "universal-jeunesse",
-    "universal-chanson",
-}
-
-
 class QobuzSpoofer:
     """Spoofs the information required to stream tracks from Qobuz."""
 
@@ -410,25 +391,6 @@ class QobuzClient(Client):
         epoint = f"{media_type}/search"
 
         return await self._paginate(epoint, params, limit=limit)
-
-    async def get_featured(self, query, limit: int = 500) -> list[dict]:
-        params = {
-            "type": query,
-        }
-        assert query in QOBUZ_FEATURED_KEYS, f'query "{query}" is invalid.'
-        epoint = "album/getFeatured"
-        return await self._paginate(epoint, params, limit=limit)
-
-    async def get_user_favorites(self, media_type: str, limit: int = 500) -> list[dict]:
-        assert media_type in ("track", "artist", "album")
-        params = {"type": f"{media_type}s"}
-        epoint = "favorite/getUserFavorites"
-
-        return await self._paginate(epoint, params, limit=limit)
-
-    async def get_user_playlists(self, limit: int = 500) -> list[dict]:
-        epoint = "playlist/getUserPlaylists"
-        return await self._paginate(epoint, {}, limit=limit)
 
     async def get_downloadable(self, item: str, quality: int) -> Downloadable:
         assert self.secret is not None and self.logged_in

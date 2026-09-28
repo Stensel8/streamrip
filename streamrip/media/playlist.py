@@ -2,7 +2,6 @@ import asyncio
 import html
 import logging
 import os
-import random
 import re
 from contextlib import ExitStack
 from dataclasses import dataclass
@@ -437,17 +436,3 @@ class PendingLastfmPlaylist(Pending):
             title_artist_pairs.extend(find_title_artist_pairs(page))
 
         return playlist_title, title_artist_pairs
-
-    async def _make_query_mock(
-        self,
-        _: str,
-        s: Status,
-        callback,
-    ) -> tuple[str | None, bool]:
-        await asyncio.sleep(random.uniform(1, 20))
-        if random.randint(0, 4) >= 1:
-            s.found += 1
-        else:
-            s.failed += 1
-        callback()
-        return None, False

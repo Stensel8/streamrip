@@ -5,39 +5,7 @@ from .album import AlbumMetadata
 from .track import TrackMetadata
 from .util import safe_get, typed
 
-NON_STREAMABLE = "_non_streamable"
-ORIGINAL_DOWNLOAD = "_original_download"
-NOT_RESOLVED = "_not_resolved"
-
 logger = logging.getLogger("streamrip")
-
-
-def get_soundcloud_id(resp: dict) -> str:
-    item_id = resp["id"]
-    if "media" not in resp:
-        return f"{item_id}|{NOT_RESOLVED}"
-
-    if not resp["streamable"] or resp["policy"] == "BLOCK":
-        return f"{item_id}|{NON_STREAMABLE}"
-
-    if resp["downloadable"] and resp["has_downloads_left"]:
-        return f"{item_id}|{ORIGINAL_DOWNLOAD}"
-
-    url = None
-    for tc in resp["media"]["transcodings"]:
-        fmt = tc["format"]
-        if fmt["protocol"] == "hls" and fmt["mime_type"] == "audio/mpeg":
-            url = tc["url"]
-            break
-
-    assert url is not None
-    return f"{item_id}|{url}"
-
-
-def parse_soundcloud_id(item_id: str) -> tuple[str, str]:
-    info = item_id.split("|")
-    assert len(info) == 2
-    return (info[0], info[1])
 
 
 @dataclass(slots=True)

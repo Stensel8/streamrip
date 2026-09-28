@@ -3,7 +3,6 @@ import base64
 import json
 import logging
 import random
-import re
 import time
 from json import JSONDecodeError
 
@@ -47,10 +46,6 @@ HIRES_CLIENT_ID = _b64("ZlgySnhkbW50WldLMGl4VA==")
 HIRES_CLIENT_SECRET = _b64(
     "MU5tNUFmREFqeHJnSkZKYktOV0xlQXlLR1ZHbUlOdVhQUExIVlhBdnhBZz0="
 )
-STREAM_URL_REGEX = re.compile(
-    r"#EXT-X-STREAM-INF:BANDWIDTH=\d+,AVERAGE-BANDWIDTH=\d+,CODECS=\"(?!jpeg)[^\"]+\",RESOLUTION=\d+x\d+\n(.+)"
-)
-
 QUALITY_MAP = {
     0: "LOW",  # AAC
     1: "HIGH",  # AAC
@@ -363,32 +358,6 @@ class TidalClient(Client):
             codec=codecs,
         )
 
-    async def get_video_file_url(self, video_id: str) -> str:
-        """Get the HLS video stream url.
-
-        The stream is downloaded using ffmpeg for now.
-
-        :param video_id:
-        :type video_id: str
-        :rtype: str
-        """
-        params = {
-            "videoquality": "HIGH",
-            "playbackmode": "STREAM",
-            "assetpresentation": "FULL",
-        }
-        resp = await self._api_request(
-            f"videos/{video_id}/playbackinfopostpaywall", params=params
-        )
-        manifest = json.loads(base64.b64decode(resp["manifest"]).decode("utf-8"))
-        async with self.session.get(manifest["urls"][0]) as resp:
-            available_urls = await resp.text(encoding="utf-8")
-
-        # Highest resolution is last
-        *_, last_match = STREAM_URL_REGEX.finditer(available_urls)
-
-        return last_match.group(1)
-
     # ---------- Login Utilities ---------------
 
     async def _login_by_access_token(self, token: str, user_id: str):
@@ -417,19 +386,6 @@ class TidalClient(Client):
         c.country_code = resp["countryCode"]
         c.access_token = token
         self._update_authorization_from_config()
-
-    async def _get_login_link(self) -> str:
-        data = {
-            "client_id": self.client_id,
-            "scope": "r_usr+w_usr+w_sub",
-        }
-        resp = await self._api_post(f"{AUTH_URL}/device_authorization", data)
-
-        if resp.get("status", 200) != 200:
-            raise Exception(f"Device authorization failed {resp}")
-
-        device_code = resp["deviceCode"]
-        return f"https://{device_code}"
 
     def _update_authorization_from_config(self):
         self.session.headers.update(

@@ -22,7 +22,6 @@ SAMPLING_RATES = {44100, 48000, 88200, 96000, 176400, 192000}
 class Converter:
     """Base class for audio codecs."""
 
-    codec_name: str
     codec_lib: str
     container: str
     lossless: bool = False
@@ -257,7 +256,6 @@ class Converter:
 class FLAC(Converter):
     """Class for FLAC converter."""
 
-    codec_name = "flac"
     codec_lib = "flac"
     container = "flac"
     lossless = True
@@ -286,7 +284,6 @@ class LAME(Converter):
         65: "-q:a 9",
     }
 
-    codec_name = "lame"
     codec_lib = "libmp3lame"
     container = "mp3"
     default_ffmpeg_arg = "-q:a 0"  # V0
@@ -299,7 +296,6 @@ class LAME(Converter):
 class ALAC(Converter):
     """Class for ALAC converter."""
 
-    codec_name = "alac"
     codec_lib = "alac"
     container = "m4a"
     lossless = True
@@ -314,7 +310,6 @@ class Vorbis(Converter):
     https://trac.ffmpeg.org/wiki/TheoraVorbisEncodingGuide
     """
 
-    codec_name = "vorbis"
     codec_lib = "libvorbis"
     container = "ogg"
     # The OGG muxer doesn't support -c:v copy; art is embedded via mutagen instead.
@@ -341,7 +336,6 @@ class OPUS(Converter):
     http://ffmpeg.org/ffmpeg-codecs.html#libopus-1
     """
 
-    codec_name = "opus"
     codec_lib = "libopus"
     container = "opus"
     # The Opus muxer doesn't support -c:v copy; art is embedded via mutagen instead.
@@ -366,7 +360,6 @@ class AAC(Converter):
     https://trac.ffmpeg.org/wiki/Encode/AAC
     """
 
-    codec_name = "aac"
     codec_lib = "libfdk_aac"
     container = "m4a"
     default_ffmpeg_arg = "-b:a 256k"
@@ -383,7 +376,6 @@ class AAC(Converter):
 class AIFF(Converter):
     """Class for AIFF converter (uncompressed PCM, upstream PR #1006)."""
 
-    codec_name = "aiff"
     codec_lib = "pcm_s24be"
     container = "aiff"
     lossless = True

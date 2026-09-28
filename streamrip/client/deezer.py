@@ -26,7 +26,6 @@ class DeezerClient(Client):
         logged_in: True if logged in
         config: deezer local config
         session: aiohttp.ClientSession, used only for track downloads not API requests
-        logged_in_user_id: USER_ID of the authenticated account, set during login
         max_favorites: upper bound for favorites pagination
 
     """
@@ -41,7 +40,6 @@ class DeezerClient(Client):
         self.logged_in = False
         self.config = config.session.deezer
         self._album_cache = {}
-        self.logged_in_user_id: int | None = None
         self._quality_warned = False
 
         # Increase the deezer-py requests session pool well above max_connections.
@@ -72,12 +70,6 @@ class DeezerClient(Client):
         if not success:
             raise AuthenticationError("Invalid or expired Deezer ARL.")
         self.logged_in = True
-        try:
-            user_data = await asyncio.to_thread(self.client.gw.get_user_data)
-            self.logged_in_user_id = user_data.get("USER", {}).get("USER_ID")
-        except Exception as e:
-            # Only needed for loved-tracks URLs; never worth failing the login.
-            logger.debug("Could not fetch Deezer user data: %s", e)
 
     async def get_metadata(self, item_id: str, media_type: str) -> dict:
         # TODO: open asyncio PR to deezer py and integrate
@@ -214,11 +206,11 @@ class DeezerClient(Client):
         advanced by the actual count returned to paginate through all favorites.
 
         ``song.getFavoriteIds`` carries no ``user_id`` parameter — it always
-        returns the authenticated user's favorites.  Comparing ``user_id`` against
-        ``logged_in_user_id`` to detect "other user" is unreliable for family
+        returns the authenticated user's favorites. Comparing ``user_id`` against
+        the logged-in account to detect "other user" is unreliable for family
         accounts: ``change_account()`` shifts ``current_user`` to a child profile
         whose id differs from the main account's USER_ID that authenticated the
-        ARL.  The ``user_id`` argument is accepted for URL-routing compatibility
+        ARL. The ``user_id`` argument is accepted for URL-routing compatibility
         but is not forwarded to the GW call.
 
         Args:

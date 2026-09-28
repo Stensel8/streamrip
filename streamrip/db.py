@@ -157,13 +157,6 @@ class DatabaseBase(DatabaseInterface):
         with sqlite3.connect(self.path) as conn:
             return list(conn.execute(f"SELECT * FROM {self.name}"))
 
-    def reset(self):
-        """Delete the database file."""
-        try:
-            os.remove(self.path)
-        except FileNotFoundError:
-            pass
-
 
 class Downloads(DatabaseBase):
     """A table that stores the downloaded IDs."""
@@ -195,9 +188,6 @@ class Database:
 
     def set_downloaded(self, item_id: str):
         self.downloads.add((item_id,))
-
-    def get_failed_downloads(self) -> list[tuple[str, str, str]]:
-        return self.failed.all()
 
     def set_failed(self, source: str, media_type: str, id: str):
         self.failed.add((source, media_type, id))
