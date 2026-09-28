@@ -52,24 +52,20 @@ class Client(ABC):
             else contextlib.nullcontext()
         )
 
-    @staticmethod
-    async def get_session(
-        headers: dict | None = None, verify_ssl: bool = True
-    ) -> aiohttp.ClientSession:
-        if headers is None:
-            headers = {}
 
-        # Get connector kwargs based on SSL verification setting
-        connector_kwargs = get_aiohttp_connector_kwargs(verify_ssl=verify_ssl)
-        connector = aiohttp.TCPConnector(
-            **connector_kwargs, resolver=aiohttp.ThreadedResolver()
-        )
-
-        # trust_env: honour HTTP(S)_PROXY / ALL_PROXY like requests already
-        # does for the audio downloads (upstream #961).
-        return aiohttp.ClientSession(
-            headers={"User-Agent": DEFAULT_USER_AGENT} | headers,
-            connector=connector,
-            timeout=REQUEST_TIMEOUT,
-            trust_env=True,
-        )
+def new_session(
+    verify_ssl: bool = True, timeout: aiohttp.ClientTimeout = REQUEST_TIMEOUT
+) -> aiohttp.ClientSession:
+    """An HTTP session; every request streamrip makes goes through one."""
+    connector = aiohttp.TCPConnector(
+        **get_aiohttp_connector_kwargs(verify_ssl=verify_ssl),
+        resolver=aiohttp.ThreadedResolver(),
+    )
+    # trust_env: honour HTTP(S)_PROXY / ALL_PROXY like requests already
+    # does for the audio downloads (upstream #961).
+    return aiohttp.ClientSession(
+        headers={"User-Agent": DEFAULT_USER_AGENT},
+        connector=connector,
+        timeout=timeout,
+        trust_env=True,
+    )

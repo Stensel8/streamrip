@@ -22,11 +22,9 @@ URL_REGEX = re.compile(
 )
 TIDAL_SHARE_SUFFIX_REGEX = re.compile(r"^(https?://[^/]*tidal\.com/.+?)/u/?$")
 SOUNDCLOUD_URL_REGEX = re.compile(r"https://soundcloud.com/[-\w:/]+")
-LASTFM_URL_REGEX = re.compile(r"https://www.last.fm/user/\w+/playlists/\w+")
 QOBUZ_INTERPRETER_URL_REGEX = re.compile(
     r"https?://www\.qobuz\.com/\w\w-\w\w/interpreter/[-\w]+/([-\w]+)",
 )
-YOUTUBE_URL_REGEX = re.compile(r"https://www\.youtube\.com/watch\?v=[-\w]+")
 
 
 class URL(ABC):
@@ -276,6 +274,5 @@ def parse_url(url: str) -> URL | None:
         SoundcloudURL.from_str(url),
         DeezerDynamicURL.from_str(url),
         DeezerFavoriteURL.from_str(url),
-        # TODO: the rest of the url types
     ]
     return next((u for u in parsed_urls if u is not None), None)

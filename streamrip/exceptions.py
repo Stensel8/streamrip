@@ -11,13 +11,6 @@ class MissingCredentialsError(Exception):
     """MissingCredentials."""
 
 
-class IneligibleError(Exception):
-    """IneligibleError.
-
-    Raised when the account is not eligible to stream a track.
-    """
-
-
 class InvalidAppIdError(Exception):
     """InvalidAppIdError."""
 

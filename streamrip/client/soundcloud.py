@@ -6,7 +6,7 @@ import re
 
 from ..config import Config
 from ..exceptions import NonStreamableError
-from .client import Client
+from .client import Client, new_session
 from .downloadable import SoundcloudDownloadable
 
 # e.g. 123456-293847-121314-209849
@@ -36,7 +36,7 @@ class SoundcloudClient(Client):
         )
 
     async def login(self):
-        self.session = await self.get_session(
+        self.session = new_session(
             verify_ssl=self.global_config.session.downloads.verify_ssl
         )
         client_id, app_version = self.config.client_id, self.config.app_version

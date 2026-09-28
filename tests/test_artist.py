@@ -2,8 +2,9 @@ import asyncio
 
 import pytest
 
-from streamrip.config import QobuzDiscographyFilterConfig
+from streamrip.config import ArtistFilterConfig
 from streamrip.media.artist import RESOLVE_CHUNK_SIZE, Artist
+from streamrip.media.label import Label
 
 
 class _FakeAlbum:
@@ -32,12 +33,11 @@ class _FakePendingAlbum:
         return _FakeAlbum()
 
 
-NO_FILTERS = QobuzDiscographyFilterConfig(
+NO_FILTERS = ArtistFilterConfig(
     extras=False,
     repeats=False,
     non_albums=False,
     features=False,
-    non_studio_albums=False,
     non_remaster=False,
 )
 
@@ -110,7 +110,7 @@ async def test_a_failing_album_does_not_stop_the_others(caplog):
 
 @pytest.mark.asyncio
 async def test_resolve_then_download_chunks_the_resolve_phase():
-    """Used when qobuz_filters.repeats is on: resolving every album's title
+    """Used when artist_filters.repeats is on: resolving every album's title
     upfront is required, but that shouldn't mean firing them all at once.
     """
     _FakePendingAlbum._concurrent = 0
@@ -121,3 +121,64 @@ async def test_resolve_then_download_chunks_the_resolve_phase():
     await artist._resolve_then_download(NO_FILTERS)
 
     assert _FakePendingAlbum._max_concurrent <= RESOLVE_CHUNK_SIZE
+
+
+@pytest.mark.asyncio
+async def test_resolve_then_download_survives_a_failing_resolve(caplog):
+    ripped = []
+
+    class Album:
+        def __init__(self, n):
+            self.n = n
+
+        async def rip(self):
+            ripped.append(self.n)
+
+    class Pending:
+        def __init__(self, n, fail=False):
+            self.n, self.fail = n, fail
+
+        async def resolve(self):
+            if self.fail:
+                raise ConnectionError("boom")
+            return Album(self.n)
+
+    albums = [Pending(1), Pending(2, fail=True), Pending(3)]
+    artist = Artist(name="Test Artist", albums=albums, client=None, config=None)
+
+    await artist._resolve_then_download(NO_FILTERS)
+
+    assert sorted(ripped) == [1, 3]
+    assert "Error resolving album: ConnectionError: boom" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_a_failing_label_album_does_not_stop_the_others():
+    ripped = []
+
+    class Album:
+        def __init__(self, n):
+            self.n = n
+
+        async def rip(self):
+            if self.n == 2:
+                raise ConnectionError("boom")
+            ripped.append(self.n)
+
+    class Pending:
+        def __init__(self, n):
+            self.n = n
+
+        async def resolve(self):
+            return Album(self.n)
+
+    label = Label(
+        name="Test Label",
+        albums=[Pending(n) for n in (1, 2, 3)],
+        client=None,
+        config=None,
+    )
+
+    await label.download()
+
+    assert sorted(ripped) == [1, 3]

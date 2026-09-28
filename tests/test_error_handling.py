@@ -107,3 +107,54 @@ class TestErrorHandling:
 
             mock_media_success.rip.assert_called_once()
             mock_media_failure.rip.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_main_resolve_handles_a_failing_item(self, caplog):
+        """One URL that fails to resolve must not stop the others."""
+        from streamrip.rip.main import Main
+
+        mock_config = MagicMock()
+        mock_config.session.database.downloads_enabled = False
+        mock_config.session.database.failed_downloads_enabled = False
+
+        with (
+            patch("streamrip.rip.main.QobuzClient"),
+            patch("streamrip.rip.main.TidalClient"),
+            patch("streamrip.rip.main.DeezerClient"),
+            patch("streamrip.rip.main.SoundcloudClient"),
+        ):
+            main = Main(mock_config)
+
+            ok = MagicMock()
+            ok.resolve = AsyncMock(return_value="album")
+            broken = MagicMock()
+            broken.id = "123"
+            broken.resolve = AsyncMock(side_effect=KeyError("tracks"))
+            main.pending = [broken, ok]
+
+            await main.resolve()
+
+            assert main.media == ["album"]
+            assert "Error resolving 123: KeyError" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_search_page_without_results_is_not_a_crash(self):
+        """A search can return a page with nothing in it; that's no results."""
+        from streamrip.rip.main import Main
+
+        mock_config = MagicMock()
+        mock_config.session.database.downloads_enabled = False
+        mock_config.session.database.failed_downloads_enabled = False
+
+        with (
+            patch("streamrip.rip.main.QobuzClient"),
+            patch("streamrip.rip.main.TidalClient"),
+            patch("streamrip.rip.main.DeezerClient"),
+            patch("streamrip.rip.main.SoundcloudClient"),
+        ):
+            main = Main(mock_config)
+            main.clients["deezer"].search = AsyncMock(return_value=[{"data": []}])
+
+            await main.search_take_first("deezer", "track", "nothing matches")
+
+            assert main.pending == []

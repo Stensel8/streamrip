@@ -53,7 +53,9 @@ def _login_resp(parameters):
 
 def _run_login(monkeypatch, parameters) -> QobuzClient:
     client = _make_client()
-    monkeypatch.setattr(client, "get_session", AsyncMock(return_value=_FakeSession()))
+    monkeypatch.setattr(
+        "streamrip.client.qobuz.new_session", lambda **_: _FakeSession()
+    )
     monkeypatch.setattr(
         client,
         "_api_request",
@@ -77,8 +79,7 @@ def test_free_account_login_sets_download_only(monkeypatch):
     """Empty credential.parameters -> download_only=True, does NOT raise."""
     client = _run_login(monkeypatch, [])
     assert client.download_only is True
-    # Login still succeeds (no IneligibleError); the account can download
-    # purchased content.
+    # Login still succeeds; the account can download purchased content.
     assert client.logged_in is True
 
 

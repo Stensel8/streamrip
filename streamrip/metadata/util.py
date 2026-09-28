@@ -13,6 +13,13 @@ def get_album_track_ids(source: str, resp) -> list[str]:
     return [track["id"] for track in tracklist]
 
 
+def deezer_artists(resp: dict) -> list[str]:
+    """The credited artists of a Deezer album or track response."""
+    contributors = resp.get("contributors") or []
+    names = [c["name"] for c in contributors if c.get("type") == "artist"]
+    return names or [safe_get(resp, "artist", "name", default="Unknown Artist")]
+
+
 def safe_get(dictionary, *keys, default=None):
     return functools.reduce(
         lambda d, key: d.get(key, default) if isinstance(d, dict) else default,
@@ -51,14 +58,7 @@ def get_quality_id(
     bit_depth: Optional[int],
     sampling_rate: Optional[int | float],
 ) -> int:
-    """Get the universal quality id from bit depth and sampling rate.
-
-    :param bit_depth:
-    :type bit_depth: Optional[int]
-    :param sampling_rate: In kHz
-    :type sampling_rate: Optional[int]
-    """
-    # XXX: Should `0` quality be supported?
+    """streamrip's quality id (1-4) for a bit depth and a sampling rate in kHz."""
     if bit_depth is None or sampling_rate is None:  # is lossy
         return 1
 

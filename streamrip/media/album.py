@@ -1,24 +1,44 @@
-import asyncio
 import logging
 import os
 from dataclasses import dataclass
 
 from .. import progress
-from ..client import Client
+from ..client import BasicDownloadable, Client
 from ..config import Config
 from ..db import Database
-from ..exceptions import NonStreamableError, TrackDownloadFailedError
-from ..filepath_utils import clean_filepath
+from ..exceptions import NonStreamableError
+from ..filepath_utils import clean_filename
 from ..metadata import AlbumMetadata
 from ..metadata.util import get_album_track_ids
 from .artwork import download_artwork
-from .media import Media, Pending, filter_prefer_explicit, resolve_or_none
-from .track import PendingTrack
+from .media import Media, Pending, rip_tracks
+from .track import PendingTrack, album_folder
 
 logger = logging.getLogger("streamrip")
 
 # Tracks of an album resolved at once; more only delays the first download.
 RESOLVE_CONCURRENCY = 4
+
+
+async def download_booklets(session, booklets: list[dict], folder: str):
+    """Save an album's PDF booklets (Qobuz "goodies") next to its tracks."""
+    pdfs = [
+        (url, clean_filename(b.get("description") or b.get("name") or "Booklet"))
+        for b in booklets
+        if (url := b.get("url") or b.get("original_url") or "").lower().endswith(".pdf")
+    ]
+    names = [name for _, name in pdfs]
+    for n, (url, name) in enumerate(pdfs, 1):
+        if names.count(name) > 1:
+            name = f"{name} {n}"
+        path = os.path.join(folder, f"{name}.pdf")
+        if os.path.isfile(path):
+            continue
+        try:
+            await BasicDownloadable(session, url, "pdf").download(path, lambda _: None)
+        except Exception as e:
+            # A missing booklet is never worth the album.
+            logger.warning(f"Could not download booklet {url}: {type(e).__name__}: {e}")
 
 
 @dataclass(slots=True)
@@ -29,68 +49,29 @@ class Album(Media):
     # folder where the tracks will be downloaded
     folder: str
     db: Database
+    client: Client | None = None
 
     async def preprocess(self):
         progress.add_title(self.meta.album)
+        # Here, not when the album is resolved: artists and labels resolve every
+        # album before their filters drop some, and those get no booklets. Only
+        # Qobuz albums have any; a finished album has no folder to put them in.
+        if (
+            self.tracks
+            and self.client is not None
+            and self.meta.info.booklets
+            and self.config.session.qobuz.download_booklets
+        ):
+            await download_booklets(
+                self.client.session, self.meta.info.booklets, self.folder
+            )
 
     async def download(self):
-        if self.config.session.metadata.prefer_explicit:
-            await self._resolve_then_download()
-            return
-
-        resolve_slots = asyncio.Semaphore(RESOLVE_CONCURRENCY)
-
-        async def _resolve_and_download(pending: Pending):
-            try:
-                async with resolve_slots:
-                    track = await pending.resolve()
-                if track is None:
-                    return
-                await track.rip()
-            except TrackDownloadFailedError:
-                pass  # already logged and recorded by Track.download()
-            except Exception as e:
-                # Include the type: some exceptions have an empty message,
-                # which used to log as "Error downloading track: ''" (#938).
-                logger.error(f"Error downloading track: {type(e).__name__}: {e}")
-
-        results = await asyncio.gather(
-            *[_resolve_and_download(p) for p in self.tracks], return_exceptions=True
+        await rip_tracks(
+            self.tracks,
+            RESOLVE_CONCURRENCY,
+            self.config.session.metadata.prefer_explicit,
         )
-
-        for result in results:
-            if isinstance(result, Exception):
-                logger.error(f"Album track processing error: {result}")
-
-    async def _resolve_then_download(self):
-        """Resolve every track before downloading any of them, so a clean
-        copy can be dropped in favor of an explicit one once both are known
-        (see [metadata] prefer_explicit). Costs one extra API call per track
-        compared to the default resolve-and-download-immediately path.
-        """
-        resolve_slots = asyncio.Semaphore(RESOLVE_CONCURRENCY)
-
-        async def _resolve(pending: Pending):
-            async with resolve_slots:
-                return await resolve_or_none(pending)
-
-        resolved = await asyncio.gather(*[_resolve(p) for p in self.tracks])
-        tracks = filter_prefer_explicit([t for t in resolved if t is not None])
-
-        async def _download(track):
-            try:
-                await track.rip()
-            except TrackDownloadFailedError:
-                pass
-            except Exception as e:
-                logger.error(f"Error downloading track: {type(e).__name__}: {e}")
-
-        results = await asyncio.gather(
-            *[_download(t) for t in tracks], return_exceptions=True
-        )
-        for result in results:
-            if isinstance(result, Exception):
-                logger.error(f"Album track processing error: {result}")
 
     async def postprocess(self):
         progress.remove_title(self.meta.album)
@@ -115,7 +96,7 @@ class PendingAlbum(Pending):
         try:
             meta = AlbumMetadata.from_album_resp(resp, self.client.source)
         except Exception as e:
-            logger.error(f"Error building album metadata for {id=}: {e}")
+            logger.error(f"Error building album metadata for {self.id}: {e}")
             return None
 
         if meta is None:
@@ -137,14 +118,13 @@ class PendingAlbum(Pending):
                 f"{meta.album}: skipping {done} of {len(tracklist)} tracks "
                 "already downloaded"
             )
-        folder = self.config.session.downloads.folder
-        album_folder = self._album_folder(folder, meta)
+        folder = album_folder(self.config, self.client.source, meta)
         if tracklist and not todo:
-            return Album(meta, [], self.config, album_folder, self.db)
-        os.makedirs(album_folder, exist_ok=True)
+            return Album(meta, [], self.config, folder, self.db)
+        os.makedirs(folder, exist_ok=True)
         embed_cover, _ = await download_artwork(
             self.client.session,
-            album_folder,
+            folder,
             meta.covers,
             self.config.session.artwork,
             for_playlist=False,
@@ -155,22 +135,11 @@ class PendingAlbum(Pending):
                 album=meta,
                 client=self.client,
                 config=self.config,
-                folder=album_folder,
+                folder=folder,
                 db=self.db,
                 cover_path=embed_cover,
             )
             for track_id in todo
         ]
         logger.debug("Pending tracks: %s", pending_tracks)
-        return Album(meta, pending_tracks, self.config, album_folder, self.db)
-
-    def _album_folder(self, parent: str, meta: AlbumMetadata) -> str:
-        config = self.config.session
-        if config.downloads.source_subdirectories:
-            parent = os.path.join(parent, self.client.source.capitalize())
-        formatter = config.filepaths.folder_format
-        folder = clean_filepath(
-            meta.format_folder_path(formatter), config.filepaths.restrict_characters
-        )
-
-        return os.path.join(parent, folder)
+        return Album(meta, pending_tracks, self.config, folder, self.db, self.client)
