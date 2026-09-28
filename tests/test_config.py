@@ -5,6 +5,7 @@ import pytest
 import tomlkit
 
 from streamrip.config import (
+    ArtistFilterConfig,
     ArtworkConfig,
     CliConfig,
     Config,
@@ -18,7 +19,6 @@ from streamrip.config import (
     MetadataConfig,
     MiscConfig,
     QobuzConfig,
-    QobuzDiscographyFilterConfig,
     SoundcloudConfig,
     TidalConfig,
     _get_dict_keys_r,
@@ -129,12 +129,11 @@ def test_config_file_update():
 
     assert toml["downloads"]["folder"] == "old_value"  # type: ignore
     assert toml["downloads"]["source_subdirectories"] is True  # type: ignore
-    assert toml["downloads"]["concurrency"] is True  # type: ignore
     assert toml["downloads"]["max_connections"] == 6  # type: ignore
     assert toml["downloads"]["requests_per_minute"] == 60  # type: ignore
     assert toml["cli"]["progress_bars"] is True  # type: ignore
     assert toml["cli"]["max_search_results"] == 100  # type: ignore
-    assert toml["misc"]["version"] == "2.3.1"  # type: ignore
+    assert toml["misc"]["version"] == "2.3.2"  # type: ignore
     # Options that no longer exist don't survive the update.
     assert "youtube" not in toml
     assert "text_output" not in toml["cli"]  # type: ignore
@@ -159,7 +158,6 @@ def test_sample_config_data_fields(sample_config_data):
             folder="test_folder",
             source_subdirectories=False,
             disc_subdirectories=True,
-            concurrency=True,
             max_connections=6,
             requests_per_minute=60,
             verify_ssl=True,
@@ -190,7 +188,6 @@ def test_sample_config_data_fields(sample_config_data):
         soundcloud=SoundcloudConfig(
             client_id="clientid",
             app_version="appversion",
-            quality=0,
         ),
         lastfm=LastFmConfig(source="qobuz", fallback_source=""),
         filepaths=FilepathsConfig(
@@ -212,12 +209,11 @@ def test_sample_config_data_fields(sample_config_data):
             renumber_playlist_tracks=True,
             exclude=[],
         ),
-        qobuz_filters=QobuzDiscographyFilterConfig(
+        artist_filters=ArtistFilterConfig(
             extras=False,
             repeats=False,
             non_albums=False,
             features=False,
-            non_studio_albums=False,
             non_remaster=False,
         ),
         cli=CliConfig(
@@ -249,7 +245,7 @@ def test_sample_config_data_fields(sample_config_data):
     assert sample_config_data.artwork == test_config.artwork
     assert sample_config_data.filepaths == test_config.filepaths
     assert sample_config_data.metadata == test_config.metadata
-    assert sample_config_data.qobuz_filters == test_config.qobuz_filters
+    assert sample_config_data.artist_filters == test_config.artist_filters
     assert sample_config_data.database == test_config.database
     assert sample_config_data.conversion == test_config.conversion
 
@@ -298,3 +294,24 @@ def test_prefer_explicit_missing_from_toml_still_loads():
 
 if __name__ == "__main__":
     pytest.main()
+
+
+def test_merged_options_carry_over_on_update(tmp_path):
+    old = tomlkit.parse(open(OLD_CONFIG).read())
+    old["downloads"]["concurrency"] = False  # type: ignore
+    old["downloads"]["max_connections"] = 6  # type: ignore
+    old["qobuz_filters"]["non_studio_albums"] = True  # type: ignore
+    old["qobuz_filters"]["repeats"] = True  # type: ignore
+    path = tmp_path / "config.toml"
+    path.write_text(tomlkit.dumps(old))
+
+    Config._update_file(str(path), SAMPLE_CONFIG)
+
+    new = tomlkit.parse(path.read_text())
+    # concurrency = false became one download at a time.
+    assert new["downloads"]["max_connections"] == 1  # type: ignore
+    assert "concurrency" not in new["downloads"]  # type: ignore
+    # The filters moved to [artist_filters]; non_studio_albums is part of extras.
+    assert "qobuz_filters" not in new
+    assert new["artist_filters"]["extras"] is True  # type: ignore
+    assert new["artist_filters"]["repeats"] is True  # type: ignore

@@ -5,14 +5,9 @@ folder = "test_folder"
 source_subdirectories = false
 disc_subdirectories = true
 
-# Download (and convert) tracks all at once, instead of sequentially. 
-# If you are converting the tracks, or have fast internet, this will 
-# substantially improve processing speed.
-concurrency = true
-# The maximum number of tracks to download at once
-# If you have very fast internet, you will benefit from a higher value,
-# A value that is too high for your bandwidth may cause slowdowns
-# Set to -1 for no limit
+# How many tracks to download at once. 1 downloads them one after another,
+# -1 means no limit. More than your connection can carry only slows each
+# download down.
 max_connections = 6
 # Max number of API requests per source to handle per minute
 # Set to -1 for no limit
@@ -53,8 +48,8 @@ country_code = "countrycode"
 access_token = "accesstoken"
 refresh_token = "refreshtoken"
 # Tokens last 1 week after refresh. This is the Unix timestamp of the expiration
-# time. If you haven't used streamrip in more than a week, you may have to log
-# in again using `streamrip config --tidal`
+# time. If you haven't used streamrip in more than a week, you may be asked to
+# log in again.
 token_expiry = "tokenexpiry"
 token_client_id = ""
 
@@ -70,9 +65,7 @@ lower_quality_if_not_available = true
 arl = "testarl"
 
 [soundcloud]
-# Only 0 is available for now
-quality = 0
-# This changes periodically, so it needs to be updated
+# Found and kept up to date by streamrip. Leave these alone.
 client_id = "clientid"
 app_version = "appversion"
 
@@ -102,18 +95,20 @@ bit_depth = 24
 # Only applicable for lossy codecs
 lossy_bitrate = 320
 
-# Filter a Qobuz artist's discography. Set to 'true' to turn on a filter.
-[qobuz_filters]
-# Remove Collectors Editions, live recordings, etc.
+# Filters for downloading an artist's discography, from any source.
+# Set one to true to turn it on.
+[artist_filters]
+# Skip special editions (deluxe, anniversary, collector's, expanded), live
+# albums, demos, remixes and various-artists compilations
 extras = false
-# Picks the highest quality out of albums with identical titles.
+# Of albums with the same title (ignoring anything in brackets), only
+# download the best quality one
 repeats = false
 # Skip singles (releases with only one track)
 non_albums = false
-# Remove albums whose artist is not the one requested
+# Skip albums credited to someone else, such as ones the artist only
+# features on
 features = false
-# Skip non studio albums
-non_studio_albums = false
 # Only download remastered albums
 non_remaster = false
 
@@ -161,8 +156,8 @@ folder_format = "{albumartist} - {title} ({year}) [{container}] [{bit_depth}B-{s
 track_format = "{tracknumber}. {artist} - {title}{explicit}"
 # Only allow printable ASCII characters in filenames.
 restrict_characters = false
-# Truncate the filename if it is greater than this number of characters
-# Setting this to false may cause downloads to fail on some systems
+# Shorten track file names to this many characters (0: no limit). Names are
+# always shortened as far as the file system needs, whatever this is set to.
 truncate_to = 120
 
 # Last.fm playlists are downloaded by searching for the titles of the tracks
@@ -181,5 +176,5 @@ max_search_results = 100
 
 [misc]
 # Metadata to identify this config file. Do not change.
-version = "2.3.1"
+version = "2.3.2"
 check_for_updates = true

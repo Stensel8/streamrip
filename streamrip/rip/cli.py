@@ -185,7 +185,6 @@ def rip(
         c.session.qobuz.quality = quality
         c.session.tidal.quality = quality
         c.session.deezer.quality = quality
-        c.session.soundcloud.quality = quality
 
     if codec is not None:
         c.session.conversion.enabled = True

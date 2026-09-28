@@ -5,7 +5,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from ..client import Client
-from ..config import Config, QobuzDiscographyFilterConfig
+from ..config import ArtistFilterConfig, Config
 from ..console import console
 from ..db import Database
 from ..exceptions import NonStreamableError
@@ -62,7 +62,7 @@ class Artist(Media):
             f"[bold]{self.name}[/bold]: found {len(self.albums)} release(s), "
             "resolving and downloading..."
         )
-        filter_conf = self.config.session.qobuz_filters
+        filter_conf = self.config.session.artist_filters
         if filter_conf.repeats:
             console.log(
                 "Resolving [purple]ALL[/purple] artist albums to detect repeats. This may take a while."
@@ -74,7 +74,7 @@ class Artist(Media):
     async def postprocess(self):
         pass
 
-    async def _resolve_then_download(self, filters: QobuzDiscographyFilterConfig):
+    async def _resolve_then_download(self, filters: ArtistFilterConfig):
         """Resolve all artist albums, then download.
 
         Used when the repeats filter is on, which needs every album's title
@@ -105,15 +105,14 @@ class Artist(Media):
 
         await asyncio.gather(*[_rip(a) for a in albums if self._wanted(a, filters)])
 
-    async def _download_async(self, filters: QobuzDiscographyFilterConfig):
+    async def _download_async(self, filters: ArtistFilterConfig):
         await rip_albums(self.albums, lambda a: self._wanted(a, filters))
 
-    def _wanted(self, a: Album, f: QobuzDiscographyFilterConfig) -> bool:
+    def _wanted(self, a: Album, f: ArtistFilterConfig) -> bool:
         """Whether an album passes every enabled filter except repeats."""
         return not (
             (f.extras and not self._extras(a))
             or (f.features and not self._features(a))
-            or (f.non_studio_albums and not self._non_studio_albums(a))
             or (f.non_remaster and not self._non_remaster(a))
             or (f.non_albums and not self._non_albums(a))
         )
@@ -150,20 +149,18 @@ class Artist(Media):
     )
 
     # ----- Filter predicates -----
-    def _non_studio_albums(self, a: Album) -> bool:
-        """Filter out non studio albums."""
-        return a.meta.albumartist != "Various Artists" and self._extras(a)
-
     def _features(self, a: Album) -> bool:
         """Filter out features."""
         return a.meta.albumartist == self.name
 
     def _extras(self, a: Album) -> bool:
-        """Filter out extras.
-
-        See `_extra_re` for criteria.
+        """Filter out extras: special editions, live albums, remixes and the
+        like (see `_extra_re`), and various-artists compilations.
         """
-        return self._extra_re.search(a.meta.album) is None
+        return (
+            a.meta.albumartist != "Various Artists"
+            and self._extra_re.search(a.meta.album) is None
+        )
 
     _remaster_re = re.compile(r"(?i)(re)?master(ed)?")
 

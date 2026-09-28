@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from streamrip.config import QobuzDiscographyFilterConfig
+from streamrip.config import ArtistFilterConfig
 from streamrip.media.artist import RESOLVE_CHUNK_SIZE, Artist
 from streamrip.media.label import Label
 
@@ -33,12 +33,11 @@ class _FakePendingAlbum:
         return _FakeAlbum()
 
 
-NO_FILTERS = QobuzDiscographyFilterConfig(
+NO_FILTERS = ArtistFilterConfig(
     extras=False,
     repeats=False,
     non_albums=False,
     features=False,
-    non_studio_albums=False,
     non_remaster=False,
 )
 
@@ -111,7 +110,7 @@ async def test_a_failing_album_does_not_stop_the_others(caplog):
 
 @pytest.mark.asyncio
 async def test_resolve_then_download_chunks_the_resolve_phase():
-    """Used when qobuz_filters.repeats is on: resolving every album's title
+    """Used when artist_filters.repeats is on: resolving every album's title
     upfront is required, but that shouldn't mean firing them all at once.
     """
     _FakePendingAlbum._concurrent = 0

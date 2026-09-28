@@ -1,6 +1,6 @@
 from typing import Optional
 
-from streamrip.config import QobuzDiscographyFilterConfig
+from streamrip.config import ArtistFilterConfig
 from streamrip.media import Album, Artist
 from streamrip.metadata import AlbumInfo, AlbumMetadata
 
@@ -132,13 +132,24 @@ def test_non_albums_filter_skips_single_track_releases():
     single.meta.tracktotal = 1
     album = create_album("Album", False, 44.1, 16, id="a")
     artist = Artist(name="artist", albums=[], client=None, config=None)  # type: ignore
-    filters = QobuzDiscographyFilterConfig(
+    filters = ArtistFilterConfig(
         extras=False,
         repeats=False,
         non_albums=True,
         features=False,
-        non_studio_albums=False,
         non_remaster=False,
     )
     assert not artist._wanted(single, filters)
+    assert artist._wanted(album, filters)
+
+
+def test_extras_filter_skips_various_artists_compilations():
+    compilation = create_album("Summer Hits", False, 44.1, 16, id="c")
+    compilation.meta.albumartist = "Various Artists"
+    album = create_album("Album", False, 44.1, 16, id="a")
+    artist = Artist(name="artist", albums=[], client=None, config=None)  # type: ignore
+    filters = ArtistFilterConfig(
+        extras=True, repeats=False, non_albums=False, features=False, non_remaster=False
+    )
+    assert not artist._wanted(compilation, filters)
     assert artist._wanted(album, filters)

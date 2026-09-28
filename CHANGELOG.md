@@ -177,9 +177,14 @@ upstream issues and pull requests.
 ### Configuration
 
 - Options that never did anything are gone: `[tidal] download_videos`,
-  `[deezer] use_deezloader` and `deezloader_warnings`, the `[youtube]` section
-  and `[cli] text_output`. The config version is 2.3.1: an existing config is
-  updated automatically on the next run, keeping your settings.
+  `[deezer] use_deezloader` and `deezloader_warnings`, the `[youtube]` section,
+  `[cli] text_output` and `[soundcloud] quality` (SoundCloud has one quality).
+- Options that did the same thing are merged: `[downloads] concurrency = false`
+  is `max_connections = 1`; `[qobuz_filters]` is `[artist_filters]`, since it
+  applies to every source, and its `non_studio_albums` (extras plus
+  various-artists compilations) is part of `extras`.
+- The config version is 2.3.2: an existing config is updated automatically on
+  the next run, keeping your settings, including those of merged options.
 - `[cli] max_search_results` is used (it was ignored): it's the default for
   `search --num-results`, in the interactive menu too.
 
