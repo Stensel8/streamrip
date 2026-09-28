@@ -1,5 +1,6 @@
 from typing import Optional
 
+from streamrip.config import ArtistFilterConfig
 from streamrip.media import Album, Artist
 from streamrip.metadata import AlbumInfo, AlbumMetadata
 
@@ -115,3 +116,40 @@ def test_missing_values():
     assert len(result) == 1
     # explicit true wins over false when other quality metrics are equal (or missing)
     assert result[0] == album2
+
+
+def test_title_starting_with_a_bracket():
+    # Used to trip an assertion and abort the whole artist download.
+    album1 = create_album("(What's the Story) Morning Glory?", False, 44.1, 16, id="a1")
+    album2 = create_album("[Untitled]", False, 44.1, 16, id="a2")
+    album3 = create_album("(What's the Story) Morning Glory?", False, 96, 24, id="a3")
+    result = Artist._filter_repeats([album1, album2, album3])
+    assert {a.meta.info.id for a in result} == {"a2", "a3"}
+
+
+def test_non_albums_filter_skips_single_track_releases():
+    single = create_album("Single", False, 44.1, 16, id="s")
+    single.meta.tracktotal = 1
+    album = create_album("Album", False, 44.1, 16, id="a")
+    artist = Artist(name="artist", albums=[], client=None, config=None)  # type: ignore
+    filters = ArtistFilterConfig(
+        extras=False,
+        repeats=False,
+        non_albums=True,
+        features=False,
+        non_remaster=False,
+    )
+    assert not artist._wanted(single, filters)
+    assert artist._wanted(album, filters)
+
+
+def test_extras_filter_skips_various_artists_compilations():
+    compilation = create_album("Summer Hits", False, 44.1, 16, id="c")
+    compilation.meta.albumartist = "Various Artists"
+    album = create_album("Album", False, 44.1, 16, id="a")
+    artist = Artist(name="artist", albums=[], client=None, config=None)  # type: ignore
+    filters = ArtistFilterConfig(
+        extras=True, repeats=False, non_albums=False, features=False, non_remaster=False
+    )
+    assert not artist._wanted(compilation, filters)
+    assert artist._wanted(album, filters)

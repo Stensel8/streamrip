@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 import aiohttp
 import pytest
 
-from streamrip.client.client import Client
+from streamrip.client.client import new_session
 from streamrip.client.tidal import (
     MAX_API_ATTEMPTS,
     MAX_RETRY_DELAY,
@@ -166,7 +166,7 @@ async def test_ssl_errors_are_not_retried(sleeps):
 
 @pytest.mark.asyncio
 async def test_sessions_do_not_wait_five_minutes_on_a_stalled_connection():
-    session = await Client.get_session()
+    session = new_session()
     try:
         assert session.timeout.total is None
         assert session.timeout.sock_read == 30

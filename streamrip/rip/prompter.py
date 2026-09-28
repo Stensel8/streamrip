@@ -148,10 +148,28 @@ class TidalPrompter(CredentialPrompter):
     client: TidalClient
 
     def has_creds(self) -> bool:
-        return len(self.config.session.tidal.access_token) > 0
+        return all(lane.tokens.access_token for lane in self.client.lanes())
 
     async def prompt_and_login(self):
-        device_code, uri = await self.client._get_device_code()
+        """Log in every lane that has no working login yet."""
+        for lane in self.client.lanes():
+            if lane.tokens.access_token:
+                try:
+                    await lane._login_lane()
+                    continue
+                except AuthenticationError, MissingCredentialsError:
+                    pass
+            await self._device_login(lane)
+        self.client.logged_in = True
+        self.save()
+
+    async def _device_login(self, lane: TidalClient):
+        if len(self.client.lanes()) > 1:
+            console.print(
+                "Tidal serves hi-res and CD quality through two separate logins. "
+                f"This one is for {'CD quality' if lane is self.client else 'hi-res'}."
+            )
+        device_code, uri = await lane._get_device_code()
         login_link = uri if uri.startswith("http") else f"https://{uri}"
 
         console.print(
@@ -169,7 +187,7 @@ class TidalPrompter(CredentialPrompter):
         while True:
             if time.time() - start > self.timeout_s:
                 raise AuthenticationError("Timed out waiting for the Tidal login.")
-            status, info = await self.client._get_auth_status(device_code)
+            status, info = await lane._get_auth_status(device_code)
             if status == 2:
                 # pending
                 await asyncio.sleep(4)
@@ -185,14 +203,14 @@ class TidalPrompter(CredentialPrompter):
         c = self.config.session.tidal
         c.user_id = info["user_id"]  # type: ignore
         c.country_code = info["country_code"]  # type: ignore
-        c.access_token = info["access_token"]  # type: ignore
-        c.refresh_token = info["refresh_token"]  # type: ignore
-        c.token_expiry = info["token_expiry"]  # type: ignore
-        c.token_client_id = self.client.client_id
+        t = lane.tokens
+        t.access_token = info["access_token"]  # type: ignore
+        t.refresh_token = info["refresh_token"]  # type: ignore
+        t.token_expiry = info["token_expiry"]  # type: ignore
+        t.token_client_id = lane.client_id
 
-        self.client._update_authorization_from_config()
-        self.client.logged_in = True
-        self.save()
+        lane._update_authorization_from_config()
+        lane.logged_in = True
 
     def type_check_client(self, client) -> TidalClient:
         assert isinstance(client, TidalClient)
@@ -203,10 +221,8 @@ class TidalPrompter(CredentialPrompter):
         cf = self.config.file.tidal
         cf.user_id = c.user_id
         cf.country_code = c.country_code
-        cf.access_token = c.access_token
-        cf.refresh_token = c.refresh_token
-        cf.token_expiry = c.token_expiry
-        cf.token_client_id = c.token_client_id
+        for lane in self.client.lanes():
+            lane.save_login()
         self.config.file.set_modified()
 
 

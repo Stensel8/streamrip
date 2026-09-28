@@ -19,87 +19,97 @@ logger = logging.getLogger("streamrip")
 
 FLAC_MAX_BLOCKSIZE = 16777215  # 16.7 MB
 
-MP4_KEYS = (
-    "\xa9nam",
-    "\xa9ART",
-    "\xa9alb",
-    r"aART",
-    "\xa9day",
-    "\xa9day",
-    "\xa9cmt",
-    "desc",
-    "purd",
-    "\xa9grp",
-    "\xa9gen",
-    "\xa9lyr",
-    "\xa9too",
-    "cprt",
-    "cpil",
-    "trkn",
-    "disk",
-    None,
-    None,
-    None,
-    "----:com.apple.iTunes:ISRC",
-)
+# Where each of streamrip's tag names (see _tag_values) goes in MP3/AIFF (ID3)
+# and M4A files. FLAC's Vorbis comments take every name, upper-cased.
+MP3_KEY = {
+    "title": id3.TIT2,
+    "artist": id3.TPE1,
+    "album": id3.TALB,
+    "albumartist": id3.TPE2,
+    "composer": id3.TCOM,
+    "year": id3.TYER,
+    "genre": id3.TCON,
+    "lyrics": id3.USLT,
+    "copyright": id3.TCOP,
+    "compilation": id3.TCMP,
+    "tracknumber": id3.TRCK,
+    "discnumber": id3.TPOS,
+    "isrc": id3.TSRC,
+}
 
-MP3_KEYS = (
-    id3.TIT2,  # type: ignore
-    id3.TPE1,  # type: ignore
-    id3.TALB,  # type: ignore
-    id3.TPE2,  # type: ignore
-    id3.TCOM,  # type: ignore
-    id3.TYER,  # type: ignore
-    id3.COMM,  # type: ignore
-    id3.TT1,  # type: ignore
-    id3.TT1,  # type: ignore
-    id3.GP1,  # type: ignore
-    id3.TCON,  # type: ignore
-    id3.USLT,  # type: ignore
-    id3.TEN,  # type: ignore
-    id3.TCOP,  # type: ignore
-    id3.TCMP,  # type: ignore
-    id3.TRCK,  # type: ignore
-    id3.TPOS,  # type: ignore
-    None,
-    None,
-    None,
-    id3.TSRC,
-)
-
-METADATA_TYPES = (
-    "title",
-    "artist",
-    "album",
-    "albumartist",
-    "composer",
-    "year",
-    "comment",
-    "description",
-    "purchase_date",
-    "grouping",
-    "genre",
-    "lyrics",
-    "encoder",
-    "copyright",
-    "compilation",
-    "tracknumber",
-    "discnumber",
-    "tracktotal",
-    "disctotal",
-    "date",
-    "isrc",
-    # Keep "version" last: MP3_KEY/MP4_KEY zip this tuple against their own
-    # positional key tuples, so a trailing entry with no counterpart is simply
-    # dropped for those formats. FLAC_KEY is built by comprehension and picks
-    # it up as the standard Vorbis VERSION field.
-    "version",
-)
+MP4_KEY = {
+    "title": "\xa9nam",
+    "artist": "\xa9ART",
+    "album": "\xa9alb",
+    "albumartist": "aART",
+    "composer": "\xa9wrt",
+    "year": "\xa9day",
+    "description": "desc",
+    "genre": "\xa9gen",
+    "lyrics": "\xa9lyr",
+    "copyright": "cprt",
+    "compilation": "cpil",
+    "tracknumber": "trkn",
+    "discnumber": "disk",
+    "isrc": "----:com.apple.iTunes:ISRC",
+}
 
 
-FLAC_KEY = {v: v.upper() for v in METADATA_TYPES}
-MP4_KEY = dict(zip(METADATA_TYPES, MP4_KEYS))
-MP3_KEY = dict(zip(METADATA_TYPES, MP3_KEYS))
+def _tag_values(meta: TrackMetadata) -> dict:
+    """A track's tags by streamrip's own names, leaving out empty ones."""
+    album = meta.album
+    values = {
+        "title": meta.title,
+        # Several artists are written as a real multi-valued tag, not one
+        # "A, B" string that players would have to split up again.
+        "artist": meta.artists
+        if meta.artists and len(meta.artists) > 1
+        else meta.artist,
+        "album": album.album,
+        "albumartist": album.albumartist,
+        "composer": meta.composer,
+        "year": album.year,
+        "description": album.description,
+        "genre": album.get_genres(),
+        "lyrics": meta.lyrics,
+        "copyright": album.get_copyright(),
+        "compilation": album.compilation,
+        "tracknumber": meta.tracknumber,
+        "discnumber": meta.discnumber,
+        "tracktotal": album.tracktotal,
+        "disctotal": album.disctotal,
+        "date": album.date,
+        "isrc": meta.isrc,
+        "version": album.version,
+    }
+    return {k: v for k, v in values.items() if v is not None and v != ""}
+
+
+def _flac_value(name: str, value):
+    if name in ("tracknumber", "discnumber", "tracktotal", "disctotal"):
+        return f"{int(value):02}"
+    return value if isinstance(value, list) else str(value)
+
+
+def _mp3_value(name: str, value, values: dict):
+    total = {"tracknumber": "tracktotal", "discnumber": "disctotal"}.get(name)
+    if total in values:
+        return f"{value}/{values[total]}"
+    # save_audio() writes ID3v2.3, which joins a list of artists with "/".
+    return value if isinstance(value, list) else str(value)
+
+
+def _mp4_value(name: str, value, values: dict):
+    if name == "tracknumber":
+        return [(value, values.get("tracktotal", 0))]
+    if name == "discnumber":
+        return [(value, values.get("disctotal", 0))]
+    if name == "isrc":
+        # A freeform atom, which mutagen wants as bytes.
+        return value.encode("utf-8")
+    if name == "compilation":
+        return True  # cpil is a flag, and only ever set for compilations
+    return value if isinstance(value, list) else str(value)
 
 
 class Container(Enum):
@@ -127,115 +137,27 @@ class Container(Enum):
         return {}
 
     def get_tag_pairs(self, meta, exclude=()) -> list[tuple]:
-        if self == Container.FLAC:
-            pairs = self._tag_flac(meta)
-            key_map = FLAC_KEY
-        elif self in (Container.MP3, Container.AIFF):
-            pairs = self._tag_mp3(meta)
-            key_map = {k: v.__name__ for k, v in MP3_KEY.items() if v is not None}
-        elif self == Container.AAC:
-            pairs = self._tag_mp4(meta)
-            key_map = MP4_KEY
-        else:
-            return []
         # [metadata] exclude lists streamrip's own tag names ("genre",
         # "albumartist", ...); it used to be ignored entirely (upstream #850).
-        excluded = {key_map[name] for name in exclude or () if key_map.get(name)}
-        return [(k, v) for k, v in pairs if k not in excluded]
-
-    def _tag_flac(self, meta: TrackMetadata) -> list[tuple]:
-        out = []
-        for k, v in FLAC_KEY.items():
-            if k == "artist" and meta.artists and len(meta.artists) > 1:
-                # Multiple separate ARTIST fields (Vorbis comments support
-                # repeated keys) instead of one "A, B" string, so players
-                # don't have to guess where to split it.
-                out.append((v, meta.artists))
-                continue
-
-            tag = self._attr_from_meta(meta, k)
-            if tag:
-                if k in {
-                    "tracknumber",
-                    "discnumber",
-                    "tracktotal",
-                    "disctotal",
-                }:
-                    tag = f"{int(tag):02}"
-
-                out.append((v, str(tag)))
-        return out
-
-    def _tag_mp3(self, meta: TrackMetadata):
-        out = []
-        for k, v in MP3_KEY.items():
-            if k == "tracknumber":
-                text = f"{meta.tracknumber}/{meta.album.tracktotal}"
-            elif k == "discnumber":
-                text = f"{meta.discnumber}/{meta.album.disctotal}"
-            elif k == "artist" and meta.artists and len(meta.artists) > 1:
-                # A real multi-value TPE1; save_audio()'s update_to_v23() +
-                # v2_version=3 joins these with "/" (the separator players
-                # actually recognize), instead of us baking in ", " which
-                # is indistinguishable from a comma inside one artist's name.
-                text = meta.artists
-            else:
-                text = self._attr_from_meta(meta, k)
-
-            if text is not None and v is not None:
-                out.append((v.__name__, v(encoding=3, text=text)))
-        return out
-
-    def _tag_mp4(self, meta: TrackMetadata):
-        out = []
-        for k, v in MP4_KEY.items():
-            if k == "tracknumber":
-                text = [(meta.tracknumber, meta.album.tracktotal)]
-            elif k == "discnumber":
-                text = [(meta.discnumber, meta.album.disctotal)]
-            elif k == "isrc" and meta.isrc is not None:
-                # because ISRC is an mp4 freeform value (not supported natively)
-                # we have to pass in the actual bytes to mutagen
-                # See mutagen.MP4Tags.__render_freeform
-                text = meta.isrc.encode("utf-8")
-            elif k == "artist" and meta.artists and len(meta.artists) > 1:
-                # Multiple values under \xa9ART instead of one joined string.
-                text = meta.artists
-            else:
-                text = self._attr_from_meta(meta, k)
-
-            if v is not None and text is not None:
-                out.append((v, text))
-        return out
-
-    def _attr_from_meta(self, meta: TrackMetadata, attr: str) -> str | None:
-        # TODO: verify this works
-        in_trackmetadata = {
-            "title",
-            "album",
-            "artist",
-            "tracknumber",
-            "discnumber",
-            "composer",
-            "isrc",
-            "lyrics",
-        }
-        if attr in in_trackmetadata:
-            if attr == "album":
-                return meta.album.album
-            val = getattr(meta, attr)
-            if val is None:
-                return None
-            return str(val)
-        else:
-            if attr == "genre":
-                return meta.album.get_genres()
-            elif attr == "copyright":
-                return meta.album.get_copyright()
-            val = getattr(meta.album, attr)
-            if val is None:
-                return None
-            return str(val)
+        values = {k: v for k, v in _tag_values(meta).items() if k not in exclude}
+        if self == Container.FLAC:
+            return [(k.upper(), _flac_value(k, v)) for k, v in values.items()]
+        if self in (Container.MP3, Container.AIFF):
+            return [
+                (
+                    frame.__name__,
+                    frame(encoding=3, text=_mp3_value(k, values[k], values)),
+                )
+                for k, frame in MP3_KEY.items()
+                if k in values
+            ]
+        if self == Container.AAC:
+            return [
+                (key, _mp4_value(k, values[k], values))
+                for k, key in MP4_KEY.items()
+                if k in values
+            ]
+        return []
 
     def tag_audio(self, audio, tags: list[tuple]):
         for k, v in tags:
@@ -265,9 +187,7 @@ class Container(Enum):
             audio["covr"] = [cover]
 
     def save_audio(self, audio, path):
-        if self == Container.FLAC:
-            audio.save()
-        elif self == Container.AAC:
+        if self in (Container.FLAC, Container.AAC):
             audio.save()
         elif self == Container.MP3:
             # ID3v2.3 for the widest player support. This used to pass the

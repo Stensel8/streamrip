@@ -5,6 +5,7 @@ import pytest
 import tomlkit
 
 from streamrip.config import (
+    ArtistFilterConfig,
     ArtworkConfig,
     CliConfig,
     Config,
@@ -18,10 +19,8 @@ from streamrip.config import (
     MetadataConfig,
     MiscConfig,
     QobuzConfig,
-    QobuzDiscographyFilterConfig,
     SoundcloudConfig,
     TidalConfig,
-    YoutubeConfig,
     _get_dict_keys_r,
     _nested_set,
     update_config,
@@ -130,15 +129,14 @@ def test_config_file_update():
 
     assert toml["downloads"]["folder"] == "old_value"  # type: ignore
     assert toml["downloads"]["source_subdirectories"] is True  # type: ignore
-    assert toml["downloads"]["concurrency"] is True  # type: ignore
     assert toml["downloads"]["max_connections"] == 6  # type: ignore
     assert toml["downloads"]["requests_per_minute"] == 60  # type: ignore
-    assert toml["cli"]["text_output"] is True  # type: ignore
     assert toml["cli"]["progress_bars"] is True  # type: ignore
     assert toml["cli"]["max_search_results"] == 100  # type: ignore
-    assert toml["misc"]["version"] == "2.3.0"  # type: ignore
-    assert "YouTubeVideos" in str(toml["youtube"]["video_downloads_folder"])
-    # type: ignore
+    assert toml["misc"]["version"] == "2.3.3"  # type: ignore
+    # Options that no longer exist don't survive the update.
+    assert "youtube" not in toml
+    assert "text_output" not in toml["cli"]  # type: ignore
     os.remove("tests/test_config_old2.toml")
 
 
@@ -160,7 +158,6 @@ def test_sample_config_data_fields(sample_config_data):
             folder="test_folder",
             source_subdirectories=False,
             disc_subdirectories=True,
-            concurrency=True,
             max_connections=6,
             requests_per_minute=60,
             verify_ssl=True,
@@ -182,24 +179,15 @@ def test_sample_config_data_fields(sample_config_data):
             refresh_token="refreshtoken",
             token_expiry="tokenexpiry",
             quality=3,
-            download_videos=True,
         ),
         deezer=DeezerConfig(
             arl="testarl",
             quality=2,
             lower_quality_if_not_available=True,
-            use_deezloader=True,
-            deezloader_warnings=True,
         ),
         soundcloud=SoundcloudConfig(
             client_id="clientid",
             app_version="appversion",
-            quality=0,
-        ),
-        youtube=YoutubeConfig(
-            video_downloads_folder="videodownloadsfolder",
-            quality=0,
-            download_videos=False,
         ),
         lastfm=LastFmConfig(source="qobuz", fallback_source=""),
         filepaths=FilepathsConfig(
@@ -221,16 +209,14 @@ def test_sample_config_data_fields(sample_config_data):
             renumber_playlist_tracks=True,
             exclude=[],
         ),
-        qobuz_filters=QobuzDiscographyFilterConfig(
+        artist_filters=ArtistFilterConfig(
             extras=False,
             repeats=False,
             non_albums=False,
             features=False,
-            non_studio_albums=False,
             non_remaster=False,
         ),
         cli=CliConfig(
-            text_output=False,
             progress_bars=False,
             max_search_results=100,
         ),
@@ -255,12 +241,11 @@ def test_sample_config_data_fields(sample_config_data):
     assert sample_config_data.tidal == test_config.tidal
     assert sample_config_data.deezer == test_config.deezer
     assert sample_config_data.soundcloud == test_config.soundcloud
-    assert sample_config_data.youtube == test_config.youtube
     assert sample_config_data.lastfm == test_config.lastfm
     assert sample_config_data.artwork == test_config.artwork
     assert sample_config_data.filepaths == test_config.filepaths
     assert sample_config_data.metadata == test_config.metadata
-    assert sample_config_data.qobuz_filters == test_config.qobuz_filters
+    assert sample_config_data.artist_filters == test_config.artist_filters
     assert sample_config_data.database == test_config.database
     assert sample_config_data.conversion == test_config.conversion
 
@@ -309,3 +294,66 @@ def test_prefer_explicit_missing_from_toml_still_loads():
 
 if __name__ == "__main__":
     pytest.main()
+
+
+def test_merged_options_carry_over_on_update(tmp_path):
+    old = tomlkit.parse(open(OLD_CONFIG).read())
+    old["downloads"]["concurrency"] = False  # type: ignore
+    old["downloads"]["max_connections"] = 6  # type: ignore
+    old["qobuz_filters"]["non_studio_albums"] = True  # type: ignore
+    old["qobuz_filters"]["repeats"] = True  # type: ignore
+    path = tmp_path / "config.toml"
+    path.write_text(tomlkit.dumps(old))
+
+    Config._update_file(str(path), SAMPLE_CONFIG)
+
+    new = tomlkit.parse(path.read_text())
+    # concurrency = false became one download at a time.
+    assert new["downloads"]["max_connections"] == 1  # type: ignore
+    assert "concurrency" not in new["downloads"]  # type: ignore
+    # The filters moved to [artist_filters]; non_studio_albums is part of extras.
+    assert "qobuz_filters" not in new
+    assert new["artist_filters"]["extras"] is True  # type: ignore
+    assert new["artist_filters"]["repeats"] is True  # type: ignore
+
+
+def _update_with_tidal_login(tmp_path, hires_client: bool):
+    old = tomlkit.parse(open(OLD_CONFIG).read())
+    tidal = old["tidal"]  # type: ignore
+    tidal["hires_client"] = hires_client
+    tidal["client_id"] = ""
+    tidal["access_token"] = "tok"
+    tidal["refresh_token"] = "ref"
+    tidal["token_expiry"] = "1"
+    tidal["token_client_id"] = "some-client"
+    path = tmp_path / "config.toml"
+    path.write_text(tomlkit.dumps(old))
+
+    Config.update_file(str(path))
+    return tomlkit.parse(path.read_text())["tidal"]  # type: ignore
+
+
+def test_hires_login_moves_to_its_own_fields_on_update(tmp_path):
+    # Before there was a second login, hires_client = true replaced the default
+    # client and its tokens lived in the ordinary fields.
+    tidal = _update_with_tidal_login(tmp_path, hires_client=True)
+    assert tidal["hires_access_token"] == "tok"
+    assert tidal["hires_refresh_token"] == "ref"
+    assert tidal["hires_token_expiry"] == "1"
+    assert tidal["hires_token_client_id"] == "some-client"
+    assert tidal["access_token"] == ""
+    assert tidal["token_client_id"] == ""
+
+
+def test_default_client_login_stays_put_on_update(tmp_path):
+    tidal = _update_with_tidal_login(tmp_path, hires_client=False)
+    assert tidal["access_token"] == "tok"
+    assert tidal["token_client_id"] == "some-client"
+    assert tidal["hires_access_token"] == ""
+
+
+def test_default_quality_is_the_highest_of_every_source():
+    session = Config.defaults().session
+    assert session.qobuz.quality == 4  # 24-bit, up to 192 kHz
+    assert session.tidal.quality == 3  # best available, hi-res where there is one
+    assert session.deezer.quality == 2  # FLAC

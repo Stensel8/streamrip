@@ -3,13 +3,17 @@ import logging
 import os
 from dataclasses import dataclass
 
+import mutagen
+from mutagen.aiff import AIFF
+from mutagen.flac import FLAC
+
 from .. import converter
 from ..client import Client, Downloadable
 from ..config import Config
 from ..db import Database
-from ..exceptions import NonStreamableError, TrackDownloadFailedError
-from ..filepath_utils import clean_filename, fit_filename
-from ..metadata import AlbumMetadata, Covers, TrackMetadata, tag_file
+from ..exceptions import TrackDownloadFailedError
+from ..filepath_utils import clean_filename, clean_filepath, fit_filename
+from ..metadata import AlbumMetadata, TrackMetadata, tag_file
 from ..metadata.tagger import TAGGABLE_EXTENSIONS
 from ..progress import add_title, get_progress_callback, remove_title
 from .artwork import download_artwork
@@ -21,10 +25,26 @@ logger = logging.getLogger("streamrip")
 # One try plus three retries with exponential backoff.
 MAX_DOWNLOAD_ATTEMPTS = 4
 
-# FLAC is always preferred over a lossy container for the same track: if one
-# is already on disk, there's no reason to also keep (or fetch) the other.
-LOSSLESS_EXTENSIONS = {"flac", "aiff", "aif"}
-LOSSY_EXTENSIONS = {"m4a", "mp3"}
+# Formats a track is downloaded in. A lossless copy of a track makes a lossy
+# copy of the same track redundant, so only one of them is kept.
+DEDUP_EXTENSIONS = ("flac", "m4a", "mp3")
+
+
+def _open_audio(path: str):
+    """`path` as a mutagen file with format-independent tag names, or None."""
+    try:
+        return mutagen.File(path, easy=True)
+    except Exception:
+        return None
+
+
+def _is_lossless(audio) -> bool:
+    # ALAC and AAC share the .m4a extension, so this has to look at the codec.
+    return isinstance(audio, FLAC | AIFF) or getattr(audio.info, "codec", "") == "alac"
+
+
+def _first_tag(audio, key: str) -> str:
+    return str((audio.tags.get(key) or [""])[0]).strip().casefold()
 
 
 @dataclass(slots=True)
@@ -36,7 +56,6 @@ class Track(Media):
     # Is None if a cover doesn't exist for the track
     cover_path: str | None
     db: Database
-    # change?
     download_path: str = ""
     is_single: bool = False
     # Base name (no extension) `download_path` is built from; kept around to
@@ -50,7 +69,9 @@ class Track(Media):
     async def preprocess(self):
         self._set_download_path()
         os.makedirs(self.folder, exist_ok=True)
-        if self._lossless_duplicate_exists():
+        if self.downloadable.extension != "flac" and self._copies_on_disk(
+            lossless=True
+        ):
             self._skip_lossy_duplicate = True
             logger.info(
                 f"Skipping '{self.meta.title}': a lossless copy already exists, "
@@ -132,13 +153,8 @@ class Track(Media):
                     f"Could not convert '{self.meta.title}', keeping the "
                     f"original file: {type(e).__name__}: {e}"
                 )
-        else:
-            # Conversion picks its own target codec for every track, so a
-            # mismatched sibling from a previous run doesn't mean anything
-            # there; only clean up when this file's own format is the one on
-            # disk.
-            self._remove_lossy_duplicates()
 
+        self._remove_lossy_copies()
         self.db.set_downloaded(self.meta.info.id)
 
     async def _convert(self):
@@ -187,26 +203,115 @@ class Track(Media):
         """Path this track would have on disk with a different extension."""
         return os.path.join(self.folder, fit_filename(self._path_stem, extension))
 
-    def _lossless_duplicate_exists(self) -> bool:
-        if self.downloadable.extension.lower() not in LOSSY_EXTENSIONS:
-            return False
-        return any(
-            os.path.isfile(self._sibling_path(ext)) for ext in LOSSLESS_EXTENSIONS
-        )
+    def _copies_on_disk(self, lossless: bool) -> list[str]:
+        """Lossless (or lossy) files of this same track under another extension.
 
-    def _remove_lossy_duplicates(self):
-        final_ext = self.download_path.rsplit(".", 1)[-1].lower()
-        if final_ext not in LOSSLESS_EXTENSIONS:
+        A matching filename stem alone doesn't prove it's the same track: a
+        single and an album can share one. So a file only counts if its title
+        and album tags match this track's too.
+        """
+        want = (
+            self.meta.title.strip().casefold(),
+            self.meta.album.album.strip().casefold(),
+        )
+        copies = []
+        for ext in DEDUP_EXTENSIONS:
+            path = self._sibling_path(ext)
+            if path == self.download_path or not os.path.isfile(path):
+                continue
+            audio = _open_audio(path)
+            if (
+                audio is not None
+                and audio.tags
+                and _is_lossless(audio) == lossless
+                and (_first_tag(audio, "title"), _first_tag(audio, "album")) == want
+            ):
+                copies.append(path)
+        return copies
+
+    def _remove_lossy_copies(self):
+        # A lossy download converted to FLAC is no better than the copy it would
+        # replace; only a genuinely lossless download supersedes the others.
+        if self.downloadable.extension != "flac":
             return
-        for ext in LOSSY_EXTENSIONS:
-            sibling = self._sibling_path(ext)
-            if os.path.isfile(sibling):
-                logger.info(f"Removing lower-quality duplicate: {sibling}")
-                os.remove(sibling)
+        final = _open_audio(self.download_path)
+        if final is None or not _is_lossless(final):
+            return
+        for path in self._copies_on_disk(lossless=False):
+            logger.info(f"Removing lower-quality copy: {path}")
+            os.remove(path)
+
+
+def album_folder(config: Config, source: str, album: AlbumMetadata) -> str:
+    """The folder an album's tracks go in."""
+    c = config.session
+    parent = c.downloads.folder
+    if c.downloads.source_subdirectories:
+        parent = os.path.join(parent, source.capitalize())
+    folder = album.format_folder_path(c.filepaths.folder_format)
+    return os.path.join(parent, clean_filepath(folder, c.filepaths.restrict_characters))
+
+
+def _record_failure(db: Database, source: str, track_id: str, message: str):
+    # Every failure has to be recorded, not just logged: otherwise the track
+    # silently goes missing, with nothing for `streamrip repair` to retry.
+    logger.error(message)
+    db.set_failed(source, "track", track_id)
+
+
+async def fetch_track_meta(
+    client: Client, db: Database, track_id: str, album: AlbumMetadata | None = None
+) -> TrackMetadata | None:
+    """A track's metadata, or None if it's already downloaded or unavailable.
+
+    Without `album`, the album's metadata is read from the track's.
+    """
+    if db.downloaded(track_id):
+        logger.info(f"Skipping track {track_id}. Marked as downloaded in the database.")
+        return None
+    source = client.source
+    try:
+        resp = await client.get_metadata(track_id, "track")
+        album = album or AlbumMetadata.from_track_resp(resp, source)
+        meta = album and TrackMetadata.from_resp(album, source, resp)
+    except Exception as e:
+        _record_failure(
+            db,
+            source,
+            track_id,
+            f"Error fetching track {track_id}: {type(e).__name__}: {e}",
+        )
+        return None
+    if meta is None:
+        _record_failure(
+            db,
+            source,
+            track_id,
+            f"Track {track_id} not available for stream on {source}",
+        )
+    return meta
+
+
+async def fetch_downloadable(
+    client: Client, config: Config, db: Database, track_id: str
+) -> Downloadable | None:
+    quality = config.session.get_source(client.source).quality
+    try:
+        return await client.get_downloadable(track_id, quality)
+    except Exception as e:
+        _record_failure(
+            db,
+            client.source,
+            track_id,
+            f"Error fetching download info for track {track_id}: {type(e).__name__}: {e}",
+        )
+        return None
 
 
 @dataclass(slots=True)
 class PendingTrack(Pending):
+    """A track of an album whose metadata and cover are already there."""
+
     id: str
     album: AlbumMetadata
     client: Client
@@ -217,68 +322,27 @@ class PendingTrack(Pending):
     cover_path: str | None
 
     async def resolve(self) -> Track | None:
-        if self.db.downloaded(self.id):
-            logger.info(
-                f"Skipping track {self.id}. Marked as downloaded in the database.",
-            )
-            return None
-
-        source = self.client.source
-        # Every failure below has to be recorded, not just logged. An unlogged
-        # failure leaves no trace anywhere: no file, no downloads.db row, and
-        # nothing in the failed db for `streamrip repair` to retry -- the track just
-        # silently goes missing from the album.
-        try:
-            resp = await self.client.get_metadata(self.id, "track")
-        except NonStreamableError as e:
-            logger.error(f"Track {self.id} not available for stream on {source}: {e}")
-            self.db.set_failed(source, "track", self.id)
-            return None
-
-        try:
-            meta = TrackMetadata.from_resp(self.album, source, resp)
-        except Exception as e:
-            logger.error(f"Error building track metadata for {self.id}: {e}")
-            self.db.set_failed(source, "track", self.id)
-            return None
-
+        meta = await fetch_track_meta(self.client, self.db, self.id, self.album)
         if meta is None:
-            logger.error(f"Track {self.id} not available for stream on {source}")
-            self.db.set_failed(source, "track", self.id)
             return None
-
-        quality = self.config.session.get_source(source).quality
-        try:
-            downloadable = await self.client.get_downloadable(self.id, quality)
-        except NonStreamableError as e:
-            logger.error(
-                f"Error getting downloadable data for track {meta.tracknumber} [{self.id}]: {e}"
-            )
-            self.db.set_failed(source, "track", self.id)
-            return None
-
-        downloads_config = self.config.session.downloads
-        if downloads_config.disc_subdirectories and self.album.disctotal > 1:
-            folder = os.path.join(self.folder, f"Disc {meta.discnumber}")
-        else:
-            folder = self.folder
-
-        return Track(
-            meta,
-            downloadable,
-            self.config,
-            folder,
-            self.cover_path,
-            self.db,
+        downloadable = await fetch_downloadable(
+            self.client, self.config, self.db, self.id
         )
+        if downloadable is None:
+            return None
+        folder = self.folder
+        if (
+            self.config.session.downloads.disc_subdirectories
+            and self.album.disctotal > 1
+        ):
+            folder = os.path.join(folder, f"Disc {meta.discnumber}")
+        return Track(meta, downloadable, self.config, folder, self.cover_path, self.db)
 
 
 @dataclass(slots=True)
 class PendingSingle(Pending):
-    """Whereas PendingTrack is used in the context of an album, where the album metadata
-    and cover have been resolved, PendingSingle is used when a single track is downloaded.
-
-    This resolves the Album metadata and downloads the cover to pass to the Track class.
+    """A track downloaded on its own, which brings its album's metadata and
+    cover with it.
     """
 
     id: str
@@ -287,106 +351,33 @@ class PendingSingle(Pending):
     db: Database
 
     async def resolve(self) -> Track | None:
-        if self.db.downloaded(self.id):
-            logger.info(
-                f"Skipping track {self.id}. Marked as downloaded in the database.",
-            )
-            return None
-
-        # As in PendingTrack.resolve: record every failure, so a track that
-        # dies here is retryable by `streamrip repair` instead of vanishing.
-        try:
-            resp = await self.client.get_metadata(self.id, "track")
-        except NonStreamableError as e:
-            logger.error(f"Error fetching track {self.id}: {e}")
-            self.db.set_failed(self.client.source, "track", self.id)
-            return None
-        # Patch for soundcloud
-        try:
-            album = AlbumMetadata.from_track_resp(resp, self.client.source)
-        except Exception as e:
-            logger.error(f"Error building album metadata for track {id=}: {e}")
-            self.db.set_failed(self.client.source, "track", self.id)
-            return None
-
-        if album is None:
-            self.db.set_failed(self.client.source, "track", self.id)
-            logger.error(
-                f"Cannot stream track (am) ({self.id}) on {self.client.source}",
-            )
-            return None
-
-        try:
-            meta = TrackMetadata.from_resp(album, self.client.source, resp)
-        except Exception as e:
-            logger.error(f"Error building track metadata for track {id=}: {e}")
-            self.db.set_failed(self.client.source, "track", self.id)
-            return None
-
+        meta = await fetch_track_meta(self.client, self.db, self.id)
         if meta is None:
-            self.db.set_failed(self.client.source, "track", self.id)
-            logger.error(
-                f"Cannot stream track (tm) ({self.id}) on {self.client.source}",
-            )
+            return None
+        album, c = meta.album, self.config.session
+        in_album_folder = c.filepaths.add_singles_to_folder
+        if in_album_folder:
+            folder = album_folder(self.config, self.client.source, album)
+        else:
+            folder = c.downloads.folder
+        os.makedirs(folder, exist_ok=True)
+
+        (cover_path, _), downloadable = await asyncio.gather(
+            download_artwork(
+                self.client.session, folder, album.covers, c.artwork, for_playlist=False
+            ),
+            fetch_downloadable(self.client, self.config, self.db, self.id),
+        )
+        if downloadable is None:
             return None
 
-        config = self.config.session
-        quality = getattr(config, self.client.source).quality
-        assert isinstance(quality, int)
-        parent = config.downloads.folder
-        in_album_folder = config.filepaths.add_singles_to_folder
-        if in_album_folder:
-            album_folder = self._format_folder(album)
-        else:
-            album_folder = parent
-
-        os.makedirs(album_folder, exist_ok=True)
-
-        embedded_cover_path, downloadable = await asyncio.gather(
-            self._download_cover(album.covers, album_folder),
-            self.client.get_downloadable(self.id, quality),
-        )
-
-        # Mirror PendingTrack: a track belonging to a multi-disc album lives in
-        # that album's disc subfolder. Without this, downloading one track of a
-        # multi-disc album (`streamrip repair`, or any single-track URL) drops it
-        # beside the Disc folders rather than into the one it belongs to.
-        # Only meaningful when we're actually building the album's folder --
-        # otherwise this would create a bare "Disc N" in the download root.
-        folder = album_folder
-        if (
-            in_album_folder
-            and config.downloads.disc_subdirectories
-            and album.disctotal > 1
-        ):
-            folder = os.path.join(album_folder, f"Disc {meta.discnumber}")
+        # As in an album download, a track of a multi-disc album goes in its
+        # disc's subfolder (`streamrip repair` downloads singles too). Only
+        # when it's in the album's folder, not as a bare "Disc N" in the root.
+        if in_album_folder and c.downloads.disc_subdirectories and album.disctotal > 1:
+            folder = os.path.join(folder, f"Disc {meta.discnumber}")
             os.makedirs(folder, exist_ok=True)
 
         return Track(
-            meta,
-            downloadable,
-            self.config,
-            folder,
-            embedded_cover_path,
-            self.db,
-            is_single=True,
+            meta, downloadable, self.config, folder, cover_path, self.db, is_single=True
         )
-
-    def _format_folder(self, meta: AlbumMetadata) -> str:
-        c = self.config.session
-        parent = c.downloads.folder
-        formatter = c.filepaths.folder_format
-        if c.downloads.source_subdirectories:
-            parent = os.path.join(parent, self.client.source.capitalize())
-
-        return os.path.join(parent, meta.format_folder_path(formatter))
-
-    async def _download_cover(self, covers: Covers, folder: str) -> str | None:
-        embed_path, _ = await download_artwork(
-            self.client.session,
-            folder,
-            covers,
-            self.config.session.artwork,
-            for_playlist=False,
-        )
-        return embed_path

@@ -5,39 +5,7 @@ from .album import AlbumMetadata
 from .track import TrackMetadata
 from .util import safe_get, typed
 
-NON_STREAMABLE = "_non_streamable"
-ORIGINAL_DOWNLOAD = "_original_download"
-NOT_RESOLVED = "_not_resolved"
-
 logger = logging.getLogger("streamrip")
-
-
-def get_soundcloud_id(resp: dict) -> str:
-    item_id = resp["id"]
-    if "media" not in resp:
-        return f"{item_id}|{NOT_RESOLVED}"
-
-    if not resp["streamable"] or resp["policy"] == "BLOCK":
-        return f"{item_id}|{NON_STREAMABLE}"
-
-    if resp["downloadable"] and resp["has_downloads_left"]:
-        return f"{item_id}|{ORIGINAL_DOWNLOAD}"
-
-    url = None
-    for tc in resp["media"]["transcodings"]:
-        fmt = tc["format"]
-        if fmt["protocol"] == "hls" and fmt["mime_type"] == "audio/mpeg":
-            url = tc["url"]
-            break
-
-    assert url is not None
-    return f"{item_id}|{url}"
-
-
-def parse_soundcloud_id(item_id: str) -> tuple[str, str]:
-    info = item_id.split("|")
-    assert len(info) == 2
-    return (info[0], info[1])
 
 
 @dataclass(slots=True)
@@ -104,7 +72,15 @@ class PlaylistMetadata:
     @classmethod
     def from_deezer(cls, resp: dict):
         name = typed(resp["title"], str)
-        tracks = [str(track["id"]) for track in resp["tracks"]]
+        ids = [str(track["id"]) for track in resp["tracks"]]
+        # Tracks you uploaded to Deezer yourself have negative ids and no album
+        # to tag them with; they're your own files anyway (upstream PR #832).
+        tracks = [i for i in ids if not i.startswith("-")]
+        if len(tracks) < len(ids):
+            logger.info(
+                f"{name}: skipping {len(ids) - len(tracks)} track(s) you uploaded "
+                "to Deezer yourself"
+            )
         return cls(name, tracks)
 
     @classmethod

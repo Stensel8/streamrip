@@ -3,55 +3,32 @@
 import logging
 import os
 import sqlite3
-from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Final
 
 logger = logging.getLogger("streamrip")
 
 
-class DatabaseInterface(ABC):
-    @abstractmethod
-    def create(self):
-        pass
+class Dummy:
+    """Stands in for a database that's disabled in the config."""
 
-    @abstractmethod
-    def contains(self, **items) -> bool:
-        pass
-
-    @abstractmethod
-    def add(self, kvs):
-        pass
-
-    @abstractmethod
-    def remove(self, kvs):
-        pass
-
-    @abstractmethod
-    def all(self) -> list:
-        pass
-
-
-class Dummy(DatabaseInterface):
-    """This exists as a mock to use in case databases are disabled."""
-
-    def create(self):
-        pass
-
-    def contains(self, **_):
+    def contains(self, **_) -> bool:
         return False
 
     def add(self, *_):
         pass
 
-    def remove(self, *_):
+    def remove(self, **_):
         pass
 
-    def all(self):
+    def clear(self) -> int:
+        return 0
+
+    def all(self) -> list:
         return []
 
 
-class DatabaseBase(DatabaseInterface):
+class DatabaseBase:
     """A wrapper for an sqlite database."""
 
     structure: dict
@@ -83,10 +60,6 @@ class DatabaseBase(DatabaseInterface):
             logger.debug("executing %s", command)
 
             conn.execute(command)
-
-    def keys(self):
-        """Get the column names of the table."""
-        return self.structure.keys()
 
     def contains(self, **items) -> bool:
         """Check whether items matches an entry in the table.
@@ -132,12 +105,7 @@ class DatabaseBase(DatabaseInterface):
                 logger.debug(e)
 
     def remove(self, **items):
-        """Remove items from a table.
-
-        Warning: NOT TESTED!
-
-        :param items:
-        """
+        """Delete the rows that match every column-name=value given."""
         conditions = " AND ".join(f"{key}=?" for key in items.keys())
         command = f"DELETE FROM {self.name} WHERE {conditions}"
 
@@ -156,13 +124,6 @@ class DatabaseBase(DatabaseInterface):
         """Iterate through the rows of the table."""
         with sqlite3.connect(self.path) as conn:
             return list(conn.execute(f"SELECT * FROM {self.name}"))
-
-    def reset(self):
-        """Delete the database file."""
-        try:
-            os.remove(self.path)
-        except FileNotFoundError:
-            pass
 
 
 class Downloads(DatabaseBase):
@@ -187,17 +148,14 @@ class Failed(DatabaseBase):
 
 @dataclass(slots=True)
 class Database:
-    downloads: DatabaseInterface
-    failed: DatabaseInterface
+    downloads: DatabaseBase | Dummy
+    failed: DatabaseBase | Dummy
 
     def downloaded(self, item_id: str) -> bool:
         return self.downloads.contains(id=item_id)
 
     def set_downloaded(self, item_id: str):
         self.downloads.add((item_id,))
-
-    def get_failed_downloads(self) -> list[tuple[str, str, str]]:
-        return self.failed.all()
 
     def set_failed(self, source: str, media_type: str, id: str):
         self.failed.add((source, media_type, id))

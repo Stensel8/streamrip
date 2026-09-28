@@ -19,3 +19,13 @@ def test_a_cleared_database_is_usable_again(tmp_path):
     assert not downloads.contains(id="1")
     downloads.add(("1",))
     assert downloads.contains(id="1")
+
+
+def test_remove_deletes_only_the_matching_row(tmp_path):
+    failed = db.Failed(str(tmp_path / "failed.db"))
+    failed.add(("tidal", "track", "1"))
+    failed.add(("qobuz", "album", "2"))
+
+    failed.remove(id="1")
+
+    assert failed.all() == [("qobuz", "album", "2")]

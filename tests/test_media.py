@@ -15,7 +15,7 @@ class FakeResolvedTrack:
     """
 
     def __init__(self, title, artist, explicit):
-        info = TrackInfo(id="1", quality=2, explicit=explicit)
+        info = TrackInfo(id="1", explicit=explicit)
         album = AlbumMetadata(
             AlbumInfo("1", 2, "flac"), "Album", artist, "2020", [], Covers(), 1
         )

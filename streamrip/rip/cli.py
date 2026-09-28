@@ -19,9 +19,10 @@ from rich.prompt import Confirm
 from rich.traceback import install
 
 from .. import __version__, db
+from ..client import new_session
 from ..config import DEFAULT_CONFIG_PATH, Config, OutdatedConfigError, set_user_defaults
 from ..console import console
-from ..utils.ssl_utils import get_aiohttp_connector_kwargs
+from ..utils.ssl_utils import print_ssl_error_help
 from .main import Main
 
 logger = logging.getLogger("streamrip")
@@ -60,6 +61,9 @@ def coro(f):
             return asyncio.run(run())
         except asyncio.CancelledError, KeyboardInterrupt:
             console.print("[yellow]Stopped.")
+        except aiohttp.ClientConnectorCertificateError as e:
+            console.print(f"[red]SSL Certificate verification error: {e}[/red]")
+            print_ssl_error_help()
 
     return wrapper
 
@@ -185,7 +189,6 @@ def rip(
         c.session.qobuz.quality = quality
         c.session.tidal.quality = quality
         c.session.deezer.quality = quality
-        c.session.soundcloud.quality = quality
 
     if codec is not None:
         c.session.conversion.enabled = True
@@ -209,41 +212,32 @@ async def url(ctx, urls):
     if ctx.obj["config"] is None:
         return
 
-    try:
-        with ctx.obj["config"] as cfg:
-            cfg: Config
-            updates = cfg.session.misc.check_for_updates
-            if updates:
-                # Run in background
-                version_coro = asyncio.create_task(
-                    latest_streamrip_version(
-                        verify_ssl=cfg.session.downloads.verify_ssl
-                    )
+    with ctx.obj["config"] as cfg:
+        cfg: Config
+        updates = cfg.session.misc.check_for_updates
+        if updates:
+            # Run in background
+            version_coro = asyncio.create_task(
+                latest_streamrip_version(verify_ssl=cfg.session.downloads.verify_ssl)
+            )
+        else:
+            version_coro = None
+
+        async with Main(cfg) as main:
+            await main.add_all(urls)
+            await main.resolve()
+            await main.rip()
+
+        if version_coro is not None:
+            latest_version, notes = await version_coro
+            if is_newer_version(latest_version):
+                console.print(
+                    f"\n[green]A new version of streamrip [cyan]v{latest_version}"
+                    f"[/cyan] is available! Run [white][bold]{UPGRADE_COMMAND}"
+                    "[/bold][/white] to update.[/green]\n"
                 )
-            else:
-                version_coro = None
-
-            async with Main(cfg) as main:
-                await main.add_all(urls)
-                await main.resolve()
-                await main.rip()
-
-            if version_coro is not None:
-                latest_version, notes = await version_coro
-                if is_newer_version(latest_version):
-                    console.print(
-                        f"\n[green]A new version of streamrip [cyan]v{latest_version}"
-                        f"[/cyan] is available! Run [white][bold]{UPGRADE_COMMAND}"
-                        "[/bold][/white] to update.[/green]\n"
-                    )
-                    if notes:
-                        console.print(Markdown(notes))
-
-    except aiohttp.ClientConnectorCertificateError as e:
-        from ..utils.ssl_utils import print_ssl_error_help
-
-        console.print(f"[red]SSL Certificate verification error: {e}[/red]")
-        print_ssl_error_help()
+                if notes:
+                    console.print(Markdown(notes))
 
 
 @rip.command()
@@ -263,43 +257,39 @@ async def file(ctx, path):
     """
     if ctx.obj["config"] is None:
         return
-    try:
-        with ctx.obj["config"] as cfg:
-            async with Main(cfg) as main:
-                async with aiofiles.open(path, "r") as f:
-                    content = await f.read()
-                    try:
-                        items: Any = json.loads(content)
-                        loaded = True
-                    except json.JSONDecodeError:
-                        items = content.split()
-                        loaded = False
-                if loaded:
+    with ctx.obj["config"] as cfg:
+        async with Main(cfg) as main:
+            async with aiofiles.open(path, "r") as f:
+                content = await f.read()
+                try:
+                    items: Any = json.loads(content)
+                    loaded = True
+                except json.JSONDecodeError:
+                    items = content.split()
+                    loaded = False
+            if loaded:
+                console.print(
+                    f"Detected json file. Loading [yellow]{len(items)}[/yellow] items"
+                )
+                await main.add_all_by_id(
+                    [(i["source"], i["media_type"], i["id"]) for i in items]
+                )
+            else:
+                # dict, not set: keeps the file's order.
+                unique = list(dict.fromkeys(items))
+                if len(unique) < len(items):
                     console.print(
-                        f"Detected json file. Loading [yellow]{len(items)}[/yellow] items"
+                        f"Found [yellow]{len(items) - len(unique)}[/yellow] "
+                        "repeated URLs!"
                     )
-                    await main.add_all_by_id(
-                        [(i["source"], i["media_type"], i["id"]) for i in items]
-                    )
-                else:
-                    s = set(items)
-                    if len(s) < len(items):
-                        console.print(
-                            f"Found [orange]{len(items) - len(s)}[/orange] repeated URLs!"
-                        )
-                        items = list(s)
-                    console.print(
-                        f"Detected list of urls. Loading [yellow]{len(items)}[/yellow] items"
-                    )
-                    await main.add_all(items)
+                    items = unique
+                console.print(
+                    f"Detected list of urls. Loading [yellow]{len(items)}[/yellow] items"
+                )
+                await main.add_all(items)
 
-                await main.resolve()
-                await main.rip()
-    except aiohttp.ClientConnectorCertificateError as e:
-        from ..utils.ssl_utils import print_ssl_error_help
-
-        console.print(f"[red]SSL Certificate verification error: {e}[/red]")
-        print_ssl_error_help()
+            await main.resolve()
+            await main.rip()
 
 
 @rip.group()
@@ -358,45 +348,36 @@ def database():
 
 
 @database.command("browse")
-@click.argument("table")
+@click.argument(
+    "table", type=click.Choice(["downloads", "failed"], case_sensitive=False)
+)
 @click.pass_context
 def database_browse(ctx, table):
     """Browse the contents of a table.
 
     Available tables:
 
-        * Downloads
+        * downloads
 
-        * Failed
+        * failed
     """
     from rich.table import Table
 
-    cfg: Config = ctx.obj["config"]
+    cfg: Config | None = ctx.obj["config"]
+    if cfg is None:
+        return
 
     if table.lower() == "downloads":
-        downloads = db.Downloads(cfg.session.database.downloads_path)
-        t = Table(title="Downloads database")
-        t.add_column("Row")
-        t.add_column("ID")
-        for i, row in enumerate(downloads.all()):
-            t.add_row(f"{i:02}", *row)
-        console.print(t)
-
-    elif table.lower() == "failed":
-        failed = db.Failed(cfg.session.database.failed_downloads_path)
-        t = Table(title="Failed downloads database")
-        t.add_column("Source")
-        t.add_column("Media Type")
-        t.add_column("ID")
-        for i, row in enumerate(failed.all()):
-            t.add_row(f"{i:02}", *row)
-        console.print(t)
-
+        t = Table("Row", "ID", title="Downloads database")
+        rows = db.Downloads(cfg.session.database.downloads_path).all()
     else:
-        console.print(
-            f"[red]Invalid database[/red] [bold]{table}[/bold]. [red]Choose[/red] [bold]downloads "
-            "[red]or[/red] failed[/bold].",
+        t = Table(
+            "Row", "Source", "Media Type", "ID", title="Failed downloads database"
         )
+        rows = db.Failed(cfg.session.database.failed_downloads_path).all()
+    for i, row in enumerate(rows):
+        t.add_row(f"{i:02}", *row)
+    console.print(t)
 
 
 @database.command("clear")
@@ -561,10 +542,9 @@ async def repair(ctx, yes, flat):
             await main.rip()
 
         # Nothing in the download pipeline removes rows from the failed db, so
-        # success can't be detected by diffing it. Instead rely on the
-        # invariant this patch establishes: set_downloaded() is only reached
-        # via postprocess(), which a failed download never gets to. So an item
-        # present in the downloads db now is one that just succeeded.
+        # success can't be detected by diffing it. But set_downloaded() is
+        # only reached via postprocess(), which a failed download never gets
+        # to, so an item in the downloads db now is one that just succeeded.
         repaired = [
             item_id
             for _, _, item_id in failed_items
@@ -599,8 +579,8 @@ async def repair(ctx, yes, flat):
 @click.option(
     "-n",
     "--num-results",
-    help="Maximum number of search results to show",
-    default=100,
+    help="Maximum number of search results to show "
+    "(default: [cli] max_search_results in the config)",
     type=click.IntRange(min=1),
 )
 @click.argument("source", required=True)
@@ -621,15 +601,16 @@ async def search(ctx, first, output_file, num_results, source, media_type, query
         console.print("Cannot choose --first and --output-file!")
         return
     with ctx.obj["config"] as cfg:
+        limit = num_results or cfg.session.cli.max_search_results
         async with Main(cfg) as main:
             if first:
                 await main.search_take_first(source, media_type, query)
             elif output_file:
                 await main.search_output_file(
-                    source, media_type, query, output_file, num_results
+                    source, media_type, query, output_file, limit
                 )
             else:
-                await main.search_interactive(source, media_type, query)
+                await main.search_interactive(source, media_type, query, limit)
             await main.resolve()
             await main.rip()
 
@@ -704,14 +685,8 @@ async def latest_streamrip_version(verify_ssl: bool = True) -> tuple[str, str | 
         A tuple of (version, release_notes)
     """
     try:
-        connector_kwargs = get_aiohttp_connector_kwargs(verify_ssl=verify_ssl)
-        connector = aiohttp.TCPConnector(
-            **connector_kwargs, resolver=aiohttp.ThreadedResolver()
-        )
         timeout = aiohttp.ClientTimeout(total=10)
-        async with aiohttp.ClientSession(
-            connector=connector, trust_env=True, timeout=timeout
-        ) as s:
+        async with new_session(verify_ssl=verify_ssl, timeout=timeout) as s:
             async with s.get(
                 f"https://api.github.com/repos/{REPOSITORY}/releases/latest",
                 headers={"Accept": "application/vnd.github+json"},

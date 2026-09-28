@@ -19,7 +19,6 @@ from .console import console
 class ProgressManager:
     def __init__(self):
         self.started = False
-        self.progress = Progress(console=console)
         self.progress = Progress(
             TextColumn("[cyan]{task.description}"),
             BarColumn(bar_width=None),

@@ -75,3 +75,88 @@ async def test_refresh_tokens_scans_scripts_from_the_end():
     client.session = MagicMock()
     client.session.get = MagicMock(side_effect=get)
     assert await client._refresh_tokens() == (CLIENT_ID, "1700000000")
+
+
+M3U = (
+    "#EXTM3U\n#EXT-X-TARGETDURATION:10\n"
+    + "".join(f"#EXTINF:10.0,\nhttps://seg/{n}.mp3\n" for n in range(3))
+    + "#EXT-X-ENDLIST\n"
+)
+
+
+class _Resp:
+    def __init__(self, body: bytes = b"", fail: bool = False):
+        self.body, self.fail = body, fail
+        self.content = self
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_):
+        pass
+
+    def raise_for_status(self):
+        if self.fail:
+            raise ConnectionError("segment failed")
+
+    async def text(self, _encoding):
+        return self.body.decode()
+
+    async def read(self):
+        return self.body
+
+
+class _Session:
+    def __init__(self, failing=()):
+        self.failing = failing
+
+    def get(self, url):
+        if url == "playlist":
+            return _Resp(M3U.encode())
+        n = url.rsplit("/", 1)[1].split(".")[0]
+        return _Resp(n.encode(), fail=url in self.failing)
+
+
+async def _fake_concat(paths, out, _ext):
+    with open(out, "wb") as f:
+        for p in paths:
+            with open(p, "rb") as segment:
+                f.write(segment.read())
+
+
+@pytest.fixture
+def hls(tmp_path, monkeypatch):
+    from streamrip.client.downloadable import SoundcloudDownloadable
+
+    temp = tmp_path / "temp"
+    temp.mkdir()
+    monkeypatch.setattr("tempfile.tempdir", str(temp))
+    monkeypatch.setattr(
+        "streamrip.client.downloadable.concat_audio_files", _fake_concat
+    )
+
+    def make(failing=()):
+        info = {"type": "mp3", "url": "playlist"}
+        return SoundcloudDownloadable(_Session(failing), info)
+
+    return make, temp, tmp_path / "out.mp3"
+
+
+@pytest.mark.asyncio
+async def test_hls_segments_are_joined_in_order_and_cleaned_up(hls):
+    make, temp, out = hls
+
+    await make()._download(str(out), lambda _: None)
+
+    assert out.read_bytes() == b"012"
+    assert list(temp.iterdir()) == []
+
+
+@pytest.mark.asyncio
+async def test_hls_segments_are_cleaned_up_when_one_fails(hls):
+    make, temp, out = hls
+
+    with pytest.raises(ConnectionError):
+        await make(failing={"https://seg/1.mp3"})._download(str(out), lambda _: None)
+
+    assert list(temp.iterdir()) == []

@@ -7,8 +7,6 @@ import time
 from collections import OrderedDict
 from typing import List, Optional
 
-import aiohttp
-
 from ..config import Config
 from ..exceptions import (
     APIError,
@@ -18,7 +16,7 @@ from ..exceptions import (
     MissingCredentialsError,
     NonStreamableError,
 )
-from .client import Client
+from .client import Client, new_session
 from .downloadable import BasicDownloadable, Downloadable
 
 logger = logging.getLogger("streamrip")
@@ -40,25 +38,6 @@ def file_url_signature(
     )
     # codeql[py/weak-sensitive-data-hashing] Qobuz's API mandates MD5 here.
     return hashlib.md5(preimage.encode("utf-8")).hexdigest()
-
-
-QOBUZ_FEATURED_KEYS = {
-    "most-streamed",
-    "recent-releases",
-    "best-sellers",
-    "press-awards",
-    "ideal-discography",
-    "editor-picks",
-    "most-featured",
-    "qobuzissims",
-    "new-releases",
-    "new-releases-full",
-    "harmonia-mundi",
-    "universal-classic",
-    "universal-jazz",
-    "universal-jeunesse",
-    "universal-chanson",
-}
 
 
 class QobuzSpoofer:
@@ -143,15 +122,7 @@ class QobuzSpoofer:
         return app_id, secrets_list
 
     async def __aenter__(self):
-        from ..utils.ssl_utils import get_aiohttp_connector_kwargs
-
-        # For the spoofer, always use SSL verification
-        connector_kwargs = get_aiohttp_connector_kwargs(verify_ssl=True)
-        connector = aiohttp.TCPConnector(
-            **connector_kwargs, resolver=aiohttp.ThreadedResolver()
-        )
-
-        self.session = aiohttp.ClientSession(connector=connector, trust_env=True)
+        self.session = new_session(verify_ssl=self.verify_ssl)
         return self
 
     async def __aexit__(self, *_):
@@ -183,9 +154,7 @@ class QobuzClient(Client):
         This data as well as the app_id is passed to self._get_user_auth_token() to get
         the actual credentials for the user.
         """
-        self.session = await self.get_session(
-            verify_ssl=self.config.session.downloads.verify_ssl
-        )
+        self.session = new_session(verify_ssl=self.config.session.downloads.verify_ssl)
         try:
             await self._login()
         except BaseException:
@@ -410,25 +379,6 @@ class QobuzClient(Client):
         epoint = f"{media_type}/search"
 
         return await self._paginate(epoint, params, limit=limit)
-
-    async def get_featured(self, query, limit: int = 500) -> list[dict]:
-        params = {
-            "type": query,
-        }
-        assert query in QOBUZ_FEATURED_KEYS, f'query "{query}" is invalid.'
-        epoint = "album/getFeatured"
-        return await self._paginate(epoint, params, limit=limit)
-
-    async def get_user_favorites(self, media_type: str, limit: int = 500) -> list[dict]:
-        assert media_type in ("track", "artist", "album")
-        params = {"type": f"{media_type}s"}
-        epoint = "favorite/getUserFavorites"
-
-        return await self._paginate(epoint, params, limit=limit)
-
-    async def get_user_playlists(self, limit: int = 500) -> list[dict]:
-        epoint = "playlist/getUserPlaylists"
-        return await self._paginate(epoint, {}, limit=limit)
 
     async def get_downloadable(self, item: str, quality: int) -> Downloadable:
         assert self.secret is not None and self.logged_in

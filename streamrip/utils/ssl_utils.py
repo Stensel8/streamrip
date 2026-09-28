@@ -1,4 +1,4 @@
-"""Utility functions for SSL handling."""
+"""Certificate checking for HTTPS connections."""
 
 import logging
 import ssl
@@ -8,54 +8,20 @@ logger = logging.getLogger("streamrip")
 
 try:
     import certifi
-
-    HAS_CERTIFI = True
 except ImportError:
     logger.debug("certifi not found, falling back to system certificates")
-    HAS_CERTIFI = False
+    certifi = None
 
 
-def create_ssl_context(verify=True):
-    """Create an SSL context with the appropriate verification settings.
-
-    Args:
-        verify: Whether to verify SSL certificates
-
-    Returns:
-        An SSL context object with the specified verification settings
-    """
-    if not verify:
-        # Disable verification entirely when requested
-        logger.warning("SSL certificate verification disabled (less secure)")
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        return ctx
-
-    # Use certifi for certificate verification if available
-    if HAS_CERTIFI:
-        return ssl.create_default_context(cafile=certifi.where())
-    else:
-        return ssl.create_default_context()
-
-
-def get_aiohttp_connector_kwargs(verify_ssl=True):
-    """Get keyword arguments for aiohttp.TCPConnector with SSL settings.
-
-    Args:
-        verify_ssl: Whether to verify SSL certificates
-
-    Returns:
-        Dictionary of kwargs to pass to aiohttp.TCPConnector
+def get_aiohttp_connector_kwargs(verify_ssl: bool = True) -> dict:
+    """Arguments for aiohttp.TCPConnector: check certificates against
+    certifi's bundle when it's installed, else the system's, or not at all.
     """
     if not verify_ssl:
         return {"ssl": False}
-
-    if HAS_CERTIFI:
-        ssl_context = create_ssl_context(verify=True)
-        return {"ssl": ssl_context}
-    else:
-        return {"ssl": True}
+    if certifi is not None:
+        return {"ssl": ssl.create_default_context(cafile=certifi.where())}
+    return {"ssl": True}
 
 
 def print_ssl_error_help():

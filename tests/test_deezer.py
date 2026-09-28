@@ -1,5 +1,5 @@
 import os
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 import pytest
 from util import arun
@@ -60,11 +60,10 @@ def test_deezer_fallback_logic_with_mock_data(mock_deezer_client):
     mock_deezer_client.client.get_track_url.return_value = "https://test.mp3"
 
     # Test fallback behavior
-    with patch.object(mock_deezer_client, "get_session"):
-        downloadable = arun(mock_deezer_client.get_downloadable("123", quality=2))
+    downloadable = arun(mock_deezer_client.get_downloadable("123", quality=2))
 
-        # Should have fallen back to quality 1 (MP3_320) since FLAC is unavailable
-        assert downloadable.quality == 1
+    # Should have fallen back to quality 1 (MP3_320) since FLAC is unavailable
+    assert downloadable.quality == 1
 
 
 def test_deezer_no_fallback_when_quality_available(mock_deezer_client):
@@ -81,11 +80,10 @@ def test_deezer_no_fallback_when_quality_available(mock_deezer_client):
     mock_deezer_client.client.gw.get_track.return_value = mock_track_info
     mock_deezer_client.client.get_track_url.return_value = "https://test.flac"
 
-    with patch.object(mock_deezer_client, "get_session"):
-        downloadable = arun(mock_deezer_client.get_downloadable("123", quality=2))
+    downloadable = arun(mock_deezer_client.get_downloadable("123", quality=2))
 
-        # Should use requested quality 2 (FLAC)
-        assert downloadable.quality == 2
+    # Should use requested quality 2 (FLAC)
+    assert downloadable.quality == 2
 
 
 def test_deezer_fallback_to_lowest_available_quality(mock_deezer_client):
@@ -102,11 +100,10 @@ def test_deezer_fallback_to_lowest_available_quality(mock_deezer_client):
     mock_deezer_client.client.gw.get_track.return_value = mock_track_info
     mock_deezer_client.client.get_track_url.return_value = "https://test.mp3"
 
-    with patch.object(mock_deezer_client, "get_session"):
-        downloadable = arun(mock_deezer_client.get_downloadable("123", quality=2))
+    downloadable = arun(mock_deezer_client.get_downloadable("123", quality=2))
 
-        # Should have fallen back to quality 0 (MP3_128) since higher qualities unavailable
-        assert downloadable.quality == 0
+    # Should have fallen back to quality 0 (MP3_128) since higher qualities unavailable
+    assert downloadable.quality == 0
 
 
 def test_deezer_no_url_raises_instead_of_building_legacy_cdn_url(mock_deezer_client):
@@ -128,9 +125,8 @@ def test_deezer_no_url_raises_instead_of_building_legacy_cdn_url(mock_deezer_cli
     mock_deezer_client.client.gw.get_track.return_value = mock_track_info
     mock_deezer_client.client.get_track_url.return_value = None
 
-    with patch.object(mock_deezer_client, "get_session"):
-        with pytest.raises(NonStreamableError, match="legacy CDN"):
-            arun(mock_deezer_client.get_downloadable("123", quality=2))
+    with pytest.raises(NonStreamableError, match="legacy CDN"):
+        arun(mock_deezer_client.get_downloadable("123", quality=2))
 
 
 def test_deezer_no_url_error_does_not_leak_a_cdn_url(mock_deezer_client):
@@ -147,9 +143,8 @@ def test_deezer_no_url_error_does_not_leak_a_cdn_url(mock_deezer_client):
     mock_deezer_client.client.gw.get_track.return_value = mock_track_info
     mock_deezer_client.client.get_track_url.return_value = None
 
-    with patch.object(mock_deezer_client, "get_session"):
-        with pytest.raises(NonStreamableError) as excinfo:
-            arun(mock_deezer_client.get_downloadable("123", quality=2))
+    with pytest.raises(NonStreamableError) as excinfo:
+        arun(mock_deezer_client.get_downloadable("123", quality=2))
 
     assert "e-cdns-proxy" not in str(excinfo.value)
 
@@ -184,8 +179,7 @@ def test_deezer_no_url_follows_fallback_track(mock_deezer_client):
         None if token == "token_123" else "https://test.flac"
     )
 
-    with patch.object(mock_deezer_client, "get_session"):
-        downloadable = arun(mock_deezer_client.get_downloadable("123", quality=2))
+    downloadable = arun(mock_deezer_client.get_downloadable("123", quality=2))
 
     # The bytes are the fallback track's, so the id -- from which the Blowfish
     # key is derived -- must follow it, not the originally requested track.
@@ -209,9 +203,8 @@ def test_deezer_fallback_is_not_followed_twice(mock_deezer_client):
     }
     mock_deezer_client.client.get_track_url.return_value = None
 
-    with patch.object(mock_deezer_client, "get_session"):
-        with pytest.raises(NonStreamableError, match="delisted"):
-            arun(mock_deezer_client.get_downloadable("123", quality=2))
+    with pytest.raises(NonStreamableError, match="delisted"):
+        arun(mock_deezer_client.get_downloadable("123", quality=2))
 
     # Once for the requested track, once for the fallback - never a third time.
     assert mock_deezer_client.client.gw.get_track.call_count == 2
@@ -235,12 +228,11 @@ def test_deezer_no_fallback_when_disabled(mock_deezer_client):
     mock_deezer_client.client.get_track_url.return_value = "https://test.mp3"
 
     # Should raise an error when requested quality is unavailable and fallback is disabled
-    with patch.object(mock_deezer_client, "get_session"):
-        with pytest.raises(
-            NonStreamableError,
-            match="The requested quality 2 is not available and fallback is disabled",
-        ):
-            arun(mock_deezer_client.get_downloadable("123", quality=2))
+    with pytest.raises(
+        NonStreamableError,
+        match="The requested quality 2 is not available and fallback is disabled",
+    ):
+        arun(mock_deezer_client.get_downloadable("123", quality=2))
 
 
 def test_deezer_album_cache(mock_deezer_client):

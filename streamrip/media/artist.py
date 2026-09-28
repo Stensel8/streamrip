@@ -1,10 +1,11 @@
 import asyncio
 import logging
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from ..client import Client
-from ..config import Config, QobuzDiscographyFilterConfig
+from ..config import ArtistFilterConfig, Config
 from ..console import console
 from ..db import Database
 from ..exceptions import NonStreamableError
@@ -21,9 +22,28 @@ logger = logging.getLogger("streamrip")
 RESOLVE_CHUNK_SIZE = 4
 
 
+async def rip_albums(
+    albums: list[PendingAlbum], wanted: Callable[[Album], bool] = lambda _: True
+):
+    """Resolve and download albums a few at a time; a failure costs one album."""
+    # Sliding window, not batches: the next album starts as soon as one finishes.
+    window = asyncio.Semaphore(RESOLVE_CHUNK_SIZE)
+
+    async def _rip(item: PendingAlbum):
+        async with window:
+            try:
+                album = await item.resolve()
+                if album is not None and wanted(album):
+                    await album.rip()
+            except Exception as e:
+                logger.error(f"Error downloading album: {type(e).__name__}: {e}")
+
+    await asyncio.gather(*map(_rip, albums))
+
+
 @dataclass(slots=True)
 class Artist(Media):
-    """Represents a list of albums. Used by Artist and Label classes."""
+    """An artist's discography: a list of albums, optionally filtered."""
 
     name: str
     albums: list[PendingAlbum]
@@ -42,7 +62,7 @@ class Artist(Media):
             f"[bold]{self.name}[/bold]: found {len(self.albums)} release(s), "
             "resolving and downloading..."
         )
-        filter_conf = self.config.session.qobuz_filters
+        filter_conf = self.config.session.artist_filters
         if filter_conf.repeats:
             console.log(
                 "Resolving [purple]ALL[/purple] artist albums to detect repeats. This may take a while."
@@ -54,131 +74,93 @@ class Artist(Media):
     async def postprocess(self):
         pass
 
-    async def _resolve_then_download(self, filters: QobuzDiscographyFilterConfig):
+    async def _resolve_then_download(self, filters: ArtistFilterConfig):
         """Resolve all artist albums, then download.
 
-        This is used if the repeat filter is turned on, since we need the titles
-        of all albums to remove repeated items. Resolving still needs every
-        album's title before filtering can happen, but that doesn't mean
-        firing every resolve request at once -- chunk it the same as the
-        download phase below, so this path doesn't burst past the streaming
-        service's rate limit either.
+        Used when the repeats filter is on, which needs every album's title
+        before it can pick one per group. Resolves still go through the same
+        window as downloads, so this doesn't burst past the rate limit either.
         """
-        resolved: list[Album] = []
-        for chunk in self.batch(self.albums, RESOLVE_CHUNK_SIZE):
-            resolved_or_none: list[Album | None] = await asyncio.gather(
-                *[album.resolve() for album in chunk]
-            )
-            resolved.extend(a for a in resolved_or_none if a is not None)
-        filtered_albums = self._apply_filters(resolved, filters)
-        batches = self.batch([a.rip() for a in filtered_albums], RESOLVE_CHUNK_SIZE)
-        for batch in batches:
-            await asyncio.gather(*batch)
-
-    async def _download_async(self, filters: QobuzDiscographyFilterConfig):
-        # Sliding window, not batches: the next album starts as soon as one finishes.
         window = asyncio.Semaphore(RESOLVE_CHUNK_SIZE)
 
-        async def _rip(item: PendingAlbum):
+        async def _resolve(item: PendingAlbum) -> Album | None:
             async with window:
                 try:
-                    album = await item.resolve()
-                    # Skip if album doesn't pass the filter
-                    if (
-                        album is None
-                        or (filters.extras and not self._extras(album))
-                        or (filters.features and not self._features(album))
-                        or (
-                            filters.non_studio_albums
-                            and not self._non_studio_albums(album)
-                        )
-                        or (filters.non_remaster and not self._non_remaster(album))
-                    ):
-                        return
+                    return await item.resolve()
+                except Exception as e:
+                    logger.error(f"Error resolving album: {type(e).__name__}: {e}")
+                    return None
+
+        resolved = await asyncio.gather(*map(_resolve, self.albums))
+        albums = [a for a in resolved if a is not None]
+        if filters.repeats:
+            albums = self._filter_repeats(albums)
+
+        async def _rip(album: Album):
+            async with window:
+                try:
                     await album.rip()
                 except Exception as e:
                     logger.error(f"Error downloading album: {type(e).__name__}: {e}")
 
-        await asyncio.gather(*[_rip(album) for album in self.albums])
+        await asyncio.gather(*[_rip(a) for a in albums if self._wanted(a, filters)])
 
-    def _apply_filters(
-        self, albums: list[Album], filt: QobuzDiscographyFilterConfig
-    ) -> list[Album]:
-        _albums = albums
-        if filt.repeats:
-            _albums = self._filter_repeats(_albums)
-        if filt.extras:
-            _albums = filter(self._extras, _albums)
-        if filt.features:
-            _albums = filter(self._features, _albums)
-        if filt.non_studio_albums:
-            _albums = filter(self._non_studio_albums, _albums)
-        if filt.non_remaster:
-            _albums = filter(self._non_remaster, _albums)
-        return list(_albums)
+    async def _download_async(self, filters: ArtistFilterConfig):
+        await rip_albums(self.albums, lambda a: self._wanted(a, filters))
 
-    # Will not fail on any nonempty string
-    _essence_re = re.compile(r"([^\(\[]+)(?:\s*[\(\[][^\)][\)\]])*")
+    def _wanted(self, a: Album, f: ArtistFilterConfig) -> bool:
+        """Whether an album passes every enabled filter except repeats."""
+        return not (
+            (f.extras and not self._extras(a))
+            or (f.features and not self._features(a))
+            or (f.non_remaster and not self._non_remaster(a))
+            or (f.non_albums and not self._non_albums(a))
+        )
 
-    @classmethod
-    def _filter_repeats(cls, albums: list[Album]) -> list[Album]:
+    @staticmethod
+    def _filter_repeats(albums: list[Album]) -> list[Album]:
         """When there are different versions of an album on the artist,
         choose the one with the best quality.
 
-        It determines that two albums are identical if they have the same title
-        ignoring contents in brackets or parentheses.
+        Two albums are versions of each other if their titles match up to the
+        first bracket or parenthesis ("X" and "X (Deluxe)").
         """
         groups: dict[str, list[Album]] = {}
         for a in albums:
-            match = cls._essence_re.match(a.meta.album)
-            assert match is not None
-            title = match.group(1).strip().lower()
-            items = groups.get(title, [])
-            items.append(a)
-            groups[title] = items
+            # A title that starts with a bracket keeps it, or every such
+            # title would land in one group.
+            title = re.split(r"[(\[]", a.meta.album, maxsplit=1)[0].strip()
+            groups.setdefault((title or a.meta.album).lower(), []).append(a)
 
-        unique_albums: list[Album] = []
-        for group in groups.values():
-            # Move explicit versions to the beginning
-            group = sorted(
+        return [
+            max(
                 group,
-                key=lambda album: album.meta.info.explicit,
-                reverse=True,
+                key=lambda a: (
+                    a.meta.info.bit_depth or 0,
+                    a.meta.info.sampling_rate or 0,
+                    a.meta.info.explicit,
+                ),
             )
-            group = sorted(
-                group,
-                key=lambda album: album.meta.info.sampling_rate or 0,
-                reverse=True,
-            )
-            group = sorted(
-                group,
-                key=lambda album: album.meta.info.bit_depth or 0,
-                reverse=True,
-            )
-            # group guaranteed to be nonempty
-            unique_albums.append(group[0])
-
-        return unique_albums
+            for group in groups.values()
+        ]
 
     _extra_re = re.compile(
         r"(?i)(anniversary|deluxe|live|collector|demo|expanded|remix)"
     )
 
     # ----- Filter predicates -----
-    def _non_studio_albums(self, a: Album) -> bool:
-        """Filter out non studio albums."""
-        return a.meta.albumartist != "Various Artists" and self._extras(a)
-
     def _features(self, a: Album) -> bool:
         """Filter out features."""
         return a.meta.albumartist == self.name
 
     def _extras(self, a: Album) -> bool:
-        """Filter out extras.
-
-        See `_extra_re` for criteria.
+        """Filter out extras: special editions, live albums, remixes and the
+        like (see `_extra_re`), and various-artists compilations.
         """
-        return self._extra_re.search(a.meta.album) is None
+        return (
+            a.meta.albumartist != "Various Artists"
+            and self._extra_re.search(a.meta.album) is None
+        )
 
     _remaster_re = re.compile(r"(?i)(re)?master(ed)?")
 
@@ -188,13 +170,8 @@ class Artist(Media):
 
     def _non_albums(self, a: Album) -> bool:
         """Filter out singles."""
-        return len(a.tracks) > 1
-
-    @staticmethod
-    def batch(iterable, n=1):
-        total = len(iterable)
-        for ndx in range(0, total, n):
-            yield iterable[ndx : min(ndx + n, total)]
+        # Not len(a.tracks): tracks already downloaded aren't in that list.
+        return a.meta.tracktotal > 1
 
 
 @dataclass(slots=True)

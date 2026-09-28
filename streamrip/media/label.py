@@ -1,15 +1,14 @@
-import asyncio
 import logging
 from dataclasses import dataclass
-
-from streamrip.exceptions import NonStreamableError
 
 from ..client import Client
 from ..config import Config
 from ..console import console
 from ..db import Database
+from ..exceptions import NonStreamableError
 from ..metadata import LabelMetadata
 from .album import PendingAlbum
+from .artist import rip_albums
 from .media import Media, Pending
 
 logger = logging.getLogger("streamrip")
@@ -17,7 +16,7 @@ logger = logging.getLogger("streamrip")
 
 @dataclass(slots=True)
 class Label(Media):
-    """Represents a list of albums. Used by Artist and Label classes."""
+    """A record label's catalog: a list of albums."""
 
     name: str
     albums: list[PendingAlbum]
@@ -35,31 +34,10 @@ class Label(Media):
             f"[bold]{self.name}[/bold]: found {len(self.albums)} release(s), "
             "resolving and downloading..."
         )
-        # Resolve only a few albums at a time to avoid the initial latency
-        # of resolving ALL albums and tracks before any downloads start.
-        album_resolve_chunk_size = 4
-
-        async def _resolve_download(item: PendingAlbum):
-            album = await item.resolve()
-            if album is None:
-                return
-            await album.rip()
-
-        batches = self.batch(
-            [_resolve_download(album) for album in self.albums],
-            album_resolve_chunk_size,
-        )
-        for batch in batches:
-            await asyncio.gather(*batch)
+        await rip_albums(self.albums)
 
     async def postprocess(self):
         pass
-
-    @staticmethod
-    def batch(iterable, n=1):
-        total = len(iterable)
-        for ndx in range(0, total, n):
-            yield iterable[ndx : min(ndx + n, total)]
 
 
 @dataclass(slots=True)

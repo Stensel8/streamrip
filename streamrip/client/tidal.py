@@ -3,7 +3,6 @@ import base64
 import json
 import logging
 import random
-import re
 import time
 from json import JSONDecodeError
 
@@ -16,7 +15,7 @@ from ..exceptions import (
     MissingCredentialsError,
     NonStreamableError,
 )
-from .client import Client
+from .client import Client, new_session
 from .downloadable import TidalDASHDownloadable, TidalDownloadable
 
 logger = logging.getLogger("streamrip")
@@ -33,12 +32,13 @@ def _b64(s: str) -> str:
 # single id is known to be served everything (see upstream PR #1017):
 #
 #   default   FLAC 16/44.1 for every lossless release, never hi-res
-#   hi-res    24-bit FLAC (MPEG-DASH) for hi-res releases, but AAC 320 for
-#             ordinary lossless releases
+#   hi-res    24-bit FLAC (MPEG-DASH, up to 192 kHz) for hi-res releases, but
+#             AAC 320 for ordinary lossless releases -- whatever is asked for
 #
-# The default gives lossless for everything. Set [tidal] hires_client = true
-# in the config to prefer 24-bit instead, or client_id/client_secret to use
-# any other pair (e.g. after Tidal revokes one).
+# So streamrip logs in with both (`hires_client`, on by default): each track is
+# asked of the hi-res client first, and of the default one when it has no hi-res
+# master. client_id/client_secret replace the default one (e.g. after Tidal
+# revokes it).
 DEFAULT_CLIENT_ID = _b64("NE4zbjZRMXg5NUxMNUs3cA==")
 DEFAULT_CLIENT_SECRET = _b64(
     "b0tPWGZKVzM3MWNYNnhhWjBQeWhnR05CZE5MbEJaZDRBS0tZb3VnTWppaz0="
@@ -47,10 +47,6 @@ HIRES_CLIENT_ID = _b64("ZlgySnhkbW50WldLMGl4VA==")
 HIRES_CLIENT_SECRET = _b64(
     "MU5tNUFmREFqeHJnSkZKYktOV0xlQXlLR1ZHbUlOdVhQUExIVlhBdnhBZz0="
 )
-STREAM_URL_REGEX = re.compile(
-    r"#EXT-X-STREAM-INF:BANDWIDTH=\d+,AVERAGE-BANDWIDTH=\d+,CODECS=\"(?!jpeg)[^\"]+\",RESOLUTION=\d+x\d+\n(.+)"
-)
-
 QUALITY_MAP = {
     0: "LOW",  # AAC
     1: "HIGH",  # AAC
@@ -71,6 +67,8 @@ _AUDIO_QUALITY_TIER = {
     "HI_RES_LOSSLESS": 3,
 }
 LOSSLESS_TIER = _AUDIO_QUALITY_TIER["LOSSLESS"]
+HIRES_TIER = _AUDIO_QUALITY_TIER["HI_RES"]
+DASH_MIME = "application/dash+xml"
 
 # Rate limiting and server errors are worth another attempt; other 4xx are not.
 RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
@@ -87,6 +85,22 @@ def _retry_after(resp, attempt: int) -> float:
     return min(seconds, MAX_RETRY_DELAY)
 
 
+class _Tokens:
+    """One lane's login tokens, stored in [tidal] under an optional prefix."""
+
+    FIELDS = ("access_token", "refresh_token", "token_expiry", "token_client_id")
+
+    def __init__(self, section, prefix: str):
+        object.__setattr__(self, "_section", section)
+        object.__setattr__(self, "_prefix", prefix)
+
+    def __getattr__(self, name):
+        return getattr(self._section, self._prefix + name)
+
+    def __setattr__(self, name, value):
+        setattr(self._section, self._prefix + name, value)
+
+
 class TidalClient(Client):
     """TidalClient."""
 
@@ -95,21 +109,39 @@ class TidalClient(Client):
     # time.monotonic() before which no request is sent (set by a 429)
     _retry_at = 0.0
 
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, hires_of: "TidalClient | None" = None):
         self.logged_in = False
         self.global_config = config
         self.config = config.session.tidal
-        self.rate_limiter = self.get_rate_limiter(
-            config.session.downloads.requests_per_minute,
-        )
         c = self.config
-        if c.client_id and c.client_secret:
-            self.client_id, self.client_secret = c.client_id, c.client_secret
-        elif c.hires_client:
+        # Tidal serves each OAuth client other formats and no single one serves
+        # them all (see above). With `hires_client` there are two lanes, each
+        # with its own login: this one is asked for hi-res first, and the
+        # lossless one when Tidal has no hi-res master for the track. The
+        # hi-res lane keeps its tokens in the `hires_*` fields of [tidal].
+        self._token_prefix = "hires_" if hires_of else ""
+        self.tokens = _Tokens(c, self._token_prefix)
+        self._root = hires_of or self
+        if hires_of:
+            self.rate_limiter = hires_of.rate_limiter
             self.client_id, self.client_secret = HIRES_CLIENT_ID, HIRES_CLIENT_SECRET
+            self.hires_lane = None
         else:
-            self.client_id = DEFAULT_CLIENT_ID
-            self.client_secret = DEFAULT_CLIENT_SECRET
+            self.rate_limiter = self.get_rate_limiter(
+                config.session.downloads.requests_per_minute,
+            )
+            if c.client_id and c.client_secret:
+                self.client_id, self.client_secret = c.client_id, c.client_secret
+            else:
+                self.client_id = DEFAULT_CLIENT_ID
+                self.client_secret = DEFAULT_CLIENT_SECRET
+            # Only worth a second login when hi-res is what is asked for.
+            wants_hires = c.hires_client and c.quality >= HIRES_TIER
+            self.hires_lane = (
+                TidalClient(config, hires_of=self) if wants_hires else None
+            )
+            # Tracks Tidal says have no hi-res master; see _note_hires_tags.
+            self._no_hires: set[str] = set()
         # HTTP Basic auth for the token endpoint. Built by hand because
         # aiohttp.BasicAuth is deprecated as of aiohttp 3.14.
         credentials = f"{self.client_id}:{self.client_secret}".encode()
@@ -117,36 +149,60 @@ class TidalClient(Client):
             "Authorization": "Basic " + base64.b64encode(credentials).decode()
         }
 
+    def lanes(self) -> list["TidalClient"]:
+        """This client and, with `hires_client`, the hi-res one behind it."""
+        return [self, self.hires_lane] if self.hires_lane else [self]
+
+    async def close(self):
+        for lane in self.lanes():
+            if getattr(lane, "session", None) is not None:
+                await lane.session.close()
+
+    def save_login(self):
+        """Copy this lane's tokens to the config file's copy, written on exit."""
+        f = self.global_config.file
+        saved = _Tokens(f.tidal, self._token_prefix)
+        for name in _Tokens.FIELDS:
+            setattr(saved, name, getattr(self.tokens, name))
+        f.set_modified()
+
     async def login(self):
-        self.session = await self.get_session(
-            verify_ssl=self.global_config.session.downloads.verify_ssl
-        )
-        c = self.config
-        if not c.access_token:
+        """Log every lane in. Any lane missing or with a lapsed login raises."""
+        for lane in self.lanes():
+            await lane._login_lane()
+        self.logged_in = True
+
+    async def _login_lane(self):
+        if getattr(self, "session", None) is None or self.session.closed:
+            self.session = new_session(
+                verify_ssl=self.global_config.session.downloads.verify_ssl
+            )
+        c, t = self.config, self.tokens
+        if not t.access_token:
             raise MissingCredentialsError(
                 "No Tidal access token in config -- Tidal has not been set up yet."
             )
-        if c.token_client_id != self.client_id:
+        if t.token_client_id != self.client_id:
             # Tokens are bound to the OAuth client that issued them. A token
             # from another client (an older streamrip, or before client_id was
             # changed in the config) keeps that client's format entitlements
             # and cannot be refreshed, so a fresh login is needed.
             raise MissingCredentialsError(
                 "The saved Tidal login belongs to a different client id "
-                "(streamrip now uses one that serves lossless tracks as FLAC "
-                "instead of AAC, or the config changed it). Please log in again."
+                "(streamrip now logs in once per format it can download, or "
+                "the config changed the client). Please log in again."
             )
 
         try:
-            self.token_expiry = float(c.token_expiry)
+            self.token_expiry = float(t.token_expiry)
         except TypeError, ValueError:
             self.token_expiry = 0.0
-        self.refresh_token = c.refresh_token
+        self.refresh_token = t.refresh_token
 
         if self.token_expiry - time.time() < 86400:  # 1 day
             await self._refresh_access_token()
         else:
-            await self._login_by_access_token(c.access_token, c.user_id)
+            await self._login_by_access_token(t.access_token, c.user_id)
 
         self.logged_in = True
 
@@ -169,21 +225,12 @@ class TidalClient(Client):
 
         url = f"{media_type}s/{item_id}"
         item = await self._api_request(url)
+        if media_type == "track":
+            self._note_hires_tags([item])
         if media_type in ("playlist", "album"):
-            # TODO: move into new method and make concurrent
-            resp = await self._api_request(f"{url}/items")
-            tracks_left = item["numberOfTracks"]
-            if tracks_left > 100:
-                offset = 0
-                while tracks_left > 0:
-                    offset += 100
-                    tracks_left -= 100
-                    items_resp = await self._api_request(
-                        f"{url}/items", {"offset": offset}
-                    )
-                    resp["items"].extend(items_resp["items"])
-
-            item["tracks"] = [item["item"] for item in resp["items"]]
+            item["tracks"] = await self._get_tracks(url)
+            if media_type == "album":
+                await self._add_hires_format(item)
         elif media_type == "artist":
             logger.debug("filtering eps")
             album_resp, ep_resp = await asyncio.gather(
@@ -226,6 +273,61 @@ class TidalClient(Client):
         logger.debug(item)
         return item
 
+    async def _get_tracks(self, url: str) -> list[dict]:
+        """The tracks of an album or playlist, fetched 100 at a time.
+
+        Its items can include music videos, which can't be downloaded as
+        tracks; they're left out rather than failing (and being retried by
+        `streamrip repair`) one by one.
+        """
+        first = await self._api_request(f"{url}/items")
+        pages = await asyncio.gather(
+            *(
+                self._api_request(f"{url}/items", {"offset": offset})
+                for offset in range(100, first.get("totalNumberOfItems", 0), 100)
+            )
+        )
+        items = [i for page in (first, *pages) for i in page["items"]]
+        tracks = [i["item"] for i in items if i.get("type", "track") == "track"]
+        if len(tracks) < len(items):
+            logger.info(f"Skipping {len(items) - len(tracks)} video(s) in {url}")
+        self._note_hires_tags(tracks)
+        return tracks
+
+    async def _add_hires_format(self, album: dict):
+        """Say what a hi-res album really is, for its folder name.
+
+        The album only reports LOSSLESS; the bit depth and sample rate are in a
+        track's playback info. One extra request per hi-res album, and only a
+        label, so any failure just leaves the default.
+        """
+        tags = (album.get("mediaMetadata") or {}).get("tags") or []
+        first = next(
+            (t for t in album["tracks"] if str(t["id"]) not in self._no_hires), None
+        )
+        if self.hires_lane is None or first is None or "HIRES_LOSSLESS" not in tags:
+            return
+        try:
+            resp = await self.hires_lane._playback_info(str(first["id"]), HIRES_TIER)
+        except Exception as e:
+            logger.debug(f"Could not read the hi-res format of {album['id']}: {e}")
+            return
+        if _AUDIO_QUALITY_TIER.get(resp.get("audioQuality"), 0) >= HIRES_TIER:
+            album["streamQuality"] = {
+                "bitDepth": resp.get("bitDepth"),
+                "sampleRate": resp.get("sampleRate"),
+            }
+
+    def _note_hires_tags(self, tracks: list[dict]):
+        """Remember which tracks Tidal says have no hi-res master (like its own
+        apps and tidal-dl-ng, go by the `HIRES_LOSSLESS` tag), so they never cost
+        the hi-res client a request. Tracks without tag data are still asked.
+        """
+        for track in tracks:
+            tags = (track.get("mediaMetadata") or {}).get("tags")
+            if tags is not None and "HIRES_LOSSLESS" not in tags:
+                self._no_hires.add(str(track["id"]))
+
     async def search(self, media_type: str, query: str, limit: int = 100) -> list[dict]:
         """Search for a query.
 
@@ -248,8 +350,7 @@ class TidalClient(Client):
             return [resp]
         return []
 
-    async def get_downloadable(self, track_id: str, quality: int):
-        quality = max(0, min(quality, self.max_quality))
+    async def _playback_info(self, track_id: str, quality: int) -> dict:
         params = {
             "audioquality": QUALITY_MAP[quality],
             "playbackmode": "STREAM",
@@ -263,6 +364,42 @@ class TidalClient(Client):
             raise NonStreamableError(
                 resp.get("userMessage") or f"No stream available for track {track_id}"
             )
+        return resp
+
+    async def _try_hires(self, track_id: str):
+        """A hi-res downloadable, or None to ask the lossless client instead.
+
+        The hi-res client is only ever served hi-res or AAC 320, so a track it
+        has no hi-res master for -- or a failure of this optional attempt --
+        goes to the lossless client, which serves FLAC and steps down from there.
+        """
+        try:
+            resp = await self._playback_info(track_id, HIRES_TIER)
+            tier = _AUDIO_QUALITY_TIER.get(resp.get("audioQuality"), 0)
+            if tier >= HIRES_TIER and resp.get("manifestMimeType") == DASH_MIME:
+                return self._get_downloadable_from_dash(track_id, resp)
+            logger.debug(f"Track {track_id}: no hi-res master, using lossless")
+        except NonStreamableError as e:
+            logger.debug(f"Track {track_id}: no hi-res stream ({e}), using lossless")
+        except Exception as e:
+            logger.warning(
+                f"Track {track_id}: hi-res request failed ({e}); using lossless"
+            )
+        return None
+
+    async def get_downloadable(self, track_id: str, quality: int):
+        quality = max(0, min(quality, self.max_quality))
+        # Highest first: hi-res where Tidal has it, then whatever the lossless
+        # client is served, one step down at a time.
+        if (
+            self.hires_lane is not None
+            and quality >= HIRES_TIER
+            and str(track_id) not in self._no_hires
+        ):
+            if (downloadable := await self.hires_lane._try_hires(track_id)) is not None:
+                return downloadable
+
+        resp = await self._playback_info(track_id, quality)
 
         actual_quality = resp.get("audioQuality")
         actual_tier = _AUDIO_QUALITY_TIER.get(actual_quality)
@@ -279,7 +416,7 @@ class TidalClient(Client):
         # Hi-res (HI_RES_LOSSLESS) tracks are served as an MPEG-DASH manifest
         # rather than the usual base64 JSON; handle it instead of silently
         # falling back to a lower quality.
-        if resp.get("manifestMimeType") == "application/dash+xml":
+        if resp.get("manifestMimeType") == DASH_MIME:
             return self._get_downloadable_from_dash(track_id, resp)
 
         try:
@@ -356,32 +493,6 @@ class TidalClient(Client):
             codec=codecs,
         )
 
-    async def get_video_file_url(self, video_id: str) -> str:
-        """Get the HLS video stream url.
-
-        The stream is downloaded using ffmpeg for now.
-
-        :param video_id:
-        :type video_id: str
-        :rtype: str
-        """
-        params = {
-            "videoquality": "HIGH",
-            "playbackmode": "STREAM",
-            "assetpresentation": "FULL",
-        }
-        resp = await self._api_request(
-            f"videos/{video_id}/playbackinfopostpaywall", params=params
-        )
-        manifest = json.loads(base64.b64decode(resp["manifest"]).decode("utf-8"))
-        async with self.session.get(manifest["urls"][0]) as resp:
-            available_urls = await resp.text(encoding="utf-8")
-
-        # Highest resolution is last
-        *_, last_match = STREAM_URL_REGEX.finditer(available_urls)
-
-        return last_match.group(1)
-
     # ---------- Login Utilities ---------------
 
     async def _login_by_access_token(self, token: str, user_id: str):
@@ -392,7 +503,7 @@ class TidalClient(Client):
         :param token: access token
         :param user_id: To verify that the user is correct
         """
-        headers = {"authorization": f"Bearer {token}"}  # temporary
+        headers = {"authorization": f"Bearer {token}"}
         async with self.session.get(
             "https://api.tidal.com/v1/sessions",
             headers=headers,
@@ -408,25 +519,12 @@ class TidalClient(Client):
         c = self.config
         c.user_id = resp["userId"]
         c.country_code = resp["countryCode"]
-        c.access_token = token
+        self.tokens.access_token = token
         self._update_authorization_from_config()
-
-    async def _get_login_link(self) -> str:
-        data = {
-            "client_id": self.client_id,
-            "scope": "r_usr+w_usr+w_sub",
-        }
-        resp = await self._api_post(f"{AUTH_URL}/device_authorization", data)
-
-        if resp.get("status", 200) != 200:
-            raise Exception(f"Device authorization failed {resp}")
-
-        device_code = resp["deviceCode"]
-        return f"https://{device_code}"
 
     def _update_authorization_from_config(self):
         self.session.headers.update(
-            {"authorization": f"Bearer {self.config.access_token}"},
+            {"authorization": f"Bearer {self.tokens.access_token}"},
         )
 
     async def _get_auth_status(self, device_code) -> tuple[int, dict[str, int | str]]:
@@ -480,23 +578,19 @@ class TidalClient(Client):
                 "Tidal refresh token has expired or been revoked."
             )
 
-        c = self.config
-        c.access_token = resp["access_token"]
-        c.token_expiry = resp["expires_in"] + time.time()
+        t = self.tokens
+        t.access_token = resp["access_token"]
+        t.token_expiry = resp["expires_in"] + time.time()
         if resp.get("refresh_token"):
-            c.refresh_token = resp["refresh_token"]
+            t.refresh_token = resp["refresh_token"]
         # Persist the refreshed token, otherwise every later run refreshes again.
-        f = self.global_config.file
-        f.tidal.access_token = c.access_token
-        f.tidal.token_expiry = c.token_expiry
-        f.tidal.refresh_token = c.refresh_token
-        f.set_modified()
+        self.save_login()
         self._update_authorization_from_config()
 
     async def _get_device_code(self) -> tuple[str, str]:
         """Get the device code that will be used to log in on the browser."""
         if getattr(self, "session", None) is None or self.session.closed:
-            self.session = await self.get_session(
+            self.session = new_session(
                 verify_ssl=self.global_config.session.downloads.verify_ssl
             )
 
@@ -545,7 +639,7 @@ class TidalClient(Client):
         attempt = 0
         while True:
             attempt += 1
-            if (pause := self._retry_at - time.monotonic()) > 0:
+            if (pause := self._root._retry_at - time.monotonic()) > 0:
                 await asyncio.sleep(pause)
 
             delay = 0.0
@@ -592,9 +686,11 @@ class TidalClient(Client):
                 await asyncio.sleep(delay)
 
     def _pause_requests(self, seconds: float):
+        # The rate limit belongs to the account, so both lanes wait together.
+        root = self._root
         now = time.monotonic()
-        if self._retry_at <= now:
+        if root._retry_at <= now:
             logger.warning(
                 f"Tidal is rate limiting us (HTTP 429); pausing for {seconds:.0f}s"
             )
-        self._retry_at = max(self._retry_at, now + seconds)
+        root._retry_at = max(root._retry_at, now + seconds)

@@ -8,27 +8,16 @@ _global_semaphore: tuple[int, asyncio.Semaphore] | None = None
 
 
 def global_download_semaphore(c: DownloadsConfig) -> asyncio.Semaphore | nullcontext:
-    """A global semaphore that limit the number of total tracks being downloaded
-    at once.
+    """A global semaphore that limits how many tracks download at once.
 
-    If concurrency is disabled in the config, the semaphore is set to 1.
-    Otherwise it's set to `max_connections`.
-    A negative `max_connections` value means there is no maximum and no semaphore is used.
-
-    Since it is global, only one value of `max_connections` is allowed per session.
+    That's `max_connections` (1: one after the other); 0 or less means no
+    limit. Since it is global, only one value is allowed per session.
     """
-    global _unlimited, _global_semaphore
+    global _global_semaphore
 
-    if c.concurrency:
-        max_connections = c.max_connections if c.max_connections > 0 else None
-    else:
-        max_connections = 1
-
-    if max_connections is None:
-        return _unlimited
-
+    max_connections = c.max_connections
     if max_connections <= 0:
-        raise Exception(f"{max_connections = } too small")
+        return _unlimited
 
     if _global_semaphore is None:
         _global_semaphore = (max_connections, asyncio.Semaphore(max_connections))
