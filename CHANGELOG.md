@@ -39,6 +39,8 @@ upstream issues and pull requests.
   [PR #1027](https://github.com/nathom/streamrip/pull/1027)); `{version}` and `{tracktotal}` are available in `folder_format`.
 - Single tracks of multi-disc albums go into their `Disc N` folder ([PR #1026](https://github.com/nathom/streamrip/pull/1026)).
 - Missing performer/ISRC/genre no longer crash a track ([#668](https://github.com/nathom/streamrip/issues/668)).
+- `download_booklets` works: an album's PDF booklets are saved in its folder.
+  The option was there (and on) but nothing downloaded them since v1.
 
 ### Tidal
 

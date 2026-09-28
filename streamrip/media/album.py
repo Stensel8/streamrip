@@ -3,11 +3,11 @@ import os
 from dataclasses import dataclass
 
 from .. import progress
-from ..client import Client
+from ..client import BasicDownloadable, Client
 from ..config import Config
 from ..db import Database
 from ..exceptions import NonStreamableError
-from ..filepath_utils import clean_filepath
+from ..filepath_utils import clean_filename, clean_filepath
 from ..metadata import AlbumMetadata
 from ..metadata.util import get_album_track_ids
 from .artwork import download_artwork
@@ -18,6 +18,27 @@ logger = logging.getLogger("streamrip")
 
 # Tracks of an album resolved at once; more only delays the first download.
 RESOLVE_CONCURRENCY = 4
+
+
+async def download_booklets(session, booklets: list[dict], folder: str):
+    """Save an album's PDF booklets (Qobuz "goodies") next to its tracks."""
+    pdfs = [
+        (url, clean_filename(b.get("description") or b.get("name") or "Booklet"))
+        for b in booklets
+        if (url := b.get("url") or b.get("original_url") or "").lower().endswith(".pdf")
+    ]
+    names = [name for _, name in pdfs]
+    for n, (url, name) in enumerate(pdfs, 1):
+        if names.count(name) > 1:
+            name = f"{name} {n}"
+        path = os.path.join(folder, f"{name}.pdf")
+        if os.path.isfile(path):
+            continue
+        try:
+            await BasicDownloadable(session, url, "pdf").download(path, lambda _: None)
+        except Exception as e:
+            # A missing booklet is never worth the album.
+            logger.warning(f"Could not download booklet {url}: {type(e).__name__}: {e}")
 
 
 @dataclass(slots=True)
@@ -62,7 +83,7 @@ class PendingAlbum(Pending):
         try:
             meta = AlbumMetadata.from_album_resp(resp, self.client.source)
         except Exception as e:
-            logger.error(f"Error building album metadata for {id=}: {e}")
+            logger.error(f"Error building album metadata for {self.id}: {e}")
             return None
 
         if meta is None:
@@ -96,6 +117,11 @@ class PendingAlbum(Pending):
             self.config.session.artwork,
             for_playlist=False,
         )
+        # Only Qobuz albums have booklets.
+        if meta.info.booklets and self.config.session.qobuz.download_booklets:
+            await download_booklets(
+                self.client.session, meta.info.booklets, album_folder
+            )
         pending_tracks = [
             PendingTrack(
                 track_id,

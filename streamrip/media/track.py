@@ -343,7 +343,7 @@ class PendingSingle(Pending):
         try:
             album = AlbumMetadata.from_track_resp(resp, self.client.source)
         except Exception as e:
-            logger.error(f"Error building album metadata for track {id=}: {e}")
+            logger.error(f"Error building album metadata for track {self.id}: {e}")
             self.db.set_failed(self.client.source, "track", self.id)
             return None
 
@@ -357,7 +357,7 @@ class PendingSingle(Pending):
         try:
             meta = TrackMetadata.from_resp(album, self.client.source, resp)
         except Exception as e:
-            logger.error(f"Error building track metadata for track {id=}: {e}")
+            logger.error(f"Error building track metadata for track {self.id}: {e}")
             self.db.set_failed(self.client.source, "track", self.id)
             return None
 

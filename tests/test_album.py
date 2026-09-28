@@ -124,3 +124,57 @@ async def test_new_album_logs_nothing_about_skipping(monkeypatch, tmp_path, capl
         album = await pending.resolve()
     assert [t.id for t in album.tracks] == ["1", "2"]
     assert "skipping" not in caplog.text.lower()
+
+
+class _FakeDownloadable:
+    downloaded: list[str] = []
+
+    def __init__(self, _session, url, _extension):
+        self.url = url
+
+    async def download(self, path, _callback):
+        if "broken" in self.url:
+            raise ConnectionError("gone")
+        type(self).downloaded.append(self.url)
+        with open(path, "wb") as f:
+            f.write(b"%PDF")
+
+
+@pytest.mark.asyncio
+async def test_booklets_are_saved_as_pdfs(monkeypatch, tmp_path, caplog):
+    monkeypatch.setattr(album_module, "BasicDownloadable", _FakeDownloadable)
+    _FakeDownloadable.downloaded = []
+    (tmp_path / "Liner Notes.pdf").write_bytes(b"%PDF")
+    booklets = [
+        {"description": "Digital Booklet", "url": "https://q/1.pdf"},
+        {"name": "Poster", "url": "https://q/2.jpg"},  # not a booklet
+        {"description": "Liner Notes", "url": "https://q/3.pdf"},  # already there
+        {"description": "Lyrics", "url": "https://q/broken.pdf"},
+        {"description": "Digital Booklet", "url": "https://q/5.pdf"},
+    ]
+
+    await album_module.download_booklets(None, booklets, str(tmp_path))
+
+    assert _FakeDownloadable.downloaded == ["https://q/1.pdf", "https://q/5.pdf"]
+    # Only names that would collide get a number.
+    assert sorted(p.name for p in tmp_path.iterdir()) == [
+        "Digital Booklet 1.pdf",
+        "Digital Booklet 4.pdf",
+        "Liner Notes.pdf",
+    ]
+    assert "Could not download booklet https://q/broken.pdf" in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("enabled", [True, False])
+async def test_booklets_follow_the_config(monkeypatch, tmp_path, enabled):
+    pending, _ = _pending_album(monkeypatch, tmp_path, ["1"], downloaded=set())
+    booklets = [{"description": "Booklet", "url": "https://q/1.pdf"}]
+    album_module.AlbumMetadata.from_album_resp(None, None).info.booklets = booklets
+    pending.config.session.qobuz.download_booklets = enabled
+    download = AsyncMock()
+    monkeypatch.setattr(album_module, "download_booklets", download)
+
+    await pending.resolve()
+
+    assert download.await_count == (1 if enabled else 0)
