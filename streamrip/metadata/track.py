@@ -33,6 +33,12 @@ class TrackMetadata:
     composer: str | None
     isrc: str | None = None
     lyrics: str | None = ""
+    # Individual artist names, when the source distinguishes them (Tidal,
+    # Deezer). `artist` above stays a single display string (joined with
+    # ", ") for filenames and templates; the tagger writes this list as a
+    # real multi-valued ARTIST tag instead of baking the join into one
+    # string, which is what let players mis-split "A, B" back apart.
+    artists: list[str] | None = None
 
     @classmethod
     def from_qobuz(cls, album: AlbumMetadata, resp: dict) -> TrackMetadata | None:
@@ -64,8 +70,7 @@ class TrackMetadata:
         track_id = str(resp["id"])
         bit_depth = typed(resp.get("maximum_bit_depth"), int | None)
         sampling_rate = typed(resp.get("maximum_sampling_rate"), int | float | None)
-        # Is the info included?
-        explicit = False
+        explicit = typed(resp.get("parental_warning", False), bool)
 
         info = TrackInfo(
             id=track_id,
@@ -96,9 +101,10 @@ class TrackMetadata:
         work = None
         title = typed(resp["title"], str)
         contributors = resp.get("contributors", [])
-        artist = ", ".join(
-            c["name"] for c in contributors if c["type"] == "artist"
-        ) or typed(resp["artist"]["name"], str)
+        artist_names = [c["name"] for c in contributors if c["type"] == "artist"] or [
+            typed(resp["artist"]["name"], str)
+        ]
+        artist = ", ".join(artist_names)
         tracknumber = typed(resp["track_position"], int)
         discnumber = typed(resp["disk_number"], int)
         composer = None
@@ -121,6 +127,7 @@ class TrackMetadata:
             composer=composer,
             isrc=isrc,
             lyrics=lyrics,
+            artists=artist_names,
         )
 
     @classmethod
@@ -170,11 +177,12 @@ class TrackMetadata:
         tracknumber = typed(track.get("trackNumber", 1), int)
         discnumber = typed(track.get("volumeNumber", 1), int)
 
-        artists = track.get("artists") or []
-        if len(artists) > 0:
-            artist = ", ".join(a["name"] for a in artists)
+        track_artists = track.get("artists") or []
+        if len(track_artists) > 0:
+            artist_names = [a["name"] for a in track_artists]
         else:
-            artist = track["artist"]["name"]
+            artist_names = [track["artist"]["name"]]
+        artist = ", ".join(artist_names)
 
         lyrics = track.get("lyrics", "")
 
@@ -207,6 +215,7 @@ class TrackMetadata:
             composer=None,
             isrc=isrc,
             lyrics=lyrics,
+            artists=artist_names,
         )
 
     @classmethod
