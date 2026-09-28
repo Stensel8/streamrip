@@ -12,7 +12,7 @@ from ..filepath_utils import clean_filepath
 from ..metadata import AlbumMetadata
 from ..metadata.util import get_album_track_ids
 from .artwork import download_artwork
-from .media import Media, Pending, filter_prefer_explicit
+from .media import Media, Pending, filter_prefer_explicit, resolve_or_none
 from .track import PendingTrack
 
 logger = logging.getLogger("streamrip")
@@ -62,7 +62,7 @@ class Album(Media):
         (see [metadata] prefer_explicit). Costs one extra API call per track
         compared to the default resolve-and-download-immediately path.
         """
-        resolved = await asyncio.gather(*[p.resolve() for p in self.tracks])
+        resolved = await asyncio.gather(*[resolve_or_none(p) for p in self.tracks])
         tracks = filter_prefer_explicit([t for t in resolved if t is not None])
 
         async def _download(track):

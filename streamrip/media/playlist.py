@@ -26,7 +26,7 @@ from ..metadata import (
 )
 from ..utils.ssl_utils import get_aiohttp_connector_kwargs
 from .artwork import download_artwork
-from .media import Media, Pending, filter_prefer_explicit
+from .media import Media, Pending, filter_prefer_explicit, resolve_or_none
 from .track import Track
 
 logger = logging.getLogger("streamrip")
@@ -158,7 +158,9 @@ class Playlist(Media):
         track_resolve_chunk_size = 20
         resolved = []
         for chunk in self.batch(self.tracks, track_resolve_chunk_size):
-            resolved_or_none = await asyncio.gather(*[t.resolve() for t in chunk])
+            resolved_or_none = await asyncio.gather(
+                *[resolve_or_none(t) for t in chunk]
+            )
             resolved.extend(t for t in resolved_or_none if t is not None)
 
         tracks = filter_prefer_explicit(resolved)
