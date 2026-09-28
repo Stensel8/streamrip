@@ -125,7 +125,7 @@ lossy_bitrate = 320
 extras = false
 # Picks the highest quality out of albums with identical titles.
 repeats = false
-# Remove EPs and Singles
+# Skip singles (releases with only one track)
 non_albums = false
 # Remove albums whose artist is not the one requested
 features = false

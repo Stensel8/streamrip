@@ -135,7 +135,7 @@ class QobuzDiscographyFilterConfig:
     extras: bool
     # Picks the highest quality out of albums with identical titles.
     repeats: bool
-    # Remove EPs and Singles
+    # Skip singles (releases with only one track)
     non_albums: bool
     # Remove albums whose artist is not the one requested
     features: bool
