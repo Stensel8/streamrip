@@ -66,6 +66,9 @@ upstream issues and pull requests.
 - API requests retry connection errors, timeouts, 5xx and 429 (up to four
   attempts with backoff) instead of dropping the track. A 429 pauses every
   request and honours `Retry-After`.
+- Albums with a `null` copyright no longer fail: the fix for it (upstream PR #979)
+  only reached the code for single tracks. Folder names say `FLAC`/`AAC` and
+  `44.1kHz` like the other sources, instead of `MP4` and `44100kHz`.
 - Music videos in albums and playlists are left out instead of each failing as
   a track (and being retried by `streamrip repair` forever); a playlist with
   videos no longer loses its last tracks when paging.
@@ -156,6 +159,8 @@ upstream issues and pull requests.
   instead of once per track.
 - New `streamrip database clear downloads|failed|all` forgets what was
   downloaded, for when you deleted the files and want them again.
+- An unknown release date gives the year "Unknown" instead of "Unkn" (in tags
+  and folder names), and no date tag instead of the text "Unknown".
 - The repeats filter no longer crashes an artist download on an album whose
   title starts with a bracket, e.g. "(What's the Story) Morning Glory?";
   `[qobuz_filters] non_albums` now actually skips single-track releases.

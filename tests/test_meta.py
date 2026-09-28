@@ -63,3 +63,72 @@ def test_track_metadata_qobuz():
     assert t.tracknumber == 9
     assert t.discnumber == 1
     assert t.composer == "John Darnielle"
+
+
+def _tidal_album(**extra):
+    return {
+        "id": 10,
+        "title": "Album",
+        "allowStreaming": True,
+        "audioQuality": "LOSSLESS",
+        "artists": [{"name": "A"}, {"name": "B"}],
+        "numberOfTracks": 9,
+        "numberOfVolumes": 2,
+        "releaseDate": "2019-05-01",
+        "cover": "ab-cd",
+        **extra,
+    }
+
+
+def test_tidal_album_with_null_copyright_and_no_date():
+    # The fix for a null copyright (upstream #979) only reached the copy of
+    # this parser used for single tracks; albums still crashed on it.
+    m = AlbumMetadata.from_tidal(_tidal_album(copyright=None, releaseDate=None))
+    assert m.copyright == ""
+    # No "Unkn" (the first four letters of "Unknown") in tags or folder names.
+    assert (m.year, m.date) == ("Unknown", None)
+
+
+def test_tidal_album_folder_details_match_other_sources():
+    m = AlbumMetadata.from_tidal(_tidal_album())
+    assert (m.info.container, m.info.bit_depth, m.info.sampling_rate) == (
+        "FLAC",
+        16,
+        44.1,
+    )
+    assert m.albumartist == "A, B"
+    assert (m.tracktotal, m.disctotal) == (9, 2)
+
+
+def test_tidal_track_response_gives_its_album():
+    track = {
+        "id": 99,
+        "allowStreaming": True,
+        "audioQuality": "HIGH",
+        "artists": [{"name": "A"}],
+        "streamStartDate": "2020-02-02T00:00:00.000+0000",
+        "volumeNumber": 1,
+        "copyright": None,
+        "album": {"id": 10, "title": "Album", "cover": "ab-cd"},
+    }
+    m = AlbumMetadata.from_track_resp(track, "tidal")
+    assert (m.info.id, m.album, m.albumartist, m.year) == ("10", "Album", "A", "2020")
+    assert m.info.container == "AAC"
+
+
+def test_deezer_track_without_album_tracklist():
+    track = {
+        "explicit_lyrics": True,
+        "contributors": [
+            {"name": "A", "type": "artist"},
+            {"name": "Producer", "type": "producer"},
+        ],
+        "album": {
+            "id": 5,
+            "title": "Album",
+            **{f"cover_{s}": "u" for s in ("xl", "big", "medium", "small")},
+        },
+    }
+    m = AlbumMetadata.from_track_resp(track, "deezer")
+    assert (m.info.id, m.info.container, m.albumartist) == ("5", "FLAC", "A")
+    assert m.info.explicit and m.year == "Unknown"
