@@ -105,6 +105,7 @@ upstream issues and pull requests.
   skips and reordered audio ([#848](https://github.com/nathom/streamrip/issues/848), [#633](https://github.com/nathom/streamrip/issues/633)).
 - Those segments are removed from the temp dir afterwards (also when one
   fails) instead of piling up, and a failed join shows ffmpeg's error.
+- Tracks are tagged disc 1 instead of disc 0.
 
 ### Downloads, conversion and tagging
 

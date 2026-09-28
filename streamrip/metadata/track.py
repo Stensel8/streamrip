@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Optional
 
 from .album import AlbumMetadata
-from .util import safe_get, tidal_quality_id, typed
+from .util import deezer_artists, safe_get
 
 logger = logging.getLogger("streamrip")
 
@@ -13,12 +12,7 @@ logger = logging.getLogger("streamrip")
 @dataclass(slots=True)
 class TrackInfo:
     id: str
-    quality: int
-
-    bit_depth: Optional[int] = None
     explicit: bool = False
-    sampling_rate: Optional[int | float] = None
-    work: Optional[str] = None
 
 
 @dataclass(slots=True)
@@ -42,180 +36,78 @@ class TrackMetadata:
 
     @classmethod
     def from_qobuz(cls, album: AlbumMetadata, resp: dict) -> TrackMetadata | None:
-        title = typed(resp["title"].strip(), str)
-        isrc = typed(resp.get("isrc"), str | None)
-        streamable = typed(resp.get("streamable", False), bool)
-
-        if not streamable:
+        if not resp.get("streamable", False):
             return None
-
-        version = typed(resp.get("version"), str | None)
-        work = typed(resp.get("work"), str | None)
-        if version is not None and version not in title:
+        title = resp["title"].strip()
+        version, work = resp.get("version"), resp.get("work")
+        if version and version not in title:
             title = f"{title} ({version})"
-        if work is not None and work not in title:
+        if work and work not in title:
             title = f"{work}: {title}"
-
-        composer = typed(resp.get("composer", {}).get("name"), str | None)
-        tracknumber = typed(resp.get("track_number", 1), int)
-        discnumber = typed(resp.get("media_number", 1), int)
-        # "performer" is missing on some tracks (upstream #668); fall back to
-        # the album artist rather than failing the whole track.
-        artist = typed(
+        return cls(
+            TrackInfo(str(resp["id"]), bool(resp.get("parental_warning"))),
+            title,
+            album,
+            # "performer" is missing on some tracks (upstream #668); fall back
+            # to the album artist rather than failing the whole track.
             safe_get(resp, "performer", "name")
             or safe_get(resp, "album", "artist", "name")
             or album.albumartist,
-            str,
-        )
-        track_id = str(resp["id"])
-        bit_depth = typed(resp.get("maximum_bit_depth"), int | None)
-        sampling_rate = typed(resp.get("maximum_sampling_rate"), int | float | None)
-        explicit = typed(resp.get("parental_warning", False), bool)
-
-        info = TrackInfo(
-            id=track_id,
-            quality=album.info.quality,
-            bit_depth=bit_depth,
-            explicit=explicit,
-            sampling_rate=sampling_rate,
-            work=work,
-        )
-        return cls(
-            info=info,
-            title=title,
-            album=album,
-            artist=artist,
-            tracknumber=tracknumber,
-            discnumber=discnumber,
-            composer=composer,
-            isrc=isrc,
+            resp.get("track_number", 1),
+            resp.get("media_number", 1),
+            safe_get(resp, "composer", "name"),
+            isrc=resp.get("isrc"),
         )
 
     @classmethod
-    def from_deezer(cls, album: AlbumMetadata, resp) -> TrackMetadata | None:
-        track_id = str(resp["id"])
-        isrc = typed(resp.get("isrc"), str | None)
-        bit_depth = 16
-        sampling_rate = 44.1
-        explicit = typed(resp.get("explicit_lyrics", False), bool)
-        work = None
-        title = typed(resp["title"], str)
-        contributors = resp.get("contributors", [])
-        artist_names = [c["name"] for c in contributors if c["type"] == "artist"] or [
-            typed(resp["artist"]["name"], str)
-        ]
-        artist = ", ".join(artist_names)
-        tracknumber = typed(resp["track_position"], int)
-        discnumber = typed(resp["disk_number"], int)
-        composer = None
-        lyrics = resp.get("lyrics", "")
-        info = TrackInfo(
-            id=track_id,
-            quality=album.info.quality,
-            bit_depth=bit_depth,
-            explicit=explicit,
-            sampling_rate=sampling_rate,
-            work=work,
-        )
+    def from_deezer(cls, album: AlbumMetadata, resp: dict) -> TrackMetadata:
+        artists = deezer_artists(resp)
         return cls(
-            info=info,
-            title=title,
-            album=album,
-            artist=artist,
-            tracknumber=tracknumber,
-            discnumber=discnumber,
-            composer=composer,
-            isrc=isrc,
-            lyrics=lyrics,
-            artists=artist_names,
+            TrackInfo(str(resp["id"]), bool(resp.get("explicit_lyrics"))),
+            resp["title"],
+            album,
+            ", ".join(artists),
+            resp["track_position"],
+            resp["disk_number"],
+            None,
+            isrc=resp.get("isrc"),
+            lyrics=resp.get("lyrics", ""),
+            artists=artists,
         )
 
     @classmethod
     def from_soundcloud(cls, album: AlbumMetadata, resp: dict) -> TrackMetadata:
-        track = resp
-        track_id = track["id"]
-        isrc = typed(safe_get(track, "publisher_metadata", "isrc"), str | None)
-        bit_depth, sampling_rate = None, None
-        explicit = typed(
-            safe_get(track, "publisher_metadata", "explicit", default=False),
-            bool,
-        )
-
-        title = typed(track["title"].strip(), str)
-        artist = typed(track["user"]["username"], str)
-        tracknumber = 1
-
-        info = TrackInfo(
-            id=track_id,
-            quality=album.info.quality,
-            bit_depth=bit_depth,
-            explicit=explicit,
-            sampling_rate=sampling_rate,
-            work=None,
-        )
+        publisher = resp.get("publisher_metadata") or {}
         return cls(
-            info=info,
-            title=title,
-            album=album,
-            artist=artist,
-            tracknumber=tracknumber,
-            discnumber=0,
-            composer=None,
-            isrc=isrc,
+            TrackInfo(str(resp["id"]), bool(publisher.get("explicit"))),
+            resp["title"].strip(),
+            album,
+            resp["user"]["username"],
+            1,
+            1,
+            None,
+            isrc=publisher.get("isrc"),
         )
 
     @classmethod
-    def from_tidal(cls, album: AlbumMetadata, track) -> TrackMetadata:
-        title = typed(track["title"], str).strip()
-        item_id = str(track["id"])
-        isrc = typed(track.get("isrc"), str | None)
-        version = track.get("version")
-        explicit = track.get("explicit", False)
-        if version:
+    def from_tidal(cls, album: AlbumMetadata, resp: dict) -> TrackMetadata:
+        title = resp["title"].strip()
+        if version := resp.get("version"):
             title = f"{title} ({version})"
-
-        tracknumber = typed(track.get("trackNumber", 1), int)
-        discnumber = typed(track.get("volumeNumber", 1), int)
-
-        track_artists = track.get("artists") or []
-        if len(track_artists) > 0:
-            artist_names = [a["name"] for a in track_artists]
-        else:
-            artist_names = [track["artist"]["name"]]
-        artist = ", ".join(artist_names)
-
-        lyrics = track.get("lyrics", "")
-
-        quality = tidal_quality_id(track.get("audioQuality"))
-
-        if quality >= 2:
-            sampling_rate = 44100
-            if quality == 3:
-                bit_depth = 24
-            else:
-                bit_depth = 16
-        else:
-            sampling_rate = bit_depth = None
-
-        info = TrackInfo(
-            id=item_id,
-            quality=quality,
-            bit_depth=bit_depth,
-            explicit=explicit,
-            sampling_rate=sampling_rate,
-            work=None,
-        )
+        artists = [a["name"] for a in resp.get("artists") or []] or [
+            resp["artist"]["name"]
+        ]
         return cls(
-            info=info,
-            title=title,
-            album=album,
-            artist=artist,
-            tracknumber=tracknumber,
-            discnumber=discnumber,
-            composer=None,
-            isrc=isrc,
-            lyrics=lyrics,
-            artists=artist_names,
+            TrackInfo(str(resp["id"]), bool(resp.get("explicit"))),
+            title,
+            album,
+            ", ".join(artists),
+            resp.get("trackNumber", 1),
+            resp.get("volumeNumber", 1),
+            None,
+            isrc=resp.get("isrc"),
+            lyrics=resp.get("lyrics", ""),
+            artists=artists,
         )
 
     @classmethod
@@ -228,7 +120,7 @@ class TrackMetadata:
             return cls.from_soundcloud(album, resp)
         if source == "deezer":
             return cls.from_deezer(album, resp)
-        raise Exception
+        raise Exception(f"Invalid source {source}")
 
     def format_track_path(self, format_string: str) -> str:
         # Available keys: "id", "tracknumber", "discnumber", "artist", "album",

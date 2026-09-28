@@ -47,10 +47,8 @@ def test_track_metadata_qobuz():
     t = TrackMetadata.from_qobuz(a, qobuz_track_resp)
     info = t.info
     assert info.id == "216020864"
-    assert info.quality == 3
-    assert info.bit_depth == 24
-    assert info.sampling_rate == 96
-    assert info.work is None
+    assert info.explicit is False
+    assert t.isrc == "USMRG2384109"
 
     assert t.title == "Water Tower"
     assert t.album == a
@@ -127,3 +125,72 @@ def test_deezer_track_without_album_tracklist():
     m = AlbumMetadata.from_track_resp(track, "deezer")
     assert (m.info.id, m.info.container, m.albumartist) == ("5", "FLAC", "A")
     assert m.info.explicit and m.year == "Unknown"
+
+
+def test_tidal_track_metadata():
+    album = AlbumMetadata.from_tidal(_tidal_album())
+    t = TrackMetadata.from_tidal(
+        album,
+        {
+            "id": 7,
+            "title": "Song ",
+            "version": "Live",
+            "explicit": True,
+            "artists": [{"name": "A"}, {"name": "B"}],
+            "trackNumber": 3,
+            "volumeNumber": 2,
+        },
+    )
+    assert (t.info.id, t.info.explicit, t.title) == ("7", True, "Song (Live)")
+    assert (t.artist, t.artists) == ("A, B", ["A", "B"])
+    assert (t.tracknumber, t.discnumber, t.lyrics) == (3, 2, "")
+
+
+def test_deezer_track_metadata():
+    resp = {
+        "id": 8,
+        "title": "Song",
+        "track_position": 4,
+        "disk_number": 1,
+        "contributors": [
+            {"name": "A", "type": "artist"},
+            {"name": "B", "type": "artist"},
+            {"name": "Producer", "type": "producer"},
+        ],
+        "artist": {"name": "A"},
+    }
+    album = AlbumMetadata.from_incomplete_deezer_track_resp(
+        resp
+        | {
+            "album": {
+                "id": 5,
+                "title": "Album",
+                **{f"cover_{s}": "u" for s in ("xl", "big", "medium", "small")},
+            }
+        }
+    )
+    t = TrackMetadata.from_deezer(album, resp)
+    assert (t.info.id, t.info.explicit) == ("8", False)
+    assert (t.artist, t.artists, album.albumartist) == ("A, B", ["A", "B"], "A, B")
+    # Without contributors, the main artist.
+    del resp["contributors"]
+    assert TrackMetadata.from_deezer(album, resp).artists == ["A"]
+
+
+def test_soundcloud_track_metadata():
+    resp = {
+        "id": "123|_original_download",
+        "title": " Song",
+        "user": {"username": "someone", "avatar_url": "https://a/large.jpg"},
+        "artwork_url": None,
+        "publisher_metadata": {"explicit": True, "isrc": "X"},
+    }
+    t = TrackMetadata.from_soundcloud(AlbumMetadata.from_soundcloud(resp), resp)
+    assert (t.info.id, t.info.explicit, t.title, t.artist, t.isrc) == (
+        "123|_original_download",
+        True,
+        "Song",
+        "someone",
+        "X",
+    )
+    assert (t.tracknumber, t.discnumber) == (1, 1)

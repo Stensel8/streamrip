@@ -88,7 +88,7 @@ def _make_track(folder: str, extension: str) -> Track:
         1,
     )
     meta = TrackMetadata(
-        info=TrackInfo(id="123", quality=2),
+        info=TrackInfo(id="123"),
         title="Song",
         album=album,
         artist="Test Artist",

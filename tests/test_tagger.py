@@ -32,14 +32,7 @@ def wipe_test_flac():
 @pytest.fixture()
 def sample_metadata() -> TrackMetadata:
     return TrackMetadata(
-        TrackInfo(
-            id="12345",
-            quality=3,
-            bit_depth=24,
-            explicit=True,
-            sampling_rate=96,
-            work=None,
-        ),
+        TrackInfo(id="12345", explicit=True),
         "testtitle",
         AlbumMetadata(
             AlbumInfo("5678", 4, "flac"),

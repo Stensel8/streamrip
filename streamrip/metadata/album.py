@@ -7,7 +7,7 @@ from typing import Optional
 
 from ..filepath_utils import clean_filename, clean_filepath
 from .covers import Covers
-from .util import get_quality_id, safe_get, tidal_quality_id, typed
+from .util import deezer_artists, get_quality_id, safe_get, tidal_quality_id, typed
 
 PHON_COPYRIGHT = "\u2117"
 COPYRIGHT = "\u00a9"
@@ -20,14 +20,6 @@ genre_clean = re.compile(r"([^\u2192\/]+)")
 
 def _year(date: str | None) -> str:
     return date[:4] if date else "Unknown"
-
-
-def _deezer_artist(resp: dict) -> str:
-    contributors = resp.get("contributors") or []
-    names = [c["name"] for c in contributors if c.get("type") == "artist"]
-    return ", ".join(names) or safe_get(
-        resp, "artist", "name", default="Unknown Artist"
-    )
 
 
 @dataclass(slots=True)
@@ -171,7 +163,7 @@ class AlbumMetadata:
         return cls(
             info,
             resp.get("title") or "Unknown Album",
-            _deezer_artist(resp),
+            ", ".join(deezer_artists(resp)),
             _year(date),
             genre=[
                 g["name"] for g in safe_get(resp, "genres", "data", default=[]) or []
@@ -198,7 +190,7 @@ class AlbumMetadata:
         return cls(
             info,
             album.get("title") or "Unknown Album",
-            _deezer_artist(resp),
+            ", ".join(deezer_artists(resp)),
             _year(date),
             genre=[],
             covers=Covers.from_deezer(album),

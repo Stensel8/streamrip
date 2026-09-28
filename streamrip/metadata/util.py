@@ -13,6 +13,13 @@ def get_album_track_ids(source: str, resp) -> list[str]:
     return [track["id"] for track in tracklist]
 
 
+def deezer_artists(resp: dict) -> list[str]:
+    """The credited artists of a Deezer album or track response."""
+    contributors = resp.get("contributors") or []
+    names = [c["name"] for c in contributors if c.get("type") == "artist"]
+    return names or [safe_get(resp, "artist", "name", default="Unknown Artist")]
+
+
 def safe_get(dictionary, *keys, default=None):
     return functools.reduce(
         lambda d, key: d.get(key, default) if isinstance(d, dict) else default,
