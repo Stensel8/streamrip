@@ -3,7 +3,7 @@
 All notable changes in this fork of [nathom/streamrip](https://github.com/nathom/streamrip). Numbers refer to
 upstream issues and pull requests.
 
-## 2.3.0
+## 2.4.0
 
 ### Installation and dependencies
 
