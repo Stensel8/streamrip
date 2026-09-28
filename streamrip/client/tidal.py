@@ -15,6 +15,7 @@ from ..exceptions import (
     MissingCredentialsError,
     NonStreamableError,
 )
+from ..metadata.util import tidal_quality_id
 from .client import Client, new_session
 from .downloadable import TidalDASHDownloadable, TidalDownloadable
 
@@ -83,6 +84,35 @@ def _retry_after(resp, attempt: int) -> float:
     except KeyError, ValueError:
         seconds = RATE_LIMIT_PAUSE * attempt
     return min(seconds, MAX_RETRY_DELAY)
+
+
+def _dedup_duplicate_albums(albums: list[dict]) -> list[dict]:
+    """Keep only the best copy when Tidal lists the same release twice.
+
+    Tidal sometimes lists one album under an artist more than once: a clean
+    and an explicit master, or just the same master at two quality tiers
+    (a lossless entry and a separate hi-res one). Grouped by title and
+    track count -- matching on both is as good as certain to be the same
+    release, not two different albums that happen to share a title -- and
+    the explicit, higher-quality copy is kept.
+    """
+    # Tidal's own catalog is inconsistent about which bracket style tags an
+    # edition name, so square and round brackets are folded together before
+    # grouping -- otherwise the same release under each style looks distinct.
+    brackets = str.maketrans("[]", "()")
+
+    groups: dict[tuple[str, int], list[dict]] = {}
+    for album in albums:
+        key = (
+            (album.get("title") or "").strip().lower().translate(brackets),
+            album.get("numberOfTracks", 0),
+        )
+        groups.setdefault(key, []).append(album)
+
+    def best(album: dict) -> tuple[bool, int]:
+        return (bool(album.get("explicit")), tidal_quality_id(album.get("audioQuality")))
+
+    return [max(group, key=best) for group in groups.values()]
 
 
 class _Tokens:
@@ -240,6 +270,8 @@ class TidalClient(Client):
 
             item["albums"] = album_resp["items"]
             item["albums"].extend(ep_resp["items"])
+            if self.global_config.session.metadata.prefer_explicit:
+                item["albums"] = _dedup_duplicate_albums(item["albums"])
         elif media_type == "track" and self.global_config.session.downloads.lyrics:
             try:
                 resp = await self._api_request(
@@ -381,6 +413,13 @@ class TidalClient(Client):
             logger.debug(f"Track {track_id}: no hi-res master, using lossless")
         except NonStreamableError as e:
             logger.debug(f"Track {track_id}: no hi-res stream ({e}), using lossless")
+        except aiohttp.ClientResponseError as e:
+            if e.status == 429:
+                # _api_request already logged and paused for this; not a
+                # separate problem worth a second, scarier-looking warning.
+                logger.debug(f"Track {track_id}: still rate limited, using lossless")
+            else:
+                logger.warning(f"Track {track_id}: hi-res request failed ({e}); using lossless")
         except Exception as e:
             logger.warning(
                 f"Track {track_id}: hi-res request failed ({e}); using lossless"
@@ -640,7 +679,9 @@ class TidalClient(Client):
         while True:
             attempt += 1
             if (pause := self._root._retry_at - time.monotonic()) > 0:
-                await asyncio.sleep(pause)
+                # + jitter: every request blocked on the same 429 wakes at the
+                # same instant otherwise, and immediately re-trips it together.
+                await asyncio.sleep(pause + random.random() * 2)
 
             delay = 0.0
             try:

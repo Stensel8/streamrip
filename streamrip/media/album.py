@@ -5,19 +5,21 @@ from dataclasses import dataclass
 from .. import progress
 from ..client import BasicDownloadable, Client
 from ..config import Config
+from ..console import console
 from ..db import Database
 from ..exceptions import NonStreamableError
 from ..filepath_utils import clean_filename
 from ..metadata import AlbumMetadata
-from ..metadata.util import get_album_track_ids
+from ..metadata.util import format_quality, get_album_track_ids
 from .artwork import download_artwork
 from .media import Media, Pending, rip_tracks
 from .track import PendingTrack, album_folder
 
 logger = logging.getLogger("streamrip")
 
-# Tracks of an album resolved at once; more only delays the first download.
-RESOLVE_CONCURRENCY = 4
+# Tracks of an album resolved at once; more only delays the first download,
+# and also means more requests landing on the rate limit in the same instant.
+RESOLVE_CONCURRENCY = 3
 
 
 async def download_booklets(session, booklets: list[dict], folder: str):
@@ -51,8 +53,18 @@ class Album(Media):
     db: Database
     client: Client | None = None
 
+    def _title(self) -> str:
+        quality = format_quality(
+            self.meta.info.container,
+            self.meta.info.bit_depth,
+            self.meta.info.sampling_rate,
+        )
+        return f"{self.meta.album} {quality}"
+
     async def preprocess(self):
-        progress.add_title(self.meta.album)
+        progress.add_title(
+            id(self), self._title(), self.config.session.cli.progress_bars
+        )
         # Here, not when the album is resolved: artists and labels resolve every
         # album before their filters drop some, and those get no booklets. Only
         # Qobuz albums have any; a finished album has no folder to put them in.
@@ -67,14 +79,19 @@ class Album(Media):
             )
 
     async def download(self):
-        await rip_tracks(
-            self.tracks,
-            RESOLVE_CONCURRENCY,
-            self.config.session.metadata.prefer_explicit,
-        )
+        big = len(self.tracks) > RESOLVE_CONCURRENCY
+        if big:
+            console.log(f"Resolving {len(self.tracks)} tracks: {self.meta.album}")
+        enabled = big and self.config.session.cli.progress_bars
+        with progress.get_resolve_callback(enabled, f"Obtaining album info: {self.meta.album}"):
+            await rip_tracks(
+                self.tracks,
+                RESOLVE_CONCURRENCY,
+                self.config.session.metadata.prefer_explicit,
+            )
 
     async def postprocess(self):
-        progress.remove_title(self.meta.album)
+        progress.remove_title(id(self), self.config.session.cli.progress_bars)
 
 
 @dataclass(slots=True)
