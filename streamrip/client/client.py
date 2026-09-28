@@ -12,8 +12,12 @@ from .downloadable import Downloadable
 
 logger = logging.getLogger("streamrip")
 
+# Firefox 83 (2020) stood out as ancient next to a real client's user agent.
+# Chrome on Windows is the most common desktop UA on the web, so it blends in
+# best; bump the version number every so often to keep it current.
 DEFAULT_USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:83.0) Gecko/20100101 Firefox/83.0"
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36"
 )
 
 # Fail a stalled connection after 30s of silence, not aiohttp's default 5 minutes.
