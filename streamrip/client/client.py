@@ -16,6 +16,9 @@ DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:83.0) Gecko/20100101 Firefox/83.0"
 )
 
+# Fail a stalled connection after 30s of silence, not aiohttp's default 5 minutes.
+REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=None, sock_connect=15, sock_read=30)
+
 
 class Client(ABC):
     source: str
@@ -67,5 +70,6 @@ class Client(ABC):
         return aiohttp.ClientSession(
             headers={"User-Agent": DEFAULT_USER_AGENT} | headers,
             connector=connector,
+            timeout=REQUEST_TIMEOUT,
             trust_env=True,
         )
