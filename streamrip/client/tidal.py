@@ -110,7 +110,10 @@ def _dedup_duplicate_albums(albums: list[dict]) -> list[dict]:
         groups.setdefault(key, []).append(album)
 
     def best(album: dict) -> tuple[bool, int]:
-        return (bool(album.get("explicit")), tidal_quality_id(album.get("audioQuality")))
+        return (
+            bool(album.get("explicit")),
+            tidal_quality_id(album.get("audioQuality")),
+        )
 
     return [max(group, key=best) for group in groups.values()]
 
@@ -419,7 +422,9 @@ class TidalClient(Client):
                 # separate problem worth a second, scarier-looking warning.
                 logger.debug(f"Track {track_id}: still rate limited, using lossless")
             else:
-                logger.warning(f"Track {track_id}: hi-res request failed ({e}); using lossless")
+                logger.warning(
+                    f"Track {track_id}: hi-res request failed ({e}); using lossless"
+                )
         except Exception as e:
             logger.warning(
                 f"Track {track_id}: hi-res request failed ({e}); using lossless"

@@ -83,7 +83,9 @@ class Album(Media):
         if big:
             console.log(f"Resolving {len(self.tracks)} tracks: {self.meta.album}")
         enabled = big and self.config.session.cli.progress_bars
-        with progress.get_resolve_callback(enabled, f"Obtaining album info: {self.meta.album}"):
+        with progress.get_resolve_callback(
+            enabled, f"Obtaining album info: {self.meta.album}"
+        ):
             await rip_tracks(
                 self.tracks,
                 RESOLVE_CONCURRENCY,
