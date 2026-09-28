@@ -9,7 +9,7 @@ import shutil
 import subprocess
 import uuid
 from tempfile import gettempdir
-from typing import Final, Optional
+from typing import Final
 
 from .exceptions import ConversionError
 from .utils.ffmpeg_utils import find_ffmpeg
@@ -33,27 +33,15 @@ class Converter:
     def __init__(
         self,
         filename: str,
-        ffmpeg_arg: Optional[str] = None,
-        sampling_rate: Optional[int] = None,
-        bit_depth: Optional[int] = None,
-        copy_art: bool = True,
+        ffmpeg_arg: str | None = None,
+        sampling_rate: int | None = None,
+        bit_depth: int | None = None,
         remove_source: bool = False,
-        show_progress: bool = False,
     ):
-        """Create a Converter object.
+        """Convert `filename` to this codec, next to the original.
 
-        :param filename:
-        :type filename: str
-        :param ffmpeg_arg: The codec ffmpeg argument (defaults to an "optimal value")
-        :type ffmpeg_arg: Optional[str]
-        :param sampling_rate: This value is ignored if a lossy codec is detected
-        :type sampling_rate: Optional[int]
-        :param bit_depth: This value is ignored if a lossy codec is detected
-        :type bit_depth: Optional[int]
-        :param copy_art: Embed the cover art (if found) into the encoded file
-        :type copy_art: bool
-        :param remove_source: Remove the source file after conversion.
-        :type remove_source: bool
+        `ffmpeg_arg` sets a lossy codec's quality (see get_quality_arg);
+        `sampling_rate` and `bit_depth` cap a lossless conversion's.
         """
         self.ffmpeg_path = find_ffmpeg()
         if self.ffmpeg_path is None:
@@ -74,56 +62,37 @@ class Converter:
         self.remove_source = remove_source
         self.sampling_rate = sampling_rate
         self.bit_depth = bit_depth
-        self.copy_art = copy_art
-        self.show_progress = show_progress
+        self.ffmpeg_arg = self.default_ffmpeg_arg if ffmpeg_arg is None else ffmpeg_arg
 
-        if ffmpeg_arg is None:
-            logger.debug("No arguments provided. Codec defaults will be used")
-            self.ffmpeg_arg = self.default_ffmpeg_arg
-        else:
-            self.ffmpeg_arg = ffmpeg_arg
-            self._is_command_valid()
-
-        logger.debug("FFmpeg codec extra argument: %s", self.ffmpeg_arg)
-
-    async def convert(self, custom_fn: Optional[str] = None):
-        """Convert the file.
-
-        :param custom_fn: Custom output filename (defaults to the original
-        name with a replaced container)
-        :type custom_fn: Optional[str]
-        """
-        if custom_fn:
-            self.final_fn = custom_fn
-
+    async def convert(self):
         # Read cover art from the source before FFmpeg runs and before any
         # potential source deletion, so it's available for post-conversion
         # embedding even when remove_source=True.
         cover_data: tuple[bytes, str] | None = None
-        if self.copy_art and not type(self)._ffmpeg_supports_art:
+        if not self._ffmpeg_supports_art:
             cover_data = await asyncio.to_thread(self._read_source_cover)
 
-        self.command = self._gen_command()
-        logger.debug("Generated conversion command: %s", self.command)
-
+        command = self._gen_command()
+        logger.debug("Converting: %s", command)
         process = await asyncio.create_subprocess_exec(
-            *self.command,
+            *command,
             stdin=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.PIPE,
         )
-        out, err = await process.communicate()
-        if process.returncode == 0 and os.path.isfile(self.tempfile):
-            if self.remove_source:
-                os.remove(self.filename)
-                logger.debug("Source removed: %s", self.filename)
+        _, err = await process.communicate()
+        if process.returncode != 0 or not os.path.isfile(self.tempfile):
+            if os.path.exists(self.tempfile):
+                os.remove(self.tempfile)
+            raise ConversionError(
+                f"ffmpeg failed (exit {process.returncode}): "
+                f"{err.decode(errors='replace')[-300:]}"
+            )
 
-            shutil.move(self.tempfile, self.final_fn)
-            logger.debug("Moved: %s -> %s", self.tempfile, self.final_fn)
-
-            if cover_data is not None:
-                await asyncio.to_thread(self._embed_cover_art, *cover_data)
-        else:
-            raise ConversionError(f"FFmpeg output:\n{out, err}")
+        if self.remove_source:
+            os.remove(self.filename)
+        shutil.move(self.tempfile, self.final_fn)
+        if cover_data is not None:
+            await asyncio.to_thread(self._embed_cover_art, *cover_data)
 
     def _read_source_cover(self) -> tuple[bytes, str] | None:
         """Read cover art from the source file. Returns (data, mime) or None."""
@@ -174,79 +143,31 @@ class Converter:
         except Exception as e:
             logger.warning("Could not embed cover art into %s: %s", self.final_fn, e)
 
-    def _gen_command(self):
-        command = [
-            self.ffmpeg_path,
-            "-i",
-            self.filename,
-        ]
+    def _gen_command(self) -> list[str]:
+        # Only errors: they're captured for ConversionError, and anything more
+        # ffmpeg prints would garble the progress bars.
+        command = [self.ffmpeg_path, "-i", self.filename, "-loglevel", "error"]
+        command += ["-c:a", self.get_codec_lib()]
+        # The cover art is a video stream, copied where the container takes one.
+        command += ["-c:v", "copy"] if self._ffmpeg_supports_art else ["-vn"]
+        command += self.ffmpeg_arg.split()
 
-        if logger.getEffectiveLevel() != logging.DEBUG:
-            command.extend(("-loglevel", "panic"))
+        aformat = []
+        if self.lossless and self.sampling_rate is not None:
+            rates = (str(r) for r in sorted(SAMPLING_RATES) if r <= self.sampling_rate)
+            aformat.append(f"sample_rates={'|'.join(rates)}")
+        if self.lossless and self.bit_depth is not None:
+            if self.bit_depth not in (16, 24, 32):
+                raise ValueError("Bit depth must be 16, 24, or 32")
+            formats = ["s16p", "s16"] + (["s32p", "s32"] if self.bit_depth > 16 else [])
+            aformat.append(f"sample_fmts={'|'.join(formats)}")
+        if aformat:
+            command += ["-af", f"aformat={':'.join(aformat)}"]
 
-        command.extend(("-c:a", self.get_codec_lib()))
+        return [*command, "-y", self.tempfile]
 
-        if self.show_progress:
-            command.append("-stats")
-
-        if self.copy_art and type(self)._ffmpeg_supports_art:
-            command.extend(["-c:v", "copy"])
-        elif not type(self)._ffmpeg_supports_art:
-            command.append("-vn")
-
-        if self.ffmpeg_arg:
-            command.extend(self.ffmpeg_arg.split())
-
-        if self.lossless:
-            aformat = []
-
-            if isinstance(self.sampling_rate, int):
-                sample_rates = "|".join(
-                    str(rate) for rate in SAMPLING_RATES if rate <= self.sampling_rate
-                )
-                aformat.append(f"sample_rates={sample_rates}")
-            elif self.sampling_rate is not None:
-                raise TypeError(
-                    f"Sampling rate must be int, not {type(self.sampling_rate)}"
-                )
-
-            if isinstance(self.bit_depth, int):
-                bit_depths = ["s16p", "s16"]
-
-                if self.bit_depth in (24, 32):
-                    bit_depths.extend(["s32p", "s32"])
-                elif self.bit_depth != 16:
-                    raise ValueError("Bit depth must be 16, 24, or 32")
-
-                sample_fmts = "|".join(bit_depths)
-                aformat.append(f"sample_fmts={sample_fmts}")
-            elif self.bit_depth is not None:
-                raise TypeError(f"Bit depth must be int, not {type(self.bit_depth)}")
-
-            if aformat:
-                aformat_params = ":".join(aformat)
-                command.extend(["-af", f"aformat={aformat_params}"])
-
-        # automatically overwrite
-        command.extend(["-y", self.tempfile])
-
-        logger.debug(command)
-
-        return command
-
-    @classmethod
-    def get_codec_lib(cls) -> str:
-        return cls.codec_lib
-
-    def _is_command_valid(self):
-        # TODO: add error handling for lossy codecs
-        if self.ffmpeg_arg is not None and self.lossless:
-            logger.debug(
-                "Lossless codecs don't support extra arguments; "
-                "the extra argument will be ignored",
-            )
-            self.ffmpeg_arg = self.default_ffmpeg_arg
-            return
+    def get_codec_lib(self) -> str:
+        return self.codec_lib
 
     @classmethod
     def get_quality_arg(cls, _: int) -> str:
@@ -364,8 +285,7 @@ class AAC(Converter):
     container = "m4a"
     default_ffmpeg_arg = "-b:a 256k"
 
-    @classmethod
-    def get_codec_lib(cls) -> str:
+    def get_codec_lib(self) -> str:
         return "libfdk_aac" if _ffmpeg_has_encoder("libfdk_aac") else "aac"
 
     @classmethod
@@ -385,9 +305,6 @@ class AIFF(Converter):
         # Keep 16-bit sources 16-bit instead of padding them to 24.
         if self.bit_depth == 16:
             self.codec_lib = "pcm_s16be"
-
-    def get_codec_lib(self) -> str:  # type: ignore[override]
-        return self.codec_lib
 
 
 @functools.cache

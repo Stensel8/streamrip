@@ -274,6 +274,5 @@ def parse_url(url: str) -> URL | None:
         SoundcloudURL.from_str(url),
         DeezerDynamicURL.from_str(url),
         DeezerFavoriteURL.from_str(url),
-        # TODO: the rest of the url types
     ]
     return next((u for u in parsed_urls if u is not None), None)

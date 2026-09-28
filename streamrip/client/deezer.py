@@ -249,7 +249,6 @@ class DeezerClient(Client):
         return artist
 
     async def search(self, media_type: str, query: str, limit: int = 200) -> list[dict]:
-        # TODO: use limit parameter
         if media_type == "featured":
             try:
                 if query:
@@ -257,7 +256,7 @@ class DeezerClient(Client):
                 else:
                     search_function = self.client.api.get_editorial_releases
             except AttributeError:
-                raise Exception(f'Invalid editorical selection "{query}"')
+                raise Exception(f'Invalid editorial selection "{query}"')
         else:
             try:
                 search_function = getattr(self.client.api, f"search_{media_type}")

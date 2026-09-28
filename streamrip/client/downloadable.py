@@ -502,8 +502,7 @@ class SoundcloudDownloadable(Downloadable):
             self.session, self.url, "flac", source="soundcloud"
         )
         await downloader.download(path, callback)
-        engine = converter.FLAC(path)
-        await engine.convert(path)
+        await converter.FLAC(path).convert()
 
     async def _download_mp3(self, path: str, callback):
         # TODO: make progress bar reflect bytes

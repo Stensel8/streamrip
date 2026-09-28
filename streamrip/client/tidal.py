@@ -368,7 +368,7 @@ class TidalClient(Client):
         :param token: access token
         :param user_id: To verify that the user is correct
         """
-        headers = {"authorization": f"Bearer {token}"}  # temporary
+        headers = {"authorization": f"Bearer {token}"}
         async with self.session.get(
             "https://api.tidal.com/v1/sessions",
             headers=headers,

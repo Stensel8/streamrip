@@ -124,7 +124,8 @@ upstream issues and pull requests.
 - Up to four attempts with backoff; retries resume the partial file
   ([#951](https://github.com/nathom/streamrip/issues/951), [#1022](https://github.com/nathom/streamrip/issues/1022), [PR #1009](https://github.com/nathom/streamrip/pull/1009)). Downloads run in a worker thread so they no
   longer block each other ([PR #982](https://github.com/nathom/streamrip/pull/982)).
-- A failed conversion keeps the original and still records the download
+- A failed conversion keeps the original, says why (ffmpeg's own error), leaves
+  no temp file behind and still records the download
   ([#1010](https://github.com/nathom/streamrip/issues/1010)); AAC falls back to ffmpeg's own encoder ([PR #990](https://github.com/nathom/streamrip/pull/990)); lossy
   conversions honour `lossy_bitrate` ([#823](https://github.com/nathom/streamrip/issues/823), [PR #960](https://github.com/nathom/streamrip/pull/960)); OGG/Opus
   keep cover art ([PR #992](https://github.com/nathom/streamrip/pull/992)); new AIFF target ([PR #1006](https://github.com/nathom/streamrip/pull/1006)); ffmpeg can no longer

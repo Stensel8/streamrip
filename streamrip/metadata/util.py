@@ -58,14 +58,7 @@ def get_quality_id(
     bit_depth: Optional[int],
     sampling_rate: Optional[int | float],
 ) -> int:
-    """Get the universal quality id from bit depth and sampling rate.
-
-    :param bit_depth:
-    :type bit_depth: Optional[int]
-    :param sampling_rate: In kHz
-    :type sampling_rate: Optional[int]
-    """
-    # XXX: Should `0` quality be supported?
+    """streamrip's quality id (1-4) for a bit depth and a sampling rate in kHz."""
     if bit_depth is None or sampling_rate is None:  # is lossy
         return 1
 
