@@ -10,7 +10,8 @@ A scriptable music downloader for Qobuz, Tidal, Deezer and SoundCloud.
 > A fork of [nathom/streamrip](https://github.com/nathom/streamrip) that works
 > again: Python 3.14+, with most open upstream issues and pull requests worked
 > through (see [CHANGELOG.md](CHANGELOG.md)). Streaming services change their
-> APIs without notice, so it needs upkeep to keep working.
+> APIs without notice, so it needs upkeep: it works now, with no promise that
+> it stays maintained.
 
 ![downloading an album](https://github.com/Stensel8/streamrip/blob/dev/demo/download_album.png?raw=true)
 
@@ -109,8 +110,9 @@ should pass before you open a pull request to `dev`.
 streamrip was written by [nathom](https://github.com/nathom) (consider
 [sponsoring nathom](https://github.com/sponsors/nathom)); this fork builds on
 everyone who sent fixes upstream, credited in [CHANGELOG.md](CHANGELOG.md).
-Thanks to Vitiko98, Sorrow446 and DashLt, and to the projects streamrip grew
-from: [qobuz-dl](https://github.com/vitiko98/qobuz-dl),
+Thanks to Vitiko98, Sorrow446 and DashLt for their contributions. streamrip was
+inspired by [rip](https://github.com/nathom/streamrip),
+[qobuz-dl](https://github.com/vitiko98/qobuz-dl),
 [Qo-DL Reborn](https://github.com/badumbass/Qo-DL-Reborn),
 [Tidal-Media-Downloader](https://github.com/yaronzz/Tidal-Media-Downloader)
 and [scdl](https://github.com/flyingrub/scdl).
