@@ -76,25 +76,30 @@ class Artist(Media):
             await asyncio.gather(*batch)
 
     async def _download_async(self, filters: QobuzDiscographyFilterConfig):
-        async def _rip(item: PendingAlbum):
-            album = await item.resolve()
-            # Skip if album doesn't pass the filter
-            if (
-                album is None
-                or (filters.extras and not self._extras(album))
-                or (filters.features and not self._features(album))
-                or (filters.non_studio_albums and not self._non_studio_albums(album))
-                or (filters.non_remaster and not self._non_remaster(album))
-            ):
-                return
-            await album.rip()
+        # Sliding window, not batches: the next album starts as soon as one finishes.
+        window = asyncio.Semaphore(RESOLVE_CHUNK_SIZE)
 
-        batches = self.batch(
-            [_rip(album) for album in self.albums],
-            RESOLVE_CHUNK_SIZE,
-        )
-        for batch in batches:
-            await asyncio.gather(*batch)
+        async def _rip(item: PendingAlbum):
+            async with window:
+                try:
+                    album = await item.resolve()
+                    # Skip if album doesn't pass the filter
+                    if (
+                        album is None
+                        or (filters.extras and not self._extras(album))
+                        or (filters.features and not self._features(album))
+                        or (
+                            filters.non_studio_albums
+                            and not self._non_studio_albums(album)
+                        )
+                        or (filters.non_remaster and not self._non_remaster(album))
+                    ):
+                        return
+                    await album.rip()
+                except Exception as e:
+                    logger.error(f"Error downloading album: {type(e).__name__}: {e}")
+
+        await asyncio.gather(*[_rip(album) for album in self.albums])
 
     def _apply_filters(
         self, albums: list[Album], filt: QobuzDiscographyFilterConfig
