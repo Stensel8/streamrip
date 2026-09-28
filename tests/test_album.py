@@ -174,7 +174,28 @@ async def test_booklets_follow_the_config(monkeypatch, tmp_path, enabled):
     pending.config.session.qobuz.download_booklets = enabled
     download = AsyncMock()
     monkeypatch.setattr(album_module, "download_booklets", download)
+    monkeypatch.setattr(album_module, "progress", MagicMock())
 
-    await pending.resolve()
+    album = await pending.resolve()
+    # Resolving alone downloads nothing: an album an artist or label filter
+    # drops afterwards must not leave its booklets behind.
+    assert download.await_count == 0
 
+    await album.preprocess()
     assert download.await_count == (1 if enabled else 0)
+
+
+@pytest.mark.asyncio
+async def test_finished_album_gets_no_booklets(monkeypatch, tmp_path):
+    pending, _ = _pending_album(monkeypatch, tmp_path, ["1"], downloaded={"1"})
+    album_module.AlbumMetadata.from_album_resp(None, None).info.booklets = [
+        {"description": "Booklet", "url": "https://q/1.pdf"}
+    ]
+    pending.config.session.qobuz.download_booklets = True
+    download = AsyncMock()
+    monkeypatch.setattr(album_module, "download_booklets", download)
+    monkeypatch.setattr(album_module, "progress", MagicMock())
+
+    await (await pending.resolve()).preprocess()
+
+    download.assert_not_awaited()

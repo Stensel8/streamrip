@@ -215,7 +215,7 @@ upstream issues and pull requests.
   is `max_connections = 1`; `[qobuz_filters]` is `[artist_filters]`, since it
   applies to every source, and its `non_studio_albums` (extras plus
   various-artists compilations) is part of `extras`.
-- The config version is 2.3.2: an existing config is updated automatically on
+- The config version is 2.3.3: an existing config is updated automatically on
   the next run, keeping your settings, including those of merged options.
 - `[cli] max_search_results` is used (it was ignored): it's the default for
   `search --num-results`, in the interactive menu too.

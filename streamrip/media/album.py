@@ -49,9 +49,22 @@ class Album(Media):
     # folder where the tracks will be downloaded
     folder: str
     db: Database
+    client: Client | None = None
 
     async def preprocess(self):
         progress.add_title(self.meta.album)
+        # Here, not when the album is resolved: artists and labels resolve every
+        # album before their filters drop some, and those get no booklets. Only
+        # Qobuz albums have any; a finished album has no folder to put them in.
+        if (
+            self.tracks
+            and self.client is not None
+            and self.meta.info.booklets
+            and self.config.session.qobuz.download_booklets
+        ):
+            await download_booklets(
+                self.client.session, self.meta.info.booklets, self.folder
+            )
 
     async def download(self):
         await rip_tracks(
@@ -116,9 +129,6 @@ class PendingAlbum(Pending):
             self.config.session.artwork,
             for_playlist=False,
         )
-        # Only Qobuz albums have booklets.
-        if meta.info.booklets and self.config.session.qobuz.download_booklets:
-            await download_booklets(self.client.session, meta.info.booklets, folder)
         pending_tracks = [
             PendingTrack(
                 track_id,
@@ -132,4 +142,4 @@ class PendingAlbum(Pending):
             for track_id in todo
         ]
         logger.debug("Pending tracks: %s", pending_tracks)
-        return Album(meta, pending_tracks, self.config, folder, self.db)
+        return Album(meta, pending_tracks, self.config, folder, self.db, self.client)
