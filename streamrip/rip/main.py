@@ -214,21 +214,30 @@ class Main:
                 f"Download completed with {failed_items} failed items out of {total_items} total items."
             )
 
-    async def search_interactive(
-        self, source: str, media_type: str, query: str, limit: int = 100
-    ):
+    async def _search(
+        self, source: str, media_type: str, query: str, limit: int
+    ) -> SearchResults | None:
+        """Search results, or None (with a message) if there are none."""
         client = await self.get_logged_in_client(source)
-
         with console.status(f"[bold]Searching {source}", spinner="dots"):
             try:
                 pages = await client.search(media_type, query, limit=limit)
             except APIError as e:
                 console.print(f"[red]Search failed: {e}")
-                return
-            if len(pages) == 0:
-                console.print(f"[red]No search results found for query {query}")
-                return
-            search_results = SearchResults.from_pages(source, media_type, pages)
+                return None
+        # A page can come back with no items in it, so count results, not pages.
+        search_results = SearchResults.from_pages(source, media_type, pages)
+        if not search_results.results:
+            console.print(f"[red]No search results found for query {query}")
+            return None
+        return search_results
+
+    async def search_interactive(
+        self, source: str, media_type: str, query: str, limit: int = 100
+    ):
+        search_results = await self._search(source, media_type, query, limit)
+        if search_results is None:
+            return
 
         if platform.system() == "Windows":  # simple term menu not supported for windows
             from pick import pick
@@ -273,39 +282,18 @@ class Main:
                 )
 
     async def search_take_first(self, source: str, media_type: str, query: str):
-        client = await self.get_logged_in_client(source)
-        with console.status(f"[bold]Searching {source}", spinner="dots"):
-            try:
-                pages = await client.search(media_type, query, limit=1)
-            except APIError as e:
-                console.print(f"[red]Search failed: {e}")
-                return
-
-        if len(pages) == 0:
-            console.print(f"[red]No search results found for query {query}")
-            return
-
-        search_results = SearchResults.from_pages(source, media_type, pages)
-        assert len(search_results.results) > 0
-        first = search_results.results[0]
-        await self.add_by_id(source, first.media_type(), first.id)
+        search_results = await self._search(source, media_type, query, 1)
+        if search_results is not None:
+            first = search_results.results[0]
+            await self.add_by_id(source, first.media_type(), first.id)
 
     async def search_output_file(
         self, source: str, media_type: str, query: str, filepath: str, limit: int
     ):
-        client = await self.get_logged_in_client(source)
-        with console.status(f"[bold]Searching {source}", spinner="dots"):
-            try:
-                pages = await client.search(media_type, query, limit=limit)
-            except APIError as e:
-                console.print(f"[red]Search failed: {e}")
-                return
-
-        if len(pages) == 0:
-            console.print(f"[red]No search results found for query {query}")
+        search_results = await self._search(source, media_type, query, limit)
+        if search_results is None:
             return
 
-        search_results = SearchResults.from_pages(source, media_type, pages)
         file_contents = json.dumps(search_results.as_list(source), indent=4)
         async with aiofiles.open(filepath, "w") as f:
             await f.write(file_contents)

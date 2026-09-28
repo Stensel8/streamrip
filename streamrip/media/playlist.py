@@ -3,7 +3,7 @@ import html
 import logging
 import os
 import re
-from contextlib import ExitStack
+from contextlib import nullcontext
 from dataclasses import dataclass
 
 import aiohttp
@@ -14,7 +14,7 @@ from ..client import Client
 from ..config import Config
 from ..console import console
 from ..db import Database
-from ..exceptions import NonStreamableError, TrackDownloadFailedError
+from ..exceptions import NonStreamableError
 from ..filepath_utils import clean_filename, clean_filepath
 from ..metadata import (
     AlbumMetadata,
@@ -25,10 +25,15 @@ from ..metadata import (
 )
 from ..utils.ssl_utils import get_aiohttp_connector_kwargs
 from .artwork import download_artwork
-from .media import Media, Pending, filter_prefer_explicit, resolve_or_none
+from .media import Media, Pending, rip_tracks
 from .track import Track
 
 logger = logging.getLogger("streamrip")
+
+# Tracks of a playlist resolved at once. Playlist tracks come from different
+# albums, so each resolve also fetches a cover; more than this only delays
+# the first download.
+RESOLVE_CONCURRENCY = 20
 
 
 @dataclass(slots=True)
@@ -45,25 +50,30 @@ class PendingPlaylistTrack(Pending):
         if self.db.downloaded(self.id):
             logger.info(f"Track ({self.id}) already logged in database. Skipping.")
             return None
+
+        source = self.client.source
+        # As in PendingTrack.resolve: record every failure, so a track that
+        # dies here is retryable by `streamrip repair` instead of vanishing.
         try:
             resp = await self.client.get_metadata(self.id, "track")
         except NonStreamableError as e:
             logger.error(f"Could not stream track {self.id}: {e}")
+            self.db.set_failed(source, "track", self.id)
             return None
 
-        album = AlbumMetadata.from_track_resp(resp, self.client.source)
-        if album is None:
-            logger.error(
-                f"Track ({self.id}) not available for stream on {self.client.source}",
-            )
-            self.db.set_failed(self.client.source, "track", self.id)
+        meta = None
+        try:
+            album = AlbumMetadata.from_track_resp(resp, source)
+            if album is not None:
+                meta = TrackMetadata.from_resp(album, source, resp)
+        except Exception as e:
+            logger.error(f"Error building track metadata for {self.id}: {e}")
+            self.db.set_failed(source, "track", self.id)
             return None
-        meta = TrackMetadata.from_resp(album, self.client.source, resp)
+
         if meta is None:
-            logger.error(
-                f"Track ({self.id}) not available for stream on {self.client.source}",
-            )
-            self.db.set_failed(self.client.source, "track", self.id)
+            logger.error(f"Track ({self.id}) not available for stream on {source}")
+            self.db.set_failed(source, "track", self.id)
             return None
 
         c = self.config.session.metadata
@@ -117,73 +127,11 @@ class Playlist(Media):
         progress.remove_title(self.name)
 
     async def download(self):
-        if self.config.session.metadata.prefer_explicit:
-            await self._resolve_then_download()
-            return
-
-        track_resolve_chunk_size = 20
-
-        async def _resolve_download(item: PendingPlaylistTrack):
-            try:
-                track = await item.resolve()
-                if track is None:
-                    return
-                await track.rip()
-            except TrackDownloadFailedError:
-                pass  # already logged and recorded by Track.download()
-            except Exception as e:
-                # Include the type: some exceptions have an empty message,
-                # which used to log as "Error downloading track: ''" (#938).
-                logger.error(f"Error downloading track: {type(e).__name__}: {e}")
-
-        batches = self.batch(
-            [_resolve_download(track) for track in self.tracks],
-            track_resolve_chunk_size,
+        await rip_tracks(
+            self.tracks,
+            RESOLVE_CONCURRENCY,
+            self.config.session.metadata.prefer_explicit,
         )
-
-        for batch in batches:
-            results = await asyncio.gather(*batch, return_exceptions=True)
-
-            for result in results:
-                if isinstance(result, Exception):
-                    logger.error(f"Batch processing error: {result}")
-
-    async def _resolve_then_download(self):
-        """Resolve every track before downloading any of them, so a clean
-        copy can be dropped in favor of an explicit one once both are known
-        (see [metadata] prefer_explicit).
-        """
-        track_resolve_chunk_size = 20
-        resolved = []
-        for chunk in self.batch(self.tracks, track_resolve_chunk_size):
-            resolved_or_none = await asyncio.gather(
-                *[resolve_or_none(t) for t in chunk]
-            )
-            resolved.extend(t for t in resolved_or_none if t is not None)
-
-        tracks = filter_prefer_explicit(resolved)
-
-        async def _download(track):
-            try:
-                await track.rip()
-            except TrackDownloadFailedError:
-                pass
-            except Exception as e:
-                logger.error(f"Error downloading track: {type(e).__name__}: {e}")
-
-        for chunk in self.batch(tracks, track_resolve_chunk_size):
-            results = await asyncio.gather(
-                *[_download(t) for t in chunk], return_exceptions=True
-            )
-            for result in results:
-                if isinstance(result, Exception):
-                    logger.error(f"Batch processing error: {result}")
-
-    @staticmethod
-    def batch(iterable, n=1):
-        total = len(iterable)
-        for ndx in range(0, total, n):
-            yield iterable[ndx : min(ndx + n, total)]
 
 
 @dataclass(slots=True)
@@ -256,29 +204,22 @@ class PendingLastfmPlaylist(Pending):
                 self.lastfm_url,
             )
         except Exception as e:
-            logger.error("Error occured while parsing last.fm page: %s", e)
+            logger.error("Error occurred while parsing last.fm page: %s", e)
             return None
 
-        requests = []
-
         s = self.Status(0, 0, len(titles_artists))
-        if self.config.session.cli.progress_bars:
-            with console.status(s.text(), spinner="moon") as status:
-
-                def callback():
-                    status.update(s.text())
-
-                for title, artist in titles_artists:
-                    requests.append(self._make_query(f"{title} {artist}", s, callback))
-                results: list[tuple[str | None, bool]] = await asyncio.gather(*requests)
-        else:
+        show = self.config.session.cli.progress_bars
+        with (
+            console.status(s.text(), spinner="moon") if show else nullcontext() as spin
+        ):
 
             def callback():
-                pass
+                if spin is not None:
+                    spin.update(s.text())
 
-            for title, artist in titles_artists:
-                requests.append(self._make_query(f"{title} {artist}", s, callback))
-            results: list[tuple[str | None, bool]] = await asyncio.gather(*requests)
+            results = await asyncio.gather(
+                *(self._make_query(f"{t} {a}", s, callback) for t, a in titles_artists)
+            )
 
         parent = self.config.session.downloads.folder
         folder = os.path.join(parent, clean_filepath(clean_filename(playlist_title)))
@@ -310,58 +251,36 @@ class PendingLastfmPlaylist(Pending):
         return Playlist(playlist_title, self.config, self.client, pending_tracks)
 
     async def _make_query(
-        self,
-        query: str,
-        search_status: Status,
-        callback,
+        self, query: str, status: Status, callback
     ) -> tuple[str | None, bool]:
-        """Search for a track with the main source, and use fallback source
-        if that fails.
+        """Search the main source, then the fallback, for one track.
 
-        Args:
-        ----
-            query (str): Query to search
-            s (Status):
-            callback: function to call after each query completes
-
-        Returns: A 2-tuple, where the first element contains the ID if it was found,
-        and the second element is True if the fallback source was used.
+        Returns the first hit's ID (None if nothing matched) and whether it
+        came from the fallback source. A search that errors counts as no hit,
+        so one bad query doesn't sink the whole playlist.
         """
-        with ExitStack() as stack:
-            # ensure `callback` is always called
-            stack.callback(callback)
-            pages = await self.client.search("track", query, limit=1)
-            if len(pages) > 0:
-                logger.debug(f"Found result for {query} on {self.client.source}")
-                search_status.found += 1
-                return (
-                    SearchResults.from_pages(self.client.source, "track", pages)
-                    .results[0]
-                    .id
-                ), False
+        hit: tuple[str | None, bool] = (None, False)
+        for client, is_fallback in ((self.client, False), (self.fallback_client, True)):
+            if client is None:
+                continue
+            try:
+                pages = await client.search("track", query, limit=1)
+                found = SearchResults.from_pages(client.source, "track", pages)
+            except Exception as e:
+                logger.warning(f"Searching {client.source} for {query!r} failed: {e}")
+                continue
+            if found.results:
+                logger.debug(f"Found result for {query} on {client.source}")
+                hit = (found.results[0].id, is_fallback)
+                break
 
-            if self.fallback_client is None:
-                logger.debug(f"No result found for {query} on {self.client.source}")
-                search_status.failed += 1
-                return None, False
-
-            pages = await self.fallback_client.search("track", query, limit=1)
-            if len(pages) > 0:
-                logger.debug(f"Found result for {query} on {self.client.source}")
-                search_status.found += 1
-                return (
-                    SearchResults.from_pages(
-                        self.fallback_client.source,
-                        "track",
-                        pages,
-                    )
-                    .results[0]
-                    .id
-                ), True
-
-            logger.debug(f"No result found for {query} on {self.client.source}")
-            search_status.failed += 1
-        return None, True
+        if hit[0] is None:
+            logger.debug(f"No result found for {query}")
+            status.failed += 1
+        else:
+            status.found += 1
+        callback()
+        return hit
 
     async def _parse_lastfm_playlist(
         self,
