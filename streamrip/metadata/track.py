@@ -70,8 +70,7 @@ class TrackMetadata:
         track_id = str(resp["id"])
         bit_depth = typed(resp.get("maximum_bit_depth"), int | None)
         sampling_rate = typed(resp.get("maximum_sampling_rate"), int | float | None)
-        # Is the info included?
-        explicit = False
+        explicit = typed(resp.get("parental_warning", False), bool)
 
         info = TrackInfo(
             id=track_id,

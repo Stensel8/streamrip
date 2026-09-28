@@ -12,7 +12,7 @@ from ..filepath_utils import clean_filepath
 from ..metadata import AlbumMetadata
 from ..metadata.util import get_album_track_ids
 from .artwork import download_artwork
-from .media import Media, Pending
+from .media import Media, Pending, filter_prefer_explicit
 from .track import PendingTrack
 
 logger = logging.getLogger("streamrip")
@@ -31,6 +31,10 @@ class Album(Media):
         progress.add_title(self.meta.album)
 
     async def download(self):
+        if self.config.session.metadata.prefer_explicit:
+            await self._resolve_then_download()
+            return
+
         async def _resolve_and_download(pending: Pending):
             try:
                 track = await pending.resolve()
@@ -48,6 +52,30 @@ class Album(Media):
             *[_resolve_and_download(p) for p in self.tracks], return_exceptions=True
         )
 
+        for result in results:
+            if isinstance(result, Exception):
+                logger.error(f"Album track processing error: {result}")
+
+    async def _resolve_then_download(self):
+        """Resolve every track before downloading any of them, so a clean
+        copy can be dropped in favor of an explicit one once both are known
+        (see [metadata] prefer_explicit). Costs one extra API call per track
+        compared to the default resolve-and-download-immediately path.
+        """
+        resolved = await asyncio.gather(*[p.resolve() for p in self.tracks])
+        tracks = filter_prefer_explicit([t for t in resolved if t is not None])
+
+        async def _download(track):
+            try:
+                await track.rip()
+            except TrackDownloadFailedError:
+                pass
+            except Exception as e:
+                logger.error(f"Error downloading track: {type(e).__name__}: {e}")
+
+        results = await asyncio.gather(
+            *[_download(t) for t in tracks], return_exceptions=True
+        )
         for result in results:
             if isinstance(result, Exception):
                 logger.error(f"Album track processing error: {result}")
