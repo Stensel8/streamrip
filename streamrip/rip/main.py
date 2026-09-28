@@ -23,6 +23,7 @@ from ..media import (
     PendingSingle,
     remove_artwork_tempdirs,
 )
+from ..media.media import resolve_or_none
 from ..metadata import SearchResults
 from ..progress import clear_progress
 from .parse_url import parse_url
@@ -187,10 +188,8 @@ class Main:
     async def resolve(self):
         """Resolve all currently pending items."""
         with console.status("Resolving URLs...", spinner="dots"):
-            coros = [p.resolve() for p in self.pending]
-            new_media: list[Media] = [
-                m for m in await asyncio.gather(*coros) if m is not None
-            ]
+            resolved = await asyncio.gather(*map(resolve_or_none, self.pending))
+            new_media: list[Media] = [m for m in resolved if m is not None]
 
         self.media.extend(new_media)
         self.pending.clear()
@@ -215,12 +214,14 @@ class Main:
                 f"Download completed with {failed_items} failed items out of {total_items} total items."
             )
 
-    async def search_interactive(self, source: str, media_type: str, query: str):
+    async def search_interactive(
+        self, source: str, media_type: str, query: str, limit: int = 100
+    ):
         client = await self.get_logged_in_client(source)
 
         with console.status(f"[bold]Searching {source}", spinner="dots"):
             try:
-                pages = await client.search(media_type, query, limit=100)
+                pages = await client.search(media_type, query, limit=limit)
             except APIError as e:
                 console.print(f"[red]Search failed: {e}")
                 return

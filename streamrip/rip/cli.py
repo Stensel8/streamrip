@@ -282,12 +282,14 @@ async def file(ctx, path):
                         [(i["source"], i["media_type"], i["id"]) for i in items]
                     )
                 else:
-                    s = set(items)
-                    if len(s) < len(items):
+                    # dict, not set: keeps the file's order.
+                    unique = list(dict.fromkeys(items))
+                    if len(unique) < len(items):
                         console.print(
-                            f"Found [orange]{len(items) - len(s)}[/orange] repeated URLs!"
+                            f"Found [yellow]{len(items) - len(unique)}[/yellow] "
+                            "repeated URLs!"
                         )
-                        items = list(s)
+                        items = unique
                     console.print(
                         f"Detected list of urls. Loading [yellow]{len(items)}[/yellow] items"
                     )
@@ -358,45 +360,36 @@ def database():
 
 
 @database.command("browse")
-@click.argument("table")
+@click.argument(
+    "table", type=click.Choice(["downloads", "failed"], case_sensitive=False)
+)
 @click.pass_context
 def database_browse(ctx, table):
     """Browse the contents of a table.
 
     Available tables:
 
-        * Downloads
+        * downloads
 
-        * Failed
+        * failed
     """
     from rich.table import Table
 
-    cfg: Config = ctx.obj["config"]
+    cfg: Config | None = ctx.obj["config"]
+    if cfg is None:
+        return
 
     if table.lower() == "downloads":
-        downloads = db.Downloads(cfg.session.database.downloads_path)
-        t = Table(title="Downloads database")
-        t.add_column("Row")
-        t.add_column("ID")
-        for i, row in enumerate(downloads.all()):
-            t.add_row(f"{i:02}", *row)
-        console.print(t)
-
-    elif table.lower() == "failed":
-        failed = db.Failed(cfg.session.database.failed_downloads_path)
-        t = Table(title="Failed downloads database")
-        t.add_column("Source")
-        t.add_column("Media Type")
-        t.add_column("ID")
-        for i, row in enumerate(failed.all()):
-            t.add_row(f"{i:02}", *row)
-        console.print(t)
-
+        t = Table("Row", "ID", title="Downloads database")
+        rows = db.Downloads(cfg.session.database.downloads_path).all()
     else:
-        console.print(
-            f"[red]Invalid database[/red] [bold]{table}[/bold]. [red]Choose[/red] [bold]downloads "
-            "[red]or[/red] failed[/bold].",
+        t = Table(
+            "Row", "Source", "Media Type", "ID", title="Failed downloads database"
         )
+        rows = db.Failed(cfg.session.database.failed_downloads_path).all()
+    for i, row in enumerate(rows):
+        t.add_row(f"{i:02}", *row)
+    console.print(t)
 
 
 @database.command("clear")
@@ -599,8 +592,8 @@ async def repair(ctx, yes, flat):
 @click.option(
     "-n",
     "--num-results",
-    help="Maximum number of search results to show",
-    default=100,
+    help="Maximum number of search results to show "
+    "(default: [cli] max_search_results in the config)",
     type=click.IntRange(min=1),
 )
 @click.argument("source", required=True)
@@ -621,15 +614,16 @@ async def search(ctx, first, output_file, num_results, source, media_type, query
         console.print("Cannot choose --first and --output-file!")
         return
     with ctx.obj["config"] as cfg:
+        limit = num_results or cfg.session.cli.max_search_results
         async with Main(cfg) as main:
             if first:
                 await main.search_take_first(source, media_type, query)
             elif output_file:
                 await main.search_output_file(
-                    source, media_type, query, output_file, num_results
+                    source, media_type, query, output_file, limit
                 )
             else:
-                await main.search_interactive(source, media_type, query)
+                await main.search_interactive(source, media_type, query, limit)
             await main.resolve()
             await main.rip()
 

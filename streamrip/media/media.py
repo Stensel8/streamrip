@@ -40,7 +40,8 @@ async def resolve_or_none(pending: Pending) -> Media | None:
     try:
         return await pending.resolve()
     except Exception as e:
-        logger.error(f"Error resolving track: {type(e).__name__}: {e}")
+        item = getattr(pending, "id", "")
+        logger.error(f"Error resolving {item}: {type(e).__name__}: {e}")
         return None
 
 

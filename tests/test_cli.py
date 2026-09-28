@@ -116,3 +116,53 @@ def test_database_clear_rejects_an_unknown_table(tmp_path):
     cfg, downloads, _ = _seeded_databases(tmp_path)
     assert _clear(cfg, "everything", "-y").exit_code != 0
     assert len(downloads.all()) == 2
+
+
+def test_database_browse_failed_lines_up_with_its_headers(tmp_path):
+    cfg, _, _ = _seeded_databases(tmp_path)
+    result = CliRunner().invoke(
+        rip, ["--config-path", cfg, "database", "browse", "failed"]
+    )
+    assert result.exit_code == 0, result.output
+    lines = result.output.splitlines()
+    header = next(line for line in lines if "Source" in line)
+    row = next(line for line in lines if "tidal" in line)
+    cells = dict(
+        zip(
+            [c.strip() for c in header.split("┃")[1:-1]],
+            [c.strip() for c in row.split("│")[1:-1]],
+        )
+    )
+    assert cells == {"Row": "00", "Source": "tidal", "Media Type": "track", "ID": "3"}
+
+
+def test_file_keeps_url_order_when_dropping_repeats(tmp_path, monkeypatch):
+    added = []
+
+    class FakeMain:
+        def __init__(self, _config):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_):
+            pass
+
+        async def add_all(self, urls):
+            added.extend(urls)
+
+        async def resolve(self):
+            pass
+
+        async def rip(self):
+            pass
+
+    monkeypatch.setattr("streamrip.rip.cli.Main", FakeMain)
+    urls = tmp_path / "urls.txt"
+    urls.write_text("https://c\nhttps://a\nhttps://c\nhttps://b\n")
+    result = CliRunner().invoke(
+        rip, ["--config-path", str(tmp_path / "config.toml"), "file", str(urls)]
+    )
+    assert result.exit_code == 0, result.output
+    assert added == ["https://c", "https://a", "https://b"]
