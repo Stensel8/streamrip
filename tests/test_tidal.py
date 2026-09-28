@@ -65,11 +65,11 @@ def test_explicit_client_override_wins():
 
 
 @pytest.mark.asyncio
-async def test_token_from_other_client_requires_new_login():
+async def test_token_from_other_client_requires_new_login(monkeypatch):
     c = _client()
     c.config.access_token = "token"
     c.config.token_client_id = HIRES_CLIENT_ID
-    c.get_session = AsyncMock(return_value=MagicMock())
+    monkeypatch.setattr("streamrip.client.tidal.new_session", lambda **_: MagicMock())
     with pytest.raises(MissingCredentialsError):
         await c.login()
 

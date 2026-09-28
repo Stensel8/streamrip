@@ -10,14 +10,13 @@ import aiohttp
 from rich.text import Text
 
 from .. import progress
-from ..client import Client
+from ..client import Client, new_session
 from ..config import Config
 from ..console import console
 from ..db import Database
 from ..exceptions import NonStreamableError
 from ..filepath_utils import clean_filename
 from ..metadata import PlaylistMetadata, SearchResults
-from ..utils.ssl_utils import get_aiohttp_connector_kwargs
 from .artwork import download_artwork
 from .media import Media, Pending, rip_tracks
 from .track import Track, fetch_downloadable, fetch_track_meta
@@ -284,16 +283,10 @@ class PendingLastfmPlaylist(Pending):
             async with session.get(url, **kwargs) as resp:
                 return await resp.text("utf-8")
 
-        # Create new session so we're not bound by rate limit
-        verify_ssl = getattr(self.config.session.downloads, "verify_ssl", True)
-        connector_kwargs = get_aiohttp_connector_kwargs(verify_ssl=verify_ssl)
-        connector = aiohttp.TCPConnector(
-            **connector_kwargs, resolver=aiohttp.ThreadedResolver()
-        )
-
-        async with aiohttp.ClientSession(
-            connector=connector, trust_env=True
-        ) as session:
+        # A session of its own, so these requests don't count against the
+        # client's rate limit.
+        verify_ssl = self.config.session.downloads.verify_ssl
+        async with new_session(verify_ssl=verify_ssl) as session:
             page = await fetch(session, playlist_url)
             playlist_title_match = re_playlist_title_match.search(page)
             if playlist_title_match is None:

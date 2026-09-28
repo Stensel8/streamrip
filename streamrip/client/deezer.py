@@ -10,7 +10,7 @@ from ..exceptions import (
     MissingCredentialsError,
     NonStreamableError,
 )
-from .client import Client
+from .client import Client, new_session
 from .downloadable import DeezerDownloadable
 
 logger = logging.getLogger("streamrip")
@@ -60,7 +60,7 @@ class DeezerClient(Client):
 
     async def login(self):
         # Used for track downloads
-        self.session = await self.get_session(
+        self.session = new_session(
             verify_ssl=self.global_config.session.downloads.verify_ssl
         )
         arl = self.config.arl

@@ -19,9 +19,10 @@ from rich.prompt import Confirm
 from rich.traceback import install
 
 from .. import __version__, db
+from ..client import new_session
 from ..config import DEFAULT_CONFIG_PATH, Config, OutdatedConfigError, set_user_defaults
 from ..console import console
-from ..utils.ssl_utils import get_aiohttp_connector_kwargs
+from ..utils.ssl_utils import print_ssl_error_help
 from .main import Main
 
 logger = logging.getLogger("streamrip")
@@ -60,6 +61,9 @@ def coro(f):
             return asyncio.run(run())
         except asyncio.CancelledError, KeyboardInterrupt:
             console.print("[yellow]Stopped.")
+        except aiohttp.ClientConnectorCertificateError as e:
+            console.print(f"[red]SSL Certificate verification error: {e}[/red]")
+            print_ssl_error_help()
 
     return wrapper
 
@@ -208,41 +212,32 @@ async def url(ctx, urls):
     if ctx.obj["config"] is None:
         return
 
-    try:
-        with ctx.obj["config"] as cfg:
-            cfg: Config
-            updates = cfg.session.misc.check_for_updates
-            if updates:
-                # Run in background
-                version_coro = asyncio.create_task(
-                    latest_streamrip_version(
-                        verify_ssl=cfg.session.downloads.verify_ssl
-                    )
+    with ctx.obj["config"] as cfg:
+        cfg: Config
+        updates = cfg.session.misc.check_for_updates
+        if updates:
+            # Run in background
+            version_coro = asyncio.create_task(
+                latest_streamrip_version(verify_ssl=cfg.session.downloads.verify_ssl)
+            )
+        else:
+            version_coro = None
+
+        async with Main(cfg) as main:
+            await main.add_all(urls)
+            await main.resolve()
+            await main.rip()
+
+        if version_coro is not None:
+            latest_version, notes = await version_coro
+            if is_newer_version(latest_version):
+                console.print(
+                    f"\n[green]A new version of streamrip [cyan]v{latest_version}"
+                    f"[/cyan] is available! Run [white][bold]{UPGRADE_COMMAND}"
+                    "[/bold][/white] to update.[/green]\n"
                 )
-            else:
-                version_coro = None
-
-            async with Main(cfg) as main:
-                await main.add_all(urls)
-                await main.resolve()
-                await main.rip()
-
-            if version_coro is not None:
-                latest_version, notes = await version_coro
-                if is_newer_version(latest_version):
-                    console.print(
-                        f"\n[green]A new version of streamrip [cyan]v{latest_version}"
-                        f"[/cyan] is available! Run [white][bold]{UPGRADE_COMMAND}"
-                        "[/bold][/white] to update.[/green]\n"
-                    )
-                    if notes:
-                        console.print(Markdown(notes))
-
-    except aiohttp.ClientConnectorCertificateError as e:
-        from ..utils.ssl_utils import print_ssl_error_help
-
-        console.print(f"[red]SSL Certificate verification error: {e}[/red]")
-        print_ssl_error_help()
+                if notes:
+                    console.print(Markdown(notes))
 
 
 @rip.command()
@@ -262,45 +257,39 @@ async def file(ctx, path):
     """
     if ctx.obj["config"] is None:
         return
-    try:
-        with ctx.obj["config"] as cfg:
-            async with Main(cfg) as main:
-                async with aiofiles.open(path, "r") as f:
-                    content = await f.read()
-                    try:
-                        items: Any = json.loads(content)
-                        loaded = True
-                    except json.JSONDecodeError:
-                        items = content.split()
-                        loaded = False
-                if loaded:
+    with ctx.obj["config"] as cfg:
+        async with Main(cfg) as main:
+            async with aiofiles.open(path, "r") as f:
+                content = await f.read()
+                try:
+                    items: Any = json.loads(content)
+                    loaded = True
+                except json.JSONDecodeError:
+                    items = content.split()
+                    loaded = False
+            if loaded:
+                console.print(
+                    f"Detected json file. Loading [yellow]{len(items)}[/yellow] items"
+                )
+                await main.add_all_by_id(
+                    [(i["source"], i["media_type"], i["id"]) for i in items]
+                )
+            else:
+                # dict, not set: keeps the file's order.
+                unique = list(dict.fromkeys(items))
+                if len(unique) < len(items):
                     console.print(
-                        f"Detected json file. Loading [yellow]{len(items)}[/yellow] items"
+                        f"Found [yellow]{len(items) - len(unique)}[/yellow] "
+                        "repeated URLs!"
                     )
-                    await main.add_all_by_id(
-                        [(i["source"], i["media_type"], i["id"]) for i in items]
-                    )
-                else:
-                    # dict, not set: keeps the file's order.
-                    unique = list(dict.fromkeys(items))
-                    if len(unique) < len(items):
-                        console.print(
-                            f"Found [yellow]{len(items) - len(unique)}[/yellow] "
-                            "repeated URLs!"
-                        )
-                        items = unique
-                    console.print(
-                        f"Detected list of urls. Loading [yellow]{len(items)}[/yellow] items"
-                    )
-                    await main.add_all(items)
+                    items = unique
+                console.print(
+                    f"Detected list of urls. Loading [yellow]{len(items)}[/yellow] items"
+                )
+                await main.add_all(items)
 
-                await main.resolve()
-                await main.rip()
-    except aiohttp.ClientConnectorCertificateError as e:
-        from ..utils.ssl_utils import print_ssl_error_help
-
-        console.print(f"[red]SSL Certificate verification error: {e}[/red]")
-        print_ssl_error_help()
+            await main.resolve()
+            await main.rip()
 
 
 @rip.group()
@@ -697,14 +686,8 @@ async def latest_streamrip_version(verify_ssl: bool = True) -> tuple[str, str | 
         A tuple of (version, release_notes)
     """
     try:
-        connector_kwargs = get_aiohttp_connector_kwargs(verify_ssl=verify_ssl)
-        connector = aiohttp.TCPConnector(
-            **connector_kwargs, resolver=aiohttp.ThreadedResolver()
-        )
         timeout = aiohttp.ClientTimeout(total=10)
-        async with aiohttp.ClientSession(
-            connector=connector, trust_env=True, timeout=timeout
-        ) as s:
+        async with new_session(verify_ssl=verify_ssl, timeout=timeout) as s:
             async with s.get(
                 f"https://api.github.com/repos/{REPOSITORY}/releases/latest",
                 headers={"Accept": "application/vnd.github+json"},

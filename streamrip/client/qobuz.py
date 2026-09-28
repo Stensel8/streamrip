@@ -7,8 +7,6 @@ import time
 from collections import OrderedDict
 from typing import List, Optional
 
-import aiohttp
-
 from ..config import Config
 from ..exceptions import (
     APIError,
@@ -18,7 +16,7 @@ from ..exceptions import (
     MissingCredentialsError,
     NonStreamableError,
 )
-from .client import Client
+from .client import Client, new_session
 from .downloadable import BasicDownloadable, Downloadable
 
 logger = logging.getLogger("streamrip")
@@ -124,15 +122,7 @@ class QobuzSpoofer:
         return app_id, secrets_list
 
     async def __aenter__(self):
-        from ..utils.ssl_utils import get_aiohttp_connector_kwargs
-
-        # For the spoofer, always use SSL verification
-        connector_kwargs = get_aiohttp_connector_kwargs(verify_ssl=True)
-        connector = aiohttp.TCPConnector(
-            **connector_kwargs, resolver=aiohttp.ThreadedResolver()
-        )
-
-        self.session = aiohttp.ClientSession(connector=connector, trust_env=True)
+        self.session = new_session(verify_ssl=self.verify_ssl)
         return self
 
     async def __aexit__(self, *_):
@@ -164,9 +154,7 @@ class QobuzClient(Client):
         This data as well as the app_id is passed to self._get_user_auth_token() to get
         the actual credentials for the user.
         """
-        self.session = await self.get_session(
-            verify_ssl=self.config.session.downloads.verify_ssl
-        )
+        self.session = new_session(verify_ssl=self.config.session.downloads.verify_ssl)
         try:
             await self._login()
         except BaseException:

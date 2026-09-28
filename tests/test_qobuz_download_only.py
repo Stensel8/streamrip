@@ -53,7 +53,9 @@ def _login_resp(parameters):
 
 def _run_login(monkeypatch, parameters) -> QobuzClient:
     client = _make_client()
-    monkeypatch.setattr(client, "get_session", AsyncMock(return_value=_FakeSession()))
+    monkeypatch.setattr(
+        "streamrip.client.qobuz.new_session", lambda **_: _FakeSession()
+    )
     monkeypatch.setattr(
         client,
         "_api_request",

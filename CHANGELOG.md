@@ -14,6 +14,11 @@ upstream issues and pull requests.
 - `appdirs` and `aiodns` are no longer dependencies. `aiodns` forced Windows onto
   an event loop that cannot run ffmpeg, so conversions failed there ([#729](https://github.com/nathom/streamrip/issues/729)).
 - HTTP(S)_PROXY / ALL_PROXY environment variables are honoured ([#961](https://github.com/nathom/streamrip/issues/961)).
+  Every request goes through one kind of session, so `--no-ssl-verify` now
+  also covers the Qobuz app id lookup (it was ignored there), and last.fm
+  and that lookup time out on a stalled connection like the rest. A
+  certificate error explains the options in every command, not only in
+  `url` and `file`.
 - Install from GitHub; the update notice points at this fork instead of telling
   you to `pip install streamrip`, which would install upstream.
 - The CLI command is `streamrip`, not `rip`: short names like `rip` collide

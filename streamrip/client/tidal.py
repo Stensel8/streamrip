@@ -15,7 +15,7 @@ from ..exceptions import (
     MissingCredentialsError,
     NonStreamableError,
 )
-from .client import Client
+from .client import Client, new_session
 from .downloadable import TidalDASHDownloadable, TidalDownloadable
 
 logger = logging.getLogger("streamrip")
@@ -113,7 +113,7 @@ class TidalClient(Client):
         }
 
     async def login(self):
-        self.session = await self.get_session(
+        self.session = new_session(
             verify_ssl=self.global_config.session.downloads.verify_ssl
         )
         c = self.config
@@ -459,7 +459,7 @@ class TidalClient(Client):
     async def _get_device_code(self) -> tuple[str, str]:
         """Get the device code that will be used to log in on the browser."""
         if getattr(self, "session", None) is None or self.session.closed:
-            self.session = await self.get_session(
+            self.session = new_session(
                 verify_ssl=self.global_config.session.downloads.verify_ssl
             )
 

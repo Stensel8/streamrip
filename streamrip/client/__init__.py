@@ -1,4 +1,4 @@
-from .client import Client
+from .client import Client, new_session
 from .deezer import DeezerClient
 from .downloadable import BasicDownloadable, Downloadable
 from .qobuz import QobuzClient
@@ -13,4 +13,5 @@ __all__ = [
     "QobuzClient",
     "SoundcloudClient",
     "TidalClient",
+    "new_session",
 ]
