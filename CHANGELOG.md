@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes in this fork of [nathom/streamrip](https://github.com/nathom/streamrip). Numbers refer to
+All notable changes in this fork of [nathom/streamrip](https://github.com/nathom/streamrip). Numbers can refer to
 upstream issues and pull requests.
 
 ## 2.4.3
