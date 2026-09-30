@@ -1,3 +1,5 @@
+import asyncio
+from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -5,10 +7,106 @@ import pytest
 from streamrip.config import Config
 from streamrip.exceptions import NonStreamableError
 from streamrip.media.playlist import (
+    LASTFM_MAX_TRACKS,
     PendingLastfmPlaylist,
     PendingPlaylistTrack,
     _playlist_folder,
 )
+
+
+def _lastfm_playlist(monkeypatch, total_tracks, fail_page=None):
+    session = AsyncMock()
+    session.__aenter__.return_value = session
+    active_requests = 0
+
+    @asynccontextmanager
+    async def get(url, **kwargs):
+        nonlocal active_requests
+        active_requests += 1
+        try:
+            # A suspended response must not allow more page requests to start.
+            await asyncio.sleep(0)
+            assert active_requests == 1
+            page = kwargs.get("params", {}).get("page", 1)
+            if page == fail_page:
+                raise ConnectionError("page unavailable")
+            start = (page - 1) * 50
+            tracks = "".join(
+                f'<a href="/track" title="Song {i} &amp; Co">'
+                '<a href="/artist" title="Artist &amp; Co">'
+                for i in range(start, min(start + 50, total_tracks))
+            )
+            response = AsyncMock()
+            response.text.return_value = (
+                '<h1 class="playlisting-playlist-header-title">Mix &amp; Match</h1>'
+                f'<div data-playlisting-entry-count="{total_tracks}"></div>{tracks}'
+            )
+            yield response
+        finally:
+            active_requests -= 1
+
+    session.get = MagicMock(side_effect=get)
+    monkeypatch.setattr("streamrip.media.playlist.new_session", lambda **kw: session)
+    playlist = PendingLastfmPlaylist(
+        "https://www.last.fm/playlist/test",
+        MagicMock(),
+        None,
+        Config.defaults(),
+        MagicMock(),
+    )
+    return playlist, session
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("count", [LASTFM_MAX_TRACKS + 1, 1_000_000_000])
+async def test_lastfm_rejects_excessive_counts_before_pagination(monkeypatch, count):
+    playlist, session = _lastfm_playlist(monkeypatch, count)
+
+    with pytest.raises(ValueError, match="supported limit"):
+        await playlist._parse_lastfm_playlist(playlist.lastfm_url)
+
+    session.get.assert_called_once_with(playlist.lastfm_url)
+    session.__aexit__.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("count", [0, 1, 50, 51, 100, 101, LASTFM_MAX_TRACKS])
+async def test_lastfm_pagination_is_bounded_and_ordered(monkeypatch, count):
+    playlist, session = _lastfm_playlist(monkeypatch, count)
+
+    title, tracks = await playlist._parse_lastfm_playlist(playlist.lastfm_url)
+
+    assert title == "Mix & Match"
+    assert tracks == [(f"Song {i} & Co", "Artist & Co") for i in range(count)]
+    calls = session.get.call_args_list
+    assert len(calls) == max(1, (count + 49) // 50)
+    assert [call.kwargs for call in calls] == [{}] + [
+        {"params": {"page": i}} for i in range(2, len(calls) + 1)
+    ]
+    assert all(call.args == (playlist.lastfm_url,) for call in calls)
+    session.__aexit__.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_lastfm_excessive_count_stops_resolution(monkeypatch, caplog):
+    playlist, session = _lastfm_playlist(monkeypatch, LASTFM_MAX_TRACKS + 1)
+
+    assert await playlist.resolve() is None
+
+    playlist.client.search.assert_not_called()
+    session.get.assert_called_once_with(playlist.lastfm_url)
+    assert "supported limit" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_lastfm_page_failure_stops_pagination_and_closes_session(monkeypatch):
+    playlist, session = _lastfm_playlist(monkeypatch, 151, fail_page=2)
+
+    with pytest.raises(ConnectionError, match="page unavailable"):
+        await playlist._parse_lastfm_playlist(playlist.lastfm_url)
+
+    assert session.get.call_count == 2
+    session.__aexit__.assert_awaited_once()
 
 
 def _search_client(source, search):

@@ -28,6 +28,9 @@ logger = logging.getLogger("streamrip")
 # the first download.
 RESOLVE_CONCURRENCY = 20
 
+# Local work budget for untrusted Last.fm counts: at most 200 pages of 50.
+LASTFM_MAX_TRACKS = 10_000
+
 
 def _playlist_folder(config: Config, name: str) -> str:
     c = config.session
@@ -264,8 +267,8 @@ class PendingLastfmPlaylist(Pending):
         """From a last.fm url, return the playlist title, and a list of
         track titles and artist names.
 
-        Each page contains 50 results, so `num_tracks // 50 + 1` requests
-        are sent per playlist.
+        Each page contains 50 results. Playlists above LASTFM_MAX_TRACKS
+        are rejected, and pages are fetched one at a time to bound pending work.
 
         :param url:
         :type url: str
@@ -301,26 +304,20 @@ class PendingLastfmPlaylist(Pending):
 
             playlist_title: str = html.unescape(playlist_title_match.group(1))
 
-            title_artist_pairs: list[tuple[str, str]] = find_title_artist_pairs(page)
-
             total_tracks_match = re_total_tracks.search(page)
             if total_tracks_match is None:
                 raise Exception("Error parsing lastfm page: %s", page)
             total_tracks = int(total_tracks_match.group(1))
+            if total_tracks > LASTFM_MAX_TRACKS:
+                raise ValueError(
+                    f"Last.fm playlist exceeds the supported limit of "
+                    f"{LASTFM_MAX_TRACKS} tracks"
+                )
 
-            remaining_tracks = total_tracks - 50  # already got 50 from 1st page
-            if remaining_tracks <= 0:
-                return playlist_title, title_artist_pairs
-
-            last_page = (
-                1 + int(remaining_tracks // 50) + int(remaining_tracks % 50 != 0)
-            )
-            requests = []
-            for page in range(2, last_page + 1):
-                requests.append(fetch(session, playlist_url, params={"page": page}))
-            results = await asyncio.gather(*requests)
-
-        for page in results:
-            title_artist_pairs.extend(find_title_artist_pairs(page))
+            title_artist_pairs = find_title_artist_pairs(page)
+            last_page = (total_tracks + 49) // 50
+            for page_number in range(2, last_page + 1):
+                page = await fetch(session, playlist_url, params={"page": page_number})
+                title_artist_pairs.extend(find_title_artist_pairs(page))
 
         return playlist_title, title_artist_pairs
