@@ -4,7 +4,6 @@ import copy
 import functools
 import logging
 import os
-import shutil
 from dataclasses import dataclass, fields, is_dataclass
 from pathlib import Path
 from typing import ClassVar
@@ -16,7 +15,9 @@ from tomlkit.toml_document import TOMLDocument
 logger = logging.getLogger("streamrip")
 
 APP_DIR = click.get_app_dir("streamrip")
-os.makedirs(APP_DIR, exist_ok=True)
+os.makedirs(APP_DIR, mode=0o700, exist_ok=True)
+if os.name == "posix":
+    os.chmod(APP_DIR, 0o700)
 DEFAULT_CONFIG_PATH = os.path.join(APP_DIR, "config.toml")
 CURRENT_CONFIG_VERSION = "2.3.3"
 
@@ -234,6 +235,9 @@ class Config:
         self.path = path
 
         with open(path) as toml_file:
+            # The packaged template is shared, but user configs contain secrets.
+            if os.name == "posix" and not os.path.samefile(path, BLANK_CONFIG_PATH):
+                os.fchmod(toml_file.fileno(), 0o600)
             self.file: ConfigData = ConfigData.from_toml(toml_file.read())
 
         self.session: ConfigData = copy.deepcopy(self.file)
@@ -242,9 +246,8 @@ class Config:
         if not self.file.modified:
             return
 
-        with open(self.path, "w") as toml_file:
-            self.file.update_toml()
-            toml_file.write(dumps(self.file.toml))
+        self.file.update_toml()
+        _write_config(self.path, self.file.toml)
 
     @staticmethod
     def _update_file(old_path: str, new_path: str):
@@ -260,8 +263,7 @@ class Config:
         _carry_over_merged_options(old)
         update_config(old, new_toml)
 
-        with open(old_path, "w") as f:
-            f.write(dumps(new_toml))
+        _write_config(old_path, new_toml)
 
     @classmethod
     def update_file(cls, path: str):
@@ -278,17 +280,26 @@ class Config:
         self.save_file()
 
 
+def _write_config(path: str, toml: TOMLDocument):
+    contents = dumps(toml)
+    # Set the creation mode atomically, even with a permissive umask. Do not
+    # truncate an existing file until its permissions have been secured.
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT, 0o600)
+    with os.fdopen(fd, "w") as f:
+        if os.name == "posix":
+            os.fchmod(f.fileno(), 0o600)
+        f.truncate(0)
+        f.write(contents)
+
+
 def set_user_defaults(path: str, /):
     """Update the TOML file at the path with user-specific default values."""
-    shutil.copy(BLANK_CONFIG_PATH, path)
-
-    with open(path) as f:
+    with open(BLANK_CONFIG_PATH) as f:
         toml = parse(f.read())
 
     toml_set_user_defaults(toml)
 
-    with open(path, "w") as f:
-        f.write(dumps(toml))
+    _write_config(path, toml)
 
 
 def toml_set_user_defaults(toml: TOMLDocument):
