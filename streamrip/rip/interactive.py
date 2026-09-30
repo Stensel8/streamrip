@@ -24,6 +24,7 @@ from rich.prompt import Prompt as _Prompt
 
 @contextmanager
 def _native_sigint():
+    """Swap SIGINT to the plain KeyboardInterrupt handler for this block."""
     try:
         asyncio.get_running_loop()
     except RuntimeError:
@@ -41,14 +42,20 @@ def _native_sigint():
 
 
 class Prompt(_Prompt):
+    """rich.prompt.Prompt, but Ctrl-C raises KeyboardInterrupt immediately."""
+
     @classmethod
     def ask(cls, *args, **kwargs):
+        """Same as rich.prompt.Prompt.ask, with Ctrl-C handled natively."""
         with _native_sigint():
             return super().ask(*args, **kwargs)
 
 
 class Confirm(_Confirm):
+    """rich.prompt.Confirm, but Ctrl-C raises KeyboardInterrupt immediately."""
+
     @classmethod
     def ask(cls, *args, **kwargs):
+        """Same as rich.prompt.Confirm.ask, with Ctrl-C handled natively."""
         with _native_sigint():
             return super().ask(*args, **kwargs)

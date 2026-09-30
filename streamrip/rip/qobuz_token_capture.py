@@ -90,6 +90,7 @@ class QobuzTokenCaptureError(Exception):
 
 
 def _cors_headers() -> dict[str, str]:
+    """Headers letting only a page on play.qobuz.com POST to this server."""
     return {
         "Access-Control-Allow-Origin": QOBUZ_ORIGIN,
         "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -117,9 +118,11 @@ async def capture_qobuz_auth_token(timeout_s: int = 300) -> tuple[str, str]:
     result: "asyncio.Future[tuple[str, str]]" = loop.create_future()
 
     async def handle_preflight(request: web.Request) -> web.Response:
+        """Answer the browser's CORS preflight OPTIONS request."""
         return web.Response(status=204, headers=_cors_headers())
 
     async def handle_callback(request: web.Request) -> web.Response:
+        """Accept the id/token the pasted snippet posts, once."""
         try:
             payload = await request.json()
             user_id = str(payload["user_id"])

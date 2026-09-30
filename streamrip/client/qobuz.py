@@ -164,6 +164,7 @@ class QobuzClient(Client):
             raise
 
     async def _login(self):
+        """Log in, fetching Qobuz's app id/secret first if not cached yet."""
         c = self.config.session.qobuz
         if not c.email_or_userid or not c.password_or_token:
             raise MissingCredentialsError
