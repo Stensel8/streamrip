@@ -1,4 +1,4 @@
-"""Tidal hi-res needs ffmpeg: say so before downloading, not per track."""
+"""streamrip needs ffmpeg: say so before logging in, not per track."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -10,70 +10,53 @@ from streamrip.exceptions import FFmpegNotFoundError, TrackDownloadFailedError
 from streamrip.media.track import MAX_DOWNLOAD_ATTEMPTS, Track
 from streamrip.rip.cli import rip
 from streamrip.rip.main import Main
-from streamrip.utils.ffmpeg_utils import ffmpeg_missing_message
 
 
-def _main(tidal_logged_in=True, quality=3):
+def _main():
     config = Config.defaults()
     config.session.database.downloads_enabled = False
     config.session.database.failed_downloads_enabled = False
-    config.session.tidal.quality = quality
-    main = Main(config)
-    main.clients["tidal"].logged_in = tidal_logged_in
-    main.media = []
-    return main
+    return Main(config)
 
 
-@pytest.mark.parametrize(
-    "logged_in, quality, ffmpeg, aborts",
-    [
-        (True, 3, None, True),
-        (True, 3, "/usr/bin/ffmpeg", False),  # ffmpeg present
-        (True, 2, None, False),  # CD quality needs no ffmpeg
-        (False, 3, None, False),  # Tidal is not used in this run
-    ],
-)
-async def test_rip_checks_ffmpeg_only_for_tidal_hires(
-    logged_in, quality, ffmpeg, aborts
-):
-    main = _main(logged_in, quality)
-    with patch("streamrip.rip.main.find_ffmpeg", return_value=ffmpeg):
-        if aborts:
-            with pytest.raises(FFmpegNotFoundError, match="No ffmpeg installation"):
-                await main.rip()
-        else:
-            await main.rip()
-
-
-async def test_rip_does_not_touch_media_when_aborting():
+async def test_main_refuses_to_start_without_ffmpeg():
     main = _main()
-    item = MagicMock(rip=AsyncMock())
-    main.media = [item]
     with patch("streamrip.rip.main.find_ffmpeg", return_value=None):
-        with pytest.raises(FFmpegNotFoundError):
-            await main.rip()
-    item.rip.assert_not_called()
+        with pytest.raises(FFmpegNotFoundError, match="No ffmpeg installation"):
+            async with main:
+                pytest.fail("Main must not be entered without ffmpeg")
 
 
-def test_cli_prints_the_message_and_exits_non_zero(tmp_path):
+async def test_main_starts_with_ffmpeg():
+    main = _main()
+    with patch("streamrip.rip.main.find_ffmpeg", return_value="/usr/bin/ffmpeg"):
+        async with main as entered:
+            assert entered is main
+
+
+@pytest.mark.parametrize("command", ["url", "file", "id", "lastfm", "search"])
+def test_every_login_command_checks_ffmpeg_first(tmp_path, command):
+    """No command that can log in to a source gets there without ffmpeg."""
     cfg = tmp_path / "config.toml"
     set_user_defaults(str(cfg))
+    urls = tmp_path / "urls.txt"
+    urls.write_text("https://tidal.com/album/1\n")
+    args = {
+        "url": ["url", "https://tidal.com/album/1"],
+        "file": ["file", str(urls)],
+        "id": ["id", "qobuz", "album", "1"],
+        "lastfm": ["lastfm", "https://www.last.fm/user/x/playlists/1"],
+        "search": ["search", "deezer", "track", "x"],
+    }[command]
     with (
-        patch.object(Main, "add_all", AsyncMock()),
-        patch.object(Main, "resolve", AsyncMock()),
-        patch.object(
-            Main,
-            "rip",
-            AsyncMock(side_effect=FFmpegNotFoundError(ffmpeg_missing_message())),
-        ),
+        patch("streamrip.rip.main.find_ffmpeg", return_value=None),
+        patch.object(Main, "get_logged_in_client", AsyncMock()) as login,
     ):
-        result = CliRunner().invoke(
-            rip, ["--config-path", str(cfg), "url", "https://tidal.com/album/1"]
-        )
-    assert result.exit_code == 1
+        result = CliRunner().invoke(rip, ["--config-path", str(cfg), *args])
+    assert result.exit_code == 1, result.output
     assert "No ffmpeg installation found" in result.output
-    # Text like "[ffmpeg]" or "[tidal]" must not be eaten as rich markup.
-    assert "[tidal]" in result.output
+    assert "pipx inject streamrip imageio-ffmpeg" in result.output
+    login.assert_not_called()
 
 
 async def test_missing_ffmpeg_is_not_retried():

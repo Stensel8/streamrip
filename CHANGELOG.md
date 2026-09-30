@@ -5,11 +5,11 @@ upstream issues and pull requests.
 
 ## Unreleased
 
-- Tidal hi-res needs ffmpeg. Without one, streamrip now stops before
-  downloading, with the commands to install ffmpeg (or the bundled
-  `imageio-ffmpeg`) and exits with status 1. Before, every hi-res track failed
-  on its own after retrying, the run still exited with status 0, and an empty
-  album folder was left behind.
+- ffmpeg is required. streamrip checks for it before logging in to anything,
+  whatever you download, and stops with the commands to install ffmpeg (or the
+  bundled `imageio-ffmpeg`) and exit status 1. Before, hi-res Tidal tracks
+  failed one by one after retrying, the run exited with status 0, and an empty
+  album folder was left behind. A missing ffmpeg is no longer retried.
 
 ## 2.4.3
 

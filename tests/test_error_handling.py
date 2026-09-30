@@ -87,7 +87,6 @@ class TestErrorHandling:
         mock_config.session.downloads.requests_per_minute = 0
         mock_config.session.database.downloads_enabled = False
         mock_config.session.database.failed_downloads_enabled = False
-        mock_config.session.tidal.quality = 2  # no ffmpeg needed
 
         with (
             patch("streamrip.rip.main.QobuzClient"),

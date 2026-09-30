@@ -24,10 +24,10 @@ def find_ffmpeg() -> str | None:
 
 
 def ffmpeg_missing_message() -> str:
-    """What to tell someone whose Tidal hi-res download has no ffmpeg."""
+    """What to tell someone who runs streamrip without an ffmpeg."""
     return (
-        "No ffmpeg installation found on your system, and Tidal hi-res "
-        "downloads need it.\n"
+        "No ffmpeg installation found on your system. streamrip needs ffmpeg "
+        "(for Tidal hi-res, SoundCloud and conversion).\n"
         "Install ffmpeg:\n"
         "  Linux:    apt install ffmpeg\n"
         "  macOS:    brew install ffmpeg\n"
@@ -35,7 +35,5 @@ def ffmpeg_missing_message() -> str:
         "or proceed with the built-in ffmpeg (a Python package) by running, in "
         "the environment streamrip is installed in:\n"
         "  pip install imageio-ffmpeg\n"
-        "  (pipx: pipx inject streamrip imageio-ffmpeg)\n"
-        "or skip hi-res by running streamrip with -q 2 (16-bit FLAC), or by "
-        "setting quality = 2 under [tidal] in the config."
+        "  (pipx: pipx inject streamrip imageio-ffmpeg)"
     )

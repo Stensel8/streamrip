@@ -47,6 +47,5 @@ def test_missing_message_says_how_to_get_ffmpeg():
         "winget install ffmpeg",
         "pip install imageio-ffmpeg",
         "pipx inject streamrip imageio-ffmpeg",
-        "-q 2",
     ):
         assert command in message
