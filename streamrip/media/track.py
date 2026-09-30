@@ -157,7 +157,8 @@ class Track(Media):
     async def postprocess(self):
         """Tag, convert, and dedup the downloaded file, then mark it downloaded."""
         if self._skip_lossy_duplicate:
-            self.db.set_downloaded(self.meta.info.id)
+            self.db.set_downloaded(self.meta.info.id, new=False)
+            self.db.skipped_now += 1
             return
 
         if self.is_single:
@@ -293,6 +294,7 @@ async def fetch_track_meta(
     """
     if db.downloaded(track_id):
         logger.info(f"Skipping track {track_id}. Marked as downloaded in the database.")
+        db.skipped_now += 1
         return None
     source = client.source
     try:

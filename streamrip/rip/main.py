@@ -226,13 +226,22 @@ class Main:
                 logger.error(f"Error processing media item: {type(e).__name__}: {e}")
                 failed_items += 1
 
-        total_items = len(self.media)
-        if failed_items > 0:
-            logger.info(
-                f"Download completed with {failed_items} failed items out of {total_items} total items."
+        # In tracks, not items: an item can be a whole discography, so "1
+        # item downloaded" said nothing about what actually happened.
+        d = self.database
+        parts = [f"{d.downloaded_now} track(s) downloaded"]
+        if d.skipped_now:
+            parts.append(f"{d.skipped_now} already downloaded")
+        if d.failed_now:
+            parts.append(f"{d.failed_now} failed")
+        summary = "Download completed: " + ", ".join(parts)
+        if failed_items:
+            summary += (
+                f"; {failed_items} of {len(self.media)} item(s) could not be processed"
             )
-        else:
-            logger.info(f"Download completed: {total_items} item(s) downloaded.")
+        logger.info(summary)
+        if d.failed_now and not isinstance(d.failed, db.Dummy):
+            logger.info("Run `streamrip repair` to retry the failed tracks.")
 
     async def _search(
         self, source: str, media_type: str, query: str, limit: int

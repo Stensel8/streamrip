@@ -63,7 +63,11 @@ class ProgressManager:
         # the logger's RichHandler print through, so neither knows the other
         # is using the terminal -- each print corrupts the other's region
         # instead of Rich's usual "pause the live area, print above it".
-        self.live = Live(self._group(), console=console, refresh_per_second=10)
+        # transient: erased when stopped, rather than leaving its last frame --
+        # by then an empty "Downloading" rule -- under the run's output.
+        self.live = Live(
+            self._group(), console=console, refresh_per_second=10, transient=True
+        )
 
     def _group(self) -> Group:
         """Return the renderable group the Live display shows."""

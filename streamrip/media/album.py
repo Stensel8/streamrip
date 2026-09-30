@@ -82,10 +82,10 @@ class Album(Media):
 
     async def download(self):
         """Resolve and download every track of the album."""
-        big = len(self.tracks) > RESOLVE_CONCURRENCY
-        if big:
-            console.log(f"Resolving {len(self.tracks)} tracks: {self.meta.album}")
-        enabled = big and self.config.session.cli.progress_bars
+        enabled = (
+            len(self.tracks) > RESOLVE_CONCURRENCY
+            and self.config.session.cli.progress_bars
+        )
         with progress.get_resolve_callback(
             enabled, f"Obtaining album info: {self.meta.album}"
         ):
@@ -94,6 +94,11 @@ class Album(Media):
                 RESOLVE_CONCURRENCY,
                 self.config.session.metadata.prefer_explicit,
             )
+        # One line for every album, however small, so the scrollback is a
+        # complete record of the run -- failed tracks log their own errors.
+        # (An album with nothing left to download already logged a skip.)
+        if self.tracks:
+            console.log(f"Finished {self.meta.albumartist} - {self._title()}")
 
     async def postprocess(self):
         progress.remove_title(id(self), self.config.session.cli.progress_bars)
@@ -133,6 +138,7 @@ class PendingAlbum(Pending):
         # make a folder for an album with nothing left to download.
         todo = [track_id for track_id in tracklist if not self.db.downloaded(track_id)]
         done = len(tracklist) - len(todo)
+        self.db.skipped_now += done
         if tracklist and not todo:
             logger.info(f"{meta.album}: all {done} tracks already downloaded, skipping")
         elif done:
