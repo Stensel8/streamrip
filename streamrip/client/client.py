@@ -50,8 +50,12 @@ class Client(ABC):
     def get_rate_limiter(
         requests_per_min: int,
     ) -> aiolimiter.AsyncLimiter | contextlib.nullcontext:
+        # One request every 60/n seconds, not "n per 60 seconds": the latter
+        # is a bucket n deep, so a fresh start (or the end of a 429 pause,
+        # once it has refilled) lets up to n requests out at the same
+        # instant -- exactly the burst that trips the limit in the first place.
         return (
-            aiolimiter.AsyncLimiter(requests_per_min, 60)
+            aiolimiter.AsyncLimiter(1, 60 / requests_per_min)
             if requests_per_min > 0
             else contextlib.nullcontext()
         )
