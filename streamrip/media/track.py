@@ -11,7 +11,7 @@ from .. import converter
 from ..client import Client, Downloadable
 from ..config import Config
 from ..db import Database
-from ..exceptions import TrackDownloadFailedError
+from ..exceptions import FFmpegNotFoundError, TrackDownloadFailedError
 from ..filepath_utils import clean_filename, clean_filepath, fit_filename
 from ..metadata import AlbumMetadata, TrackMetadata, tag_file
 from ..metadata.tagger import TAGGABLE_EXTENSIONS
@@ -83,6 +83,11 @@ class Track(Media):
             add_title(id(self), self.meta.title, self.config.session.cli.progress_bars)
 
     async def download(self):
+        """Skip redundant lossy copies or download with progress and retries.
+
+        Missing ffmpeg fails without retrying. On final failure, record the
+        failure, remove partial output, and raise TrackDownloadFailedError.
+        """
         if self._skip_lossy_duplicate:
             return
         quality = format_quality(
@@ -111,7 +116,10 @@ class Track(Media):
                     raise
                 except Exception as e:
                     error = f"{type(e).__name__}: {e}"
-                    if attempt < MAX_DOWNLOAD_ATTEMPTS:
+                    # A missing ffmpeg does not fix itself in 2-8 seconds.
+                    if attempt < MAX_DOWNLOAD_ATTEMPTS and not isinstance(
+                        e, FFmpegNotFoundError
+                    ):
                         delay = 2**attempt  # 2s, 4s, 8s
                         logger.warning(
                             f"Error downloading track '{self.meta.title}', "

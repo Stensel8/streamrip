@@ -1,6 +1,6 @@
 [project]
 name = "streamrip"
-version = "2.4.3"
+version = "2.4.4"
 description = "A fast, all-in-one music downloader for Qobuz, Deezer, Tidal, and SoundCloud"
 authors = [{ name = "nathom", email = "nathanthomas707@gmail.com" }]
 maintainers = [{ name = "Stensel8" }]
