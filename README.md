@@ -4,7 +4,7 @@
 [![Python 3.14+](https://img.shields.io/badge/python-3.14%2B-blue)](https://github.com/Stensel8/streamrip/blob/dev/pyproject.toml)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 
-A scriptable music downloader for Qobuz, Tidal, Deezer and SoundCloud.
+A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, and SoundCloud.
 
 > [!NOTE]
 > A fork of [nathom/streamrip](https://github.com/nathom/streamrip) that works
@@ -23,15 +23,21 @@ A scriptable music downloader for Qobuz, Tidal, Deezer and SoundCloud.
 
 ## Installation
 
-The install script fetches Python 3.14 (with [uv](https://docs.astral.sh/uv/))
-and installs streamrip into a `.venv` in the current directory:
+### Latest release (recommended)
+
+[![Latest release](https://img.shields.io/github/v/release/Stensel8/streamrip?display_name=tag&sort=semver)](https://github.com/Stensel8/streamrip/releases/latest)
+
+Download and extract the [latest release](https://github.com/Stensel8/streamrip/releases/latest),
+then open the extracted directory and run the local installer. It fetches
+Python 3.14 with [uv](https://docs.astral.sh/uv/) if needed and installs
+streamrip into a `.venv` next to the installer.
 
 ```bash
-curl -LsSf https://raw.githubusercontent.com/Stensel8/streamrip/dev/install.sh | bash  # Linux/macOS
+./install.sh
 ```
 
 ```powershell
-irm https://raw.githubusercontent.com/Stensel8/streamrip/dev/install.ps1 | iex  # Windows
+.\install.ps1
 ```
 
 With Python 3.14 already there, install it into a venv of your own, or with
@@ -39,13 +45,29 @@ With Python 3.14 already there, install it into a venv of your own, or with
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate  # fish: activate.fish
-pip install git+https://github.com/Stensel8/streamrip.git
+pip install .
 
-pipx install git+https://github.com/Stensel8/streamrip.git
-uv tool install git+https://github.com/Stensel8/streamrip.git
+pipx install .
+uv tool install .
 ```
 
-Add `@<branch-or-tag>` to the URL for a specific version.
+### `dev` branch (unstable, active development)
+
+Download and extract the [`dev` branch](https://github.com/Stensel8/streamrip/archive/refs/heads/dev.zip),
+then open the extracted directory and run the local installer. This is
+unstable and may be broken between commits.
+
+```bash
+./install.sh
+```
+
+```powershell
+.\install.ps1
+```
+
+```bash
+pip install .
+```
 
 streamrip needs [ffmpeg](https://ffmpeg.org/download.html) (Tidal hi-res,
 SoundCloud, conversion) and checks for it before logging in to anything:
@@ -62,11 +84,28 @@ bundled one with `pip install imageio-ffmpeg` in streamrip's environment
 streamrip asks for what it needs the first time you use a source, and saves it
 in the config. A login that stops working is asked for again.
 
-- **Qobuz** needs a subscription, or downloads the albums you bought. Its login
-  page has a captcha, so streamrip offers to open a browser and take the token
-  from your login there. Without a desktop, enter your user id and
-  `user_auth_token` yourself: log in at [play.qobuz.com](https://play.qobuz.com/login)
-  and copy both from the `user/login` response in DevTools → Network.
+- **Qobuz** needs a subscription, or downloads the albums you bought. Qobuz's
+  web login has no device-code flow to poll (unlike Tidal's), but it does save
+  a working login token for itself the moment you're logged in, so streamrip
+  offers a choice of how to grab that:
+  1. **An isolated browser window** that logs in and captures the token with
+     no further input from you. Drives a Chrome-family browser already on
+     your machine (Chrome, Edge, Brave, Chromium, ...) in a throwaway
+     profile — no existing session to work around, nothing downloaded. If
+     none is found (Firefox/LibreWolf-only setups), it asks before
+     downloading Playwright's own small browser instead.
+  2. **Your own browser**, open to [the login page](https://play.qobuz.com/login).
+     Log in first, *then* paste the short script streamrip prints into the
+     console (F12) — Qobuz reloads the page on login, which would stop the
+     script if pasted beforehand. It reads the token Qobuz's own web player
+     already saves for itself in `localStorage`. Nothing is downloaded or
+     driven; a few lines of JavaScript run in the browser you already have
+     open.
+  3. **By hand**: copy `user.id` and `user_auth_token` from DevTools →
+     Network yourself, or use email/password.
+
+  Options 1 and 2 fall back to manual entry if nothing arrives within a few
+  minutes. Credentials are saved for later use either way.
 - **Tidal** needs a subscription. streamrip shows a link to log in with on any
   device, twice: Tidal serves hi-res (up to 24-bit, 192 kHz) and CD quality
   through two separate logins. Each track is asked for in hi-res first and falls

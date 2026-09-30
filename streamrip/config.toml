@@ -8,7 +8,7 @@ disc_subdirectories = true
 # How many tracks to download at once. 1 downloads them one after another,
 # -1 means no limit. More than your connection can carry only slows each
 # download down.
-max_connections = 6
+max_connections = 5
 # Max number of API requests per source to handle per minute
 # Set to -1 for no limit. Downloading many albums at once (e.g. an artist's
 # full discography) can burst past a higher limit and get 429 "Too Many
@@ -29,10 +29,9 @@ download_booklets = true
 
 # Authenticate to Qobuz using auth token? Value can be true/false only
 # Qobuz moved its web login behind a captcha, so token login is recommended:
-# log in at play.qobuz.com, open DevTools -> Network, find the user/login
-# request and copy user.id and user_auth_token from its response.
-# streamrip can capture these for you instead: it'll offer to open a
-# browser and log in normally the next time login is needed.
+# streamrip opens play.qobuz.com in your default browser. Open DevTools ->
+# Network before logging in, then find the user/login request and paste
+# user.id and user_auth_token from its response into the terminal prompts.
 use_auth_token = false
 # Enter your userid if the above use_auth_token is set to true, else enter your email
 email_or_userid = ""
@@ -201,7 +200,5 @@ progress_bars = true
 max_search_results = 100
 
 [misc]
-# Metadata to identify this config file. Do not change.
-version = "2.3.3"
-# Print a message if a new version of streamrip is available 
+# Print a message if a new version of streamrip is available
 check_for_updates = true

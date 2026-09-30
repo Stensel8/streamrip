@@ -7,6 +7,7 @@ import shutil
 import signal
 import subprocess
 import sys
+from contextlib import asynccontextmanager, closing
 from functools import wraps
 from typing import Any
 
@@ -17,15 +18,15 @@ from click_help_colors import HelpColorsGroup  # type: ignore
 from rich.logging import RichHandler
 from rich.markdown import Markdown
 from rich.markup import escape
-from rich.prompt import Confirm
 from rich.traceback import install
 
 from .. import __version__, db
 from ..client import new_session
-from ..config import DEFAULT_CONFIG_PATH, Config, OutdatedConfigError, set_user_defaults
+from ..config import DEFAULT_CONFIG_PATH, Config, set_user_defaults
 from ..console import console
 from ..exceptions import FFmpegNotFoundError
 from ..utils.ssl_utils import print_ssl_error_help
+from .interactive import Confirm
 from .main import Main
 
 logger = logging.getLogger("streamrip")
@@ -33,7 +34,12 @@ logger = logging.getLogger("streamrip")
 
 # Where this build of streamrip comes from, for update checks and advice.
 REPOSITORY = "Stensel8/streamrip"
-UPGRADE_COMMAND = f"pip install --upgrade git+https://github.com/{REPOSITORY}.git"
+
+
+def _upgrade_command(version: str, *, is_release: bool = True) -> str:
+    """Install the detected release tag or the default branch used as fallback."""
+    ref = f"v{version}" if is_release else "HEAD"
+    return f"pip install --upgrade git+https://github.com/{REPOSITORY}.git@{ref}"
 
 
 def coro(f):
@@ -80,8 +86,67 @@ def coro(f):
     return wrapper
 
 
+@asynccontextmanager
+async def main_session(ctx):
+    """Shared by every download command (url, file, search, lastfm, id).
+
+    Opens the config as a session and runs the caller's block. The update
+    check lives in `_StreamripGroup.main()` so it also covers Click's
+    `--help`, `--version`, and bare-invocation paths.
+    """
+    with ctx.obj["config"] as cfg:
+        cfg: Config
+        async with Main(cfg) as main:
+            yield main
+
+
+def _print_update_notice(
+    latest_version: str, notes: str | None, is_release: bool
+) -> None:
+    console.print(
+        f"[green]A new version of streamrip [cyan]v{latest_version}"
+        f"[/cyan] is available! Run [white][bold]"
+        f"{_upgrade_command(latest_version, is_release=is_release)}"
+        "[/bold][/white] to update.[/green]\n"
+    )
+    if notes:
+        console.print(Markdown(notes))
+
+
+class _StreamripGroup(HelpColorsGroup):
+    """Checks for updates before literally anything else runs.
+
+    Click short-circuits --help, --version, and a bare invocation with no
+    subcommand before the group's own callback (`rip()` below) ever runs --
+    so a check placed there misses all three. `main()` is Click's actual
+    entry point, called before any of that, for every invocation alike:
+    one check, called unconditionally, covers all of them (asked for
+    explicitly, 2026-09-30).
+    """
+
+    def main(self, *args, **kwargs):
+        notice = None
+        try:
+            with console.status("streamrip: Checking for updates...", spinner="dots"):
+                # Close the coroutine even if run() rejects an active event loop.
+                with closing(latest_streamrip_version()) as check:
+                    latest_version, notes, is_release = asyncio.run(check)
+            if is_newer_version(latest_version):
+                notice = (latest_version, notes, is_release)
+        except Exception as exc:
+            logger.debug("Could not check for updates: %s", exc)
+        try:
+            return super().main(*args, **kwargs)
+        finally:
+            # In a finally, not just after: search's screen-clearing picker
+            # would wipe a notice printed too early, and a raised/cancelled
+            # command must not also cancel the one thing this was for.
+            if notice is not None:
+                _print_update_notice(*notice)
+
+
 @click.group(
-    cls=HelpColorsGroup,
+    cls=_StreamripGroup,
     help_headers_color="yellow",
     help_options_color="green",
 )
@@ -178,11 +243,6 @@ def rip(
 
     try:
         c = Config(config_path)
-    except OutdatedConfigError as e:
-        console.print(e)
-        console.print("Auto-updating config file...")
-        Config.update_file(config_path)
-        c = Config(config_path)
     except Exception as e:
         console.print(
             f"Error loading config from [bold cyan]{config_path}[/bold cyan]: {e}\n"
@@ -224,32 +284,10 @@ async def url(ctx, urls):
     if ctx.obj["config"] is None:
         return
 
-    with ctx.obj["config"] as cfg:
-        cfg: Config
-        updates = cfg.session.misc.check_for_updates
-        if updates:
-            # Run in background
-            version_coro = asyncio.create_task(
-                latest_streamrip_version(verify_ssl=cfg.session.downloads.verify_ssl)
-            )
-        else:
-            version_coro = None
-
-        async with Main(cfg) as main:
-            await main.add_all(urls)
-            await main.resolve()
-            await main.rip()
-
-        if version_coro is not None:
-            latest_version, notes = await version_coro
-            if is_newer_version(latest_version):
-                console.print(
-                    f"\n[green]A new version of streamrip [cyan]v{latest_version}"
-                    f"[/cyan] is available! Run [white][bold]{UPGRADE_COMMAND}"
-                    "[/bold][/white] to update.[/green]\n"
-                )
-                if notes:
-                    console.print(Markdown(notes))
+    async with main_session(ctx) as main:
+        await main.add_all(urls)
+        await main.resolve()
+        await main.rip()
 
 
 @rip.command()
@@ -269,39 +307,37 @@ async def file(ctx, path):
     """
     if ctx.obj["config"] is None:
         return
-    with ctx.obj["config"] as cfg:
-        async with Main(cfg) as main:
-            async with aiofiles.open(path, "r") as f:
-                content = await f.read()
-                try:
-                    items: Any = json.loads(content)
-                    loaded = True
-                except json.JSONDecodeError:
-                    items = content.split()
-                    loaded = False
-            if loaded:
+    async with main_session(ctx) as main:
+        async with aiofiles.open(path, "r") as f:
+            content = await f.read()
+            try:
+                items: Any = json.loads(content)
+                loaded = True
+            except json.JSONDecodeError:
+                items = content.split()
+                loaded = False
+        if loaded:
+            console.print(
+                f"Detected json file. Loading [yellow]{len(items)}[/yellow] items"
+            )
+            await main.add_all_by_id(
+                [(i["source"], i["media_type"], i["id"]) for i in items]
+            )
+        else:
+            # dict, not set: keeps the file's order.
+            unique = list(dict.fromkeys(items))
+            if len(unique) < len(items):
                 console.print(
-                    f"Detected json file. Loading [yellow]{len(items)}[/yellow] items"
+                    f"Found [yellow]{len(items) - len(unique)}[/yellow] repeated URLs!"
                 )
-                await main.add_all_by_id(
-                    [(i["source"], i["media_type"], i["id"]) for i in items]
-                )
-            else:
-                # dict, not set: keeps the file's order.
-                unique = list(dict.fromkeys(items))
-                if len(unique) < len(items):
-                    console.print(
-                        f"Found [yellow]{len(items) - len(unique)}[/yellow] "
-                        "repeated URLs!"
-                    )
-                    items = unique
-                console.print(
-                    f"Detected list of urls. Loading [yellow]{len(items)}[/yellow] items"
-                )
-                await main.add_all(items)
+                items = unique
+            console.print(
+                f"Detected list of urls. Loading [yellow]{len(items)}[/yellow] items"
+            )
+            await main.add_all(items)
 
-            await main.resolve()
-            await main.rip()
+        await main.resolve()
+        await main.rip()
 
 
 @rip.group()
@@ -612,19 +648,16 @@ async def search(ctx, first, output_file, num_results, source, media_type, query
     if first and output_file:
         console.print("Cannot choose --first and --output-file!")
         return
-    with ctx.obj["config"] as cfg:
-        limit = num_results or cfg.session.cli.max_search_results
-        async with Main(cfg) as main:
-            if first:
-                await main.search_take_first(source, media_type, query)
-            elif output_file:
-                await main.search_output_file(
-                    source, media_type, query, output_file, limit
-                )
-            else:
-                await main.search_interactive(source, media_type, query, limit)
-            await main.resolve()
-            await main.rip()
+    limit = num_results or ctx.obj["config"].session.cli.max_search_results
+    async with main_session(ctx) as main:
+        if first:
+            await main.search_take_first(source, media_type, query)
+        elif output_file:
+            await main.search_output_file(source, media_type, query, output_file, limit)
+        else:
+            await main.search_interactive(source, media_type, query, limit)
+        await main.resolve()
+        await main.rip()
 
 
 @rip.command()
@@ -646,10 +679,9 @@ async def lastfm(ctx, source, fallback_source, url):
         config.session.lastfm.source = source
     if fallback_source is not None:
         config.session.lastfm.fallback_source = fallback_source
-    with config as cfg:
-        async with Main(cfg) as main:
-            await main.resolve_lastfm(url)
-            await main.rip()
+    async with main_session(ctx) as main:
+        await main.resolve_lastfm(url)
+        await main.rip()
 
 
 @rip.command()
@@ -662,11 +694,10 @@ async def id(ctx, source, media_type, id):
     """Download an item by ID."""
     if ctx.obj["config"] is None:
         return
-    with ctx.obj["config"] as cfg:
-        async with Main(cfg) as main:
-            await main.add_by_id(source, media_type, id)
-            await main.resolve()
-            await main.rip()
+    async with main_session(ctx) as main:
+        await main.add_by_id(source, media_type, id)
+        await main.resolve()
+        await main.rip()
 
 
 def _version_tuple(version: str) -> tuple[int, ...]:
@@ -683,7 +714,9 @@ def is_newer_version(latest: str | None, current: str = __version__) -> bool:
         return False
 
 
-async def latest_streamrip_version(verify_ssl: bool = True) -> tuple[str, str | None]:
+async def latest_streamrip_version(
+    verify_ssl: bool = True,
+) -> tuple[str, str | None, bool]:
     """Get the latest version of this fork and its release notes from GitHub.
 
     Uses the latest GitHub release, or the version in pyproject.toml on the
@@ -694,7 +727,7 @@ async def latest_streamrip_version(verify_ssl: bool = True) -> tuple[str, str | 
         verify_ssl: Whether to verify SSL certificates
 
     Returns:
-        A tuple of (version, release_notes)
+        A tuple of (version, release_notes, is_release)
     """
     try:
         timeout = aiohttp.ClientTimeout(total=10)
@@ -707,7 +740,7 @@ async def latest_streamrip_version(verify_ssl: bool = True) -> tuple[str, str | 
                     release = await resp.json(content_type=None)
                     tag = str(release.get("tag_name") or "").lstrip("vV")
                     if tag:
-                        return tag, release.get("body")
+                        return tag, release.get("body"), True
 
             async with s.get(
                 f"https://raw.githubusercontent.com/{REPOSITORY}/HEAD/pyproject.toml"
@@ -717,10 +750,10 @@ async def latest_streamrip_version(verify_ssl: bool = True) -> tuple[str, str | 
                         r'^version\s*=\s*"([^"]+)"', await resp.text(), re.MULTILINE
                     )
                     if match:
-                        return match.group(1), None
+                        return match.group(1), None, False
     except Exception as e:
         logger.debug("Could not check for updates: %s", e)
-    return __version__, None
+    return __version__, None, False
 
 
 if __name__ == "__main__":

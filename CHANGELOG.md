@@ -3,6 +3,26 @@
 All notable changes in this fork of [nathom/streamrip](https://github.com/nathom/streamrip). Numbers can refer to
 upstream issues and pull requests.
 
+## 2.4.5
+
+- Qobuz login now offers a choice: an isolated browser that logs in and
+  captures the token automatically, pasting a short script into your own
+  browser's console, or entering it by hand. Falls back to manual entry if
+  the automatic options time out.
+- Qobuz search accepts the result limit loaded from the TOML config, fixing
+  the crash when searching without `--num-results`.
+- Tidal hi-res (DASH) downloads no longer leak MP4 container metadata
+  (`major_brand`, ffmpeg's `encoder` stamp, ...) into the FLAC's tags.
+- Removed the config version/migration system: an incompatible config now
+  just says to run `streamrip config reset`, instead of being silently
+  rewritten through a growing pile of per-option migration cases.
+- `max_connections` (tracks downloaded at once) defaults to 5, down from 6.
+- A fully successful download now reports completion too, not just failures.
+- The update check now runs, with a spinner, before every download command
+  (`url`, `file`, `search`, `lastfm`, `id`) instead of only `url`. The
+  suggested upgrade command pins the detected release instead of installing
+  whatever `dev` currently has.
+
 ## 2.4.4
 
 - ffmpeg is required and checked before any login. Without it streamrip stops

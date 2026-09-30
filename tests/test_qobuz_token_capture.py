@@ -1,79 +1,82 @@
-from unittest.mock import AsyncMock, MagicMock, patch
+import asyncio
+import re
 
+import aiohttp
 import pytest
 
 from streamrip.rip.qobuz_token_capture import (
     QobuzTokenCaptureError,
-    _capture_qobuz_auth_token_async,
-    _install_chromium,
+    capture_qobuz_auth_token,
 )
 
-
-@pytest.mark.asyncio
-async def test_install_chromium_succeeds():
-    proc = AsyncMock()
-    proc.communicate.return_value = (b"", None)
-    proc.returncode = 0
-    with patch("asyncio.create_subprocess_exec", return_value=proc):
-        await _install_chromium()  # should not raise
+CALLBACK_RE = re.compile(r"http://127\.0\.0\.1:\d+/callback/[\w-]+")
 
 
-@pytest.mark.asyncio
-async def test_install_chromium_failure_raises():
-    proc = AsyncMock()
-    proc.communicate.return_value = (b"network error", None)
-    proc.returncode = 1
-    with patch("asyncio.create_subprocess_exec", return_value=proc):
-        with pytest.raises(QobuzTokenCaptureError, match="Could not download"):
-            await _install_chromium()
-
-
-@pytest.mark.asyncio
-async def test_missing_chromium_is_installed_automatically_then_retried():
-    """The first launch fails the way Playwright does when the browser isn't
-    downloaded yet; streamrip should install it and retry, not just give up.
-    """
-    browser = AsyncMock()
-    context = AsyncMock()
-    page = MagicMock()
-    page.on = MagicMock()
-    page.goto = AsyncMock()
-    page.wait_for_timeout = AsyncMock()
-
-    browser.new_context.return_value = context
-    context.new_page.return_value = page
-
-    chromium = MagicMock()
-    chromium.launch = AsyncMock(
-        side_effect=[
-            Exception(
-                "BrowserType.launch: Executable doesn't exist ... "
-                "Run 'playwright install' to download new browsers."
-            ),
-            browser,
-        ]
+def _mock_console_print(monkeypatch):
+    printed: list[str] = []
+    monkeypatch.setattr(
+        "streamrip.rip.qobuz_token_capture.console.print",
+        lambda *a, **k: printed.append(" ".join(str(x) for x in a)),
     )
+    return printed
 
-    playwright_ctx = MagicMock()
-    playwright_ctx.chromium = chromium
-    async_playwright_cm = AsyncMock()
-    async_playwright_cm.__aenter__.return_value = playwright_ctx
-    async_playwright_cm.__aexit__.return_value = False
 
-    install_mock = AsyncMock()
+async def _wait_for_callback_url(printed: list[str]) -> str:
+    for _ in range(100):
+        match = CALLBACK_RE.search("\n".join(printed))
+        if match:
+            return match.group(0)
+        await asyncio.sleep(0.02)
+    raise AssertionError("capture never printed a callback URL")
 
-    with (
-        patch(
-            "playwright.async_api.async_playwright",
-            return_value=async_playwright_cm,
-        ),
-        patch("streamrip.rip.qobuz_token_capture._install_chromium", install_mock),
-        pytest.raises(QobuzTokenCaptureError, match="Could not detect"),
-    ):
-        # timeout_s=0: falls straight through to "no login detected" once
-        # the (successful, second-attempt) browser is up, without needing
-        # to simulate real Qobuz login network traffic.
-        await _capture_qobuz_auth_token_async(timeout_s=0)
 
-    install_mock.assert_awaited_once()
-    assert chromium.launch.await_count == 2
+async def test_capture_receives_the_token_the_snippet_posts(monkeypatch):
+    printed = _mock_console_print(monkeypatch)
+    task = asyncio.ensure_future(capture_qobuz_auth_token(timeout_s=5))
+    callback_url = await _wait_for_callback_url(printed)
+
+    async with aiohttp.ClientSession() as session:
+        async with session.post(
+            callback_url,
+            json={"user_id": "123", "token": "captured-token"},
+            headers={"Origin": "https://play.qobuz.com"},
+        ) as resp:
+            assert resp.status == 204
+            assert (
+                resp.headers["Access-Control-Allow-Origin"] == "https://play.qobuz.com"
+            )
+
+    assert await task == ("123", "captured-token")
+
+
+async def test_capture_times_out_when_nothing_is_posted(monkeypatch):
+    _mock_console_print(monkeypatch)
+    with pytest.raises(QobuzTokenCaptureError):
+        await capture_qobuz_auth_token(timeout_s=0.2)
+
+
+async def test_wrong_path_is_rejected_and_capture_still_times_out(monkeypatch):
+    printed = _mock_console_print(monkeypatch)
+    task = asyncio.ensure_future(capture_qobuz_auth_token(timeout_s=0.5))
+    callback_url = await _wait_for_callback_url(printed)
+    wrong_url = callback_url.rsplit("/", 1)[0] + "/wrong-nonce"
+
+    async with aiohttp.ClientSession() as session:
+        async with session.post(wrong_url, json={"user_id": "x", "token": "y"}) as resp:
+            assert resp.status == 404
+
+    with pytest.raises(QobuzTokenCaptureError):
+        await task
+
+
+async def test_malformed_payload_is_rejected(monkeypatch):
+    printed = _mock_console_print(monkeypatch)
+    task = asyncio.ensure_future(capture_qobuz_auth_token(timeout_s=0.5))
+    callback_url = await _wait_for_callback_url(printed)
+
+    async with aiohttp.ClientSession() as session:
+        async with session.post(callback_url, json={"nonsense": True}) as resp:
+            assert resp.status == 400
+
+    with pytest.raises(QobuzTokenCaptureError):
+        await task
