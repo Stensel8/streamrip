@@ -39,7 +39,11 @@ REPOSITORY = "Stensel8/streamrip"
 def _upgrade_command(version: str, *, is_release: bool = True) -> str:
     """Install the detected release tag or the default branch used as fallback."""
     ref = f"v{version}" if is_release else "HEAD"
-    return f"pip install --upgrade git+https://github.com/{REPOSITORY}.git@{ref}"
+    target = f"git+https://github.com/{REPOSITORY}.git@{ref}"
+    uv = shutil.which("uv")
+    if uv:
+        return f'"{uv}" pip install --python "{sys.executable}" --upgrade {target}'
+    return f'"{sys.executable}" -m pip install --upgrade {target}'
 
 
 def coro(f):
