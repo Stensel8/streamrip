@@ -243,6 +243,7 @@ class Main:
     async def search_interactive(
         self, source: str, media_type: str, query: str, limit: int = 100
     ):
+        """Search, then let the user pick results from an interactive menu."""
         search_results = await self._search(source, media_type, query, limit)
         if search_results is None:
             return
@@ -290,6 +291,7 @@ class Main:
                 )
 
     async def search_take_first(self, source: str, media_type: str, query: str):
+        """Search and queue only the first result, with no user interaction."""
         search_results = await self._search(source, media_type, query, 1)
         if search_results is not None:
             first = search_results.results[0]
@@ -298,6 +300,7 @@ class Main:
     async def search_output_file(
         self, source: str, media_type: str, query: str, filepath: str, limit: int
     ):
+        """Search and write the results to filepath as JSON, without downloading."""
         search_results = await self._search(source, media_type, query, limit)
         if search_results is None:
             return
@@ -341,6 +344,7 @@ class Main:
         return self
 
     async def __aexit__(self, *_):
+        """Close every client session and clean up progress bars and artwork."""
         # Ensure all client sessions are closed
         for client in self.clients.values():
             if isinstance(client, TidalClient):

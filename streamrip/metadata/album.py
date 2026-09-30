@@ -19,6 +19,7 @@ genre_clean = re.compile(r"([^\u2192\/]+)")
 
 
 def _year(date: str | None) -> str:
+    """Return the 4-digit year prefix of an ISO date, or "Unknown"."""
     return date[:4] if date else "Unknown"
 
 
@@ -90,6 +91,7 @@ class AlbumMetadata:
 
     @classmethod
     def from_qobuz(cls, resp: dict) -> AlbumMetadata:
+        """Build album metadata from a Qobuz API album response."""
         album = (resp.get("title") or "Unknown Album").strip()
         version = (resp.get("version") or "").strip() or None
         # The edition is part of what the album *is* -- a standard and a deluxe
@@ -150,6 +152,7 @@ class AlbumMetadata:
 
     @classmethod
     def from_deezer(cls, resp: dict) -> AlbumMetadata:
+        """Build album metadata from a Deezer API album response."""
         date = resp.get("release_date")
         info = AlbumInfo(
             id=str(resp["id"]),
@@ -200,6 +203,7 @@ class AlbumMetadata:
 
     @classmethod
     def from_soundcloud(cls, resp: dict) -> AlbumMetadata:
+        """Build album metadata standing in for a SoundCloud track's own."""
         # SoundCloud has no albums: a track stands in for its own.
         publisher = resp.get("publisher_metadata") or {}
         date = resp.get("created_at")

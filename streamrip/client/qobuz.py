@@ -61,6 +61,7 @@ class QobuzSpoofer:
         self.verify_ssl = verify_ssl
 
     async def get_app_id_and_secrets(self) -> tuple[str, list[str]]:
+        """Scrape Qobuz's web player bundle for its app id and secrets."""
         assert self.session is not None
         async with self.session.get("https://play.qobuz.com/login") as req:
             login_page = await req.text()
@@ -122,10 +123,12 @@ class QobuzSpoofer:
         return app_id, secrets_list
 
     async def __aenter__(self):
+        """Open the spoofer's own HTTP session."""
         self.session = new_session(verify_ssl=self.verify_ssl)
         return self
 
     async def __aexit__(self, *_):
+        """Close the spoofer's HTTP session."""
         if self.session is not None:
             await self.session.close()
         self.session = None

@@ -181,6 +181,7 @@ class TidalPrompter(CredentialPrompter):
         self.save()
 
     async def _device_login(self, lane: TidalClient):
+        """Walk the user through Tidal's device login flow for one lane."""
         if len(self.client.lanes()) > 1:
             console.print(
                 "Tidal serves hi-res and CD quality through two separate logins. "
