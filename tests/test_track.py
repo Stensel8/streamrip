@@ -1,5 +1,7 @@
+import json
 import os
 import shutil
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import mutagen
@@ -11,7 +13,7 @@ from streamrip.client.downloadable import Downloadable
 from streamrip.client.qobuz import QobuzClient
 from streamrip.config import Config
 from streamrip.exceptions import NonStreamableError
-from streamrip.media.track import PendingSingle, Track, album_folder
+from streamrip.media.track import PendingSingle, PendingTrack, Track, album_folder
 from streamrip.metadata import (
     AlbumInfo,
     AlbumMetadata,
@@ -233,3 +235,83 @@ def test_album_folder_follows_restrict_characters(restrict):
     assert folder == (
         "/music/Bjrk - Homognic" if restrict else "/music/Björk - Homogénic"
     )
+
+
+@pytest.fixture(params=["single", "album"])
+def pending_disc_track(request, tmp_path, monkeypatch):
+    with open("tests/qobuz_track_resp.json") as f:
+        resp = json.load(f)
+    resp["album"]["media_count"] = 2
+    config = Config.defaults()
+    config.session.downloads.folder = str(tmp_path / "downloads")
+    config.session.downloads.disc_subdirectories = True
+    config.session.filepaths.add_singles_to_folder = True
+    config.session.filepaths.folder_format = "{title}"
+    config.session.filepaths.track_format = "{title}"
+    config.session.cli.progress_bars = False
+    client = MagicMock()
+    client.source = "qobuz"
+    client.get_metadata = AsyncMock(return_value=resp)
+    client.get_downloadable = AsyncMock(return_value=FakeDownloadable("flac"))
+    database = MagicMock()
+    database.downloaded.return_value = False
+    artwork = AsyncMock(return_value=((None, None), None))
+    monkeypatch.setattr("streamrip.media.track.download_artwork", artwork)
+    track_id = str(resp["id"])
+    if request.param == "single":
+        pending = PendingSingle(track_id, client, config, database)
+    else:
+        album = AlbumMetadata.from_qobuz(resp["album"])
+        pending = PendingTrack(
+            track_id,
+            album,
+            client,
+            config,
+            album_folder(config, client.source, album),
+            database,
+            None,
+        )
+    return pending, resp, artwork
+
+
+@pytest.mark.parametrize(
+    "discnumber",
+    ["1/../../../escaped", r"1\..\..\..\escaped", "2", "", None, True, 0, -1, 1.5],
+)
+@pytest.mark.asyncio
+async def test_invalid_disc_number_is_rejected_before_io(
+    pending_disc_track, tmp_path, discnumber
+):
+    pending, resp, artwork = pending_disc_track
+    resp["media_number"] = discnumber
+
+    assert await pending.resolve() is None
+
+    pending.db.set_failed.assert_called_once_with("qobuz", "track", pending.id)
+    pending.client.get_downloadable.assert_not_awaited()
+    artwork.assert_not_awaited()
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("discnumber", [1, 2, None])
+@pytest.mark.asyncio
+async def test_valid_disc_number_download_stays_in_album(
+    pending_disc_track, discnumber
+):
+    pending, resp, _ = pending_disc_track
+    if discnumber is None:
+        del resp["media_number"]  # A missing Qobuz disc number defaults to 1.
+    else:
+        resp["media_number"] = discnumber
+
+    track = await pending.resolve()
+    assert track is not None
+    expected = Path(album_folder(pending.config, "qobuz", track.meta.album)) / (
+        f"Disc {discnumber or 1}"
+    )
+    assert Path(track.folder) == expected
+    await track.preprocess()
+    await track.download()
+    assert Path(track.download_path).parent == expected
+    assert Path(track.download_path).read_bytes() == Path(FIXTURES["flac"]).read_bytes()
+    pending.db.set_failed.assert_not_called()
