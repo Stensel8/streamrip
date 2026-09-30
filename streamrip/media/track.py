@@ -104,7 +104,12 @@ class Track(Media):
                 # so a connection that keeps dropping near the end of a large
                 # FLAC still gets there (upstream #951, #1022).
                 self.downloadable.resume = attempt > 1
-                label = f"Track {self.meta.tracknumber} {quality}"
+                # Plain "Track N" rows don't say whose track it is -- which
+                # matters for labels, and for features on an artist's page.
+                label = (
+                    f"{self.meta.album.albumartist} - "
+                    f"Track {self.meta.tracknumber} {quality}"
+                )
                 if attempt > 1:
                     label += f" (retry {attempt - 1})"
                 try:

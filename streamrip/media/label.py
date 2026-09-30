@@ -35,7 +35,8 @@ class Label(Media):
             f"[bold]{self.name}[/bold]: found {len(self.albums)} release(s), "
             "resolving and downloading..."
         )
-        await rip_albums(self.albums)
+        enabled = self.config is not None and self.config.session.cli.progress_bars
+        await rip_albums(self.albums, self.name, enabled)
 
     async def postprocess(self):
         pass

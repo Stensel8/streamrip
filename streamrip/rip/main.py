@@ -17,6 +17,8 @@ from ..exceptions import (
     MissingCredentialsError,
 )
 from ..media import (
+    Artist,
+    Label,
     Media,
     Pending,
     PendingAlbum,
@@ -29,7 +31,7 @@ from ..media import (
 )
 from ..media.media import resolve_or_none
 from ..metadata import SearchResults
-from ..progress import clear_progress
+from ..progress import clear_progress, clear_screen
 from ..utils.ffmpeg_utils import ffmpeg_missing_message, find_ffmpeg
 from .interactive import Confirm
 from .parse_url import parse_url
@@ -201,17 +203,27 @@ class Main:
         self.pending.clear()
 
     async def rip(self):
-        """Download all resolved items."""
-        results = await asyncio.gather(
-            *[item.rip() for item in self.media], return_exceptions=True
-        )
+        """Download all resolved items, one at a time, top to bottom.
 
+        An Artist or Label is its entire discography -- running several of
+        those at once means every one of them has an album's worth of tracks
+        in flight together, which both interleaves the progress display
+        beyond following and multiplies how hard the streaming service's
+        rate limit gets hit at once. Finishing one item completely before
+        starting the next keeps both predictable, in exchange for not
+        overlapping items that could otherwise run independently.
+        """
         failed_items = 0
-        for result in results:
-            if isinstance(result, Exception):
-                logger.error(
-                    f"Error processing media item: {type(result).__name__}: {result}"
-                )
+        for i, item in enumerate(self.media):
+            # An artist or label logs a whole discography's worth of lines;
+            # clear the previous item's off screen so only the one now
+            # running is shown.
+            if i > 0 and isinstance(item, Artist | Label):
+                clear_screen(self.config.session.cli.progress_bars)
+            try:
+                await item.rip()
+            except Exception as e:
+                logger.error(f"Error processing media item: {type(e).__name__}: {e}")
                 failed_items += 1
 
         total_items = len(self.media)

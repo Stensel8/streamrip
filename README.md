@@ -16,7 +16,7 @@ A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, and Sou
 
 ![downloading an album](https://github.com/Stensel8/streamrip/blob/dev/demo/download_album.png?raw=true)
 
-- Tracks, albums, playlists, discographies and labels, several at once
+- Tracks, albums, playlists, discographies and labels; queue several in one go
 - Spotify and Apple Music playlists through [last.fm](https://www.last.fm)
 - Tagged, with cover art, and converted to FLAC, ALAC, AIFF, MP3, AAC, OGG or Opus if you like
 - Remembers what it downloaded; `streamrip repair` retries what failed
