@@ -5,12 +5,12 @@ import time
 from abc import ABC, abstractmethod
 
 from click import launch
-from rich.prompt import Prompt
 
 from ..client import Client, DeezerClient, QobuzClient, SoundcloudClient, TidalClient
 from ..config import Config
 from ..console import console
 from ..exceptions import AuthenticationError, MissingCredentialsError
+from .interactive import Prompt
 from .qobuz_token_capture import (
     QobuzTokenCaptureError,
     capture_qobuz_auth_token,

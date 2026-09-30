@@ -27,9 +27,9 @@ import shutil
 import sys
 
 from aiohttp import web
-from rich.prompt import Confirm
 
 from ..console import console
+from .interactive import Confirm
 
 logger = logging.getLogger("streamrip")
 

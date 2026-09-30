@@ -18,7 +18,6 @@ from click_help_colors import HelpColorsGroup  # type: ignore
 from rich.logging import RichHandler
 from rich.markdown import Markdown
 from rich.markup import escape
-from rich.prompt import Confirm
 from rich.traceback import install
 
 from .. import __version__, db
@@ -27,6 +26,7 @@ from ..config import DEFAULT_CONFIG_PATH, Config, set_user_defaults
 from ..console import console
 from ..exceptions import FFmpegNotFoundError
 from ..utils.ssl_utils import print_ssl_error_help
+from .interactive import Confirm
 from .main import Main
 
 logger = logging.getLogger("streamrip")

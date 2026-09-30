@@ -5,7 +5,6 @@ import platform
 import sys
 
 import aiofiles
-from rich.prompt import Confirm
 
 from .. import db
 from ..client import Client, DeezerClient, QobuzClient, SoundcloudClient, TidalClient
@@ -32,6 +31,7 @@ from ..media.media import resolve_or_none
 from ..metadata import SearchResults
 from ..progress import clear_progress
 from ..utils.ffmpeg_utils import ffmpeg_missing_message, find_ffmpeg
+from .interactive import Confirm
 from .parse_url import parse_url
 from .prompter import get_prompter
 
