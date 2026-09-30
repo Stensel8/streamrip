@@ -127,9 +127,7 @@ class _StreamripGroup(HelpColorsGroup):
     def main(self, *args, **kwargs):
         notice = None
         with console.status("streamrip: Checking for updates...", spinner="dots"):
-            latest_version, notes, is_release = asyncio.run(
-                latest_streamrip_version()
-            )
+            latest_version, notes, is_release = asyncio.run(latest_streamrip_version())
         if is_newer_version(latest_version):
             notice = (latest_version, notes, is_release)
         try:
