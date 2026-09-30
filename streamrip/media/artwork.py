@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import shutil
+import tempfile
 
 import aiohttp
 from PIL import Image
@@ -17,11 +18,12 @@ logger = logging.getLogger("streamrip")
 
 def remove_artwork_tempdirs():
     logger.debug("Removing dirs %s", _artwork_tempdirs)
-    for path in _artwork_tempdirs:
+    for path in _artwork_tempdirs.copy():
         try:
             shutil.rmtree(path)
         except FileNotFoundError:
             pass
+        _artwork_tempdirs.discard(path)
 
 
 async def download_artwork(
@@ -39,8 +41,8 @@ async def download_artwork(
     If `for_playlist` is set, it will not download hires cover art regardless
     of the config setting.
 
-    Embedded artworks are put in a temporary directory under `folder` called
-    "__embed" that can be deleted once a playlist or album is done downloading.
+    Embedded artworks are put in unique temporary directories under `folder`
+    that can be deleted once the download session is done.
 
     Hi-res (saved) artworks are kept in `folder` as "cover.jpg".
 
@@ -80,8 +82,8 @@ async def download_artwork(
     _, embed_url, embed_cover_path = covers.get_size(config.embed_size)
     if embed_cover_path is None and embed:
         assert embed_url is not None
-        embed_dir = os.path.join(folder, "__artwork")
-        os.makedirs(embed_dir, exist_ok=True)
+        os.makedirs(folder, exist_ok=True)
+        embed_dir = tempfile.mkdtemp(prefix="__artwork_", dir=folder)
         _artwork_tempdirs.add(embed_dir)
         embed_cover_path = os.path.join(embed_dir, f"cover{hash(embed_url)}.jpg")
         downloadables.append(
