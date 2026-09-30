@@ -1,6 +1,6 @@
 [project]
 name = "streamrip"
-version = "2.4.4"
+version = "2.4.5"
 description = "A fast, all-in-one music downloader for Qobuz, Deezer, Tidal, and SoundCloud"
 authors = [{ name = "nathom", email = "nathanthomas707@gmail.com" }]
 maintainers = [{ name = "Stensel8" }]
@@ -31,10 +31,6 @@ dependencies = [
   "click>=8.1,<9",
   "click-help-colors>=0.9.4,<0.10",
   "requests>=2.32,<3",
-  # Captures the Qobuz user_auth_token from a real browser login so users
-  # never have to dig it out of DevTools by hand. The Chromium build it
-  # drives downloads itself automatically the first time it's needed.
-  "playwright>=1.49",
 ]
 
 [project.optional-dependencies]

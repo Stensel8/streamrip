@@ -461,8 +461,11 @@ class QobuzClient(Client):
         limit: int = 500,
     ) -> list[dict]:
         """Return search response pages, bounded by the caller's result limit."""
-        if type(limit) is not int or limit < 0:
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit < 0:
             raise ValueError("Qobuz search limit must be a non-negative integer")
+        # Config values are tomlkit Integer subclasses. Normalize before using
+        # the limit as a fallback for strictly validated API pagination metadata.
+        limit = int(limit)
         if limit == 0:
             return []
 

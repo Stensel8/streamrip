@@ -62,11 +62,13 @@ bundled one with `pip install imageio-ffmpeg` in streamrip's environment
 streamrip asks for what it needs the first time you use a source, and saves it
 in the config. A login that stops working is asked for again.
 
-- **Qobuz** needs a subscription, or downloads the albums you bought. Its login
-  page has a captcha, so streamrip offers to open a browser and take the token
-  from your login there. Without a desktop, enter your user id and
-  `user_auth_token` yourself: log in at [play.qobuz.com](https://play.qobuz.com/login)
-  and copy both from the `user/login` response in DevTools → Network.
+- **Qobuz** needs a subscription, or downloads the albums you bought. streamrip
+  opens [the HTTPS login page](https://play.qobuz.com/login) in your system's
+  default browser on Linux, Windows, and macOS. Open DevTools → Network before
+  logging in, then copy `user.id` and `user_auth_token` from the `user/login`
+  response into streamrip's prompts. If already logged in, log out and log in
+  again with Network open. The link is also printed for opening manually.
+  No browser is downloaded or automated; credentials are saved for later use.
 - **Tidal** needs a subscription. streamrip shows a link to log in with on any
   device, twice: Tidal serves hi-res (up to 24-bit, 192 kHz) and CD quality
   through two separate logins. Each track is asked for in hi-res first and falls

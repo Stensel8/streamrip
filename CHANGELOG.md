@@ -3,6 +3,15 @@
 All notable changes in this fork of [nathom/streamrip](https://github.com/nathom/streamrip). Numbers can refer to
 upstream issues and pull requests.
 
+## 2.4.5
+
+- Qobuz opens its HTTPS login page in the system default browser, like Tidal.
+  Paste the user id and token using the printed instructions. Removed Playwright
+  and automatic Chromium downloads.
+
+- Qobuz search accepts the result limit loaded from the TOML config, fixing
+  the crash when searching without `--num-results`.
+
 ## 2.4.4
 
 - ffmpeg is required and checked before any login. Without it streamrip stops
