@@ -237,7 +237,9 @@ def test_update_notice_prints_after_a_clean_download(tmp_path, monkeypatch, caps
     assert result.exit_code == 0, result.output
     # Rich's console writes straight to the real stdout, not Click's
     # result.output capture -- pytest's own capsys catches that instead.
-    assert "v99.0.0" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "v99.0.0" in out
+    assert sys.prefix in out
 
 
 def test_update_notice_still_prints_when_the_download_is_cancelled(
@@ -258,6 +260,7 @@ def test_update_notice_still_prints_when_the_download_is_cancelled(
     out = capsys.readouterr().out
     assert "v99.0.0" in out
     assert "Stopped" in out
+    assert sys.prefix in out
 
 
 def test_upgrade_command_preserves_release_or_branch_origin():

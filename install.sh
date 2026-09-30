@@ -11,6 +11,8 @@ set -euo pipefail
 
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 cd "$script_dir"
+venv_path="$script_dir/.venv"
+streamrip_path="$venv_path/bin/streamrip"
 
 if ! command -v uv >/dev/null 2>&1; then
     echo "uv not found, installing it (see https://docs.astral.sh/uv/)..."
@@ -20,17 +22,19 @@ fi
 
 if [ ! -d .venv ]; then
     echo "Creating .venv (Python 3.14)..."
-    uv venv --python 3.14 .venv
+    uv venv --python 3.14 "$venv_path"
 fi
 
 echo "Installing streamrip into .venv..."
-uv pip install --python .venv --upgrade .
+uv pip install --python "$venv_path" --upgrade "$script_dir"
 
 echo
-if .venv/bin/streamrip --version >/dev/null 2>&1; then
-    echo "Done. $(.venv/bin/streamrip --version) is installed at .venv/bin/streamrip."
+if "$streamrip_path" --version >/dev/null 2>&1; then
+    echo "Installed: $("$streamrip_path" --version)"
+    echo "Environment: $venv_path"
+    echo "Run directly: $streamrip_path"
 else
-    echo "Install finished, but .venv/bin/streamrip --version failed -- something's wrong."
+    echo "Install finished, but $streamrip_path --version failed -- something's wrong."
     exit 1
 fi
 echo
@@ -42,10 +46,10 @@ echo
 parent_shell=$(ps -o comm= -p "$PPID" 2>/dev/null || true)
 echo "Activate the venv so plain 'streamrip' works:"
 if [ "$parent_shell" = "fish" ]; then
-    echo "  source .venv/bin/activate.fish"
+    echo "  source \"$venv_path/bin/activate.fish\""
 else
-    echo "  source .venv/bin/activate       # bash/zsh"
-    echo "  source .venv/bin/activate.fish  # fish"
+    echo "  source \"$venv_path/bin/activate\"       # bash/zsh"
+    echo "  source \"$venv_path/bin/activate.fish\"  # fish"
 fi
 echo "Leave it again with 'deactivate'."
 echo
