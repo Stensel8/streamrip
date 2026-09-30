@@ -11,7 +11,12 @@ from .. import db
 from ..client import Client, DeezerClient, QobuzClient, SoundcloudClient, TidalClient
 from ..config import Config
 from ..console import console
-from ..exceptions import APIError, AuthenticationError, MissingCredentialsError
+from ..exceptions import (
+    APIError,
+    AuthenticationError,
+    FFmpegNotFoundError,
+    MissingCredentialsError,
+)
 from ..media import (
     Media,
     Pending,
@@ -26,6 +31,7 @@ from ..media import (
 from ..media.media import resolve_or_none
 from ..metadata import SearchResults
 from ..progress import clear_progress
+from ..utils.ffmpeg_utils import ffmpeg_missing_message, find_ffmpeg
 from .parse_url import parse_url
 from .prompter import get_prompter
 
@@ -325,6 +331,11 @@ class Main:
             self.media.append(playlist)
 
     async def __aenter__(self):
+        """Return this session, raising FFmpegNotFoundError if ffmpeg is missing."""
+        # ffmpeg is required whatever is downloaded (Tidal hi-res, SoundCloud,
+        # conversion), so check before logging in to anything.
+        if find_ffmpeg() is None:
+            raise FFmpegNotFoundError(ffmpeg_missing_message())
         return self
 
     async def __aexit__(self, *_):

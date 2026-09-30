@@ -68,6 +68,14 @@ class ItemNotFoundError(NonStreamableError):
     """
 
 
+class FFmpegNotFoundError(Exception):
+    """A download or conversion needs ffmpeg and none could be found.
+
+    Retrying cannot help, so downloads do not retry it. The message tells the
+    user how to get an ffmpeg.
+    """
+
+
 class ConversionError(Exception):
     """ConversionError."""
 

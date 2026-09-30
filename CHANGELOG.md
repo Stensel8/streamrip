@@ -3,6 +3,12 @@
 All notable changes in this fork of [nathom/streamrip](https://github.com/nathom/streamrip). Numbers can refer to
 upstream issues and pull requests.
 
+## 2.4.4
+
+- ffmpeg is required and checked before any login. Without it streamrip stops
+  with install instructions and exit status 1, instead of failing every
+  hi-res Tidal track one by one.
+
 ## 2.4.3
 
 Security hardening.

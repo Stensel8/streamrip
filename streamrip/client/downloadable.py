@@ -22,7 +22,7 @@ from Cryptodome.Cipher import AES, Blowfish
 from Cryptodome.Util import Counter
 
 from .. import converter
-from ..exceptions import NonStreamableError
+from ..exceptions import FFmpegNotFoundError, NonStreamableError
 from ..utils.ffmpeg_utils import find_ffmpeg
 
 logger = logging.getLogger("streamrip")
@@ -433,11 +433,15 @@ class TidalDASHDownloadable(Downloadable):
         return self._size
 
     async def _download(self, path: str, callback):
+        """Fetch DASH segments and remux them to path, reporting bytes received.
+
+        Raise FFmpegNotFoundError before fetching if ffmpeg is unavailable.
+        Remove the temporary MP4 even if downloading or remuxing fails.
+        """
         ffmpeg_path = find_ffmpeg()
         if ffmpeg_path is None:
-            raise NonStreamableError(
-                "FFmpeg is required to download Tidal hi-res (DASH) tracks. "
-                "Install it, or install streamrip's ffmpeg extra."
+            raise FFmpegNotFoundError(
+                "ffmpeg not found, which Tidal hi-res (DASH) tracks need"
             )
         tmp_path = path + ".dash.mp4"
         try:
@@ -556,8 +560,9 @@ async def concat_audio_files(paths: list[str], out: str, ext: str, max_files_ope
     """
     ffmpeg_path = find_ffmpeg()
     if ffmpeg_path is None:
-        raise Exception(
-            "FFmpeg is required. Install it, or install streamrip's ffmpeg extra."
+        raise FFmpegNotFoundError(
+            "FFmpeg is required. Install it (apt/brew/winget install ffmpeg), or "
+            "run: pip install imageio-ffmpeg"
         )
 
     # Base case

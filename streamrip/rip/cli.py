@@ -6,6 +6,7 @@ import re
 import shutil
 import signal
 import subprocess
+import sys
 from functools import wraps
 from typing import Any
 
@@ -15,6 +16,7 @@ import click
 from click_help_colors import HelpColorsGroup  # type: ignore
 from rich.logging import RichHandler
 from rich.markdown import Markdown
+from rich.markup import escape
 from rich.prompt import Confirm
 from rich.traceback import install
 
@@ -22,6 +24,7 @@ from .. import __version__, db
 from ..client import new_session
 from ..config import DEFAULT_CONFIG_PATH, Config, OutdatedConfigError, set_user_defaults
 from ..console import console
+from ..exceptions import FFmpegNotFoundError
 from ..utils.ssl_utils import print_ssl_error_help
 from .main import Main
 
@@ -34,9 +37,14 @@ UPGRADE_COMMAND = f"pip install --upgrade git+https://github.com/{REPOSITORY}.gi
 
 
 def coro(f):
+    """Adapt an async CLI command to Click with shared error handling."""
+
     @wraps(f)
     def wrapper(*args, **kwargs):
+        """Run the command, report handled errors, and exit 1 for missing ffmpeg."""
+
         async def run():
+            """Run the command with SIGINT cancellation where supported."""
             # Ctrl-C used to be ignored until whatever was in flight finished,
             # so people force-killed streamrip -- which skips the cleanup in
             # Main.__aexit__ and leaves __artwork directories behind. Cancel
@@ -45,6 +53,7 @@ def coro(f):
             loop = asyncio.get_running_loop()
 
             def stop():
+                """Cancel the active task and restore default SIGINT handling."""
                 console.print("\n[yellow]Stopping... (Ctrl-C again to force)")
                 loop.remove_signal_handler(signal.SIGINT)
                 if task is not None:
@@ -64,6 +73,9 @@ def coro(f):
         except aiohttp.ClientConnectorCertificateError as e:
             console.print(f"[red]SSL Certificate verification error: {e}[/red]")
             print_ssl_error_help()
+        except FFmpegNotFoundError as e:
+            console.print(escape(str(e)), style="red")
+            sys.exit(1)
 
     return wrapper
 

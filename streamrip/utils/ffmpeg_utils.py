@@ -21,3 +21,19 @@ def find_ffmpeg() -> str | None:
         return imageio_ffmpeg.get_ffmpeg_exe()
     except Exception:
         return None
+
+
+def ffmpeg_missing_message() -> str:
+    """What to tell someone who runs streamrip without an ffmpeg."""
+    return (
+        "No ffmpeg installation found on your system. streamrip needs ffmpeg "
+        "(for Tidal hi-res, SoundCloud and conversion).\n"
+        "Install ffmpeg:\n"
+        "  Linux:    apt install ffmpeg\n"
+        "  macOS:    brew install ffmpeg\n"
+        "  Windows:  winget install ffmpeg\n"
+        "or proceed with the built-in ffmpeg (a Python package) by running, in "
+        "the environment streamrip is installed in:\n"
+        "  pip install imageio-ffmpeg\n"
+        "  (pipx: pipx inject streamrip imageio-ffmpeg)"
+    )
