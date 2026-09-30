@@ -17,6 +17,7 @@ logger = logging.getLogger("streamrip")
 
 
 def remove_artwork_tempdirs():
+    """Delete every temporary embed-artwork directory created this session."""
     logger.debug("Removing dirs %s", _artwork_tempdirs)
     for path in _artwork_tempdirs.copy():
         try:

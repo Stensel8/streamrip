@@ -108,6 +108,7 @@ class QobuzInterpreterURL(URL):
         config: Config,
         db: Database,
     ) -> Pending:
+        """Resolve the interpreter URL's artist id, fetching the page if needed."""
         url = self.match.group(0)
         possible_id = self.match.group(1)
         if possible_id.isdigit():

@@ -65,6 +65,7 @@ class Converter:
         self.ffmpeg_arg = self.default_ffmpeg_arg if ffmpeg_arg is None else ffmpeg_arg
 
     async def convert(self):
+        """Run ffmpeg, replacing the source file with the converted one."""
         # Read cover art from the source before FFmpeg runs and before any
         # potential source deletion, so it's available for post-conversion
         # embedding even when remove_source=True.
@@ -144,6 +145,7 @@ class Converter:
             logger.warning("Could not embed cover art into %s: %s", self.final_fn, e)
 
     def _gen_command(self) -> list[str]:
+        """Build the ffmpeg command line that performs the conversion."""
         # Only errors: they're captured for ConversionError, and anything more
         # ffmpeg prints would garble the progress bars.
         command = [self.ffmpeg_path, "-i", self.filename, "-loglevel", "error"]

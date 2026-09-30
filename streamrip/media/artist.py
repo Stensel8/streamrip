@@ -29,6 +29,7 @@ async def rip_albums(
     window = asyncio.Semaphore(RESOLVE_CHUNK_SIZE)
 
     async def _rip(item: PendingAlbum):
+        """Resolve and download one album, dropping it if unwanted."""
         async with window:
             try:
                 album = await item.resolve()
@@ -53,6 +54,7 @@ class Artist(Media):
         pass
 
     async def download(self):
+        """Resolve and download every wanted album of the discography."""
         # Fetching each album's tracklist happens RESOLVE_CHUNK_SIZE at a
         # time before the first progress bar appears, which for an artist
         # with a large discography can take a while with nothing on screen
@@ -83,6 +85,7 @@ class Artist(Media):
         window = asyncio.Semaphore(RESOLVE_CHUNK_SIZE)
 
         async def _resolve(item: PendingAlbum) -> Album | None:
+            """Resolve one album, returning None on failure."""
             async with window:
                 try:
                     return await item.resolve()
@@ -96,6 +99,7 @@ class Artist(Media):
             albums = self._filter_repeats(albums)
 
         async def _rip(album: Album):
+            """Download one already-resolved album."""
             async with window:
                 try:
                     await album.rip()
@@ -105,6 +109,7 @@ class Artist(Media):
         await asyncio.gather(*[_rip(a) for a in albums if self._wanted(a, filters)])
 
     async def _download_async(self, filters: ArtistFilterConfig):
+        """Resolve and download albums one at a time, without repeats filtering."""
         await rip_albums(self.albums, lambda a: self._wanted(a, filters))
 
     def _wanted(self, a: Album, f: ArtistFilterConfig) -> bool:

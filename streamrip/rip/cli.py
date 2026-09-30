@@ -103,6 +103,7 @@ async def main_session(ctx):
 def _print_update_notice(
     latest_version: str, notes: str | None, is_release: bool
 ) -> None:
+    """Print the available-update message and its release notes, if any."""
     console.print(
         f"[green]A new version of streamrip [cyan]v{latest_version}"
         f"[/cyan] is available! Run [white][bold]"
@@ -125,6 +126,7 @@ class _StreamripGroup(HelpColorsGroup):
     """
 
     def main(self, *args, **kwargs):
+        """Check for updates, run the command, then print a notice if newer."""
         notice = None
         try:
             with console.status("streamrip: Checking for updates...", spinner="dots"):

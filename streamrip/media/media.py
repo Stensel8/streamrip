@@ -81,10 +81,12 @@ async def rip_tracks(pending: list, resolve_concurrency: int, prefer_explicit: b
     slots = asyncio.Semaphore(resolve_concurrency)
 
     async def resolve(item):
+        """Resolve one item, bounded by the resolve concurrency limit."""
         async with slots:
             return await resolve_or_none(item)
 
     async def rip(track):
+        """Download one already-resolved track."""
         try:
             await track.rip()
         except TrackDownloadFailedError:
@@ -100,6 +102,7 @@ async def rip_tracks(pending: list, resolve_concurrency: int, prefer_explicit: b
         return
 
     async def resolve_and_rip(item):
+        """Resolve one item and download it immediately if it resolved."""
         if (track := await resolve(item)) is not None:
             await rip(track)
 

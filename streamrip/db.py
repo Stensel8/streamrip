@@ -13,18 +13,22 @@ class Dummy:
     """Stands in for a database that's disabled in the config."""
 
     def contains(self, **_) -> bool:
+        """Always return False: nothing is ever stored."""
         return False
 
     def add(self, *_):
         pass
 
     def remove(self, **_):
+        """No-op: there is nothing to remove."""
         pass
 
     def clear(self) -> int:
+        """No-op: there is nothing to clear."""
         return 0
 
     def all(self) -> list:
+        """Return an empty list: there is nothing stored."""
         return []
 
 

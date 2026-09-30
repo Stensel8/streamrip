@@ -249,6 +249,7 @@ class DeezerClient(Client):
         return artist
 
     async def search(self, media_type: str, query: str, limit: int = 200) -> list[dict]:
+        """Search Deezer, or fetch an editorial selection for "featured"."""
         if media_type == "featured":
             try:
                 if query:
