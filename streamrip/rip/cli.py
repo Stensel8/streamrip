@@ -7,6 +7,7 @@ import shutil
 import signal
 import subprocess
 import sys
+from contextlib import asynccontextmanager
 from functools import wraps
 from typing import Any
 
@@ -33,7 +34,11 @@ logger = logging.getLogger("streamrip")
 
 # Where this build of streamrip comes from, for update checks and advice.
 REPOSITORY = "Stensel8/streamrip"
-UPGRADE_COMMAND = f"pip install --upgrade git+https://github.com/{REPOSITORY}.git"
+
+
+def _upgrade_command(version: str) -> str:
+    """pip command to install a specific released version, not `dev` HEAD."""
+    return f"pip install --upgrade git+https://github.com/{REPOSITORY}.git@v{version}"
 
 
 def coro(f):
@@ -78,6 +83,38 @@ def coro(f):
             sys.exit(1)
 
     return wrapper
+
+
+@asynccontextmanager
+async def main_session(ctx):
+    """Shared by every download command (url, file, search, lastfm, id).
+
+    Opens the config as a session, checks for a newer streamrip release (if
+    enabled) before doing anything else, and always reports the outcome --
+    so every command that can download gets the same visible check, not
+    just `url`.
+    """
+    with ctx.obj["config"] as cfg:
+        cfg: Config
+        if cfg.session.misc.check_for_updates:
+            with console.status("Checking for updates...", spinner="dots"):
+                latest_version, notes = await latest_streamrip_version(
+                    verify_ssl=cfg.session.downloads.verify_ssl
+                )
+            if is_newer_version(latest_version):
+                console.print(
+                    f"[green]A new version of streamrip [cyan]v{latest_version}"
+                    f"[/cyan] is available! Run [white][bold]"
+                    f"{_upgrade_command(latest_version)}"
+                    "[/bold][/white] to update.[/green]\n"
+                )
+                if notes:
+                    console.print(Markdown(notes))
+            else:
+                console.print(f"[green]Already the latest version: v{__version__}")
+
+        async with Main(cfg) as main:
+            yield main
 
 
 @click.group(
@@ -219,32 +256,10 @@ async def url(ctx, urls):
     if ctx.obj["config"] is None:
         return
 
-    with ctx.obj["config"] as cfg:
-        cfg: Config
-        updates = cfg.session.misc.check_for_updates
-        if updates:
-            # Run in background
-            version_coro = asyncio.create_task(
-                latest_streamrip_version(verify_ssl=cfg.session.downloads.verify_ssl)
-            )
-        else:
-            version_coro = None
-
-        async with Main(cfg) as main:
-            await main.add_all(urls)
-            await main.resolve()
-            await main.rip()
-
-        if version_coro is not None:
-            latest_version, notes = await version_coro
-            if is_newer_version(latest_version):
-                console.print(
-                    f"\n[green]A new version of streamrip [cyan]v{latest_version}"
-                    f"[/cyan] is available! Run [white][bold]{UPGRADE_COMMAND}"
-                    "[/bold][/white] to update.[/green]\n"
-                )
-                if notes:
-                    console.print(Markdown(notes))
+    async with main_session(ctx) as main:
+        await main.add_all(urls)
+        await main.resolve()
+        await main.rip()
 
 
 @rip.command()
@@ -264,39 +279,37 @@ async def file(ctx, path):
     """
     if ctx.obj["config"] is None:
         return
-    with ctx.obj["config"] as cfg:
-        async with Main(cfg) as main:
-            async with aiofiles.open(path, "r") as f:
-                content = await f.read()
-                try:
-                    items: Any = json.loads(content)
-                    loaded = True
-                except json.JSONDecodeError:
-                    items = content.split()
-                    loaded = False
-            if loaded:
+    async with main_session(ctx) as main:
+        async with aiofiles.open(path, "r") as f:
+            content = await f.read()
+            try:
+                items: Any = json.loads(content)
+                loaded = True
+            except json.JSONDecodeError:
+                items = content.split()
+                loaded = False
+        if loaded:
+            console.print(
+                f"Detected json file. Loading [yellow]{len(items)}[/yellow] items"
+            )
+            await main.add_all_by_id(
+                [(i["source"], i["media_type"], i["id"]) for i in items]
+            )
+        else:
+            # dict, not set: keeps the file's order.
+            unique = list(dict.fromkeys(items))
+            if len(unique) < len(items):
                 console.print(
-                    f"Detected json file. Loading [yellow]{len(items)}[/yellow] items"
+                    f"Found [yellow]{len(items) - len(unique)}[/yellow] repeated URLs!"
                 )
-                await main.add_all_by_id(
-                    [(i["source"], i["media_type"], i["id"]) for i in items]
-                )
-            else:
-                # dict, not set: keeps the file's order.
-                unique = list(dict.fromkeys(items))
-                if len(unique) < len(items):
-                    console.print(
-                        f"Found [yellow]{len(items) - len(unique)}[/yellow] "
-                        "repeated URLs!"
-                    )
-                    items = unique
-                console.print(
-                    f"Detected list of urls. Loading [yellow]{len(items)}[/yellow] items"
-                )
-                await main.add_all(items)
+                items = unique
+            console.print(
+                f"Detected list of urls. Loading [yellow]{len(items)}[/yellow] items"
+            )
+            await main.add_all(items)
 
-            await main.resolve()
-            await main.rip()
+        await main.resolve()
+        await main.rip()
 
 
 @rip.group()
@@ -607,19 +620,16 @@ async def search(ctx, first, output_file, num_results, source, media_type, query
     if first and output_file:
         console.print("Cannot choose --first and --output-file!")
         return
-    with ctx.obj["config"] as cfg:
-        limit = num_results or cfg.session.cli.max_search_results
-        async with Main(cfg) as main:
-            if first:
-                await main.search_take_first(source, media_type, query)
-            elif output_file:
-                await main.search_output_file(
-                    source, media_type, query, output_file, limit
-                )
-            else:
-                await main.search_interactive(source, media_type, query, limit)
-            await main.resolve()
-            await main.rip()
+    limit = num_results or ctx.obj["config"].session.cli.max_search_results
+    async with main_session(ctx) as main:
+        if first:
+            await main.search_take_first(source, media_type, query)
+        elif output_file:
+            await main.search_output_file(source, media_type, query, output_file, limit)
+        else:
+            await main.search_interactive(source, media_type, query, limit)
+        await main.resolve()
+        await main.rip()
 
 
 @rip.command()
@@ -641,10 +651,9 @@ async def lastfm(ctx, source, fallback_source, url):
         config.session.lastfm.source = source
     if fallback_source is not None:
         config.session.lastfm.fallback_source = fallback_source
-    with config as cfg:
-        async with Main(cfg) as main:
-            await main.resolve_lastfm(url)
-            await main.rip()
+    async with main_session(ctx) as main:
+        await main.resolve_lastfm(url)
+        await main.rip()
 
 
 @rip.command()
@@ -657,11 +666,10 @@ async def id(ctx, source, media_type, id):
     """Download an item by ID."""
     if ctx.obj["config"] is None:
         return
-    with ctx.obj["config"] as cfg:
-        async with Main(cfg) as main:
-            await main.add_by_id(source, media_type, id)
-            await main.resolve()
-            await main.rip()
+    async with main_session(ctx) as main:
+        await main.add_by_id(source, media_type, id)
+        await main.resolve()
+        await main.rip()
 
 
 def _version_tuple(version: str) -> tuple[int, ...]:

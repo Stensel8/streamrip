@@ -18,6 +18,11 @@ upstream issues and pull requests.
   rewritten through a growing pile of per-option migration cases.
 - `max_connections` (tracks downloaded at once) defaults to 5, down from 6.
 - A fully successful download now reports completion too, not just failures.
+- The update check now runs, with a spinner, before every download command
+  (`url`, `file`, `search`, `lastfm`, `id`) instead of only `url`, and always
+  reports the outcome -- "Already the latest version" too, not just when a
+  newer one exists. The suggested upgrade command pins that release instead
+  of installing whatever `dev` currently has.
 
 ## 2.4.4
 

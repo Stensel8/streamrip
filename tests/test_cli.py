@@ -3,7 +3,7 @@ from click.testing import CliRunner
 
 from streamrip import db
 from streamrip.config import set_user_defaults
-from streamrip.rip.cli import UPGRADE_COMMAND, is_newer_version, rip
+from streamrip.rip.cli import _upgrade_command, is_newer_version, rip
 
 
 def test_version_comparison_is_numeric():
@@ -15,8 +15,14 @@ def test_version_comparison_is_numeric():
 
 
 def test_upgrade_command_installs_from_the_fork():
-    assert "github.com/Stensel8/streamrip" in UPGRADE_COMMAND
-    assert "pip install streamrip" not in UPGRADE_COMMAND
+    cmd = _upgrade_command("2.4.5")
+    assert "github.com/Stensel8/streamrip" in cmd
+    assert "pip install streamrip" not in cmd
+
+
+def test_upgrade_command_pins_the_detected_release():
+    # Not `dev` HEAD, which can be ahead of or behind the release just detected.
+    assert _upgrade_command("2.4.5").endswith("@v2.4.5")
 
 
 def test_help_lists_commands(tmp_path):

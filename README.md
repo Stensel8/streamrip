@@ -23,8 +23,36 @@ A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, and Sou
 
 ## Installation
 
+### Latest release (recommended)
+
 The install script fetches Python 3.14 (with [uv](https://docs.astral.sh/uv/))
-and installs streamrip into a `.venv` in the current directory:
+and installs streamrip into a `.venv` in the current directory. This installs
+the [latest release](https://github.com/Stensel8/streamrip/releases/latest),
+currently v2.4.4:
+
+```bash
+curl -LsSf https://raw.githubusercontent.com/Stensel8/streamrip/v2.4.4/install.sh | bash  # Linux/macOS
+```
+
+```powershell
+irm https://raw.githubusercontent.com/Stensel8/streamrip/v2.4.4/install.ps1 | iex  # Windows
+```
+
+With Python 3.14 already there, install it into a venv of your own, or with
+[pipx](https://pipx.pypa.io/) or uv:
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate  # fish: activate.fish
+pip install git+https://github.com/Stensel8/streamrip.git@v2.4.4
+
+pipx install git+https://github.com/Stensel8/streamrip.git@v2.4.4
+uv tool install git+https://github.com/Stensel8/streamrip.git@v2.4.4
+```
+
+### `dev` branch (unstable, active development)
+
+Whatever's currently being worked on, not a released version -- may be
+broken between commits. Same commands, `dev` instead of a version tag:
 
 ```bash
 curl -LsSf https://raw.githubusercontent.com/Stensel8/streamrip/dev/install.sh | bash  # Linux/macOS
@@ -34,18 +62,9 @@ curl -LsSf https://raw.githubusercontent.com/Stensel8/streamrip/dev/install.sh |
 irm https://raw.githubusercontent.com/Stensel8/streamrip/dev/install.ps1 | iex  # Windows
 ```
 
-With Python 3.14 already there, install it into a venv of your own, or with
-[pipx](https://pipx.pypa.io/) or uv:
-
 ```bash
-python3 -m venv .venv && source .venv/bin/activate  # fish: activate.fish
-pip install git+https://github.com/Stensel8/streamrip.git
-
-pipx install git+https://github.com/Stensel8/streamrip.git
-uv tool install git+https://github.com/Stensel8/streamrip.git
+pip install git+https://github.com/Stensel8/streamrip.git@dev
 ```
-
-Add `@<branch-or-tag>` to the URL for a specific version.
 
 streamrip needs [ffmpeg](https://ffmpeg.org/download.html) (Tidal hi-res,
 SoundCloud, conversion) and checks for it before logging in to anything:
