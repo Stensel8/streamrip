@@ -28,14 +28,14 @@ A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, and Sou
 The install script fetches Python 3.14 (with [uv](https://docs.astral.sh/uv/))
 and installs streamrip into a `.venv` in the current directory. This installs
 the [latest release](https://github.com/Stensel8/streamrip/releases/latest),
-currently v2.4.4:
+currently v2.4.5:
 
 ```bash
-curl -LsSf https://raw.githubusercontent.com/Stensel8/streamrip/v2.4.4/install.sh | bash  # Linux/macOS
+curl -LsSf https://raw.githubusercontent.com/Stensel8/streamrip/v2.4.5/install.sh | bash  # Linux/macOS
 ```
 
 ```powershell
-irm https://raw.githubusercontent.com/Stensel8/streamrip/v2.4.4/install.ps1 | iex  # Windows
+irm https://raw.githubusercontent.com/Stensel8/streamrip/v2.4.5/install.ps1 | iex  # Windows
 ```
 
 With Python 3.14 already there, install it into a venv of your own, or with
@@ -43,10 +43,10 @@ With Python 3.14 already there, install it into a venv of your own, or with
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate  # fish: activate.fish
-pip install git+https://github.com/Stensel8/streamrip.git@v2.4.4
+pip install git+https://github.com/Stensel8/streamrip.git@v2.4.5
 
-pipx install git+https://github.com/Stensel8/streamrip.git@v2.4.4
-uv tool install git+https://github.com/Stensel8/streamrip.git@v2.4.4
+pipx install git+https://github.com/Stensel8/streamrip.git@v2.4.5
+uv tool install git+https://github.com/Stensel8/streamrip.git@v2.4.5
 ```
 
 ### `dev` branch (unstable, active development)

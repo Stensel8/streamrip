@@ -242,49 +242,58 @@ async def capture_qobuz_auth_token_via_browser(
             "Playwright isn't available; use another login method."
         ) from e
 
-    async with async_playwright() as pw:
-        browser, found_as = await _launch_installed_chromium(pw, headless)
-        if browser is not None:
-            console.print(f"[cyan]Driving your installed browser ({found_as})…[/cyan]")
-        else:
-            if not Confirm.ask(
-                "\n[yellow]No installed Chrome, Edge, Brave, or Chromium "
-                "found.[/yellow] Playwright would need to download its own "
-                "browser (not the one you use day to day) to log in "
-                "automatically -- about 150 MB, once. Download it?",
-                default=False,
-            ):
-                raise QobuzTokenCaptureError(
-                    "Skipped downloading a browser; use another login method."
+    try:
+        async with async_playwright() as pw:
+            browser, found_as = await _launch_installed_chromium(pw, headless)
+            if browser is not None:
+                console.print(
+                    f"[cyan]Driving your installed browser ({found_as})…[/cyan]"
                 )
-            await _download_playwright_chromium()
-            browser = await pw.chromium.launch(headless=headless)
-            console.print("[cyan]Using the downloaded browser…[/cyan]")
+            else:
+                if not Confirm.ask(
+                    "\n[yellow]No installed Chrome, Edge, Brave, or Chromium "
+                    "found.[/yellow] Playwright would need to download its own "
+                    "browser (not the one you use day to day) to log in "
+                    "automatically -- about 150 MB, once. Download it?",
+                    default=False,
+                ):
+                    raise QobuzTokenCaptureError(
+                        "Skipped downloading a browser; use another login method."
+                    )
+                await _download_playwright_chromium()
+                browser = await pw.chromium.launch(headless=headless)
+                console.print("[cyan]Using the downloaded browser…[/cyan]")
 
-        try:
-            context = await browser.new_context()
-            page = await context.new_page()
-            await page.goto(login_url)
+            try:
+                context = await browser.new_context()
+                page = await context.new_page()
+                await page.goto(login_url)
 
-            deadline = asyncio.get_event_loop().time() + timeout_s
-            while asyncio.get_event_loop().time() < deadline:
-                try:
-                    raw = await page.evaluate("() => localStorage.getItem('localuser')")
-                except PlaywrightError:
-                    # Qobuz reloads the page on login, which tears down the
-                    # execution context mid-poll; the next tick runs against
-                    # the page that comes after, once it's settled.
-                    await asyncio.sleep(1)
-                    continue
-                if raw:
+                deadline = asyncio.get_event_loop().time() + timeout_s
+                while asyncio.get_event_loop().time() < deadline:
                     try:
-                        data = json.loads(raw)
-                    except ValueError:
-                        data = None
-                    if data and data.get("id") and data.get("token"):
-                        return str(data["id"]), str(data["token"])
-                await asyncio.sleep(1)
+                        raw = await page.evaluate(
+                            "() => localStorage.getItem('localuser')"
+                        )
+                    except PlaywrightError:
+                        # Qobuz reloads the page on login, which tears down the
+                        # execution context mid-poll; the next tick runs against
+                        # the page that comes after, once it's settled.
+                        await asyncio.sleep(1)
+                        continue
+                    if raw:
+                        try:
+                            data = json.loads(raw)
+                        except ValueError:
+                            data = None
+                        if data and data.get("id") and data.get("token"):
+                            return str(data["id"]), str(data["token"])
+                    await asyncio.sleep(1)
 
-            raise QobuzTokenCaptureError(f"No login detected within {timeout_s}s.")
-        finally:
-            await browser.close()
+                raise QobuzTokenCaptureError(f"No login detected within {timeout_s}s.")
+            finally:
+                await browser.close()
+    except QobuzTokenCaptureError:
+        raise
+    except Exception as exc:
+        raise QobuzTokenCaptureError(f"Browser capture failed: {exc}") from exc

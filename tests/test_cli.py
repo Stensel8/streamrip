@@ -205,7 +205,7 @@ class _FakeMain:
 def _run_url_with_a_newer_version_available(tmp_path, monkeypatch, raise_during_rip):
     monkeypatch.setattr(
         "streamrip.rip.cli.latest_streamrip_version",
-        AsyncMock(return_value=("99.0.0", None)),
+        AsyncMock(return_value=("99.0.0", None, True)),
     )
     _FakeMain.to_raise = raise_during_rip
     monkeypatch.setattr("streamrip.rip.cli.Main", _FakeMain)
@@ -241,3 +241,8 @@ def test_update_notice_still_prints_when_the_download_is_cancelled(
     out = capsys.readouterr().out
     assert "v99.0.0" in out
     assert "Stopped" in out
+
+
+def test_upgrade_command_preserves_release_or_branch_origin():
+    assert _upgrade_command("2.4.5", is_release=True).endswith("@v2.4.5")
+    assert _upgrade_command("2.4.5", is_release=False).endswith("@HEAD")

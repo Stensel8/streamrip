@@ -2,6 +2,7 @@ import os
 import shutil
 
 import pytest
+import tomlkit
 
 from streamrip.config import (
     ArtistFilterConfig,
@@ -205,3 +206,14 @@ def test_default_quality_is_the_highest_of_every_source():
     assert session.qobuz.quality == 4  # 24-bit, up to 192 kHz
     assert session.tidal.quality == 3  # best available, hi-res where there is one
     assert session.deezer.quality == 2  # FLAC
+
+
+def test_legacy_misc_version_is_ignored():
+    with open(SAMPLE_CONFIG) as f:
+        doc = tomlkit.parse(f.read())
+    doc["misc"]["version"] = "2.3.3"
+    data = ConfigData.from_toml(tomlkit.dumps(doc))
+    assert data.misc.check_for_updates == doc["misc"]["check_for_updates"]
+    assert "version" not in data.toml["misc"]
+    data.update_toml()
+    assert "version" not in data.toml["misc"]
