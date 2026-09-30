@@ -275,5 +275,3 @@ def toml_set_user_defaults(toml: TOMLDocument):
     toml["downloads"]["folder"] = DEFAULT_DOWNLOADS_FOLDER  # type: ignore
     toml["database"]["downloads_path"] = DEFAULT_DOWNLOADS_DB_PATH  # type: ignore
     toml["database"]["failed_downloads_path"] = DEFAULT_FAILED_DOWNLOADS_DB_PATH  # type: ignore
-
-

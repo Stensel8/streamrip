@@ -43,8 +43,7 @@ async def test_capture_receives_the_token_the_snippet_posts(monkeypatch):
         ) as resp:
             assert resp.status == 204
             assert (
-                resp.headers["Access-Control-Allow-Origin"]
-                == "https://play.qobuz.com"
+                resp.headers["Access-Control-Allow-Origin"] == "https://play.qobuz.com"
             )
 
     assert await task == ("123", "captured-token")
@@ -63,9 +62,7 @@ async def test_wrong_path_is_rejected_and_capture_still_times_out(monkeypatch):
     wrong_url = callback_url.rsplit("/", 1)[0] + "/wrong-nonce"
 
     async with aiohttp.ClientSession() as session:
-        async with session.post(
-            wrong_url, json={"user_id": "x", "token": "y"}
-        ) as resp:
+        async with session.post(wrong_url, json={"user_id": "x", "token": "y"}) as resp:
             assert resp.status == 404
 
     with pytest.raises(QobuzTokenCaptureError):

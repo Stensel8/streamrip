@@ -18,6 +18,9 @@ StreamripDownloads
 *.aac
 *.pyc
 *test.py
+# *test.py above also matches conftest.py (ends in "test.py"), pytest's
+# standard shared-fixture file -- never meant to be excluded from git.
+!**/conftest.py
 /.mypy_cache
 .DS_Store
 pyrightconfig.json

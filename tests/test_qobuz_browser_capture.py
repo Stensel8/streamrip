@@ -69,7 +69,9 @@ async def test_times_out_when_never_logged_in():
         await runner.cleanup()
 
 
-async def _serve_two_pages(first_html: str, second_html: str) -> tuple[web.AppRunner, str]:
+async def _serve_two_pages(
+    first_html: str, second_html: str
+) -> tuple[web.AppRunner, str]:
     async def first(request: web.Request) -> web.Response:
         return web.Response(text=first_html, content_type="text/html")
 
