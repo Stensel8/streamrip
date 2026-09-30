@@ -280,6 +280,12 @@ async def fetch_track_meta(
         resp = await client.get_metadata(track_id, "track")
         album = album or AlbumMetadata.from_track_resp(resp, source)
         meta = album and TrackMetadata.from_resp(album, source, resp)
+        # Disc numbers become directory components in both album and single
+        # downloads. Reject malformed provider values before any filesystem I/O.
+        if meta is not None and (
+            type(meta.discnumber) is not int or meta.discnumber < 1
+        ):
+            raise ValueError("Disc number must be a positive integer")
     except Exception as e:
         _record_failure(
             db,
