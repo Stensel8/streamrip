@@ -453,10 +453,19 @@ class TidalDASHDownloadable(Downloadable):
                     await f.write(chunk)
                     callback(len(chunk))
 
+            # -map_metadata -1 -fflags +bitexact: a plain stream-copy remux
+            # would otherwise leave the source MP4's own container fields
+            # and ffmpeg's version stamp sitting in the output's tags,
+            # meaningless outside that MP4. streamrip's own tagger writes
+            # the real tags right after this step anyway.
             proc = await asyncio.create_subprocess_exec(
                 ffmpeg_path,
                 "-i",
                 tmp_path,
+                "-map_metadata",
+                "-1",
+                "-fflags",
+                "+bitexact",
                 "-c",
                 "copy",
                 "-y",
