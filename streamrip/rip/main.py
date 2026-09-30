@@ -9,9 +9,15 @@ from rich.prompt import Confirm
 
 from .. import db
 from ..client import Client, DeezerClient, QobuzClient, SoundcloudClient, TidalClient
+from ..client.tidal import HIRES_TIER
 from ..config import Config
 from ..console import console
-from ..exceptions import APIError, AuthenticationError, MissingCredentialsError
+from ..exceptions import (
+    APIError,
+    AuthenticationError,
+    FFmpegNotFoundError,
+    MissingCredentialsError,
+)
 from ..media import (
     Media,
     Pending,
@@ -26,6 +32,7 @@ from ..media import (
 from ..media.media import resolve_or_none
 from ..metadata import SearchResults
 from ..progress import clear_progress
+from ..utils.ffmpeg_utils import ffmpeg_missing_message, find_ffmpeg
 from .parse_url import parse_url
 from .prompter import get_prompter
 
@@ -194,8 +201,22 @@ class Main:
         self.media.extend(new_media)
         self.pending.clear()
 
+    def _require_ffmpeg_for_hires(self):
+        """Stop before downloading if Tidal hi-res is wanted and ffmpeg is not there.
+
+        Hi-res tracks arrive as segments that ffmpeg has to join. Without it
+        every hi-res track would fail one by one, after its retries.
+        """
+        if not self.clients["tidal"].logged_in:
+            return
+        if self.config.session.tidal.quality < HIRES_TIER:
+            return
+        if find_ffmpeg() is None:
+            raise FFmpegNotFoundError(ffmpeg_missing_message())
+
     async def rip(self):
         """Download all resolved items."""
+        self._require_ffmpeg_for_hires()
         results = await asyncio.gather(
             *[item.rip() for item in self.media], return_exceptions=True
         )

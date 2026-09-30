@@ -6,6 +6,7 @@ import re
 import shutil
 import signal
 import subprocess
+import sys
 from functools import wraps
 from typing import Any
 
@@ -15,6 +16,7 @@ import click
 from click_help_colors import HelpColorsGroup  # type: ignore
 from rich.logging import RichHandler
 from rich.markdown import Markdown
+from rich.markup import escape
 from rich.prompt import Confirm
 from rich.traceback import install
 
@@ -22,6 +24,7 @@ from .. import __version__, db
 from ..client import new_session
 from ..config import DEFAULT_CONFIG_PATH, Config, OutdatedConfigError, set_user_defaults
 from ..console import console
+from ..exceptions import FFmpegNotFoundError
 from ..utils.ssl_utils import print_ssl_error_help
 from .main import Main
 
@@ -64,6 +67,9 @@ def coro(f):
         except aiohttp.ClientConnectorCertificateError as e:
             console.print(f"[red]SSL Certificate verification error: {e}[/red]")
             print_ssl_error_help()
+        except FFmpegNotFoundError as e:
+            console.print(escape(str(e)), style="red")
+            sys.exit(1)
 
     return wrapper
 

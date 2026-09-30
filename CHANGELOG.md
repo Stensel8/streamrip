@@ -3,6 +3,14 @@
 All notable changes in this fork of [nathom/streamrip](https://github.com/nathom/streamrip). Numbers can refer to
 upstream issues and pull requests.
 
+## Unreleased
+
+- Tidal hi-res needs ffmpeg. Without one, streamrip now stops before
+  downloading, with the commands to install ffmpeg (or the bundled
+  `imageio-ffmpeg`) and exits with status 1. Before, every hi-res track failed
+  on its own after retrying, the run still exited with status 0, and an empty
+  album folder was left behind.
+
 ## 2.4.3
 
 Security hardening.

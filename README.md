@@ -47,7 +47,10 @@ uv tool install git+https://github.com/Stensel8/streamrip.git
 
 Add `@<branch-or-tag>` to the URL for a specific version. Conversion and Tidal
 hi-res downloads need [ffmpeg](https://ffmpeg.org/download.html)
-(`apt install ffmpeg`, `brew install ffmpeg`).
+(`apt install ffmpeg`, `brew install ffmpeg`, `winget install ffmpeg`), or the
+bundled one: `pip install imageio-ffmpeg` in streamrip's environment
+(`pipx inject streamrip imageio-ffmpeg` for pipx). Without either, streamrip
+stops before a Tidal hi-res download and says so; `-q 2` skips hi-res.
 
 > [!IMPORTANT]
 > `pip install streamrip`, the AUR package and `brew install streamrip` install

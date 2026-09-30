@@ -34,3 +34,19 @@ def test_returns_none_when_nothing_is_available():
         patch.dict(sys.modules, {"imageio_ffmpeg": None}),
     ):
         assert find_ffmpeg() is None
+
+
+def test_missing_message_says_how_to_get_ffmpeg():
+    from streamrip.utils.ffmpeg_utils import ffmpeg_missing_message
+
+    message = ffmpeg_missing_message()
+    assert "No ffmpeg installation found" in message
+    for command in (
+        "apt install ffmpeg",
+        "brew install ffmpeg",
+        "winget install ffmpeg",
+        "pip install imageio-ffmpeg",
+        "pipx inject streamrip imageio-ffmpeg",
+        "-q 2",
+    ):
+        assert command in message
