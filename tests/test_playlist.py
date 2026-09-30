@@ -6,6 +6,7 @@ from streamrip.config import Config
 from streamrip.exceptions import NonStreamableError
 from streamrip.media.playlist import (
     PendingLastfmPlaylist,
+    PendingPlaylist,
     PendingPlaylistTrack,
     _playlist_folder,
 )
@@ -129,3 +130,66 @@ def test_playlist_folder_is_one_folder_and_follows_restrict_characters():
     assert _playlist_folder(config, "Café / Mix") == "/music/Café  Mix"
     config.session.filepaths.restrict_characters = True
     assert _playlist_folder(config, "Café / Mix") == "/music/Caf  Mix"
+
+
+@pytest.mark.parametrize("name", ["", ".", "..", "/", ".. /", "é"])
+def test_playlist_folder_rejects_special_components_after_sanitizing(tmp_path, name):
+    config = Config.defaults()
+    config.session.downloads.folder = str(tmp_path)
+    config.session.filepaths.restrict_characters = True
+    with pytest.raises(ValueError, match="playlist folder"):
+        _playlist_folder(config, name)
+
+
+@pytest.mark.parametrize("destination", ["outside", "root"])
+def test_playlist_folder_rejects_symlinks_outside_or_to_root(tmp_path, destination):
+    root = tmp_path / "music"
+    root.mkdir()
+    outside = tmp_path / "music-other"
+    outside.mkdir()
+    (root / "Mix").symlink_to(outside if destination == "outside" else root)
+    config = Config.defaults()
+    config.session.downloads.folder = str(root)
+    with pytest.raises(ValueError, match="playlist folder"):
+        _playlist_folder(config, "Mix")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("name", ["..", "Mix"])
+async def test_remote_playlist_title_is_checked_before_tracks_are_created(
+    tmp_path, monkeypatch, name
+):
+    config = Config.defaults()
+    config.session.downloads.folder = str(tmp_path / "music")
+    config.session.cli.progress_bars = False
+    client = MagicMock()
+    client.source = "tidal"
+    client.get_metadata = AsyncMock(return_value={"title": name, "tracks": [{"id": 1}]})
+    pending = PendingPlaylist("1", client, config, MagicMock())
+    api_playlist = await pending.resolve()
+
+    page = (
+        f'<h1 class="playlisting-playlist-header-title">{name}</h1>'
+        '<div data-playlisting-entry-count="1"></div>'
+        '<a href="/track" title="Song"><a href="/artist" title="Artist">'
+    )
+    session = MagicMock()
+    session.get.return_value.__aenter__.return_value.text = AsyncMock(return_value=page)
+    monkeypatch.setattr(
+        "streamrip.media.playlist.new_session",
+        MagicMock(return_value=AsyncMock(__aenter__=AsyncMock(return_value=session))),
+    )
+    query = AsyncMock(return_value=("1", False))
+    monkeypatch.setattr(PendingLastfmPlaylist, "_make_query", query)
+    lastfm_playlist = await PendingLastfmPlaylist(
+        "https://example.test/playlist", client, None, config, MagicMock()
+    ).resolve()
+
+    for playlist in (api_playlist, lastfm_playlist):
+        if name == "..":
+            assert playlist is None
+        else:
+            assert playlist.tracks[0].folder == str(tmp_path / "music" / "Mix")
+    if name == "..":
+        query.assert_not_awaited()
+    assert not (tmp_path / "music").exists()
