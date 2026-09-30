@@ -89,10 +89,11 @@ def coro(f):
 async def main_session(ctx):
     """Shared by every download command (url, file, search, lastfm, id).
 
-    Opens the config as a session, checks for a newer streamrip release (if
-    enabled) before doing anything else, and always reports the outcome --
-    so every command that can download gets the same visible check, not
-    just `url`.
+    Opens the config as a session, and checks for a newer streamrip release
+    (if enabled) before doing anything else -- so every command that can
+    download gets the same visible check, not just `url`. Silent when
+    already on the latest version; only speaks up when there's something
+    to report.
     """
     with ctx.obj["config"] as cfg:
         cfg: Config
@@ -110,8 +111,6 @@ async def main_session(ctx):
                 )
                 if notes:
                     console.print(Markdown(notes))
-            else:
-                logger.info(f"streamrip: Already the latest version: v{__version__}")
 
         async with Main(cfg) as main:
             yield main
