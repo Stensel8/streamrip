@@ -62,13 +62,28 @@ bundled one with `pip install imageio-ffmpeg` in streamrip's environment
 streamrip asks for what it needs the first time you use a source, and saves it
 in the config. A login that stops working is asked for again.
 
-- **Qobuz** needs a subscription, or downloads the albums you bought. streamrip
-  opens [the HTTPS login page](https://play.qobuz.com/login) in your system's
-  default browser on Linux, Windows, and macOS. Open DevTools → Network before
-  logging in, then copy `user.id` and `user_auth_token` from the `user/login`
-  response into streamrip's prompts. If already logged in, log out and log in
-  again with Network open. The link is also printed for opening manually.
-  No browser is downloaded or automated; credentials are saved for later use.
+- **Qobuz** needs a subscription, or downloads the albums you bought. Qobuz's
+  web login has no device-code flow to poll (unlike Tidal's), but it does save
+  a working login token for itself the moment you're logged in, so streamrip
+  offers a choice of how to grab that:
+  1. **An isolated browser window** that logs in and captures the token with
+     no further input from you. Drives a Chrome-family browser already on
+     your machine (Chrome, Edge, Brave, Chromium, ...) in a throwaway
+     profile — no existing session to work around, nothing downloaded. If
+     none is found (Firefox/LibreWolf-only setups), it asks before
+     downloading Playwright's own small browser instead.
+  2. **Your own browser**, open to [the login page](https://play.qobuz.com/login).
+     Log in first, *then* paste the short script streamrip prints into the
+     console (F12) — Qobuz reloads the page on login, which would stop the
+     script if pasted beforehand. It reads the token Qobuz's own web player
+     already saves for itself in `localStorage`. Nothing is downloaded or
+     driven; a few lines of JavaScript run in the browser you already have
+     open.
+  3. **By hand**: copy `user.id` and `user_auth_token` from DevTools →
+     Network yourself, or use email/password.
+
+  Options 1 and 2 fall back to manual entry if nothing arrives within a few
+  minutes. Credentials are saved for later use either way.
 - **Tidal** needs a subscription. streamrip shows a link to log in with on any
   device, twice: Tidal serves hi-res (up to 24-bit, 192 kHz) and CD quality
   through two separate logins. Each track is asked for in hi-res first and falls

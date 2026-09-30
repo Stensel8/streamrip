@@ -11,6 +11,11 @@ from ..client import Client, DeezerClient, QobuzClient, SoundcloudClient, TidalC
 from ..config import Config
 from ..console import console
 from ..exceptions import AuthenticationError, MissingCredentialsError
+from .qobuz_token_capture import (
+    QobuzTokenCaptureError,
+    capture_qobuz_auth_token,
+    capture_qobuz_auth_token_via_browser,
+)
 
 logger = logging.getLogger("streamrip")
 
@@ -78,17 +83,48 @@ class QobuzPrompter(CredentialPrompter):
 
         Qobuz moved its web login behind OAuth/reCAPTCHA, so the old
         email/password flow fails for most accounts (upstream #954, #956).
-        The token from a logged-in browser session still works.
+        The token from a logged-in browser session still works; offer the
+        two ways to capture it automatically (see qobuz_token_capture)
+        before falling back to asking for it outright.
         """
         console.print(
             "\n[cyan]Qobuz now requires a token login.[/cyan]\n"
-            "  1. Open [blue underline]https://play.qobuz.com/login[/] in any browser\n"
-            "  2. Open DevTools -> Network, then log in (log out first if needed)\n"
-            "  3. Find the [bold]user/login[/bold] request and open its response\n"
-            "  4. Copy [bold]user.id[/bold] and [bold]user_auth_token[/bold]\n"
+            "How do you want to log in?\n"
+            "  1. Open an isolated browser window that logs in and captures\n"
+            "     the token automatically\n"
+            "  2. Log in in your own browser, then paste a short script into\n"
+            "     its console to send the token back\n"
+            "  3. Enter the token (or email/password) by hand\n"
+        )
+        choice = Prompt.ask("Choose", choices=["1", "2", "3"], default="2")
+
+        if choice == "1":
+            try:
+                user_id, token = await capture_qobuz_auth_token_via_browser()
+            except QobuzTokenCaptureError as e:
+                console.print(f"[yellow]{e}")
+            else:
+                self._set_session_creds(True, user_id, token)
+                return
+        elif choice == "2":
+            _open_login_link("https://play.qobuz.com/login")
+            try:
+                user_id, token = await capture_qobuz_auth_token()
+            except QobuzTokenCaptureError as e:
+                console.print(f"[yellow]{e}")
+            else:
+                self._set_session_creds(True, user_id, token)
+                return
+
+        _open_login_link("https://play.qobuz.com/login")
+        console.print(
+            "\nEnter it manually instead:\n"
+            "  1. In the browser tab that just opened, open DevTools -> Network,\n"
+            "     then log in (log out first if needed)\n"
+            "  2. Find the [bold]user/login[/bold] request and open its response\n"
+            "  3. Copy [bold]user.id[/bold] and [bold]user_auth_token[/bold]\n"
             "Leave the user id empty to log in with email and password instead.\n"
         )
-        _open_login_link("https://play.qobuz.com/login")
         user_id = Prompt.ask("Enter your Qobuz user id", default="").strip()
         if user_id:
             token = Prompt.ask(

@@ -31,6 +31,10 @@ dependencies = [
   "click>=8.1,<9",
   "click-help-colors>=0.9.4,<0.10",
   "requests>=2.32,<3",
+  # Drives a browser for automatic Qobuz login: an already-installed
+  # Chrome-family browser when there is one (no download), or its own
+  # browser after asking, when there isn't.
+  "playwright>=1.40,<2",
 ]
 
 [project.optional-dependencies]
