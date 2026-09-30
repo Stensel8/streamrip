@@ -213,7 +213,7 @@ class _StreamripGroup(HelpColorsGroup):
 def rip(
     ctx, config_path, folder, no_db, quality, codec, no_progress, no_ssl_verify, verbose
 ):
-    """Streamrip: the all in one music downloader."""
+    """A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, and SoundCloud."""
     global logger
     logging.basicConfig(
         level="INFO",

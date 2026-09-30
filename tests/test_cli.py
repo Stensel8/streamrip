@@ -46,6 +46,10 @@ def test_help_lists_commands(tmp_path, capsys):
     )
     assert result.exit_code == 0
     output = capsys.readouterr().out
+    assert (
+        "A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, and SoundCloud."
+        in " ".join(output.split())
+    )
     for command in ("url", "file", "search", "lastfm", "id", "repair", "config"):
         assert command in output
 
