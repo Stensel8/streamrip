@@ -40,11 +40,13 @@ def _open_audio(path: str):
 
 
 def _is_lossless(audio) -> bool:
+    """Whether a mutagen file is a lossless (FLAC, AIFF, or ALAC) codec."""
     # ALAC and AAC share the .m4a extension, so this has to look at the codec.
     return isinstance(audio, FLAC | AIFF) or getattr(audio.info, "codec", "") == "alac"
 
 
 def _first_tag(audio, key: str) -> str:
+    """Return the first value of a tag, normalized for comparison."""
     return str((audio.tags.get(key) or [""])[0]).strip().casefold()
 
 
@@ -68,6 +70,7 @@ class Track(Media):
     _skip_lossy_duplicate: bool = False
 
     async def preprocess(self):
+        """Set the download path and skip it if a lossless copy already exists."""
         self._set_download_path()
         os.makedirs(self.folder, exist_ok=True)
         if self.downloadable.extension != "flac" and self._copies_on_disk(
@@ -147,6 +150,7 @@ class Track(Media):
                     ) from e
 
     async def postprocess(self):
+        """Tag, convert, and dedup the downloaded file, then mark it downloaded."""
         if self._skip_lossy_duplicate:
             self.db.set_downloaded(self.meta.info.id)
             return
@@ -244,6 +248,7 @@ class Track(Media):
         return copies
 
     def _remove_lossy_copies(self):
+        """Delete lossy copies of this track once a lossless copy has landed."""
         # A lossy download converted to FLAC is no better than the copy it would
         # replace; only a genuinely lossless download supersedes the others.
         if self.downloadable.extension != "flac":
@@ -267,6 +272,7 @@ def album_folder(config: Config, source: str, album: AlbumMetadata) -> str:
 
 
 def _record_failure(db: Database, source: str, track_id: str, message: str):
+    """Log message and record the track as failed in the database."""
     # Every failure has to be recorded, not just logged: otherwise the track
     # silently goes missing, with nothing for `streamrip repair` to retry.
     logger.error(message)
@@ -315,6 +321,7 @@ async def fetch_track_meta(
 async def fetch_downloadable(
     client: Client, config: Config, db: Database, track_id: str
 ) -> Downloadable | None:
+    """Return a Downloadable for the track, or None and record the failure."""
     quality = config.session.get_source(client.source).quality
     try:
         return await client.get_downloadable(track_id, quality)
@@ -342,6 +349,7 @@ class PendingTrack(Pending):
     cover_path: str | None
 
     async def resolve(self) -> Track | None:
+        """Fetch this track's metadata and download info, resolving into a Track."""
         meta = await fetch_track_meta(self.client, self.db, self.id, self.album)
         if meta is None:
             return None
@@ -371,6 +379,7 @@ class PendingSingle(Pending):
     db: Database
 
     async def resolve(self) -> Track | None:
+        """Fetch this single's metadata, album info, and cover, into a Track."""
         meta = await fetch_track_meta(self.client, self.db, self.id)
         if meta is None:
             return None

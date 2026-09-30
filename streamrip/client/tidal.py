@@ -143,6 +143,7 @@ class TidalClient(Client):
     _retry_at = 0.0
 
     def __init__(self, config: Config, hires_of: "TidalClient | None" = None):
+        """Build a client lane; hires_of makes this the hi-res lane behind it."""
         self.logged_in = False
         self.global_config = config
         self.config = config.session.tidal
@@ -187,6 +188,7 @@ class TidalClient(Client):
         return [self, self.hires_lane] if self.hires_lane else [self]
 
     async def close(self):
+        """Close every lane's HTTP session."""
         for lane in self.lanes():
             if getattr(lane, "session", None) is not None:
                 await lane.session.close()
@@ -206,6 +208,7 @@ class TidalClient(Client):
         self.logged_in = True
 
     async def _login_lane(self):
+        """Log this single lane in, refreshing its access token if it's stale."""
         if getattr(self, "session", None) is None or self.session.closed:
             self.session = new_session(
                 verify_ssl=self.global_config.session.downloads.verify_ssl
@@ -386,6 +389,7 @@ class TidalClient(Client):
         return []
 
     async def _playback_info(self, track_id: str, quality: int) -> dict:
+        """Fetch a track's playback manifest at the given quality tier."""
         params = {
             "audioquality": QUALITY_MAP[quality],
             "playbackmode": "STREAM",
@@ -432,6 +436,7 @@ class TidalClient(Client):
         return None
 
     async def get_downloadable(self, track_id: str, quality: int):
+        """Return a downloadable for the track, trying the hi-res lane first."""
         quality = max(0, min(quality, self.max_quality))
         # Highest first: hi-res where Tidal has it, then whatever the lossless
         # client is served, one step down at a time.
@@ -567,6 +572,7 @@ class TidalClient(Client):
         self._update_authorization_from_config()
 
     def _update_authorization_from_config(self):
+        """Point the session's Authorization header at the current access token."""
         self.session.headers.update(
             {"authorization": f"Bearer {self.tokens.access_token}"},
         )
@@ -732,6 +738,7 @@ class TidalClient(Client):
                 await asyncio.sleep(delay)
 
     def _pause_requests(self, seconds: float):
+        """Block every lane's requests for seconds after a 429."""
         # The rate limit belongs to the account, so both lanes wait together.
         root = self._root
         now = time.monotonic()

@@ -86,12 +86,14 @@ def _tag_values(meta: TrackMetadata) -> dict:
 
 
 def _flac_value(name: str, value):
+    """Format a tag value for a FLAC Vorbis comment."""
     if name in ("tracknumber", "discnumber", "tracktotal", "disctotal"):
         return f"{int(value):02}"
     return value if isinstance(value, list) else str(value)
 
 
 def _mp3_value(name: str, value, values: dict):
+    """Format a tag value for an ID3 (MP3/AIFF) frame."""
     total = {"tracknumber": "tracktotal", "discnumber": "disctotal"}.get(name)
     if total in values:
         return f"{value}/{values[total]}"
@@ -100,6 +102,7 @@ def _mp3_value(name: str, value, values: dict):
 
 
 def _mp4_value(name: str, value, values: dict):
+    """Format a tag value for an MP4 (M4A) atom."""
     if name == "tracknumber":
         return [(value, values.get("tracktotal", 0))]
     if name == "discnumber":
@@ -137,6 +140,7 @@ class Container(Enum):
         return {}
 
     def get_tag_pairs(self, meta, exclude=()) -> list[tuple]:
+        """Return this container's (key, value) tag pairs for meta."""
         # [metadata] exclude lists streamrip's own tag names ("genre",
         # "albumartist", ...); it used to be ignored entirely (upstream #850).
         values = {k: v for k, v in _tag_values(meta).items() if k not in exclude}
@@ -187,6 +191,7 @@ class Container(Enum):
             audio["covr"] = [cover]
 
     def save_audio(self, audio, path):
+        """Write the tagged audio object back to path."""
         if self in (Container.FLAC, Container.AAC):
             audio.save()
         elif self == Container.MP3:

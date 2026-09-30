@@ -10,11 +10,14 @@ logger = logging.getLogger("streamrip")
 
 @dataclass(slots=True)
 class PlaylistMetadata:
+    """A playlist's name and its tracks, resolved or as bare ids."""
+
     name: str
     tracks: list[TrackMetadata] | list[str]
 
     @classmethod
     def from_qobuz(cls, resp: dict):
+        """Build playlist metadata from a Qobuz API playlist response."""
         logger.debug(resp)
         name = typed(resp["name"], str)
         tracks = []
@@ -71,6 +74,10 @@ class PlaylistMetadata:
 
     @classmethod
     def from_deezer(cls, resp: dict):
+        """Build playlist metadata from a Deezer API playlist response.
+
+        Tracks the user uploaded to Deezer themselves are left out.
+        """
         name = typed(resp["title"], str)
         ids = [str(track["id"]) for track in resp["tracks"]]
         # Tracks you uploaded to Deezer yourself have negative ids and no album
@@ -85,11 +92,13 @@ class PlaylistMetadata:
 
     @classmethod
     def from_tidal(cls, resp: dict):
+        """Build playlist metadata from a Tidal API playlist response."""
         name = typed(resp["title"], str)
         tracks = [str(track["id"]) for track in resp["tracks"]]
         return cls(name, tracks)
 
     def ids(self) -> list[str]:
+        """Return the track ids, resolving TrackMetadata entries to their id."""
         if len(self.tracks) == 0:
             return []
         if isinstance(self.tracks[0], str):
@@ -99,6 +108,7 @@ class PlaylistMetadata:
 
     @classmethod
     def from_resp(cls, resp: dict, source: str):
+        """Dispatch to the from_* builder matching source."""
         if source == "qobuz":
             return cls.from_qobuz(resp)
         elif source == "soundcloud":

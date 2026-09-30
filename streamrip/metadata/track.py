@@ -11,12 +11,16 @@ logger = logging.getLogger("streamrip")
 
 @dataclass(slots=True)
 class TrackInfo:
+    """A track's id and whether it's the explicit edition."""
+
     id: str
     explicit: bool = False
 
 
 @dataclass(slots=True)
 class TrackMetadata:
+    """A track's metadata, built from one streaming source's API response."""
+
     info: TrackInfo
 
     title: str
@@ -36,6 +40,7 @@ class TrackMetadata:
 
     @classmethod
     def from_qobuz(cls, album: AlbumMetadata, resp: dict) -> TrackMetadata | None:
+        """Build track metadata from a Qobuz API track response."""
         if not resp.get("streamable", False):
             return None
         title = resp["title"].strip()
@@ -61,6 +66,7 @@ class TrackMetadata:
 
     @classmethod
     def from_deezer(cls, album: AlbumMetadata, resp: dict) -> TrackMetadata:
+        """Build track metadata from a Deezer API track response."""
         artists = deezer_artists(resp)
         return cls(
             TrackInfo(str(resp["id"]), bool(resp.get("explicit_lyrics"))),
@@ -77,6 +83,7 @@ class TrackMetadata:
 
     @classmethod
     def from_soundcloud(cls, album: AlbumMetadata, resp: dict) -> TrackMetadata:
+        """Build track metadata from a SoundCloud API track response."""
         publisher = resp.get("publisher_metadata") or {}
         return cls(
             TrackInfo(str(resp["id"]), bool(publisher.get("explicit"))),
@@ -91,6 +98,7 @@ class TrackMetadata:
 
     @classmethod
     def from_tidal(cls, album: AlbumMetadata, resp: dict) -> TrackMetadata:
+        """Build track metadata from a Tidal API track response."""
         title = resp["title"].strip()
         if version := resp.get("version"):
             title = f"{title} ({version})"
@@ -112,6 +120,7 @@ class TrackMetadata:
 
     @classmethod
     def from_resp(cls, album: AlbumMetadata, source, resp) -> TrackMetadata | None:
+        """Dispatch to the from_* builder matching source."""
         if source == "qobuz":
             return cls.from_qobuz(album, resp)
         if source == "tidal":

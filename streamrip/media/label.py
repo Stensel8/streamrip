@@ -27,6 +27,7 @@ class Label(Media):
         pass
 
     async def download(self):
+        """Resolve and download every album in the label's catalog."""
         # Fetching each album's tracklist happens a few at a time before the
         # first progress bar appears, which for a label with a large
         # catalog can take a while with nothing on screen to show for it.

@@ -204,6 +204,7 @@ class DeezerDownloadable(Downloadable):
         self.id = str(info["id"])
 
     async def _download(self, path: str, callback):
+        """Download the file, decrypting it on the fly if it's encrypted."""
         async with self.session.get(self.url, allow_redirects=True) as resp:
             resp.raise_for_status()
             self._size = int(resp.headers.get("Content-Length", 0))
@@ -511,6 +512,7 @@ class SoundcloudDownloadable(Downloadable):
             await self._download_original(path, callback)
 
     async def _download_original(self, path: str, callback):
+        """Download the original file and convert it to FLAC."""
         downloader = BasicDownloadable(
             self.session, self.url, "flac", source="soundcloud"
         )
@@ -518,6 +520,7 @@ class SoundcloudDownloadable(Downloadable):
         await converter.FLAC(path).convert()
 
     async def _download_mp3(self, path: str, callback):
+        """Download every HLS segment concurrently, then concatenate them."""
         # TODO: make progress bar reflect bytes
         async with self.session.get(self.url) as resp:
             content = await resp.text("utf-8")
@@ -546,6 +549,7 @@ class SoundcloudDownloadable(Downloadable):
                     os.remove(tmp)
 
     async def _download_segment(self, segment_uri: str, tmp: str, callback):
+        """Download one HLS segment to tmp and report it done."""
         async with self.session.get(segment_uri) as resp:
             resp.raise_for_status()
             async with aiofiles.open(tmp, "wb") as file:

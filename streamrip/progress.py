@@ -18,7 +18,10 @@ from .console import console
 
 
 class ProgressManager:
+    """Owns the Rich Live display shared by every download/resolve progress bar."""
+
     def __init__(self):
+        """Build the resolve and download progress bars, not started yet."""
         self.started = False
         # Its own Progress, not a task in the download one: that one's columns
         # (bar, transfer speed, ETA) don't mean anything for "still fetching
@@ -50,38 +53,46 @@ class ProgressManager:
         self.live = Live(self._group(), console=console, refresh_per_second=10)
 
     def _group(self) -> Group:
+        """Return the renderable group the Live display shows."""
         return Group(self.get_title_text(), self.resolve_progress, self.progress)
 
     def _ensure_started(self):
+        """Start the Live display on its first use."""
         if not self.started:
             self.live.start()
             self.started = True
 
     def _refresh(self):
+        """Redraw the Live display, if it has been started."""
         if self.started:
             self.live.update(self._group())
 
     def get_callback(self, total: int, desc: str):
+        """Return a Handle that drives a new download progress bar task."""
         self._ensure_started()
 
         task = self.progress.add_task(f"[cyan]{desc}", total=total)
 
         def _callback_update(x: int):
+            """Advance the task by x and redraw."""
             self.progress.update(task, advance=x)
             self._refresh()
 
         def _callback_done():
+            """Hide the task once its download is done."""
             self.progress.update(task, visible=False)
 
         return Handle(_callback_update, _callback_done)
 
     def get_resolve_callback(self, desc: str):
+        """Return a Handle that drives a new resolve spinner task."""
         self._ensure_started()
 
         task = self.resolve_progress.add_task(f"[cyan]{desc}")
         self._refresh()
 
         def _done():
+            """Hide the task once resolving is done."""
             self.resolve_progress.update(task, visible=False)
 
         return Handle(lambda _: None, _done)
@@ -91,17 +102,20 @@ class ProgressManager:
             self.live.stop()
 
     def add_title(self, key: int, title: str):
+        """Show title as the active album/playlist under the given key."""
         self._ensure_started()
         self.task_titles[key] = title.strip()
         self._text_cache = self.gen_title_text()
         self._refresh()
 
     def remove_title(self, key: int):
+        """Stop showing the title registered under the given key."""
         self.task_titles.pop(key, None)
         self._text_cache = self.gen_title_text()
         self._refresh()
 
     def gen_title_text(self) -> Rule:
+        """Render the currently active title(s) as a Rule."""
         # One name, not several joined by commas: two albums on one line read
         # as one confusing thing, not two. Dict order is insertion order, so
         # this is the most recently started album/playlist still active.
@@ -140,6 +154,7 @@ def get_progress_callback(enabled: bool, total: int, desc: str) -> Handle:
 
 
 def get_resolve_callback(enabled: bool, desc: str) -> Handle:
+    """Return a resolve progress Handle, or a no-op one if disabled."""
     global _p
     if not enabled:
         return Handle(lambda _: None, lambda: None)
@@ -147,6 +162,7 @@ def get_resolve_callback(enabled: bool, desc: str) -> Handle:
 
 
 def add_title(key: int, title: str, enabled: bool = True):
+    """Show title as the active album/playlist, unless disabled."""
     if not enabled:
         return
     global _p
@@ -154,6 +170,7 @@ def add_title(key: int, title: str, enabled: bool = True):
 
 
 def remove_title(key: int, enabled: bool = True):
+    """Stop showing the title registered under key, unless disabled."""
     if not enabled:
         return
     global _p

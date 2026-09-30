@@ -37,6 +37,8 @@ class QobuzConfig:
 
 @dataclass(slots=True)
 class TidalConfig:
+    """Tidal section of the config file."""
+
     user_id: str
     country_code: str
     access_token: str
@@ -56,6 +58,8 @@ class TidalConfig:
 
 @dataclass(slots=True)
 class DeezerConfig:
+    """Deezer section of the config file."""
+
     arl: str
     quality: int
     lower_quality_if_not_available: bool
@@ -63,6 +67,8 @@ class DeezerConfig:
 
 @dataclass(slots=True)
 class SoundcloudConfig:
+    """SoundCloud section of the config file."""
+
     client_id: str
     app_version: str
     # SoundCloud streams in one quality; nothing to configure.
@@ -88,6 +94,8 @@ class ConversionConfig:
 
 @dataclass(slots=True)
 class ArtistFilterConfig:
+    """Filters applied when downloading an artist's discography."""
+
     extras: bool
     repeats: bool
     non_albums: bool
@@ -97,6 +105,8 @@ class ArtistFilterConfig:
 
 @dataclass(slots=True)
 class ArtworkConfig:
+    """Cover art embedding and saving options."""
+
     embed: bool
     embed_size: str
     embed_max_width: int
@@ -106,6 +116,8 @@ class ArtworkConfig:
 
 @dataclass(slots=True)
 class MetadataConfig:
+    """Tag-writing options that don't fit under a single source."""
+
     set_playlist_to_album: bool
     renumber_playlist_tracks: bool
     exclude: list[str]
@@ -114,6 +126,8 @@ class MetadataConfig:
 
 @dataclass(slots=True)
 class FilepathsConfig:
+    """Filename and folder naming options."""
+
     add_singles_to_folder: bool
     folder_format: str
     track_format: str
@@ -123,6 +137,8 @@ class FilepathsConfig:
 
 @dataclass(slots=True)
 class DownloadsConfig:
+    """Download destination, concurrency, and connection options."""
+
     folder: str
     source_subdirectories: bool
     disc_subdirectories: bool
@@ -134,18 +150,24 @@ class DownloadsConfig:
 
 @dataclass(slots=True)
 class LastFmConfig:
+    """Last.fm playlist import options."""
+
     source: str
     fallback_source: str
 
 
 @dataclass(slots=True)
 class CliConfig:
+    """Command-line interface display options."""
+
     progress_bars: bool
     max_search_results: int
 
 
 @dataclass(slots=True)
 class MiscConfig:
+    """Options that don't belong to any other section."""
+
     check_for_updates: bool
 
 
@@ -201,6 +223,7 @@ class ConfigData:
         return self._modified
 
     def update_toml(self):
+        """Write every section's current dataclass values back into self.toml."""
         for f in _section_fields():
             update_toml_section_from_config(self.toml[f.name], getattr(self, f.name))
 
@@ -208,12 +231,14 @@ class ConfigData:
         self,
         source: str,
     ) -> QobuzConfig | DeezerConfig | SoundcloudConfig | TidalConfig:
+        """Return the config for the given streaming source."""
         if source not in ("qobuz", "tidal", "deezer", "soundcloud"):
             raise Exception(f"Invalid source {source}")
         return getattr(self, source)
 
 
 def _section_fields():
+    """Return the ConfigData fields that hold a [section]'s own dataclass."""
     return [f for f in fields(ConfigData) if is_dataclass(f.type)]
 
 
@@ -223,7 +248,10 @@ def update_toml_section_from_config(toml_section, config):
 
 
 class Config:
+    """A user's config, loaded from a TOML file at path."""
+
     def __init__(self, path: str, /):
+        """Load the config at path, securing it first if it holds secrets."""
         self.path = path
 
         with open(path) as toml_file:
@@ -235,6 +263,7 @@ class Config:
         self.session: ConfigData = copy.deepcopy(self.file)
 
     def save_file(self):
+        """Write self.file back to path, unless nothing was modified."""
         if not self.file.modified:
             return
 
@@ -253,6 +282,7 @@ class Config:
 
 
 def _write_config(path: str, toml: TOMLDocument):
+    """Write toml to path, securing its permissions before any contents."""
     contents = dumps(toml)
     # Set the creation mode atomically, even with a permissive umask. Do not
     # truncate an existing file until its permissions have been secured.
@@ -275,6 +305,7 @@ def set_user_defaults(path: str, /):
 
 
 def toml_set_user_defaults(toml: TOMLDocument):
+    """Point toml's path-valued options at directories under this user's home."""
     toml["downloads"]["folder"] = DEFAULT_DOWNLOADS_FOLDER  # type: ignore
     toml["database"]["downloads_path"] = DEFAULT_DOWNLOADS_DB_PATH  # type: ignore
     toml["database"]["failed_downloads_path"] = DEFAULT_FAILED_DOWNLOADS_DB_PATH  # type: ignore

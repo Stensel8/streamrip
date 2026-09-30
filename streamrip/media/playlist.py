@@ -33,6 +33,11 @@ LASTFM_MAX_TRACKS = 10_000
 
 
 def _playlist_folder(config: Config, name: str) -> str:
+    """Return the sanitized download folder for a playlist named name.
+
+    Raises ValueError if the sanitized name is empty, ".", "..", or would
+    resolve outside the downloads root.
+    """
     c = config.session
     folder = clean_filename(name, c.filepaths.restrict_characters)
     if folder in ("", ".", ".."):
@@ -57,6 +62,7 @@ class PendingPlaylistTrack(Pending):
     total: int = 0
 
     async def resolve(self) -> Track | None:
+        """Fetch metadata and cover art, and resolve into a downloadable Track."""
         meta = await fetch_track_meta(self.client, self.db, self.id)
         if meta is None:
             return None
@@ -97,12 +103,15 @@ class Playlist(Media):
     tracks: list[PendingPlaylistTrack]
 
     async def preprocess(self):
+        """Register the playlist's title for progress display."""
         progress.add_title(id(self), self.name, self.config.session.cli.progress_bars)
 
     async def postprocess(self):
+        """Remove the playlist's title from progress display."""
         progress.remove_title(id(self), self.config.session.cli.progress_bars)
 
     async def download(self):
+        """Resolve and download every track of the playlist."""
         big = len(self.tracks) > RESOLVE_CONCURRENCY
         if big:
             console.log(f"Resolving {len(self.tracks)} tracks: {self.name}")
@@ -125,6 +134,7 @@ class PendingPlaylist(Pending):
     db: Database
 
     async def resolve(self) -> Playlist | None:
+        """Fetch the playlist's metadata and resolve into a Playlist of tracks."""
         try:
             resp = await self.client.get_metadata(self.id, "playlist")
         except NonStreamableError as e:
@@ -172,6 +182,7 @@ class PendingLastfmPlaylist(Pending):
         total: int
 
         def text(self) -> Text:
+            """Render the current found/failed/total counts as status text."""
             return Text.assemble(
                 "Searching for last.fm tracks (",
                 (f"{self.found} found", "bold green"),
@@ -183,6 +194,7 @@ class PendingLastfmPlaylist(Pending):
             )
 
     async def resolve(self) -> Playlist | None:
+        """Search each Last.fm entry on the streaming source and build a Playlist."""
         try:
             playlist_title, titles_artists = await self._parse_lastfm_playlist(
                 self.lastfm_url,
@@ -199,6 +211,7 @@ class PendingLastfmPlaylist(Pending):
         ):
 
             def callback():
+                """Refresh the spinner's status text after a query completes."""
                 if spin is not None:
                     spin.update(s.text())
 

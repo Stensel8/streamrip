@@ -54,6 +54,7 @@ class Album(Media):
     client: Client | None = None
 
     def _title(self) -> str:
+        """Return the album's title, suffixed with its quality label."""
         quality = format_quality(
             self.meta.info.container,
             self.meta.info.bit_depth,
@@ -62,6 +63,7 @@ class Album(Media):
         return f"{self.meta.album} {quality}"
 
     async def preprocess(self):
+        """Register the album's title for progress display, then fetch booklets."""
         progress.add_title(
             id(self), self._title(), self.config.session.cli.progress_bars
         )
@@ -79,6 +81,7 @@ class Album(Media):
             )
 
     async def download(self):
+        """Resolve and download every track of the album."""
         big = len(self.tracks) > RESOLVE_CONCURRENCY
         if big:
             console.log(f"Resolving {len(self.tracks)} tracks: {self.meta.album}")
