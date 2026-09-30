@@ -3,6 +3,19 @@
 All notable changes in this fork of [nathom/streamrip](https://github.com/nathom/streamrip). Numbers refer to
 upstream issues and pull requests.
 
+## 2.4.3
+
+Security hardening.
+
+- Config files and the app directory are owner-only (`0600`/`0700`).
+- Playlist folders stay inside the download folder, and artwork cleanup no
+  longer deletes existing files.
+- Invalid disc numbers are rejected before any file is written.
+- Qobuz search and Last.fm playlist pagination are bounded (Last.fm: max
+  10,000 tracks) and fetched one page at a time.
+- Qobuz artist URLs are fetched over HTTPS without account credentials.
+  Redirects are now an error: use a URL that contains the artist id.
+
 ## 2.4.2
 
 - Albums and playlists download one at a time, with a spinner and status
