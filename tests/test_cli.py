@@ -28,13 +28,14 @@ def test_upgrade_command_pins_the_detected_release():
     assert _upgrade_command("2.4.5").endswith("@v2.4.5")
 
 
-def test_help_lists_commands(tmp_path):
+def test_help_lists_commands(tmp_path, capsys):
     result = CliRunner().invoke(
         rip, ["--config-path", str(tmp_path / "config.toml"), "--help"]
     )
     assert result.exit_code == 0
+    output = capsys.readouterr().out
     for command in ("url", "file", "search", "lastfm", "id", "repair", "config"):
-        assert command in result.output
+        assert command in output
 
 
 def test_codec_choice_accepts_opus_and_aiff(tmp_path):
@@ -75,13 +76,13 @@ def _clear(cfg, *args, **kwargs):
     )
 
 
-def test_database_clear_downloads_leaves_failed_alone(tmp_path):
+def test_database_clear_downloads_leaves_failed_alone(tmp_path, capsys):
     cfg, downloads, failed = _seeded_databases(tmp_path)
     result = _clear(cfg, "downloads", "-y")
     assert result.exit_code == 0, result.output
     assert downloads.all() == []
     assert len(failed.all()) == 1
-    assert "Cleared 2 downloaded track(s)" in result.output
+    assert "Cleared 2 downloaded track(s)" in capsys.readouterr().out
 
 
 def test_database_clear_all(tmp_path):
@@ -98,12 +99,12 @@ def test_database_clear_table_name_is_case_insensitive(tmp_path):
     assert downloads.all() == []
 
 
-def test_database_clear_asks_first_and_can_be_declined(tmp_path):
+def test_database_clear_asks_first_and_can_be_declined(tmp_path, capsys):
     cfg, downloads, _ = _seeded_databases(tmp_path)
     result = _clear(cfg, "downloads", input="n\n")
     assert result.exit_code == 0, result.output
     assert len(downloads.all()) == 2
-    assert "Clear aborted" in result.output
+    assert "Clear aborted" in capsys.readouterr().out
 
 
 def test_database_clear_when_confirmed(tmp_path):
@@ -113,12 +114,12 @@ def test_database_clear_when_confirmed(tmp_path):
     assert downloads.all() == []
 
 
-def test_database_clear_with_nothing_to_clear(tmp_path):
+def test_database_clear_with_nothing_to_clear(tmp_path, capsys):
     cfg, downloads, _ = _seeded_databases(tmp_path)
     downloads.clear()
     result = _clear(cfg, "downloads")
     assert result.exit_code == 0, result.output
-    assert "Nothing to clear" in result.output
+    assert "Nothing to clear" in capsys.readouterr().out
 
 
 def test_database_clear_rejects_an_unknown_table(tmp_path):
@@ -127,13 +128,13 @@ def test_database_clear_rejects_an_unknown_table(tmp_path):
     assert len(downloads.all()) == 2
 
 
-def test_database_browse_failed_lines_up_with_its_headers(tmp_path):
+def test_database_browse_failed_lines_up_with_its_headers(tmp_path, capsys):
     cfg, _, _ = _seeded_databases(tmp_path)
     result = CliRunner().invoke(
         rip, ["--config-path", cfg, "database", "browse", "failed"]
     )
     assert result.exit_code == 0, result.output
-    lines = result.output.splitlines()
+    lines = capsys.readouterr().out.splitlines()
     header = next(line for line in lines if "Source" in line)
     row = next(line for line in lines if "tidal" in line)
     cells = dict(
