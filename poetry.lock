@@ -1770,4 +1770,4 @@ ssl = ["certifi"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.14,<4.0"
-content-hash = "9e5e1fd4fbf1db463ae9e99e5216452be540ab4f5e92cc5d2130694643683a2d"
+content-hash = "9fe99950203bd94f79b59bf0934fd9e0384a9459056407b7a79f2f5f434c9323"

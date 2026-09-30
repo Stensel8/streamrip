@@ -164,6 +164,7 @@ class QobuzClient(Client):
             raise
 
     async def _login(self):
+        """Log in, fetching Qobuz's app id/secret first if not cached yet."""
         c = self.config.session.qobuz
         if not c.email_or_userid or not c.password_or_token:
             raise MissingCredentialsError
@@ -171,7 +172,10 @@ class QobuzClient(Client):
         assert not self.logged_in, "Already logged in"
 
         if not c.app_id or not c.secrets:
-            logger.info("App id/secrets not found, fetching")
+            logger.info(
+                "Fetching Qobuz's app id and secret (a one-time setup step, "
+                "not your login -- cached in the config afterward)"
+            )
             await self._refresh_app_id_and_secrets()
 
         # A stale app_id/secret pair (e.g. hardcoded in the config after Qobuz
@@ -461,8 +465,11 @@ class QobuzClient(Client):
         limit: int = 500,
     ) -> list[dict]:
         """Return search response pages, bounded by the caller's result limit."""
-        if type(limit) is not int or limit < 0:
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit < 0:
             raise ValueError("Qobuz search limit must be a non-negative integer")
+        # Config values are tomlkit Integer subclasses. Normalize before using
+        # the limit as a fallback for strictly validated API pagination metadata.
+        limit = int(limit)
         if limit == 0:
             return []
 

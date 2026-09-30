@@ -4,7 +4,10 @@
 #
 # Uses uv (https://docs.astral.sh/uv/) to fetch Python 3.14 if it isn't
 # already installed, then creates .venv and installs streamrip into it.
-# Safe to re-run: it reuses the existing .venv and upgrades streamrip.
+# Safe to re-run: it reuses the existing .venv and upgrades streamrip from
+# this checkout.
+
+Set-Location $PSScriptRoot
 
 if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
     Write-Host "uv not found, installing it (see https://docs.astral.sh/uv/)..."
@@ -18,8 +21,7 @@ if (-not (Test-Path .venv)) {
 }
 
 Write-Host "Installing streamrip into .venv..."
-uv pip install --python .venv --upgrade `
-    "streamrip @ git+https://github.com/Stensel8/streamrip.git"
+uv pip install --python .venv --upgrade .
 
 Write-Host ""
 $version = & .venv\Scripts\streamrip.exe --version 2>$null

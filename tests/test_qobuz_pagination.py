@@ -4,8 +4,10 @@ import asyncio
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+import tomlkit
 
 from streamrip.client.qobuz import QobuzClient
+from streamrip.config import Config
 from streamrip.exceptions import APIError
 
 
@@ -57,12 +59,31 @@ async def test_invalid_total_is_reported(total):
     assert client._request_ok.call_count == 1
 
 
-@pytest.mark.parametrize("limit", [-1, None, "10", 1.5, True])
+@pytest.mark.parametrize("limit", [-1, None, "10", 1.5, True, False, tomlkit.item(-1)])
 async def test_invalid_caller_limit_is_rejected_without_a_request(limit):
     client = _client(_page())
     with pytest.raises(ValueError, match="search limit"):
         await client.search("album", "query", limit=limit)
     client._request_ok.assert_not_called()
+
+
+async def test_search_accepts_default_config_limit():
+    limit = Config.defaults().session.cli.max_search_results
+    page = {"artists": {"total": 1, "limit": 1, "items": [{"name": "Eminem"}]}}
+    client = _client(page)
+    assert await client.search("artist", "Eminem", limit=limit) == [page]
+    assert client._request_ok.call_args.args[1]["limit"] == limit
+
+
+@pytest.mark.parametrize("limit", [0, 1, 5])
+async def test_toml_limit_without_response_page_size(limit):
+    page = {"albums": {"total": 10, "items": []}}
+    client = _client(page)
+    config_limit = tomlkit.parse(f"max_search_results = {limit}")["max_search_results"]
+    assert await client.search("album", "query", limit=config_limit) == (
+        [page] if limit else []
+    )
+    assert client._request_ok.call_count == (1 if limit else 0)
 
 
 async def test_zero_caller_limit_needs_no_request():

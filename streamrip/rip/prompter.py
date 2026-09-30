@@ -5,19 +5,28 @@ import time
 from abc import ABC, abstractmethod
 
 from click import launch
-from rich.prompt import Confirm, Prompt
 
 from ..client import Client, DeezerClient, QobuzClient, SoundcloudClient, TidalClient
 from ..config import Config
 from ..console import console
 from ..exceptions import AuthenticationError, MissingCredentialsError
+from .interactive import Prompt
 from .qobuz_token_capture import (
     QobuzTokenCaptureError,
     capture_qobuz_auth_token,
-    playwright_available,
+    capture_qobuz_auth_token_via_browser,
 )
 
 logger = logging.getLogger("streamrip")
+
+
+def _open_login_link(url: str) -> None:
+    """Ask the system default browser to open a link already printed to the user."""
+    try:
+        launch(url)
+    except Exception:
+        # No browser available (e.g. over SSH); use the printed link manually.
+        pass
 
 
 class CredentialPrompter(ABC):
@@ -74,17 +83,46 @@ class QobuzPrompter(CredentialPrompter):
 
         Qobuz moved its web login behind OAuth/reCAPTCHA, so the old
         email/password flow fails for most accounts (upstream #954, #956).
-        The token from a logged-in browser session still works.
+        The token from a logged-in browser session still works; offer the
+        two ways to capture it automatically (see qobuz_token_capture)
+        before falling back to asking for it outright.
         """
-        if await self._try_browser_capture():
-            return
-
         console.print(
             "\n[cyan]Qobuz now requires a token login.[/cyan]\n"
-            "  1. Log in at [blue underline]https://play.qobuz.com/login[/]\n"
-            "  2. Open your browser's DevTools -> Network tab\n"
-            "  3. Find the [bold]user/login[/bold] request and open its response\n"
-            "  4. Copy [bold]user.id[/bold] and [bold]user_auth_token[/bold]\n"
+            "How do you want to log in?\n"
+            "  1. Open an isolated browser window that logs in and captures\n"
+            "     the token automatically\n"
+            "  2. Log in in your own browser, then paste a short script into\n"
+            "     its console to send the token back\n"
+            "  3. Enter the token (or email/password) by hand\n"
+        )
+        choice = Prompt.ask("Choose", choices=["1", "2", "3"], default="2")
+
+        if choice == "1":
+            try:
+                user_id, token = await capture_qobuz_auth_token_via_browser()
+            except QobuzTokenCaptureError as e:
+                console.print(f"[yellow]{e}")
+            else:
+                self._set_session_creds(True, user_id, token)
+                return
+        elif choice == "2":
+            _open_login_link("https://play.qobuz.com/login")
+            try:
+                user_id, token = await capture_qobuz_auth_token()
+            except QobuzTokenCaptureError as e:
+                console.print(f"[yellow]{e}")
+            else:
+                self._set_session_creds(True, user_id, token)
+                return
+
+        _open_login_link("https://play.qobuz.com/login")
+        console.print(
+            "\nEnter it manually instead:\n"
+            "  1. In the browser tab that just opened, open DevTools -> Network,\n"
+            "     then log in (log out first if needed)\n"
+            "  2. Find the [bold]user/login[/bold] request and open its response\n"
+            "  3. Copy [bold]user.id[/bold] and [bold]user_auth_token[/bold]\n"
             "Leave the user id empty to log in with email and password instead.\n"
         )
         user_id = Prompt.ask("Enter your Qobuz user id", default="").strip()
@@ -99,27 +137,6 @@ class QobuzPrompter(CredentialPrompter):
         pwd_input = Prompt.ask("Enter your Qobuz password (invisible)", password=True)
         pwd = hashlib.md5(pwd_input.encode("utf-8")).hexdigest()
         self._set_session_creds(False, email, pwd)
-
-    async def _try_browser_capture(self) -> bool:
-        """Grab the token from a real browser login, if Playwright is usable.
-
-        The Chromium build it needs downloads itself automatically the
-        first time this actually runs.
-        """
-        if not playwright_available():
-            return False
-        if not Confirm.ask(
-            "Open a browser window to log into Qobuz and capture the token?",
-            default=True,
-        ):
-            return False
-        try:
-            user_id, token = await capture_qobuz_auth_token(timeout_s=300)
-        except QobuzTokenCaptureError as e:
-            console.print(f"[yellow]{e}")
-            return False
-        self._set_session_creds(True, user_id, token)
-        return True
 
     def _set_session_creds(self, use_auth_token: bool, user: str, secret: str):
         c = self.config.session.qobuz
@@ -176,11 +193,7 @@ class TidalPrompter(CredentialPrompter):
             f"Go to [blue underline]{login_link}[/blue underline] to log into Tidal "
             f"within {self.timeout_s // 60} minutes.",
         )
-        try:
-            launch(login_link)
-        except Exception:
-            # No browser available (e.g. over SSH); the link is printed above.
-            pass
+        _open_login_link(login_link)
 
         start = time.time()
         info: dict = {}

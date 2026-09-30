@@ -5,8 +5,12 @@
 #
 # Uses uv (https://docs.astral.sh/uv/) to fetch Python 3.14 if it isn't
 # already installed, then creates .venv and installs streamrip into it.
-# Safe to re-run: it reuses the existing .venv and upgrades streamrip.
+# Safe to re-run: it reuses the existing .venv and upgrades streamrip from
+# this checkout.
 set -euo pipefail
+
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+cd "$script_dir"
 
 if ! command -v uv >/dev/null 2>&1; then
     echo "uv not found, installing it (see https://docs.astral.sh/uv/)..."
@@ -20,8 +24,7 @@ if [ ! -d .venv ]; then
 fi
 
 echo "Installing streamrip into .venv..."
-uv pip install --python .venv --upgrade \
-    "streamrip @ git+https://github.com/Stensel8/streamrip.git"
+uv pip install --python .venv --upgrade .
 
 echo
 if .venv/bin/streamrip --version >/dev/null 2>&1; then
