@@ -3,13 +3,11 @@
 All notable changes in this fork of [nathom/streamrip](https://github.com/nathom/streamrip). Numbers can refer to
 upstream issues and pull requests.
 
-## Unreleased
+## 2.4.4
 
-- ffmpeg is required. streamrip checks for it before logging in to anything,
-  whatever you download, and stops with the commands to install ffmpeg (or the
-  bundled `imageio-ffmpeg`) and exit status 1. Before, hi-res Tidal tracks
-  failed one by one after retrying, the run exited with status 0, and an empty
-  album folder was left behind. A missing ffmpeg is no longer retried.
+- ffmpeg is required and checked before any login. Without it streamrip stops
+  with install instructions and exit status 1, instead of failing every
+  hi-res Tidal track one by one.
 
 ## 2.4.3
 
