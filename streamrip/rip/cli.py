@@ -97,7 +97,7 @@ async def main_session(ctx):
     with ctx.obj["config"] as cfg:
         cfg: Config
         if cfg.session.misc.check_for_updates:
-            with console.status("Checking for updates...", spinner="dots"):
+            with console.status("streamrip: Checking for updates...", spinner="dots"):
                 latest_version, notes = await latest_streamrip_version(
                     verify_ssl=cfg.session.downloads.verify_ssl
                 )
@@ -111,7 +111,7 @@ async def main_session(ctx):
                 if notes:
                     console.print(Markdown(notes))
             else:
-                console.print(f"[green]Already the latest version: v{__version__}")
+                logger.info(f"streamrip: Already the latest version: v{__version__}")
 
         async with Main(cfg) as main:
             yield main
