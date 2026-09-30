@@ -127,9 +127,9 @@ class Client(ABC):
             delay = 0.0
             try:
                 async with self.rate_limiter:
-                    # A 429 may have arrived while waiting for admission.
-                    # Discard this admission and wait outside the limiter;
-                    # sending later requires fresh capacity to stay spaced.
+                    # A sibling request may have extended the pause while we
+                    # waited for admission. Discard this slot and wait outside
+                    # the limiter, then acquire a fresh slot before sending.
                     if owner._retry_at > time.monotonic():
                         continue
                     attempt += 1

@@ -84,25 +84,25 @@ def test_deezer_albums_are_left_as_listed():
     assert _ids(resp, source="deezer") == [1, 2]
 
 
-def test_tidal_versions_stay_distinct_and_matching_versions_are_deduplicated():
-    def album(id, version, explicit=False):
-        return {
+def test_tidal_keeps_different_versions_but_deduplicates_normalized_versions():
+    albums = [
+        {
             "id": id,
             "title": "Seasons",
-            "version": version,
-            "artists": [{"id": ME}],
+            "artist": {"id": ME},
             "numberOfTracks": 2,
+            "version": version,
             "explicit": explicit,
-            "audioQuality": "LOSSLESS",
         }
-
-    resp = {
-        "name": "30 Seconds To Mars",
-        "albums": [
-            album("standard", None),
-            album("remix", "Remix"),
-            album("acoustic-clean", " [Acoustic] "),
-            album("acoustic-explicit", "(acoustic)", explicit=True),
-        ],
-    }
-    assert _ids(resp, source="tidal") == ["standard", "remix", "acoustic-explicit"]
+        for id, version, explicit in [
+            ("original", None, False),
+            ("remix", "Remix", False),
+            ("acoustic-clean", " [Acoustic] ", False),
+            ("acoustic-explicit", "(acoustic)", True),
+        ]
+    ]
+    assert _ids({"name": "A", "albums": albums}, source="tidal") == [
+        "original",
+        "remix",
+        "acoustic-explicit",
+    ]
