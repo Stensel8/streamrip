@@ -22,7 +22,7 @@ logger = logging.getLogger("streamrip")
 # best; bump the version number every so often to keep it current.
 DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36"
+    "(KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36"
 )
 
 # Fail a stalled connection after 30s of silence, not aiohttp's default 5 minutes.
