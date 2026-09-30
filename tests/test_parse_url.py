@@ -1,9 +1,15 @@
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import aiohttp
+import pytest
+
+from streamrip.client import new_session
+from streamrip.config import Config
 from streamrip.rip.parse_url import (
     DeezerDynamicURL,
     GenericURL,
+    QobuzInterpreterURL,
     SoundcloudURL,
     parse_url,
 )
@@ -203,6 +209,103 @@ class TestDeezerDynamicURL(unittest.TestCase):
 
         # Run the coroutine
         asyncio.run(run_test())
+
+
+@pytest.mark.parametrize("scheme", ["http", "https"])
+@pytest.mark.parametrize("verify_ssl", [True, False])
+async def test_interpreter_fetch_isolated_from_authenticated_session(
+    scheme, verify_ssl
+):
+    url = f"{scheme}://www.qobuz.com/us-en/interpreter/miles-davis/download-streaming-albums"
+    config = Config.defaults()
+    config.session.downloads.verify_ssl = verify_ssl
+    response = MagicMock(status=200)
+    response.text = AsyncMock(return_value="getSimilarArtist('12345')")
+    response.__aenter__.return_value = response
+    sessions = []
+
+    async with new_session() as authenticated:
+        authenticated.headers["X-User-Auth-Token"] = "test-token"
+        authenticated.headers["X-App-Id"] = "test-app"
+        authenticated.cookie_jar.update_cookies({"account": "test-cookie"})
+        client = MagicMock(session=authenticated)
+
+        def get(session, request_url, **kwargs):
+            sessions.append(session)
+            assert session is not authenticated
+            assert "X-User-Auth-Token" not in session.headers
+            assert "X-App-Id" not in session.headers
+            assert not session.cookie_jar
+            assert request_url == url.replace("http://", "https://", 1)
+            assert kwargs["allow_redirects"] is False
+            return response
+
+        with (
+            patch("aiohttp.ClientSession.get", autospec=True, side_effect=get),
+            patch("streamrip.rip.parse_url.new_session", wraps=new_session) as make,
+        ):
+            parsed = parse_url(url)
+            assert isinstance(parsed, QobuzInterpreterURL)
+            pending = await parsed.into_pending(client, config, MagicMock())
+
+        assert pending.id == "12345"
+        assert pending.client is client
+        make.assert_called_once_with(verify_ssl=verify_ssl)
+        assert len(sessions) == 1
+        assert sessions[0].closed
+        assert not authenticated.closed
+        assert authenticated.headers["X-User-Auth-Token"] == "test-token"
+
+
+@pytest.mark.parametrize("scheme", ["http", "https"])
+async def test_interpreter_numeric_id_needs_no_page_fetch(scheme):
+    parsed = parse_url(f"{scheme}://www.qobuz.com/us-en/interpreter/miles-davis/12345")
+    with patch("streamrip.rip.parse_url.new_session") as make:
+        pending = await parsed.into_pending(MagicMock(), Config.defaults(), MagicMock())
+    assert pending.id == "12345"
+    make.assert_not_called()
+
+
+@pytest.mark.parametrize("status", [301, 302, 303, 307, 308, 404, 200])
+async def test_interpreter_fetch_errors_close_public_session(status):
+    response = MagicMock(status=status)
+    response.headers = {
+        "Location": "http://www.qobuz.com/us-en/interpreter/miles-davis/12345"
+    }
+    # Even a redirect body containing an ID must not be accepted.
+    response.text = AsyncMock(
+        return_value="" if status == 200 else "getSimilarArtist('1')"
+    )
+    response.__aenter__.return_value = response
+    if status == 404:
+        response.raise_for_status.side_effect = aiohttp.ClientResponseError(
+            MagicMock(), (), status=404
+        )
+    sessions = []
+
+    def get(session, url, **kwargs):
+        sessions.append(session)
+        assert kwargs["allow_redirects"] is False
+        return response
+
+    error = (
+        "Unable to extract artist id"
+        if status == 200
+        else "404"
+        if status == 404
+        else "redirected"
+    )
+    with (
+        patch("aiohttp.ClientSession.get", autospec=True, side_effect=get),
+        pytest.raises(Exception, match=error),
+    ):
+        await QobuzInterpreterURL.extract_interpreter_url(
+            "https://www.qobuz.com/us-en/interpreter/miles-davis/download-streaming-albums"
+        )
+    assert len(sessions) == 1
+    assert sessions[0].closed
+    if status != 200:
+        response.text.assert_not_awaited()
 
 
 if __name__ == "__main__":
