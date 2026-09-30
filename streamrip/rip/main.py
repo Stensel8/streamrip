@@ -214,11 +214,13 @@ class Main:
                 )
                 failed_items += 1
 
+        total_items = len(self.media)
         if failed_items > 0:
-            total_items = len(self.media)
             logger.info(
                 f"Download completed with {failed_items} failed items out of {total_items} total items."
             )
+        else:
+            logger.info(f"Download completed: {total_items} item(s) downloaded.")
 
     async def _search(
         self, source: str, media_type: str, query: str, limit: int

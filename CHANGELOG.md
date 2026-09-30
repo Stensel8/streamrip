@@ -5,12 +5,31 @@ upstream issues and pull requests.
 
 ## 2.4.5
 
-- Qobuz opens its HTTPS login page in the system default browser, like Tidal.
-  Paste the user id and token using the printed instructions. Removed Playwright
-  and automatic Chromium downloads.
+- Qobuz login now offers a choice: an isolated browser window that logs in
+  and captures the token automatically (drives an already-installed
+  Chrome-family browser when there is one, asks before downloading
+  Playwright's own otherwise); logging in yourself and pasting a short
+  script into your own browser's console afterward, which reads the token
+  Qobuz's web player already saves for itself; or entering it by hand.
+  Falls back to manual entry if the automatic options don't come back
+  within a few minutes.
 
 - Qobuz search accepts the result limit loaded from the TOML config, fixing
   the crash when searching without `--num-results`.
+
+- Removed the config version/migration system. A config that no longer
+  matches the current schema now fails to load with a clear message
+  pointing at `streamrip config reset`, instead of being silently
+  auto-migrated through renamed and merged options.
+
+- `max_connections` (tracks downloaded at once) defaults to 5, down from 6.
+
+- Tidal hi-res (DASH) downloads no longer leak the intermediate MP4
+  container's own tags (`major_brand`, `minor_version`, `compatible_brands`,
+  ffmpeg's `encoder` stamp) into the final FLAC's tags.
+
+- A download that finishes with no failures now says so, instead of only
+  reporting when something failed.
 
 ## 2.4.4
 

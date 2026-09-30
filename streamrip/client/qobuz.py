@@ -171,7 +171,10 @@ class QobuzClient(Client):
         assert not self.logged_in, "Already logged in"
 
         if not c.app_id or not c.secrets:
-            logger.info("App id/secrets not found, fetching")
+            logger.info(
+                "Fetching Qobuz's app id and secret (a one-time setup step, "
+                "not your login -- cached in the config afterward)"
+            )
             await self._refresh_app_id_and_secrets()
 
         # A stale app_id/secret pair (e.g. hardcoded in the config after Qobuz
