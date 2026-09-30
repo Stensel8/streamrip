@@ -4,7 +4,7 @@
 [![Python 3.14+](https://img.shields.io/badge/python-3.14%2B-blue)](https://github.com/Stensel8/streamrip/blob/dev/pyproject.toml)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 
-A scriptable music downloader for Qobuz, Tidal, Deezer and SoundCloud.
+A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, and SoundCloud.
 
 > [!NOTE]
 > A fork of [nathom/streamrip](https://github.com/nathom/streamrip) that works
