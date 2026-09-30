@@ -4,7 +4,7 @@ import logging
 import re
 from abc import ABC, abstractmethod
 
-from ..client import Client, SoundcloudClient
+from ..client import Client, SoundcloudClient, new_session
 from ..config import Config
 from ..db import Database
 from ..media import (
@@ -114,21 +114,33 @@ class QobuzInterpreterURL(URL):
             logger.debug("Found artist ID %s in interpreter url %s", possible_id, url)
             artist_id = possible_id
         else:
-            artist_id = await self.extract_interpreter_url(url, client)
+            artist_id = await self.extract_interpreter_url(
+                url, verify_ssl=config.session.downloads.verify_ssl
+            )
         return PendingArtist(artist_id, client, config, db)
 
     @staticmethod
-    async def extract_interpreter_url(url: str, client: Client) -> str:
+    async def extract_interpreter_url(url: str, verify_ssl: bool = True) -> str:
         """Extract artist ID from a Qobuz interpreter url.
 
         :param url: Urls of the form "https://www.qobuz.com/us-en/interpreter/{artist}/download-streaming-albums"
         :type url: str
         :rtype: str
         """
-        async with client.session.get(url) as resp:
-            match = QobuzInterpreterURL.interpreter_artist_regex.search(
-                await resp.text(),
-            )
+        # Public pages must never inherit the API session's account credentials.
+        url = url.replace("http://", "https://", 1)
+        async with new_session(verify_ssl=verify_ssl) as session:
+            # Do not let a redirect downgrade the request to plaintext HTTP.
+            async with session.get(url, allow_redirects=False) as resp:
+                if 300 <= resp.status < 400:
+                    raise ValueError(
+                        "Qobuz interpreter URL redirected. Use a URL that contains "
+                        "an artist id."
+                    )
+                resp.raise_for_status()
+                match = QobuzInterpreterURL.interpreter_artist_regex.search(
+                    await resp.text(),
+                )
 
         if match:
             return match.group(1)
