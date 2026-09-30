@@ -7,13 +7,13 @@ from unittest.mock import MagicMock
 import aiohttp
 import pytest
 
-from streamrip.client.client import new_session
-from streamrip.client.tidal import (
+from streamrip.client.client import (
     MAX_API_ATTEMPTS,
     MAX_RETRY_DELAY,
     RATE_LIMIT_PAUSE,
-    TidalClient,
+    new_session,
 )
+from streamrip.client.tidal import TidalClient
 from streamrip.config import Config
 from streamrip.exceptions import ItemNotFoundError
 
@@ -48,7 +48,7 @@ class _Session:
         self.outcomes = list(outcomes)
         self.calls = 0
 
-    def get(self, url, params=None):
+    def get(self, url, params=None, headers=None):
         self.calls += 1
         outcome = self.outcomes.pop(0)
         if isinstance(outcome, BaseException):

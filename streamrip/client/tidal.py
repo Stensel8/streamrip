@@ -2,7 +2,6 @@ import asyncio
 import base64
 import json
 import logging
-import random
 import time
 from json import JSONDecodeError
 
@@ -71,20 +70,6 @@ LOSSLESS_TIER = _AUDIO_QUALITY_TIER["LOSSLESS"]
 HIRES_TIER = _AUDIO_QUALITY_TIER["HI_RES"]
 DASH_MIME = "application/dash+xml"
 
-# Rate limiting and server errors are worth another attempt; other 4xx are not.
-RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
-MAX_API_ATTEMPTS = 4
-MAX_RETRY_DELAY = 60
-RATE_LIMIT_PAUSE = 10  # seconds per attempt when a 429 has no Retry-After
-
-
-def _retry_after(resp, attempt: int) -> float:
-    try:
-        seconds = max(float(resp.headers["Retry-After"]), 1.0)
-    except KeyError, ValueError:
-        seconds = RATE_LIMIT_PAUSE * attempt
-    return min(seconds, MAX_RETRY_DELAY)
-
 
 def _dedup_duplicate_albums(albums: list[dict]) -> list[dict]:
     """Keep only the best copy when Tidal lists the same release twice.
@@ -139,8 +124,6 @@ class TidalClient(Client):
 
     source = "tidal"
     max_quality = 3
-    # time.monotonic() before which no request is sent (set by a 429)
-    _retry_at = 0.0
 
     def __init__(self, config: Config, hires_of: "TidalClient | None" = None):
         """Build a client lane; hires_of makes this the hi-res lane behind it."""
@@ -670,80 +653,25 @@ class TidalClient(Client):
                 return await resp.json()
 
     async def _api_request(self, path: str, params=None, base: str = BASE) -> dict:
-        """Handle Tidal API requests.
-
-        Connection errors, timeouts, 5xx and 429 are retried with backoff. A 429
-        holds back every request, since the rate limit belongs to the account.
-
-        :param path:
-        :type path: str
-        :param params:
-        :rtype: dict
-        """
+        """GET a Tidal API path, with the retries of Client._get_with_retries."""
         if params is None:
             params = {}
 
         params["countryCode"] = self.config.country_code
         params.setdefault("limit", 100)
 
-        attempt = 0
-        while True:
-            attempt += 1
-            if (pause := self._root._retry_at - time.monotonic()) > 0:
-                # + jitter: every request blocked on the same 429 wakes at the
-                # same instant otherwise, and immediately re-trips it together.
-                await asyncio.sleep(pause + random.random() * 2)
+        async def read(resp) -> dict:
+            if resp.status == 404:
+                # Logged at debug, not warning: some callers ask for optional
+                # things (lyrics) where a 404 is the normal answer. Callers
+                # that do care log it themselves.
+                logger.debug("TIDAL: item not found (404): %s", resp.url)
+                raise ItemNotFoundError(f"TIDAL: item not found: {resp.url}")
+            resp.raise_for_status()
+            return await resp.json()
 
-            delay = 0.0
-            try:
-                async with self.rate_limiter:
-                    async with self.session.get(
-                        f"{base}/{path}", params=params
-                    ) as resp:
-                        if resp.status == 404:
-                            # Logged at debug, not warning: some callers ask for
-                            # optional things (lyrics) where a 404 is the normal
-                            # answer. Callers that do care log it themselves.
-                            logger.debug("TIDAL: item not found (404): %s", resp.url)
-                            raise ItemNotFoundError(
-                                f"TIDAL: item not found: {resp.url}"
-                            )
-                        if resp.status == 429:
-                            self._pause_requests(_retry_after(resp, attempt))
-                        if (
-                            resp.status not in RETRY_STATUSES
-                            or attempt == MAX_API_ATTEMPTS
-                        ):
-                            resp.raise_for_status()
-                            return await resp.json()
-                        if resp.status != 429:
-                            reason = f"HTTP {resp.status}"
-                            delay = 2**attempt + random.random()
-            except aiohttp.ClientSSLError:
-                raise
-            except (
-                aiohttp.ClientConnectionError,
-                aiohttp.ClientPayloadError,
-                asyncio.TimeoutError,
-            ) as e:
-                if attempt == MAX_API_ATTEMPTS:
-                    raise
-                reason = type(e).__name__
-                delay = 2**attempt + random.random()
+        return await self._get_with_retries(f"{base}/{path}", read, params=params)
 
-            if delay:
-                logger.warning(
-                    f"Tidal request failed ({reason}), retrying in {delay:.0f}s"
-                )
-                await asyncio.sleep(delay)
-
-    def _pause_requests(self, seconds: float):
-        """Block every lane's requests for seconds after a 429."""
+    def _pause_owner(self) -> "TidalClient":
         # The rate limit belongs to the account, so both lanes wait together.
-        root = self._root
-        now = time.monotonic()
-        if root._retry_at <= now:
-            logger.warning(
-                f"Tidal is rate limiting us (HTTP 429); pausing for {seconds:.0f}s"
-            )
-        root._retry_at = max(root._retry_at, now + seconds)
+        return self._root

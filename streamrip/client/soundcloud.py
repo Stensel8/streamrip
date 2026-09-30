@@ -259,16 +259,21 @@ class SoundcloudClient(Client):
             _params.update(params)
 
         logger.debug(f"Requesting {url} with {_params=}, {headers=}")
-        async with self.session.get(url, params=_params, headers=headers) as resp:
+
+        async def read(resp):
             return await resp.json(), resp.status
+
+        return await self._get_with_retries(url, read, _params, headers)
 
     async def _request_body(self, url, params=None, headers=None):
         _params = self._auth_params()
         if params is not None:
             _params.update(params)
 
-        async with self.session.get(url, params=_params, headers=headers) as resp:
+        async def read(resp):
             return await resp.content.read(), resp.status
+
+        return await self._get_with_retries(url, read, _params, headers)
 
     async def _announce_success(self):
         url = f"{BASE}/announcements"

@@ -1,8 +1,13 @@
 """The clients that interact with the streaming service APIs."""
 
+import asyncio
 import contextlib
 import logging
+import random
+import time
 from abc import ABC, abstractmethod
+from collections.abc import Awaitable, Callable
+from typing import TypeVar
 
 import aiohttp
 import aiolimiter
@@ -23,12 +28,32 @@ DEFAULT_USER_AGENT = (
 # Fail a stalled connection after 30s of silence, not aiohttp's default 5 minutes.
 REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=None, sock_connect=15, sock_read=30)
 
+# Rate limiting and server errors are worth another attempt; other 4xx are not.
+RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
+MAX_API_ATTEMPTS = 4
+MAX_RETRY_DELAY = 60
+RATE_LIMIT_PAUSE = 10  # seconds per attempt when a 429 has no Retry-After
+
+T = TypeVar("T")
+
+
+def retry_after(resp, attempt: int) -> float:
+    """How long a 429 asks us to wait: its Retry-After, capped, or a default."""
+    try:
+        seconds = max(float(resp.headers["Retry-After"]), 1.0)
+    except KeyError, ValueError:
+        seconds = RATE_LIMIT_PAUSE * attempt
+    return min(seconds, MAX_RETRY_DELAY)
+
 
 class Client(ABC):
     source: str
     max_quality: int
     session: aiohttp.ClientSession
     logged_in: bool
+    rate_limiter: aiolimiter.AsyncLimiter | contextlib.nullcontext
+    # time.monotonic() before which no API request is sent (set by a 429)
+    _retry_at: float = 0.0
 
     @abstractmethod
     async def login(self):
@@ -59,6 +84,81 @@ class Client(ABC):
             if requests_per_min > 0
             else contextlib.nullcontext()
         )
+
+    def _pause_owner(self) -> "Client":
+        """The client whose 429 pause this one shares (itself, by default)."""
+        return self
+
+    def _pause_requests(self, seconds: float):
+        """Hold back every request of this account for seconds after a 429."""
+        owner = self._pause_owner()
+        now = time.monotonic()
+        if owner._retry_at <= now:
+            logger.warning(
+                f"{self.source.capitalize()} is rate limiting us (HTTP 429); "
+                f"pausing for {seconds:.0f}s"
+            )
+        owner._retry_at = max(owner._retry_at, now + seconds)
+
+    async def _get_with_retries(
+        self,
+        url: str,
+        read: Callable[[aiohttp.ClientResponse], Awaitable[T]],
+        params: dict | None = None,
+        headers: dict | None = None,
+    ) -> T:
+        """GET an API url, retrying what is likely to work a moment later.
+
+        Connection errors, timeouts, 5xx and 429 are retried with backoff, up to
+        MAX_API_ATTEMPTS. A 429 holds back every request, not just this one,
+        since the rate limit belongs to the account. `read` turns the response
+        into the result; it gets every response that isn't retried, including
+        the last attempt's, whatever its status.
+        """
+        attempt = 0
+        while True:
+            attempt += 1
+            owner = self._pause_owner()
+            if (pause := owner._retry_at - time.monotonic()) > 0:
+                # + jitter: every request blocked on the same 429 wakes at the
+                # same instant otherwise, and immediately re-trips it together.
+                await asyncio.sleep(pause + random.random() * 2)
+
+            delay = 0.0
+            try:
+                async with self.rate_limiter:
+                    async with self.session.get(
+                        url, params=params, headers=headers
+                    ) as resp:
+                        if resp.status == 429:
+                            self._pause_requests(retry_after(resp, attempt))
+                        if (
+                            resp.status not in RETRY_STATUSES
+                            or attempt == MAX_API_ATTEMPTS
+                        ):
+                            return await read(resp)
+                        if resp.status != 429:
+                            reason = f"HTTP {resp.status}"
+                            delay = 2**attempt + random.random()
+            except aiohttp.ClientSSLError:
+                raise
+            except (
+                aiohttp.ClientConnectionError,
+                aiohttp.ClientPayloadError,
+                asyncio.TimeoutError,
+            ) as e:
+                if attempt == MAX_API_ATTEMPTS:
+                    raise
+                reason = type(e).__name__
+                delay = 2**attempt + random.random()
+
+            if delay:
+                # The reason only: the url can carry credentials (Qobuz).
+                logger.warning(
+                    f"{self.source.capitalize()} request failed ({reason}), "
+                    f"retrying in {delay:.0f}s"
+                )
+                await asyncio.sleep(delay)
 
 
 def new_session(

@@ -433,20 +433,21 @@ class QobuzClient(Client):
         )
 
     async def _request_ok(self, epoint: str, params: dict) -> dict:
-        """_api_request that insists on HTTP 200, retrying once if Qobuz blips.
+        """_api_request that insists on HTTP 200, retrying once if search blips.
 
         Qobuz's search backend fails intermittently -- a 400 reading
         "Impossible to connect, please check your Algolia Application Id."
-        that succeeds moments later -- and its edge sometimes answers with a
-        502 HTML page. One short retry absorbs those; anything else is raised
-        with Qobuz's own message rather than a bare AssertionError.
+        that succeeds moments later. A 400 isn't something _api_request
+        retries (5xx already are), so one short retry here absorbs it;
+        anything else is raised with Qobuz's own message rather than a bare
+        AssertionError.
         """
         for attempt in (1, 2):
             status, page = await self._api_request(epoint, params)
             if status == 200:
                 return page
             message = (page.get("message") if isinstance(page, dict) else None) or ""
-            transient = status >= 500 or "Algolia" in message
+            transient = "Algolia" in message
             if attempt == 1 and transient:
                 logger.warning(
                     "Qobuz %s failed (HTTP %d: %s) -- retrying once",
@@ -566,21 +567,24 @@ class QobuzClient(Client):
         """Make a request to the API.
         returns: status code, json parsed response
         """
-        url = f"{QOBUZ_BASE_URL}/{epoint}"
         # Only the endpoint: params carry credentials (user_auth_token, password)
         # and the request signature.
         logger.debug("api_request: endpoint=%s", epoint)
-        async with self.rate_limiter:
-            async with self.session.get(url, params=params) as response:
-                if "json" not in (response.content_type or ""):
-                    # An HTML error page, such as a 502 from Qobuz's edge.
-                    # aiohttp's ContentTypeError would quote the full request
-                    # URL, which carries user_auth_token -- so report the
-                    # status instead of letting that propagate.
-                    return response.status, {
-                        "message": f"non-JSON response ({response.content_type})"
-                    }
-                return response.status, await response.json()
+
+        async def read(response) -> tuple[int, dict]:
+            if "json" not in (response.content_type or ""):
+                # An HTML error page, such as a 502 from Qobuz's edge.
+                # aiohttp's ContentTypeError would quote the full request
+                # URL, which carries user_auth_token -- so report the
+                # status instead of letting that propagate.
+                return response.status, {
+                    "message": f"non-JSON response ({response.content_type})"
+                }
+            return response.status, await response.json()
+
+        return await self._get_with_retries(
+            f"{QOBUZ_BASE_URL}/{epoint}", read, params=params
+        )
 
     @staticmethod
     def get_quality(quality: int):
