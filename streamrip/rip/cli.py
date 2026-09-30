@@ -7,7 +7,7 @@ import shutil
 import signal
 import subprocess
 import sys
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, closing
 from functools import wraps
 from typing import Any
 
@@ -126,10 +126,15 @@ class _StreamripGroup(HelpColorsGroup):
 
     def main(self, *args, **kwargs):
         notice = None
-        with console.status("streamrip: Checking for updates...", spinner="dots"):
-            latest_version, notes, is_release = asyncio.run(latest_streamrip_version())
-        if is_newer_version(latest_version):
-            notice = (latest_version, notes, is_release)
+        try:
+            with console.status("streamrip: Checking for updates...", spinner="dots"):
+                # Close the coroutine even if run() rejects an active event loop.
+                with closing(latest_streamrip_version()) as check:
+                    latest_version, notes, is_release = asyncio.run(check)
+            if is_newer_version(latest_version):
+                notice = (latest_version, notes, is_release)
+        except Exception as exc:
+            logger.debug("Could not check for updates: %s", exc)
         try:
             return super().main(*args, **kwargs)
         finally:

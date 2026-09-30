@@ -33,12 +33,10 @@ Python 3.14 with [uv](https://docs.astral.sh/uv/) if needed and installs
 streamrip into a `.venv` next to the installer.
 
 ```bash
-cd streamrip-*
 ./install.sh
 ```
 
 ```powershell
-Set-Location streamrip-*
 .\install.ps1
 ```
 
@@ -60,12 +58,10 @@ then open the extracted directory and run the local installer. This is
 unstable and may be broken between commits.
 
 ```bash
-cd streamrip-dev
 ./install.sh
 ```
 
 ```powershell
-Set-Location streamrip-dev
 .\install.ps1
 ```
 

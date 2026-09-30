@@ -1,6 +1,7 @@
 import asyncio
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 import tomlkit
 from click.testing import CliRunner
 
@@ -247,3 +248,41 @@ def test_update_notice_still_prints_when_the_download_is_cancelled(
 def test_upgrade_command_preserves_release_or_branch_origin():
     assert _upgrade_command("2.4.5", is_release=True).endswith("@v2.4.5")
     assert _upgrade_command("2.4.5", is_release=False).endswith("@HEAD")
+
+
+@pytest.mark.parametrize("args", [["--help"], ["--version"]])
+def test_update_failure_does_not_block_click(monkeypatch, capsys, args):
+    check = AsyncMock(side_effect=RuntimeError("update check failed"))
+    notice = MagicMock()
+    monkeypatch.setattr("streamrip.rip.cli.latest_streamrip_version", check)
+    monkeypatch.setattr("streamrip.rip.cli._print_update_notice", notice)
+
+    result = CliRunner().invoke(rip, args)
+
+    assert result.exit_code == 0
+    output = result.output + capsys.readouterr().out
+    assert ("Usage:" if args == ["--help"] else "version") in output
+    check.assert_awaited_once()
+    notice.assert_not_called()
+
+
+@pytest.mark.parametrize("args", [["--help"], ["--version"]])
+async def test_update_check_inside_event_loop_does_not_block_click(
+    monkeypatch, capsys, args
+):
+    from inspect import CORO_CLOSED, getcoroutinestate
+
+    check = AsyncMock()
+    coroutine = check()
+    notice = MagicMock()
+    monkeypatch.setattr("streamrip.rip.cli.latest_streamrip_version", lambda: coroutine)
+    monkeypatch.setattr("streamrip.rip.cli._print_update_notice", notice)
+
+    result = CliRunner().invoke(rip, args)
+
+    assert result.exit_code == 0
+    output = result.output + capsys.readouterr().out
+    assert ("Usage:" if args == ["--help"] else "version") in output
+    assert getcoroutinestate(coroutine) == CORO_CLOSED
+    check.assert_not_awaited()
+    notice.assert_not_called()
