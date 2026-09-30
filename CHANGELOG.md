@@ -5,23 +5,16 @@ upstream issues and pull requests.
 
 ## 2.4.3
 
-Security hardening, from a CodeRabbit review.
+Security hardening.
 
-- Config files and the app directory are only readable by their owner
-  (`0600`/`0700`), including when a config is created, saved or migrated.
-- Playlist folders can no longer point outside the download folder (a title
-  such as `..` or a symlinked folder), and cleaning up artwork no longer
-  deletes files that were already in a folder.
-- Disc numbers that are not a positive integer are rejected before anything
-  is written to disk, so a malformed value from a provider cannot escape the
-  album folder.
-- Qobuz search pagination is bounded by the requested limit; the page size and
-  total in a response are validated and pages are requested one at a time.
-- Last.fm playlists above 10,000 tracks are rejected, and their pages are
-  fetched one at a time instead of all at once.
-- Qobuz artist ("interpreter") URLs are fetched over HTTPS in a separate
-  session, so account credentials are never sent along. A redirect is now an
-  error: use a URL that contains the artist id.
+- Config files and the app directory are owner-only (`0600`/`0700`).
+- Playlist folders stay inside the download folder, and artwork cleanup no
+  longer deletes existing files.
+- Invalid disc numbers are rejected before any file is written.
+- Qobuz search and Last.fm playlist pagination are bounded (Last.fm: max
+  10,000 tracks) and fetched one page at a time.
+- Qobuz artist URLs are fetched over HTTPS without account credentials.
+  Redirects are now an error: use a URL that contains the artist id.
 
 ## 2.4.2
 
