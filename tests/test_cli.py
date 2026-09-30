@@ -172,3 +172,33 @@ def test_file_keeps_url_order_when_dropping_repeats(tmp_path, monkeypatch):
     )
     assert result.exit_code == 0, result.output
     assert added == ["https://c", "https://a", "https://b"]
+
+
+async def test_update_command_preserves_release_or_branch_origin(monkeypatch):
+    from unittest.mock import AsyncMock, MagicMock
+
+    from streamrip.rip.cli import latest_streamrip_version
+
+    for status, expected_ref in [(200, "v2.4.5"), (404, "HEAD")]:
+        release = AsyncMock()
+        release.status = status
+        release.json.return_value = {"tag_name": "v2.4.5", "body": "Release notes"}
+        branch = AsyncMock()
+        branch.status = 200
+        branch.text.return_value = '[project]\nversion = "2.4.5"\n'
+        session = MagicMock()
+        session.get.side_effect = [release, branch]
+        release.__aenter__.return_value = release
+        branch.__aenter__.return_value = branch
+        context = AsyncMock()
+        context.__aenter__.return_value = session
+        monkeypatch.setattr("streamrip.rip.cli.new_session", lambda **_: context)
+
+        version, notes, is_release = await latest_streamrip_version()
+        assert version == "2.4.5"
+        assert notes == ("Release notes" if status == 200 else None)
+        assert _upgrade_command(version, is_release=is_release).endswith(
+            f"@{expected_ref}"
+        )
+        if status == 404:
+            assert session.get.call_args.args[0].endswith("/HEAD/pyproject.toml")

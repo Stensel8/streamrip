@@ -36,9 +36,10 @@ logger = logging.getLogger("streamrip")
 REPOSITORY = "Stensel8/streamrip"
 
 
-def _upgrade_command(version: str) -> str:
-    """pip command to install a specific released version, not `dev` HEAD."""
-    return f"pip install --upgrade git+https://github.com/{REPOSITORY}.git@v{version}"
+def _upgrade_command(version: str, *, is_release: bool = True) -> str:
+    """Install the detected release tag or the default branch used as fallback."""
+    ref = f"v{version}" if is_release else "HEAD"
+    return f"pip install --upgrade git+https://github.com/{REPOSITORY}.git@{ref}"
 
 
 def coro(f):
@@ -106,21 +107,21 @@ async def main_session(ctx):
         notice = None
         if cfg.session.misc.check_for_updates:
             with console.status("streamrip: Checking for updates...", spinner="dots"):
-                latest_version, notes = await latest_streamrip_version(
+                latest_version, notes, is_release = await latest_streamrip_version(
                     verify_ssl=cfg.session.downloads.verify_ssl
                 )
             if is_newer_version(latest_version):
-                notice = (latest_version, notes)
+                notice = (latest_version, notes, is_release)
 
         async with Main(cfg) as main:
             yield main
 
         if notice is not None:
-            latest_version, notes = notice
+            latest_version, notes, is_release = notice
             console.print(
                 f"[green]A new version of streamrip [cyan]v{latest_version}"
                 f"[/cyan] is available! Run [white][bold]"
-                f"{_upgrade_command(latest_version)}"
+                f"{_upgrade_command(latest_version, is_release=is_release)}"
                 "[/bold][/white] to update.[/green]\n"
             )
             if notes:
@@ -696,7 +697,9 @@ def is_newer_version(latest: str | None, current: str = __version__) -> bool:
         return False
 
 
-async def latest_streamrip_version(verify_ssl: bool = True) -> tuple[str, str | None]:
+async def latest_streamrip_version(
+    verify_ssl: bool = True,
+) -> tuple[str, str | None, bool]:
     """Get the latest version of this fork and its release notes from GitHub.
 
     Uses the latest GitHub release, or the version in pyproject.toml on the
@@ -707,7 +710,7 @@ async def latest_streamrip_version(verify_ssl: bool = True) -> tuple[str, str | 
         verify_ssl: Whether to verify SSL certificates
 
     Returns:
-        A tuple of (version, release_notes)
+        A tuple of (version, release_notes, is_release)
     """
     try:
         timeout = aiohttp.ClientTimeout(total=10)
@@ -720,7 +723,7 @@ async def latest_streamrip_version(verify_ssl: bool = True) -> tuple[str, str | 
                     release = await resp.json(content_type=None)
                     tag = str(release.get("tag_name") or "").lstrip("vV")
                     if tag:
-                        return tag, release.get("body")
+                        return tag, release.get("body"), True
 
             async with s.get(
                 f"https://raw.githubusercontent.com/{REPOSITORY}/HEAD/pyproject.toml"
@@ -730,10 +733,10 @@ async def latest_streamrip_version(verify_ssl: bool = True) -> tuple[str, str | 
                         r'^version\s*=\s*"([^"]+)"', await resp.text(), re.MULTILINE
                     )
                     if match:
-                        return match.group(1), None
+                        return match.group(1), None, False
     except Exception as e:
         logger.debug("Could not check for updates: %s", e)
-    return __version__, None
+    return __version__, None, False
 
 
 if __name__ == "__main__":

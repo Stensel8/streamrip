@@ -183,6 +183,8 @@ class ConfigData:
         """Parse a config file. Raises if its schema doesn't match this version."""
         # TODO: handle the mistake where Windows people forget to escape backslash
         toml = parse(toml_str)
+        # Older releases wrote a schema version that MiscConfig no longer uses.
+        toml.get("misc", {}).pop("version", None)
         sections = {f.name: f.type(**toml[f.name]) for f in _section_fields()}  # type: ignore
         return cls(toml=toml, **sections)
 
