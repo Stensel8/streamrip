@@ -2,11 +2,13 @@
 
 import asyncio
 import contextlib
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import aiohttp
 import pytest
 
+import streamrip.client.client as client_module
 from streamrip.client.client import (
     MAX_API_ATTEMPTS,
     MAX_RETRY_DELAY,
@@ -59,9 +61,14 @@ class _Session:
 @pytest.fixture
 def sleeps(monkeypatch):
     slept = []
+    now = 100.0
+
+    monkeypatch.setattr(client_module, "time", SimpleNamespace(monotonic=lambda: now))
 
     async def fake_sleep(delay):
+        nonlocal now
         slept.append(delay)
+        now += delay
 
     monkeypatch.setattr(asyncio, "sleep", fake_sleep)
     return slept
@@ -117,9 +124,11 @@ async def test_persistent_server_error_raises_the_http_error(sleeps):
 async def test_rate_limit_waits_for_retry_after_and_pauses_later_requests(sleeps):
     c = _client(_Response(429, headers={"Retry-After": "7"}), _Response(), _Response())
     await c._api_request("tracks/1")
-    # This one never saw a 429 itself, but the account is still rate limited.
+    # A later request shares the account pause even without seeing a 429.
+    c._pause_requests(7)
     await c._api_request("tracks/2")
     assert c.session.calls == 3
+    assert len(sleeps) == 2
     # +0-2s jitter, so concurrent requests don't all wake and re-trip it together.
     assert all(7 <= s < 9 for s in sleeps)
 

@@ -82,3 +82,27 @@ def test_qobuz_album_without_artist_credits_is_kept():
 def test_deezer_albums_are_left_as_listed():
     resp = {"name": "A", "albums": [{"id": 1, "title": "X"}, {"id": 2, "title": "X"}]}
     assert _ids(resp, source="deezer") == [1, 2]
+
+
+def test_tidal_versions_stay_distinct_and_matching_versions_are_deduplicated():
+    def album(id, version, explicit=False):
+        return {
+            "id": id,
+            "title": "Seasons",
+            "version": version,
+            "artists": [{"id": ME}],
+            "numberOfTracks": 2,
+            "explicit": explicit,
+            "audioQuality": "LOSSLESS",
+        }
+
+    resp = {
+        "name": "30 Seconds To Mars",
+        "albums": [
+            album("standard", None),
+            album("remix", "Remix"),
+            album("acoustic-clean", " [Acoustic] "),
+            album("acoustic-explicit", "(acoustic)", explicit=True),
+        ],
+    }
+    assert _ids(resp, source="tidal") == ["standard", "remix", "acoustic-explicit"]

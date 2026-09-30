@@ -2,10 +2,13 @@
 
 import asyncio
 import contextlib
+from types import SimpleNamespace
 
 import aiohttp
 import pytest
 
+import streamrip.client.client as client_module
+from streamrip.client.client import MAX_API_ATTEMPTS
 from streamrip.client.qobuz import QobuzClient
 from streamrip.client.soundcloud import SoundcloudClient
 from streamrip.config import Config
@@ -113,3 +116,66 @@ async def test_soundcloud_requests_go_through_its_rate_limiter_and_retry():
         200,
     )
     assert c.rate_limiter.entered == 2
+
+
+@pytest.mark.asyncio
+async def test_pause_extended_during_sleep_is_checked_before_admission(monkeypatch):
+    c = _qobuz(_Response())
+    c.rate_limiter = _CountingLimiter()
+    now = 100.0
+    monkeypatch.setattr(client_module, "time", SimpleNamespace(monotonic=lambda: now))
+    monkeypatch.setattr(client_module.random, "random", lambda: 0)
+    c._pause_requests(5)
+    waits = []
+
+    async def sleep(delay):
+        nonlocal now
+        assert c.rate_limiter.entered == 0
+        assert c.session.calls == 0
+        waits.append(delay)
+        now += delay
+        if len(waits) == 1:
+            c._pause_requests(7)
+
+    monkeypatch.setattr(asyncio, "sleep", sleep)
+    assert await c._api_request("track/get", {}) == (200, {"ok": True})
+    assert waits == [5, 7]
+    assert c.rate_limiter.entered == 1
+
+
+@pytest.mark.asyncio
+async def test_pause_after_admission_requires_fresh_capacity_without_using_attempts(
+    monkeypatch,
+):
+    c = _qobuz(
+        *[aiohttp.ServerDisconnectedError() for _ in range(MAX_API_ATTEMPTS - 1)],
+        _Response(),
+    )
+    now = 100.0
+    monkeypatch.setattr(client_module, "time", SimpleNamespace(monotonic=lambda: now))
+
+    class PausingLimiter(_CountingLimiter):
+        active = False
+
+        async def __aenter__(self):
+            await super().__aenter__()
+            self.active = True
+            # Model another request receiving 429 while this one queues.
+            if self.entered <= MAX_API_ATTEMPTS:
+                assert c.session.calls == 0
+                c._pause_requests(5)
+
+        async def __aexit__(self, *exc):
+            self.active = False
+
+    c.rate_limiter = PausingLimiter()
+
+    async def sleep(delay):
+        nonlocal now
+        assert not c.rate_limiter.active
+        now += delay
+
+    monkeypatch.setattr(asyncio, "sleep", sleep)
+    assert await c._api_request("track/get", {}) == (200, {"ok": True})
+    assert c.session.calls == MAX_API_ATTEMPTS
+    assert c.rate_limiter.entered == 2 * MAX_API_ATTEMPTS

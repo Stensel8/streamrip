@@ -31,7 +31,8 @@ def _worth_retrying(e: Exception) -> bool:
         e,
         requests.ConnectionError
         | requests.Timeout
-        | requests.exceptions.ChunkedEncodingError,
+        | requests.exceptions.ChunkedEncodingError
+        | requests.exceptions.ContentDecodingError,
     )
 
 

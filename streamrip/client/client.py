@@ -117,16 +117,22 @@ class Client(ABC):
         """
         attempt = 0
         while True:
-            attempt += 1
             owner = self._pause_owner()
             if (pause := owner._retry_at - time.monotonic()) > 0:
                 # + jitter: every request blocked on the same 429 wakes at the
                 # same instant otherwise, and immediately re-trips it together.
                 await asyncio.sleep(pause + random.random() * 2)
+                continue
 
             delay = 0.0
             try:
                 async with self.rate_limiter:
+                    # A 429 may have arrived while waiting for admission.
+                    # Discard this admission and wait outside the limiter;
+                    # sending later requires fresh capacity to stay spaced.
+                    if owner._retry_at > time.monotonic():
+                        continue
+                    attempt += 1
                     async with self.session.get(
                         url, params=params, headers=headers
                     ) as resp:
