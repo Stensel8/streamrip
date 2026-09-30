@@ -25,17 +25,19 @@ A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, and Sou
 
 ### Latest release (recommended)
 
-The install script fetches Python 3.14 (with [uv](https://docs.astral.sh/uv/))
-and installs streamrip into a `.venv` in the current directory. This installs
-the [latest release](https://github.com/Stensel8/streamrip/releases/latest),
-currently v2.4.4:
+Download and extract the [latest release](https://github.com/Stensel8/streamrip/releases/latest),
+then open the extracted directory and run the local installer. It fetches
+Python 3.14 with [uv](https://docs.astral.sh/uv/) if needed and installs
+streamrip into a `.venv` next to the installer.
 
 ```bash
-curl -LsSf https://raw.githubusercontent.com/Stensel8/streamrip/v2.4.4/install.sh | bash  # Linux/macOS
+cd streamrip-*
+./install.sh
 ```
 
 ```powershell
-irm https://raw.githubusercontent.com/Stensel8/streamrip/v2.4.4/install.ps1 | iex  # Windows
+Set-Location streamrip-*
+.\install.ps1
 ```
 
 With Python 3.14 already there, install it into a venv of your own, or with
@@ -43,27 +45,30 @@ With Python 3.14 already there, install it into a venv of your own, or with
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate  # fish: activate.fish
-pip install git+https://github.com/Stensel8/streamrip.git@v2.4.4
+pip install .
 
-pipx install git+https://github.com/Stensel8/streamrip.git@v2.4.4
-uv tool install git+https://github.com/Stensel8/streamrip.git@v2.4.4
+pipx install .
+uv tool install .
 ```
 
 ### `dev` branch (unstable, active development)
 
-Whatever's currently being worked on, not a released version -- may be
-broken between commits. Same commands, `dev` instead of a version tag:
+Download and extract the [`dev` branch](https://github.com/Stensel8/streamrip/archive/refs/heads/dev.zip),
+then open the extracted directory and run the local installer. This is
+unstable and may be broken between commits.
 
 ```bash
-curl -LsSf https://raw.githubusercontent.com/Stensel8/streamrip/dev/install.sh | bash  # Linux/macOS
+cd streamrip-dev
+./install.sh
 ```
 
 ```powershell
-irm https://raw.githubusercontent.com/Stensel8/streamrip/dev/install.ps1 | iex  # Windows
+Set-Location streamrip-dev
+.\install.ps1
 ```
 
 ```bash
-pip install git+https://github.com/Stensel8/streamrip.git@dev
+pip install .
 ```
 
 streamrip needs [ffmpeg](https://ffmpeg.org/download.html) (Tidal hi-res,
