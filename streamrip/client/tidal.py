@@ -14,7 +14,6 @@ from ..exceptions import (
     MissingCredentialsError,
     NonStreamableError,
 )
-from ..metadata.util import tidal_quality_id
 from .client import Client, new_session
 from .downloadable import TidalDASHDownloadable, TidalDownloadable
 
@@ -69,38 +68,6 @@ _AUDIO_QUALITY_TIER = {
 LOSSLESS_TIER = _AUDIO_QUALITY_TIER["LOSSLESS"]
 HIRES_TIER = _AUDIO_QUALITY_TIER["HI_RES"]
 DASH_MIME = "application/dash+xml"
-
-
-def _dedup_duplicate_albums(albums: list[dict]) -> list[dict]:
-    """Keep only the best copy when Tidal lists the same release twice.
-
-    Tidal sometimes lists one album under an artist more than once: a clean
-    and an explicit master, or just the same master at two quality tiers
-    (a lossless entry and a separate hi-res one). Grouped by title and
-    track count -- matching on both is as good as certain to be the same
-    release, not two different albums that happen to share a title -- and
-    the explicit, higher-quality copy is kept.
-    """
-    # Tidal's own catalog is inconsistent about which bracket style tags an
-    # edition name, so square and round brackets are folded together before
-    # grouping -- otherwise the same release under each style looks distinct.
-    brackets = str.maketrans("[]", "()")
-
-    groups: dict[tuple[str, int], list[dict]] = {}
-    for album in albums:
-        key = (
-            (album.get("title") or "").strip().lower().translate(brackets),
-            album.get("numberOfTracks", 0),
-        )
-        groups.setdefault(key, []).append(album)
-
-    def best(album: dict) -> tuple[bool, int]:
-        return (
-            bool(album.get("explicit")),
-            tidal_quality_id(album.get("audioQuality")),
-        )
-
-    return [max(group, key=best) for group in groups.values()]
 
 
 class _Tokens:
@@ -259,8 +226,6 @@ class TidalClient(Client):
 
             item["albums"] = album_resp["items"]
             item["albums"].extend(ep_resp["items"])
-            if self.global_config.session.metadata.prefer_explicit:
-                item["albums"] = _dedup_duplicate_albums(item["albums"])
         elif media_type == "track" and self.global_config.session.downloads.lyrics:
             try:
                 resp = await self._api_request(

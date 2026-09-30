@@ -225,7 +225,11 @@ class PendingArtist(Pending):
             return None
 
         try:
-            meta = ArtistMetadata.from_resp(resp, self.client.source)
+            meta = ArtistMetadata.from_resp(
+                resp,
+                self.client.source,
+                self.config.session.metadata.prefer_explicit,
+            )
         except Exception as e:
             logger.error(
                 f"Error building artist metadata: {e}",
