@@ -1,6 +1,7 @@
 """Qobuz and SoundCloud API requests get the same retries Tidal's always had."""
 
 import asyncio
+import base64
 import contextlib
 from types import SimpleNamespace
 
@@ -22,6 +23,13 @@ class _Response:
         self.content_type = content_type
         self._body = body if body is not None else {"ok": True}
 
+    async def text(self, encoding="utf-8"):
+        return self._body
+
+    def raise_for_status(self):
+        if self.status >= 400:
+            raise aiohttp.ClientResponseError(None, (), status=self.status)
+
     async def json(self):
         return self._body
 
@@ -38,6 +46,9 @@ class _Session:
     def __init__(self, *outcomes):
         self.outcomes = list(outcomes)
         self.calls = 0
+
+    async def close(self):
+        self.closed = True
 
     def get(self, url, params=None, headers=None):
         self.calls += 1
@@ -176,3 +187,53 @@ async def test_pause_extensions_require_fresh_admission(monkeypatch, pause_durin
     assert extensions == client_module.MAX_API_ATTEMPTS
     if pause_during == "admission":
         assert events[:13] == ["sleep", "admit", "exit"] * 4 + ["sleep"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("provider", ["qobuz", "soundcloud"])
+@pytest.mark.parametrize("failure_at", ["page", "bundle"])
+@pytest.mark.parametrize("failure", [TimeoutError(), _Response(503)])
+async def test_bootstrap_requests_retry_and_use_the_account_limiter(
+    monkeypatch, provider, failure_at, failure
+):
+    """Both bootstrap fetches recover from transport and server failures."""
+    if provider == "qobuz":
+        client = _qobuz()
+        page = '<script src="/resources/1.2.3-a123/bundle.js"></script>'
+        bundle = 'production:{api:{appId:"123456789",appSecret:"' + "x" * 32 + '"'
+        for timezone in ("paris", "london"):
+            seed = base64.b64encode(timezone.encode()).decode() + "A" * 44
+            bundle += f'x.initialSeed("{seed}",window.utimezone.{timezone})'
+        expected = ("123456789", ["london", "paris"])
+        fetch = client._get_app_id_and_secrets
+    else:
+        client = SoundcloudClient(Config.defaults())
+        page = '<script src="/bundle.js"></script>'
+        bundle = 'client_id:"' + "a" * 32 + '"'
+        expected = ("a" * 32, "")
+        fetch = client._refresh_tokens
+
+    outcomes = [_Response(body=page), _Response(body=bundle)]
+    outcomes.insert(0 if failure_at == "page" else 1, failure)
+    session = _Session(*outcomes)
+    client.rate_limiter = _CountingLimiter()
+    if provider == "qobuz":
+        monkeypatch.setattr("streamrip.client.qobuz.new_session", lambda **_: session)
+    else:
+        client.session = session
+
+    assert await fetch() == expected
+    assert session.calls == 3
+    assert client.rate_limiter.entered == 3
+    if provider == "qobuz":
+        assert session.closed
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_does_not_parse_a_persistent_http_error():
+    """Exhausted text fetches raise the HTTP error instead of parsing its body."""
+    c = _qobuz(*[_Response(503) for _ in range(client_module.MAX_API_ATTEMPTS)])
+    with pytest.raises(aiohttp.ClientResponseError) as error:
+        await c._get_text_with_retries("https://example.test/bundle.js")
+    assert error.value.status == 503
+    assert c.session.calls == client_module.MAX_API_ATTEMPTS

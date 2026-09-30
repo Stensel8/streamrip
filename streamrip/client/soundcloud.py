@@ -288,8 +288,7 @@ class SoundcloudClient(Client):
         tags (which changed and broke this, upstream #1038), try every bundle,
         newest last, the way yt-dlp does.
         """
-        async with self.session.get(STOCK_URL) as resp:
-            page_text = await resp.text(encoding="utf-8")
+        page_text = await self._get_text_with_retries(STOCK_URL)
 
         app_version_match = re.search(r'__sc_version\s*=\s*"(\d+)"', page_text)
         app_version = app_version_match.group(1) if app_version_match else ""
@@ -301,8 +300,7 @@ class SoundcloudClient(Client):
             elif script_url.startswith("/"):
                 script_url = STOCK_URL.rstrip("/") + script_url
             try:
-                async with self.session.get(script_url) as resp:
-                    script = await resp.text(encoding="utf-8")
+                script = await self._get_text_with_retries(script_url)
             except Exception as e:
                 logger.debug("Could not fetch %s: %s", script_url, e)
                 continue

@@ -16,7 +16,7 @@ from ..exceptions import (
     MissingCredentialsError,
     NonStreamableError,
 )
-from .client import Client, new_session
+from .client import RETRY_STATUSES, Client, RequestClient, new_session
 from .downloadable import BasicDownloadable, Downloadable
 
 logger = logging.getLogger("streamrip")
@@ -40,10 +40,12 @@ def file_url_signature(
     return hashlib.md5(preimage.encode("utf-8")).hexdigest()
 
 
-class QobuzSpoofer:
+class QobuzSpoofer(RequestClient):
     """Spoofs the information required to stream tracks from Qobuz."""
 
-    def __init__(self, verify_ssl: bool = True):
+    source = "qobuz"
+
+    def __init__(self, verify_ssl: bool = True, client: Client | None = None):
         """Create a Spoofer."""
         self.seed_timezone_regex = (
             r'[a-z]\.initialSeed\("(?P<seed>[\w=]+)",window\.ut'
@@ -59,12 +61,15 @@ class QobuzSpoofer:
         )
         self.session = None
         self.verify_ssl = verify_ssl
+        self.client = client
+        self.rate_limiter = (
+            client.rate_limiter if client is not None else self.get_rate_limiter(0)
+        )
 
     async def get_app_id_and_secrets(self) -> tuple[str, list[str]]:
         """Scrape Qobuz's web player bundle for its app id and secrets."""
         assert self.session is not None
-        async with self.session.get("https://play.qobuz.com/login") as req:
-            login_page = await req.text()
+        login_page = await self._get_text_with_retries("https://play.qobuz.com/login")
 
         bundle_url_match = re.search(
             r'<script src="(/resources/\d+\.\d+\.\d+-[a-z]\d{3}/bundle\.js)"></script>',
@@ -73,8 +78,9 @@ class QobuzSpoofer:
         assert bundle_url_match is not None
         bundle_url = bundle_url_match.group(1)
 
-        async with self.session.get("https://play.qobuz.com" + bundle_url) as req:
-            self.bundle = await req.text()
+        self.bundle = await self._get_text_with_retries(
+            "https://play.qobuz.com" + bundle_url
+        )
 
         match = re.search(self.app_id_regex, self.bundle)
         if match is None:
@@ -121,6 +127,10 @@ class QobuzSpoofer:
         secrets_list = vals
 
         return app_id, secrets_list
+
+    def _pause_owner(self) -> RequestClient:
+        """Share the account pause with the API client during bootstrap."""
+        return self.client._pause_owner() if self.client is not None else self
 
     async def __aenter__(self):
         """Open the spoofer's own HTTP session."""
@@ -415,7 +425,8 @@ class QobuzClient(Client):
         Qobuz's search backend fails intermittently -- a 400 reading
         "Impossible to connect, please check your Algolia Application Id."
         that succeeds moments later. A 400 isn't something _api_request
-        retries (5xx already are), so one short retry here absorbs it;
+        retries (common 5xx already are), so one short retry here absorbs it
+        and preserves the fallback for other 5xx statuses;
         anything else is raised with Qobuz's own message rather than a bare
         AssertionError.
         """
@@ -424,7 +435,9 @@ class QobuzClient(Client):
             if status == 200:
                 return page
             message = (page.get("message") if isinstance(page, dict) else None) or ""
-            transient = "Algolia" in message
+            transient = (
+                status >= 500 and status not in RETRY_STATUSES
+            ) or "Algolia" in message
             if attempt == 1 and transient:
                 logger.warning(
                     "Qobuz %s failed (HTTP %d: %s) -- retrying once",
@@ -494,7 +507,7 @@ class QobuzClient(Client):
 
     async def _get_app_id_and_secrets(self) -> tuple[str, list[str]]:
         async with QobuzSpoofer(
-            verify_ssl=self.config.session.downloads.verify_ssl
+            verify_ssl=self.config.session.downloads.verify_ssl, client=self
         ) as spoofer:
             return await spoofer.get_app_id_and_secrets()
 

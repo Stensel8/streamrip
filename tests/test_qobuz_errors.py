@@ -121,3 +121,22 @@ async def test_search_command_reports_failure_instead_of_crashing():
         await m.search_interactive("qobuz", "artist", "Radioaktivists")
     printed = " ".join(str(c.args[0]) for c in console.print.call_args_list)
     assert "Search failed" in printed and "Algolia" in printed
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [501, 505])
+async def test_uncommon_server_errors_keep_the_fallback_retry(status):
+    """5xx errors outside the shared set retain Qobuz's one extra attempt."""
+    c = _client((status, {}), (200, {"ok": True}))
+    assert await c._request_ok("artist/search", {}) == {"ok": True}
+    assert c._api_request.await_count == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [500, 502, 503, 504])
+async def test_exhausted_shared_server_retries_are_not_repeated(status):
+    """The fallback must not multiply the shared retry budget."""
+    c = _client((status, {}))
+    with pytest.raises(APIError, match=str(status)):
+        await c._request_ok("artist/search", {})
+    assert c._api_request.await_count == 1

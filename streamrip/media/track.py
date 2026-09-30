@@ -69,6 +69,18 @@ class Track(Media):
     # lossy copy.
     _skip_lossy_duplicate: bool = False
 
+    async def rip(self):
+        """Record failures from every processing phase for summaries and repair."""
+        try:
+            await super(Track, self).rip()
+        except TrackDownloadFailedError:
+            raise  # The exhausted download was already recorded.
+        except Exception:
+            self.db.set_failed(self.downloadable.source, "track", self.meta.info.id)
+            if self.is_single:
+                remove_title(id(self), self.config.session.cli.progress_bars)
+            raise
+
     async def preprocess(self):
         """Set the download path and skip it if a lossless copy already exists."""
         self._set_download_path()

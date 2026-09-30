@@ -46,30 +46,14 @@ def retry_after(resp, attempt: int) -> float:
     return min(seconds, MAX_RETRY_DELAY)
 
 
-class Client(ABC):
+class RequestClient:
+    """Shared request pacing and retries for API and bootstrap clients."""
+
     source: str
-    max_quality: int
     session: aiohttp.ClientSession
-    logged_in: bool
     rate_limiter: aiolimiter.AsyncLimiter | contextlib.nullcontext
     # time.monotonic() before which no API request is sent (set by a 429)
     _retry_at: float = 0.0
-
-    @abstractmethod
-    async def login(self):
-        raise NotImplementedError
-
-    @abstractmethod
-    async def get_metadata(self, item: str, media_type):
-        raise NotImplementedError
-
-    @abstractmethod
-    async def search(self, media_type: str, query: str, limit: int = 500) -> list[dict]:
-        raise NotImplementedError
-
-    @abstractmethod
-    async def get_downloadable(self, item: str, quality: int) -> Downloadable:
-        raise NotImplementedError
 
     @staticmethod
     def get_rate_limiter(
@@ -85,7 +69,7 @@ class Client(ABC):
             else contextlib.nullcontext()
         )
 
-    def _pause_owner(self) -> "Client":
+    def _pause_owner(self) -> "RequestClient":
         """The client whose 429 pause this one shares (itself, by default)."""
         return self
 
@@ -165,6 +149,38 @@ class Client(ABC):
                     f"retrying in {delay:.0f}s"
                 )
                 await asyncio.sleep(delay)
+
+    async def _get_text_with_retries(self, url: str) -> str:
+        """Fetch a web page or script with retries and reject HTTP errors."""
+
+        async def read(resp):
+            resp.raise_for_status()
+            return await resp.text(encoding="utf-8")
+
+        return await self._get_with_retries(url, read)
+
+
+class Client(RequestClient, ABC):
+    """Provider interface backed by shared HTTP request handling."""
+
+    max_quality: int
+    logged_in: bool
+
+    @abstractmethod
+    async def login(self):
+        raise NotImplementedError
+
+    @abstractmethod
+    async def get_metadata(self, item: str, media_type):
+        raise NotImplementedError
+
+    @abstractmethod
+    async def search(self, media_type: str, query: str, limit: int = 500) -> list[dict]:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def get_downloadable(self, item: str, quality: int) -> Downloadable:
+        raise NotImplementedError
 
 
 def new_session(
