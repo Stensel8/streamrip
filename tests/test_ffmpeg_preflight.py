@@ -51,11 +51,15 @@ def test_every_login_command_checks_ffmpeg_first(tmp_path, command):
     with (
         patch("streamrip.rip.main.find_ffmpeg", return_value=None),
         patch.object(Main, "get_logged_in_client", AsyncMock()) as login,
+        # The console may hold on to the stdout it was created with, so check
+        # what is printed instead of what CliRunner captures.
+        patch("streamrip.rip.cli.console") as console,
     ):
         result = CliRunner().invoke(rip, ["--config-path", str(cfg), *args])
-    assert result.exit_code == 1, result.output
-    assert "No ffmpeg installation found" in result.output
-    assert "pipx inject streamrip imageio-ffmpeg" in result.output
+    assert result.exit_code == 1
+    printed = "".join(str(call.args[0]) for call in console.print.call_args_list)
+    assert "No ffmpeg installation found" in printed
+    assert "pipx inject streamrip imageio-ffmpeg" in printed
     login.assert_not_called()
 
 
