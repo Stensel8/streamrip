@@ -460,25 +460,22 @@ class QobuzClient(Client):
         params: dict,
         limit: int = 500,
     ) -> list[dict]:
-        """Paginate search results.
+        """Return search response pages, bounded by the caller's result limit."""
+        if type(limit) is not int or limit < 0:
+            raise ValueError("Qobuz search limit must be a non-negative integer")
+        if limit == 0:
+            return []
 
-        params:
-            limit: If None, all the results are yielded. Otherwise a maximum
-            of `limit` results are yielded.
-
-        Returns
-        -------
-            Generator that yields (status code, response) tuples
-        """
-        params.update({"limit": limit})
+        params = {**params, "limit": limit, "offset": 0}
         page = await self._request_ok(epoint, params)
         logger.debug("paginate: initial request succeeded")
         # albums, tracks, etc.
         key = epoint.split("/")[0] + "s"
         items = page.get(key, {})
         total = items.get("total", 0)
-        if limit is not None and limit < total:
-            total = limit
+        if type(total) is not int or total < 0:
+            raise APIError("Qobuz search returned an invalid pagination total")
+        total = min(total, limit)
 
         logger.debug("paginate: %d total items requested", total)
 
@@ -486,21 +483,25 @@ class QobuzClient(Client):
             logger.debug("Nothing found from %s epoint", epoint)
             return []
 
-        limit = int(page.get(key, {}).get("limit", 500))
-        offset = int(page.get(key, {}).get("offset", 0))
+        page_size = items.get("limit", min(500, limit))
+        if type(page_size) is not int or not 0 < page_size <= limit:
+            raise APIError("Qobuz search returned an invalid pagination limit")
 
-        logger.debug("paginate: from response: limit=%d, offset=%d", limit, offset)
-        params.update({"limit": limit})
-
-        pages = []
-        requests = []
-        pages.append(page)
-        while (offset + limit) < total:
-            offset += limit
-            params.update({"offset": offset})
-            requests.append(self._request_ok(epoint, params.copy()))
-
-        pages.extend(await asyncio.gather(*requests))
+        # Qobuz may cap the requested page size. Keep that validated size,
+        # but never use response offsets to control progress or allocate a
+        # batch of requests from response metadata.
+        pages = [page]
+        for offset in range(page_size, total, page_size):
+            pages.append(
+                await self._request_ok(
+                    epoint,
+                    {
+                        **params,
+                        "offset": offset,
+                        "limit": min(page_size, total - offset),
+                    },
+                )
+            )
         return pages
 
     async def _get_app_id_and_secrets(self) -> tuple[str, list[str]]:
