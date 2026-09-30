@@ -82,3 +82,27 @@ def test_qobuz_album_without_artist_credits_is_kept():
 def test_deezer_albums_are_left_as_listed():
     resp = {"name": "A", "albums": [{"id": 1, "title": "X"}, {"id": 2, "title": "X"}]}
     assert _ids(resp, source="deezer") == [1, 2]
+
+
+def test_tidal_keeps_different_versions_but_deduplicates_normalized_versions():
+    albums = [
+        {
+            "id": id,
+            "title": "Seasons",
+            "artist": {"id": ME},
+            "numberOfTracks": 2,
+            "version": version,
+            "explicit": explicit,
+        }
+        for id, version, explicit in [
+            ("original", None, False),
+            ("remix", "Remix", False),
+            ("acoustic-clean", " [Acoustic] ", False),
+            ("acoustic-explicit", "(acoustic)", True),
+        ]
+    ]
+    assert _ids({"name": "A", "albums": albums}, source="tidal") == [
+        "original",
+        "remix",
+        "acoustic-explicit",
+    ]

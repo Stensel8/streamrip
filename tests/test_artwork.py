@@ -89,12 +89,13 @@ def _saved_cover_only():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "error", [requests.ConnectionError, requests.exceptions.ContentDecodingError]
+)
 async def test_a_network_hiccup_does_not_cost_the_album_its_cover(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, error
 ):
-    calls = _flaky_download(
-        monkeypatch, [requests.ConnectionError("Temporary failure in name resolution")]
-    )
+    calls = _flaky_download(monkeypatch, [error("interrupted download")])
     covers, config = _saved_cover_only()
     _, saved = await artwork.download_artwork(
         MagicMock(), str(tmp_path), covers, config, False

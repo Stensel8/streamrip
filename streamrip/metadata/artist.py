@@ -86,6 +86,7 @@ def _tidal_albums(resp: dict, prefer_explicit: bool) -> list[dict]:
         key=lambda a: (
             _artist_ids(a),
             _norm(a.get("title")),
+            _norm(a.get("version")),
             a.get("numberOfTracks", 0),
         ),
         rank=lambda a: (

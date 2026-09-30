@@ -2,10 +2,12 @@
 
 import asyncio
 import contextlib
+from types import SimpleNamespace
 
 import aiohttp
 import pytest
 
+from streamrip.client import client as client_module
 from streamrip.client.qobuz import QobuzClient
 from streamrip.client.soundcloud import SoundcloudClient
 from streamrip.config import Config
@@ -113,3 +115,64 @@ async def test_soundcloud_requests_go_through_its_rate_limiter_and_retry():
         200,
     )
     assert c.rate_limiter.entered == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("pause_during", ["sleep", "admission"])
+async def test_pause_extensions_require_fresh_admission(monkeypatch, pause_during):
+    c = _qobuz(_Response(503), _Response(503), _Response(503), _Response())
+    # Also exercise clients sharing another client's account pause.
+    owner = _qobuz()
+    owner._retry_at = 5.0
+    monkeypatch.setattr(c, "_pause_owner", lambda: owner)
+    now = 0.0
+    extensions = 0
+    events = []
+
+    def extend_pause():
+        nonlocal extensions
+        if extensions < client_module.MAX_API_ATTEMPTS:
+            owner._retry_at = now + 10
+            extensions += 1
+
+    class Limiter:
+        active = False
+
+        async def __aenter__(self):
+            assert now >= owner._retry_at
+            self.active = True
+            events.append("admit")
+            if pause_during == "admission":
+                extend_pause()
+
+        async def __aexit__(self, *exc):
+            self.active = False
+            events.append("exit")
+
+    async def sleep(delay):
+        nonlocal now
+        assert not c.rate_limiter.active
+        events.append("sleep")
+        now += delay
+        if pause_during == "sleep":
+            extend_pause()
+
+    get = c.session.get
+
+    def checked_get(*args, **kwargs):
+        assert now >= owner._retry_at
+        assert c.rate_limiter.active
+        assert events[-1] == "admit"
+        events.append("send")
+        return get(*args, **kwargs)
+
+    c.rate_limiter = Limiter()
+    monkeypatch.setattr(c.session, "get", checked_get)
+    monkeypatch.setattr(client_module, "time", SimpleNamespace(monotonic=lambda: now))
+    monkeypatch.setattr(asyncio, "sleep", sleep)
+
+    assert await c._api_request("track/get", {}) == (200, {"ok": True})
+    assert c.session.calls == client_module.MAX_API_ATTEMPTS
+    assert extensions == client_module.MAX_API_ATTEMPTS
+    if pause_during == "admission":
+        assert events[:13] == ["sleep", "admit", "exit"] * 4 + ["sleep"]
