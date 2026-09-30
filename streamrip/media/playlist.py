@@ -35,7 +35,13 @@ LASTFM_MAX_TRACKS = 10_000
 def _playlist_folder(config: Config, name: str) -> str:
     c = config.session
     folder = clean_filename(name, c.filepaths.restrict_characters)
-    return os.path.join(c.downloads.folder, folder)
+    if folder in ("", ".", ".."):
+        raise ValueError(f"Invalid playlist folder: {name!r}")
+    root = os.path.realpath(c.downloads.folder)
+    path = os.path.realpath(os.path.join(root, folder))
+    if path == root or os.path.commonpath((root, path)) != root:
+        raise ValueError(f"Invalid playlist folder outside download root: {name!r}")
+    return path
 
 
 @dataclass(slots=True)
@@ -129,11 +135,11 @@ class PendingPlaylist(Pending):
 
         try:
             meta = PlaylistMetadata.from_resp(resp, self.client.source)
+            folder = _playlist_folder(self.config, meta.name)
         except Exception as e:
             logger.error(f"Error creating playlist: {e}")
             return None
         name = meta.name
-        folder = _playlist_folder(self.config, name)
         ids = meta.ids()
         tracks = [
             PendingPlaylistTrack(
@@ -181,6 +187,7 @@ class PendingLastfmPlaylist(Pending):
             playlist_title, titles_artists = await self._parse_lastfm_playlist(
                 self.lastfm_url,
             )
+            folder = _playlist_folder(self.config, playlist_title)
         except Exception as e:
             logger.error("Error occurred while parsing last.fm page: %s", e)
             return None
@@ -198,8 +205,6 @@ class PendingLastfmPlaylist(Pending):
             results = await asyncio.gather(
                 *(self._make_query(f"{t} {a}", s, callback) for t, a in titles_artists)
             )
-
-        folder = _playlist_folder(self.config, playlist_title)
 
         pending_tracks = []
         for pos, (id, from_fallback) in enumerate(results, start=1):
