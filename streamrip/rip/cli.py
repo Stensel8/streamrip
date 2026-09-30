@@ -110,9 +110,11 @@ def _print_update_notice(
     """Print the available-update message and its release notes, if any."""
     console.print(
         f"[green]A new version of streamrip [cyan]v{latest_version}"
-        f"[/cyan] is available! Run [white][bold]"
+        f"[/cyan] is available.[/green]\n"
+        f"This installation is in [cyan]{escape(sys.prefix)}[/cyan]. Update it with:\n"
+        f"[white][bold]"
         f"{_upgrade_command(latest_version, is_release=is_release)}"
-        "[/bold][/white] to update.[/green]\n"
+        "[/bold][/white]\n"
     )
     if notes:
         console.print(Markdown(notes))

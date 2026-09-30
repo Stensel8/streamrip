@@ -8,6 +8,8 @@
 # this checkout.
 
 Set-Location $PSScriptRoot
+$venvPath = Join-Path $PSScriptRoot ".venv"
+$streamripPath = Join-Path $venvPath "Scripts\streamrip.exe"
 
 if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
     Write-Host "uv not found, installing it (see https://docs.astral.sh/uv/)..."
@@ -15,27 +17,29 @@ if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
     $env:Path = "$env:USERPROFILE\.local\bin;$env:Path"
 }
 
-if (-not (Test-Path .venv)) {
+if (-not (Test-Path $venvPath)) {
     Write-Host "Creating .venv (Python 3.14)..."
-    uv venv --python 3.14 .venv
+    uv venv --python 3.14 "$venvPath"
 }
 
 Write-Host "Installing streamrip into .venv..."
-uv pip install --python .venv --upgrade .
+uv pip install --python "$venvPath" --upgrade "$PSScriptRoot"
 
 Write-Host ""
-$version = & .venv\Scripts\streamrip.exe --version 2>$null
+$version = & $streamripPath --version 2>$null
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "Done. $version is installed at .venv\Scripts\streamrip.exe."
+    Write-Host "Installed: $version"
+    Write-Host "Environment: $venvPath"
+    Write-Host "Run directly: $streamripPath"
 } else {
-    Write-Host "Install finished, but .venv\Scripts\streamrip.exe --version failed -- something's wrong."
+    Write-Host "Install finished, but $streamripPath --version failed -- something's wrong."
     exit 1
 }
 Write-Host ""
 Write-Host "Activate the venv so plain 'streamrip' works:"
-Write-Host "  .venv\Scripts\Activate.ps1"
+Write-Host "  & `"$venvPath\Scripts\Activate.ps1`""
 Write-Host "Leave it again with 'deactivate'."
 Write-Host ""
 Write-Host "If 'streamrip' then runs something else, an alias or function named"
 Write-Host "streamrip is shadowing it (check with 'Get-Command streamrip -All')."
-Write-Host ".venv\Scripts\streamrip.exe always works regardless of that, activated or not."
+Write-Host "$streamripPath always works regardless of that, activated or not."
