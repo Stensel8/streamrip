@@ -1,3 +1,6 @@
+import asyncio
+from unittest.mock import AsyncMock
+
 import tomlkit
 from click.testing import CliRunner
 
@@ -172,3 +175,69 @@ def test_file_keeps_url_order_when_dropping_repeats(tmp_path, monkeypatch):
     )
     assert result.exit_code == 0, result.output
     assert added == ["https://c", "https://a", "https://b"]
+
+
+class _FakeMain:
+    """A Main whose download step optionally raises, like a cancelled one."""
+
+    to_raise: BaseException | None = None
+
+    def __init__(self, _config):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_):
+        pass
+
+    async def add_all(self, urls):
+        pass
+
+    async def resolve(self):
+        pass
+
+    async def rip(self):
+        if self.to_raise is not None:
+            raise self.to_raise
+
+
+def _run_url_with_a_newer_version_available(tmp_path, monkeypatch, raise_during_rip):
+    monkeypatch.setattr(
+        "streamrip.rip.cli.latest_streamrip_version",
+        AsyncMock(return_value=("99.0.0", None)),
+    )
+    _FakeMain.to_raise = raise_during_rip
+    monkeypatch.setattr("streamrip.rip.cli.Main", _FakeMain)
+    return CliRunner().invoke(
+        rip,
+        ["--config-path", str(tmp_path / "config.toml"), "url", "https://example"],
+    )
+
+
+def test_update_notice_prints_after_a_clean_download(tmp_path, monkeypatch, capsys):
+    result = _run_url_with_a_newer_version_available(tmp_path, monkeypatch, None)
+    assert result.exit_code == 0, result.output
+    # Rich's console writes straight to the real stdout, not Click's
+    # result.output capture -- pytest's own capsys catches that instead.
+    assert "v99.0.0" in capsys.readouterr().out
+
+
+def test_update_notice_still_prints_when_the_download_is_cancelled(
+    tmp_path, monkeypatch, capsys
+):
+    """Ctrl-C during a download must not also cancel the update notice.
+
+    The notice is printed after the download step (see main_session in
+    rip/cli.py) so search's screen-clearing picker can't wipe it out --
+    but a cancelled/failed download raises through that same point, so
+    printing it only has to happen in a finally, or this exact case
+    (observed live 2026-09-30) silently drops it.
+    """
+    result = _run_url_with_a_newer_version_available(
+        tmp_path, monkeypatch, asyncio.CancelledError()
+    )
+    assert result.exit_code == 0, result.output
+    out = capsys.readouterr().out
+    assert "v99.0.0" in out
+    assert "Stopped" in out

@@ -89,46 +89,56 @@ def coro(f):
 async def main_session(ctx):
     """Shared by every download command (url, file, search, lastfm, id).
 
-    Opens the config as a session, and checks for a newer streamrip release
-    (if enabled) before doing anything else -- so every command that can
-    download gets the same visible check, not just `url`. Silent when
-    already on the latest version; only speaks up when there's something
-    to report.
-
-    The notice itself is held back until the caller's block returns, not
-    printed right after the check: `search` clears the screen for its
-    interactive picker, which would wipe out a notice printed beforehand
-    before anyone could read it (observed live 2026-09-30). Printed last,
-    nothing that follows can wipe it.
+    Opens the config as a session and runs the caller's block. The update
+    check lives in `_StreamripGroup.main()` so it also covers Click's
+    `--help`, `--version`, and bare-invocation paths.
     """
     with ctx.obj["config"] as cfg:
         cfg: Config
-        notice = None
-        if cfg.session.misc.check_for_updates:
-            with console.status("streamrip: Checking for updates...", spinner="dots"):
-                latest_version, notes = await latest_streamrip_version(
-                    verify_ssl=cfg.session.downloads.verify_ssl
-                )
-            if is_newer_version(latest_version):
-                notice = (latest_version, notes)
-
         async with Main(cfg) as main:
             yield main
 
-        if notice is not None:
-            latest_version, notes = notice
-            console.print(
-                f"[green]A new version of streamrip [cyan]v{latest_version}"
-                f"[/cyan] is available! Run [white][bold]"
-                f"{_upgrade_command(latest_version)}"
-                "[/bold][/white] to update.[/green]\n"
-            )
-            if notes:
-                console.print(Markdown(notes))
+
+def _print_update_notice(latest_version: str, notes: str | None) -> None:
+    console.print(
+        f"[green]A new version of streamrip [cyan]v{latest_version}"
+        f"[/cyan] is available! Run [white][bold]"
+        f"{_upgrade_command(latest_version)}"
+        "[/bold][/white] to update.[/green]\n"
+    )
+    if notes:
+        console.print(Markdown(notes))
+
+
+class _StreamripGroup(HelpColorsGroup):
+    """Checks for updates before literally anything else runs.
+
+    Click short-circuits --help, --version, and a bare invocation with no
+    subcommand before the group's own callback (`rip()` below) ever runs --
+    so a check placed there misses all three. `main()` is Click's actual
+    entry point, called before any of that, for every invocation alike:
+    one check, called unconditionally, covers all of them (asked for
+    explicitly, 2026-09-30).
+    """
+
+    def main(self, *args, **kwargs):
+        notice = None
+        with console.status("streamrip: Checking for updates...", spinner="dots"):
+            latest_version, notes = asyncio.run(latest_streamrip_version())
+        if is_newer_version(latest_version):
+            notice = (latest_version, notes)
+        try:
+            return super().main(*args, **kwargs)
+        finally:
+            # In a finally, not just after: search's screen-clearing picker
+            # would wipe a notice printed too early, and a raised/cancelled
+            # command must not also cancel the one thing this was for.
+            if notice is not None:
+                _print_update_notice(*notice)
 
 
 @click.group(
-    cls=HelpColorsGroup,
+    cls=_StreamripGroup,
     help_headers_color="yellow",
     help_options_color="green",
 )
