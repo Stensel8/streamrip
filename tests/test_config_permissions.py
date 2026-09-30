@@ -6,7 +6,6 @@ import subprocess
 import sys
 
 import pytest
-import tomlkit
 
 from streamrip.config import BLANK_CONFIG_PATH, Config, set_user_defaults
 
@@ -77,20 +76,7 @@ def test_saving_credentials_secures_existing_or_recreated_file(tmp_path, remove_
     assert saved.tidal.refresh_token == "synthetic-tidal-token"
 
 
-def test_migration_preserves_credentials_with_private_permissions(tmp_path):
-    path = tmp_path / "config.toml"
-    old = tomlkit.parse(open("tests/test_config_old.toml").read())
-    old["deezer"]["arl"] = "synthetic-cookie"
-    path.write_text(tomlkit.dumps(old))
-    path.chmod(0o644)
-
-    Config.update_file(str(path))
-
-    assert mode(path) == 0o600
-    assert Config(str(path)).file.deezer.arl == "synthetic-cookie"
-
-
-@pytest.mark.parametrize("operation", ["save", "reset", "migrate"])
+@pytest.mark.parametrize("operation", ["save", "reset"])
 def test_permission_failure_aborts_before_changing_contents(
     tmp_path, monkeypatch, operation
 ):
@@ -111,10 +97,8 @@ def test_permission_failure_aborts_before_changing_contents(
     with pytest.raises(PermissionError):
         if operation == "save":
             config.save_file()
-        elif operation == "reset":
-            set_user_defaults(str(path))
         else:
-            Config.update_file(str(path))
+            set_user_defaults(str(path))
 
     assert path.read_bytes() == original
     assert descriptors

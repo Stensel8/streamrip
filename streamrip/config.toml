@@ -200,7 +200,5 @@ progress_bars = true
 max_search_results = 100
 
 [misc]
-# Metadata to identify this config file. Do not change.
-version = "2.3.3"
-# Print a message if a new version of streamrip is available 
+# Print a message if a new version of streamrip is available
 check_for_updates = true

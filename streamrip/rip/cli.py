@@ -22,7 +22,7 @@ from rich.traceback import install
 
 from .. import __version__, db
 from ..client import new_session
-from ..config import DEFAULT_CONFIG_PATH, Config, OutdatedConfigError, set_user_defaults
+from ..config import DEFAULT_CONFIG_PATH, Config, set_user_defaults
 from ..console import console
 from ..exceptions import FFmpegNotFoundError
 from ..utils.ssl_utils import print_ssl_error_help
@@ -177,11 +177,6 @@ def rip(
     ctx.obj["config_path"] = config_path
 
     try:
-        c = Config(config_path)
-    except OutdatedConfigError as e:
-        console.print(e)
-        console.print("Auto-updating config file...")
-        Config.update_file(config_path)
         c = Config(config_path)
     except Exception as e:
         console.print(

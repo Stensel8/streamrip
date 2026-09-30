@@ -2,7 +2,6 @@ import os
 import shutil
 
 import pytest
-import tomlkit
 
 from streamrip.config import (
     ArtistFilterConfig,
@@ -21,13 +20,9 @@ from streamrip.config import (
     QobuzConfig,
     SoundcloudConfig,
     TidalConfig,
-    _get_dict_keys_r,
-    _nested_set,
-    update_config,
 )
 
 SAMPLE_CONFIG = "tests/test_config.toml"
-OLD_CONFIG = "tests/test_config_old.toml"
 
 
 # Define a fixture to create a sample ConfigData instance for testing
@@ -47,97 +42,6 @@ def sample_config() -> Config:
     # You can customize this to your specific needs for testing
     config = Config(SAMPLE_CONFIG)
     return config
-
-
-def test_get_keys_r():
-    d = {
-        "key1": {
-            "key2": {
-                "key3": 1,
-                "key4": 1,
-            },
-            "key6": [1, 2],
-            5: 1,
-        }
-    }
-    res = _get_dict_keys_r(d)
-    print(res)
-    assert res == {
-        ("key1", "key2", "key3"),
-        ("key1", "key2", "key4"),
-        ("key1", "key6"),
-        ("key1", 5),
-    }
-
-
-def test_safe_set():
-    d = {
-        "key1": {
-            "key2": {
-                "key3": 1,
-                "key4": 1,
-            },
-            "key6": [1, 2],
-            5: 1,
-        }
-    }
-    _nested_set(d, "key1", "key2", "key3", val=5)
-    assert d == {
-        "key1": {
-            "key2": {
-                "key3": 5,
-                "key4": 1,
-            },
-            "key6": [1, 2],
-            5: 1,
-        }
-    }
-
-
-def test_config_update():
-    old = {
-        "downloads": {"folder": "some_path", "use_service": True},
-        "qobuz": {"email": "asdf@gmail.com", "password": "test"},
-        "legacy_conf": {"something": 1, "other": 2},
-    }
-    new = {
-        "downloads": {"folder": "", "use_service": False, "keep_artwork": True},
-        "qobuz": {"email": "", "password": ""},
-        "tidal": {"email": "", "password": ""},
-    }
-    update_config(old, new)
-    assert new == {
-        "downloads": {"folder": "some_path", "use_service": True, "keep_artwork": True},
-        "qobuz": {"email": "asdf@gmail.com", "password": "test"},
-        "tidal": {"email": "", "password": ""},
-    }
-
-
-def test_config_throws_outdated():
-    with pytest.raises(Exception, match="update"):
-        _ = Config(OLD_CONFIG)
-
-
-def test_config_file_update():
-    tmp_conf = "tests/test_config_old2.toml"
-    shutil.copy("tests/test_config_old.toml", tmp_conf)
-    Config._update_file(tmp_conf, SAMPLE_CONFIG)
-
-    with open(tmp_conf) as f:
-        s = f.read()
-        toml = tomlkit.parse(s)  # type: ignore
-
-    assert toml["downloads"]["folder"] == "old_value"  # type: ignore
-    assert toml["downloads"]["source_subdirectories"] is True  # type: ignore
-    assert toml["downloads"]["max_connections"] == 6  # type: ignore
-    assert toml["downloads"]["requests_per_minute"] == 60  # type: ignore
-    assert toml["cli"]["progress_bars"] is True  # type: ignore
-    assert toml["cli"]["max_search_results"] == 100  # type: ignore
-    assert toml["misc"]["version"] == "2.3.3"  # type: ignore
-    # Options that no longer exist don't survive the update.
-    assert "youtube" not in toml
-    assert "text_output" not in toml["cli"]  # type: ignore
-    os.remove("tests/test_config_old2.toml")
 
 
 def test_sample_config_data_properties(sample_config_data):
@@ -233,7 +137,7 @@ def test_sample_config_data_fields(sample_config_data):
             bit_depth=24,
             lossy_bitrate=320,
         ),
-        misc=MiscConfig(version="2.0", check_for_updates=True),
+        misc=MiscConfig(check_for_updates=True),
         _modified=False,
     )
     assert sample_config_data.downloads == test_config.downloads
@@ -294,62 +198,6 @@ def test_prefer_explicit_missing_from_toml_still_loads():
 
 if __name__ == "__main__":
     pytest.main()
-
-
-def test_merged_options_carry_over_on_update(tmp_path):
-    old = tomlkit.parse(open(OLD_CONFIG).read())
-    old["downloads"]["concurrency"] = False  # type: ignore
-    old["downloads"]["max_connections"] = 6  # type: ignore
-    old["qobuz_filters"]["non_studio_albums"] = True  # type: ignore
-    old["qobuz_filters"]["repeats"] = True  # type: ignore
-    path = tmp_path / "config.toml"
-    path.write_text(tomlkit.dumps(old))
-
-    Config._update_file(str(path), SAMPLE_CONFIG)
-
-    new = tomlkit.parse(path.read_text())
-    # concurrency = false became one download at a time.
-    assert new["downloads"]["max_connections"] == 1  # type: ignore
-    assert "concurrency" not in new["downloads"]  # type: ignore
-    # The filters moved to [artist_filters]; non_studio_albums is part of extras.
-    assert "qobuz_filters" not in new
-    assert new["artist_filters"]["extras"] is True  # type: ignore
-    assert new["artist_filters"]["repeats"] is True  # type: ignore
-
-
-def _update_with_tidal_login(tmp_path, hires_client: bool):
-    old = tomlkit.parse(open(OLD_CONFIG).read())
-    tidal = old["tidal"]  # type: ignore
-    tidal["hires_client"] = hires_client
-    tidal["client_id"] = ""
-    tidal["access_token"] = "tok"
-    tidal["refresh_token"] = "ref"
-    tidal["token_expiry"] = "1"
-    tidal["token_client_id"] = "some-client"
-    path = tmp_path / "config.toml"
-    path.write_text(tomlkit.dumps(old))
-
-    Config.update_file(str(path))
-    return tomlkit.parse(path.read_text())["tidal"]  # type: ignore
-
-
-def test_hires_login_moves_to_its_own_fields_on_update(tmp_path):
-    # Before there was a second login, hires_client = true replaced the default
-    # client and its tokens lived in the ordinary fields.
-    tidal = _update_with_tidal_login(tmp_path, hires_client=True)
-    assert tidal["hires_access_token"] == "tok"
-    assert tidal["hires_refresh_token"] == "ref"
-    assert tidal["hires_token_expiry"] == "1"
-    assert tidal["hires_token_client_id"] == "some-client"
-    assert tidal["access_token"] == ""
-    assert tidal["token_client_id"] == ""
-
-
-def test_default_client_login_stays_put_on_update(tmp_path):
-    tidal = _update_with_tidal_login(tmp_path, hires_client=False)
-    assert tidal["access_token"] == "tok"
-    assert tidal["token_client_id"] == "some-client"
-    assert tidal["hires_access_token"] == ""
 
 
 def test_default_quality_is_the_highest_of_every_source():
