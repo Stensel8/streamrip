@@ -94,26 +94,37 @@ async def main_session(ctx):
     download gets the same visible check, not just `url`. Silent when
     already on the latest version; only speaks up when there's something
     to report.
+
+    The notice itself is held back until the caller's block returns, not
+    printed right after the check: `search` clears the screen for its
+    interactive picker, which would wipe out a notice printed beforehand
+    before anyone could read it (observed live 2026-09-30). Printed last,
+    nothing that follows can wipe it.
     """
     with ctx.obj["config"] as cfg:
         cfg: Config
+        notice = None
         if cfg.session.misc.check_for_updates:
             with console.status("streamrip: Checking for updates...", spinner="dots"):
                 latest_version, notes = await latest_streamrip_version(
                     verify_ssl=cfg.session.downloads.verify_ssl
                 )
             if is_newer_version(latest_version):
-                console.print(
-                    f"[green]A new version of streamrip [cyan]v{latest_version}"
-                    f"[/cyan] is available! Run [white][bold]"
-                    f"{_upgrade_command(latest_version)}"
-                    "[/bold][/white] to update.[/green]\n"
-                )
-                if notes:
-                    console.print(Markdown(notes))
+                notice = (latest_version, notes)
 
         async with Main(cfg) as main:
             yield main
+
+        if notice is not None:
+            latest_version, notes = notice
+            console.print(
+                f"[green]A new version of streamrip [cyan]v{latest_version}"
+                f"[/cyan] is available! Run [white][bold]"
+                f"{_upgrade_command(latest_version)}"
+                "[/bold][/white] to update.[/green]\n"
+            )
+            if notes:
+                console.print(Markdown(notes))
 
 
 @click.group(
