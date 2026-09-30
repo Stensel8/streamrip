@@ -37,9 +37,14 @@ UPGRADE_COMMAND = f"pip install --upgrade git+https://github.com/{REPOSITORY}.gi
 
 
 def coro(f):
+    """Adapt an async CLI command to Click with shared error handling."""
+
     @wraps(f)
     def wrapper(*args, **kwargs):
+        """Run the command, report handled errors, and exit 1 for missing ffmpeg."""
+
         async def run():
+            """Run the command with SIGINT cancellation where supported."""
             # Ctrl-C used to be ignored until whatever was in flight finished,
             # so people force-killed streamrip -- which skips the cleanup in
             # Main.__aexit__ and leaves __artwork directories behind. Cancel
@@ -48,6 +53,7 @@ def coro(f):
             loop = asyncio.get_running_loop()
 
             def stop():
+                """Cancel the active task and restore default SIGINT handling."""
                 console.print("\n[yellow]Stopping... (Ctrl-C again to force)")
                 loop.remove_signal_handler(signal.SIGINT)
                 if task is not None:

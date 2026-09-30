@@ -37,6 +37,7 @@ def test_returns_none_when_nothing_is_available():
 
 
 def test_missing_message_says_how_to_get_ffmpeg():
+    """Include system, pip, and pipx installation commands in missing guidance."""
     from streamrip.utils.ffmpeg_utils import ffmpeg_missing_message
 
     message = ffmpeg_missing_message()

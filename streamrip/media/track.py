@@ -83,6 +83,11 @@ class Track(Media):
             add_title(id(self), self.meta.title, self.config.session.cli.progress_bars)
 
     async def download(self):
+        """Skip redundant lossy copies or download with progress and retries.
+
+        Missing ffmpeg fails without retrying. On final failure, record the
+        failure, remove partial output, and raise TrackDownloadFailedError.
+        """
         if self._skip_lossy_duplicate:
             return
         quality = format_quality(

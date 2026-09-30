@@ -331,6 +331,7 @@ class Main:
             self.media.append(playlist)
 
     async def __aenter__(self):
+        """Return this session, raising FFmpegNotFoundError if ffmpeg is missing."""
         # ffmpeg is required whatever is downloaded (Tidal hi-res, SoundCloud,
         # conversion), so check before logging in to anything.
         if find_ffmpeg() is None:

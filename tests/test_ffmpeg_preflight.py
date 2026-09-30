@@ -13,6 +13,7 @@ from streamrip.rip.main import Main
 
 
 def _main():
+    """Create a download session with both persistent databases disabled."""
     config = Config.defaults()
     config.session.database.downloads_enabled = False
     config.session.database.failed_downloads_enabled = False
@@ -20,6 +21,7 @@ def _main():
 
 
 async def test_main_refuses_to_start_without_ffmpeg():
+    """Reject context entry with installation guidance when ffmpeg is missing."""
     main = _main()
     with patch("streamrip.rip.main.find_ffmpeg", return_value=None):
         with pytest.raises(FFmpegNotFoundError, match="No ffmpeg installation"):
@@ -28,6 +30,7 @@ async def test_main_refuses_to_start_without_ffmpeg():
 
 
 async def test_main_starts_with_ffmpeg():
+    """Allow context entry and return the session when ffmpeg is available."""
     main = _main()
     with patch("streamrip.rip.main.find_ffmpeg", return_value="/usr/bin/ffmpeg"):
         async with main as entered:
@@ -64,6 +67,7 @@ def test_every_login_command_checks_ffmpeg_first(tmp_path, command):
 
 
 async def test_missing_ffmpeg_is_not_retried():
+    """Fail after one download attempt without sleeping when ffmpeg is missing."""
     track = MagicMock()
     track._skip_lossy_duplicate = False
     track.config.session.downloads.max_connections = 6

@@ -433,6 +433,11 @@ class TidalDASHDownloadable(Downloadable):
         return self._size
 
     async def _download(self, path: str, callback):
+        """Fetch DASH segments and remux them to path, reporting bytes received.
+
+        Raise FFmpegNotFoundError before fetching if ffmpeg is unavailable.
+        Remove the temporary MP4 even if downloading or remuxing fails.
+        """
         ffmpeg_path = find_ffmpeg()
         if ffmpeg_path is None:
             raise FFmpegNotFoundError(
