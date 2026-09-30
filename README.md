@@ -105,7 +105,7 @@ in the config. A login that stops working is asked for again.
      driven; a few lines of JavaScript run in the browser you already have
      open.
   3. **By hand**: copy `user.id` and `user_auth_token` from DevTools →
-     Network yourself, or use email/password.
+     Network yourself.
 
   Options 1 and 2 fall back to manual entry if nothing arrives within a few
   minutes. Credentials are saved for later use either way.

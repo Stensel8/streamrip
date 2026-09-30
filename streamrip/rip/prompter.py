@@ -1,5 +1,4 @@
 import asyncio
-import hashlib
 import logging
 import time
 from abc import ABC, abstractmethod
@@ -62,7 +61,7 @@ class QobuzPrompter(CredentialPrompter):
 
     def has_creds(self) -> bool:
         c = self.config.session.qobuz
-        return c.email_or_userid != "" and c.password_or_token != ""
+        return c.user_id != "" and c.auth_token != ""
 
     async def prompt_and_login(self):
         if not self.has_creds():
@@ -79,22 +78,19 @@ class QobuzPrompter(CredentialPrompter):
                 await self._prompt_creds_and_set_session_config()
 
     async def _prompt_creds_and_set_session_config(self):
-        """Ask for a user id + user_auth_token (or, as a fallback, a password).
+        """Ask for a user id + user_auth_token.
 
-        Qobuz moved its web login behind OAuth/reCAPTCHA, so the old
-        email/password flow fails for most accounts (upstream #954, #956).
-        The token from a logged-in browser session still works; offer the
-        two ways to capture it automatically (see qobuz_token_capture)
-        before falling back to asking for it outright.
+        The token from a logged-in browser session is the only login Qobuz
+        still accepts; offer the two ways to capture it automatically (see
+        qobuz_token_capture) before asking for it outright.
         """
         console.print(
-            "\n[cyan]Qobuz now requires a token login.[/cyan]\n"
-            "How do you want to log in?\n"
+            "\nHow do you want to log in to Qobuz?\n"
             "  1. Open an isolated browser window that logs in and captures\n"
             "     the token automatically\n"
             "  2. Log in in your own browser, then paste a short script into\n"
             "     its console to send the token back\n"
-            "  3. Enter the token (or email/password) by hand\n"
+            "  3. Copy the user id and token from your browser by hand\n"
         )
         choice = Prompt.ask("Choose", choices=["1", "2", "3"], default="2")
 
@@ -104,7 +100,7 @@ class QobuzPrompter(CredentialPrompter):
             except QobuzTokenCaptureError as e:
                 console.print(f"[yellow]{e}")
             else:
-                self._set_session_creds(True, user_id, token)
+                self._set_session_creds(user_id, token)
                 return
         elif choice == "2":
             _open_login_link("https://play.qobuz.com/login")
@@ -113,7 +109,7 @@ class QobuzPrompter(CredentialPrompter):
             except QobuzTokenCaptureError as e:
                 console.print(f"[yellow]{e}")
             else:
-                self._set_session_creds(True, user_id, token)
+                self._set_session_creds(user_id, token)
                 return
 
         _open_login_link("https://play.qobuz.com/login")
@@ -123,26 +119,21 @@ class QobuzPrompter(CredentialPrompter):
             "     then log in (log out first if needed)\n"
             "  2. Find the [bold]user/login[/bold] request and open its response\n"
             "  3. Copy [bold]user.id[/bold] and [bold]user_auth_token[/bold]\n"
-            "Leave the user id empty to log in with email and password instead.\n"
         )
-        user_id = Prompt.ask("Enter your Qobuz user id", default="").strip()
-        if user_id:
+        user_id = ""
+        while not user_id:
+            user_id = Prompt.ask("Enter your Qobuz user id").strip()
+        token = ""
+        while not token:
             token = Prompt.ask(
                 "Enter your Qobuz user_auth_token (invisible)", password=True
             ).strip()
-            self._set_session_creds(True, user_id, token)
-            return
+        self._set_session_creds(user_id, token)
 
-        email = Prompt.ask("Enter your Qobuz email")
-        pwd_input = Prompt.ask("Enter your Qobuz password (invisible)", password=True)
-        pwd = hashlib.md5(pwd_input.encode("utf-8")).hexdigest()
-        self._set_session_creds(False, email, pwd)
-
-    def _set_session_creds(self, use_auth_token: bool, user: str, secret: str):
+    def _set_session_creds(self, user_id: str, token: str):
         c = self.config.session.qobuz
-        c.use_auth_token = use_auth_token
-        c.email_or_userid = user
-        c.password_or_token = secret
+        c.user_id = user_id
+        c.auth_token = token
         console.print(
             f"[green]Credentials will be saved to [bold cyan]{self.config.path}",
         )
@@ -150,9 +141,8 @@ class QobuzPrompter(CredentialPrompter):
     def save(self):
         c = self.config.session.qobuz
         cf = self.config.file.qobuz
-        cf.use_auth_token = c.use_auth_token
-        cf.email_or_userid = c.email_or_userid
-        cf.password_or_token = c.password_or_token
+        cf.user_id = c.user_id
+        cf.auth_token = c.auth_token
         self.config.file.set_modified()
 
     def type_check_client(self, client) -> QobuzClient:

@@ -151,12 +151,7 @@ class QobuzClient(Client):
         self.download_only: bool = False
 
     async def login(self):
-        """User credentials require either a user token OR a user email & password.
-
-        A hash of the password is stored in self.config.qobuz.password_or_token.
-        This data as well as the app_id is passed to self._get_user_auth_token() to get
-        the actual credentials for the user.
-        """
+        """Log in with the user id and user_auth_token saved in the config."""
         self.session = new_session(verify_ssl=self.config.session.downloads.verify_ssl)
         try:
             await self._login()
@@ -169,7 +164,7 @@ class QobuzClient(Client):
     async def _login(self):
         """Log in, fetching Qobuz's app id/secret first if not cached yet."""
         c = self.config.session.qobuz
-        if not c.email_or_userid or not c.password_or_token:
+        if not c.user_id or not c.auth_token:
             raise MissingCredentialsError
 
         assert not self.logged_in, "Already logged in"
@@ -208,37 +203,19 @@ class QobuzClient(Client):
         c = self.config.session.qobuz
         self.session.headers.update({"X-App-Id": str(c.app_id)})
 
-        if c.use_auth_token:
-            params = {
-                "user_id": c.email_or_userid,
-                "user_auth_token": c.password_or_token,
-                "app_id": str(c.app_id),
-            }
-        else:
-            params = {
-                "email": c.email_or_userid,
-                "password": c.password_or_token,
-                "app_id": str(c.app_id),
-            }
-
-        logger.debug(
-            "Logging into Qobuz with %s",
-            "a token" if c.use_auth_token else "a password",
-        )
+        params = {
+            "user_id": c.user_id,
+            "user_auth_token": c.auth_token,
+            "app_id": str(c.app_id),
+        }
         status, resp = await self._api_request("user/login", params)
         # The response carries the user_auth_token and the account profile.
         logger.debug("Login response keys: %s", sorted(resp))
 
         if status == 401:
-            if c.use_auth_token:
-                raise AuthenticationError(
-                    "Invalid Qobuz user id or user_auth_token. The token may have "
-                    "expired; log in again to get a fresh one."
-                )
             raise AuthenticationError(
-                "Invalid Qobuz email or password. Qobuz has moved its web login "
-                "behind a captcha, so password login may no longer work; log in "
-                "with a user id and user_auth_token instead."
+                "Invalid Qobuz user id or user_auth_token. The token may have "
+                "expired; log in again to get a fresh one."
             )
         elif status == 400:
             raise InvalidAppIdError(f"Qobuz rejected app id {c.app_id}")
@@ -567,7 +544,7 @@ class QobuzClient(Client):
         """Make a request to the API.
         returns: status code, json parsed response
         """
-        # Only the endpoint: params carry credentials (user_auth_token, password)
+        # Only the endpoint: params carry credentials (user_auth_token)
         # and the request signature.
         logger.debug("api_request: endpoint=%s", epoint)
 

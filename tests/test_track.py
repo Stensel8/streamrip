@@ -24,7 +24,7 @@ from streamrip.metadata import (
 
 
 @pytest.mark.skipif(
-    "QOBUZ_EMAIL" not in os.environ, reason="Qobuz credentials not found in env."
+    "QOBUZ_AUTH_TOKEN" not in os.environ, reason="Qobuz credentials not found in env."
 )
 def test_pending_resolve(qobuz_client: QobuzClient):
     qobuz_client.config.session.downloads.folder = "./tests"

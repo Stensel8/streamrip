@@ -24,12 +24,9 @@ quality = 3
 # This will download booklet pdfs that are included with some albums
 download_booklets = true
 
-# Authenticate to Qobuz using auth token? Value can be true/false only
-use_auth_token = false
-# Enter your userid if the above use_auth_token is set to true, else enter your email
-email_or_userid = "test@gmail.com"
-# Enter your auth token if the above use_auth_token is set to true, else enter the md5 hash of your plaintext password
-password_or_token = "test_pwd"
+# Your Qobuz login
+user_id = "123456789"
+auth_token = "test_token"
 # Do not change
 app_id = "12345"
 # Do not change

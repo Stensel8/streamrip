@@ -91,9 +91,8 @@ async def test_failed_login_does_not_quote_the_token():
     c.logged_in = False
     c.config = MagicMock()
     q = c.config.session.qobuz
-    q.use_auth_token = True
-    q.email_or_userid = "123456789"
-    q.password_or_token = TOKEN
+    q.user_id = "123456789"
+    q.auth_token = TOKEN
     q.app_id = "987654321"
     q.secrets = ["s1"]
     c._api_request = AsyncMock(return_value=(401, {}))
