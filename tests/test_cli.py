@@ -1,4 +1,5 @@
 import asyncio
+import sys
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -18,10 +19,20 @@ def test_version_comparison_is_numeric():
     assert not is_newer_version(None, "2.3.0")
 
 
-def test_upgrade_command_installs_from_the_fork():
+def test_upgrade_command_installs_from_the_fork(monkeypatch):
+    monkeypatch.setattr("streamrip.rip.cli.shutil.which", lambda _: "/path/to/uv")
     cmd = _upgrade_command("2.4.5")
+    assert cmd.startswith(
+        f'"/path/to/uv" pip install --python "{sys.executable}" --upgrade '
+    )
     assert "github.com/Stensel8/streamrip" in cmd
     assert "pip install streamrip" not in cmd
+
+
+def test_upgrade_command_uses_interpreter_pip_without_uv(monkeypatch):
+    monkeypatch.setattr("streamrip.rip.cli.shutil.which", lambda _: None)
+    cmd = _upgrade_command("2.4.5")
+    assert cmd.startswith(f'"{sys.executable}" -m pip install --upgrade ')
 
 
 def test_upgrade_command_pins_the_detected_release():
