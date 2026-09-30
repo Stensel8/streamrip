@@ -25,6 +25,8 @@ A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, and Sou
 
 ### Latest release (recommended)
 
+[![Latest release](https://img.shields.io/github/v/release/Stensel8/streamrip?display_name=tag&sort=semver)](https://github.com/Stensel8/streamrip/releases/latest)
+
 Download and extract the [latest release](https://github.com/Stensel8/streamrip/releases/latest),
 then open the extracted directory and run the local installer. It fetches
 Python 3.14 with [uv](https://docs.astral.sh/uv/) if needed and installs
