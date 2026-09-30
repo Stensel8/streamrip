@@ -3,6 +3,15 @@
 All notable changes in this fork of [nathom/streamrip](https://github.com/nathom/streamrip). Numbers can refer to
 upstream issues and pull requests.
 
+## 2.4.6
+
+- Update notices show which environment will be upgraded and use its active
+  Python (or `uv`) for the suggested command. A failed update check no longer
+  prevents the CLI from starting.
+- Install scripts install from the local source archive and report the full
+  paths to the environment and executable. The README clarifies which release
+  archive includes those scripts.
+
 ## 2.4.5
 
 - Qobuz login now offers a choice: an isolated browser that logs in and
