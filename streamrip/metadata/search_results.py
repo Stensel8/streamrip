@@ -1,9 +1,52 @@
-import os
+"""Search results, the same shape whatever the source, for the menu."""
+
+import html
 import re
-import textwrap
-from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import ClassVar
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+
+from .util import qobuz_artists
+
+TIDAL_IMAGE = "https://resources.tidal.com/images/{uuid}/320x320.jpg"
+RELEASE_TYPES = {
+    "ALBUM": "Album",
+    "EP": "EP",
+    "SINGLE": "Single",
+    "COMPILE": "Compilation",
+}
+
+
+@dataclass(slots=True)
+class Summary:
+    """One search result: its menu line, and what its preview shows."""
+
+    media_type: str
+    id: str
+    name: str
+    # Who made it; None for an artist.
+    artist: str | None = None
+    year: str | None = None
+    explicit: bool = False
+    # The preview's (label, value) lines, e.g. ("Tracks", "12").
+    details: list[tuple[str, str]] = field(default_factory=list)
+    description: str | None = None
+    image_url: str | None = None
+
+    def summarize(self) -> str:
+        """The result's line in the menu."""
+        line = clean(self.name)
+        if self.artist:
+            line += f" by {clean(self.artist)}"
+        notes = [n for n in (self.year, "explicit" if self.explicit else None) if n]
+        return f"{line} ({', '.join(notes)})" if notes else line
+
+    def __str__(self):
+        return self.summarize()
+
+
+def _details(*pairs) -> list[tuple[str, str]]:
+    """The (label, value) pairs that have a value."""
+    return [(label, str(value)) for label, value in pairs if value]
 
 
 def _artist(item: dict) -> str:
@@ -12,170 +55,266 @@ def _artist(item: dict) -> str:
         (item.get("performer") or {}).get("name")
         or item.get("artist")
         or (item.get("publisher_metadata") or {}).get("artist")
+        or (item.get("user") or {}).get("username")
     )
     if isinstance(artist, dict):
         artist = artist.get("name")
     return artist or "Unknown"
 
 
-class Summary(ABC):
-    id: str
-    media_type: ClassVar[str]
-
-    @abstractmethod
-    def summarize(self) -> str:
-        pass
-
-    @abstractmethod
-    def preview(self) -> str:
-        pass
-
-    @classmethod
-    @abstractmethod
-    def from_item(cls, item: dict) -> "Summary":
-        pass
-
-    def __str__(self):
-        return self.summarize()
+def _track_artists(item: dict) -> str:
+    """All of a track's artists, the way its tags will list them."""
+    names = [a["name"] for a in item.get("artists") or [] if a.get("name")]
+    return ", ".join(names or qobuz_artists(item)) or _artist(item)
 
 
-@dataclass(slots=True)
-class ArtistSummary(Summary):
-    id: str
-    name: str
-    num_albums: str | None
-    media_type: ClassVar[str] = "artist"
-
-    def summarize(self) -> str:
-        return clean(self.name)
-
-    def preview(self) -> str:
-        # Not every source's artist search includes an album count (Tidal's
-        # doesn't at all), so don't print a made-up "Unknown Albums" -- just
-        # leave the line out rather than claim something we don't know.
-        if self.num_albums is None:
-            return f"ID: {self.id}"
-        return f"{self.num_albums} Albums\n\nID: {self.id}"
-
-    @classmethod
-    def from_item(cls, item: dict):
-        name = item.get("name") or _artist(item)
-        return cls(str(item["id"]), name, item.get("albums_count"))
+def _album(item: dict) -> dict:
+    album = item.get("album")
+    return album if isinstance(album, dict) else {}
 
 
-@dataclass(slots=True)
-class TrackSummary(Summary):
-    id: str
-    name: str
-    artist: str
-    date_released: str | None
-    media_type: ClassVar[str] = "track"
-
-    def summarize(self) -> str:
-        return f"{clean(self.name)} by {clean(self.artist)}"
-
-    def preview(self) -> str:
-        return f"Released on:\n{self.date_released}\n\nID: {self.id}"
-
-    @classmethod
-    def from_item(cls, item: dict):
-        name = item.get("title") or item.get("name") or "Unknown"
-        date_released = (
-            item.get("release_date")
-            or item.get("streamStartDate")
-            or (item.get("album") or {}).get("release_date_original")
-            or item.get("display_date")
-            or item.get("date")
-            or item.get("year")
-            or "Unknown"
-        )
-        return cls(str(item["id"]), name.strip(), _artist(item), date_released)
+def _day(value) -> str | None:
+    """An ISO date or time, or a Unix time, as YYYY-MM-DD."""
+    if isinstance(value, int | float) and value > 0:
+        return datetime.fromtimestamp(value, UTC).strftime("%Y-%m-%d")
+    return str(value)[:10] if value else None
 
 
-@dataclass(slots=True)
-class AlbumSummary(Summary):
-    id: str
-    name: str
-    artist: str
-    num_tracks: str
-    date_released: str | None
-    media_type: ClassVar[str] = "album"
-
-    def summarize(self) -> str:
-        return f"{clean(self.name)} by {clean(self.artist)}"
-
-    def preview(self) -> str:
-        return f"Date released:\n{self.date_released}\n\n{self.num_tracks} Tracks\n\nID: {self.id}"
-
-    @classmethod
-    def from_item(cls, item: dict):
-        title = (item.get("title") or "").strip()
-        version = (item.get("version") or "").strip()
-        name = f"{title} ({version})" if version else title
-        num_tracks = (
-            item.get("tracks_count")
-            or item.get("numberOfTracks")
-            or len(item.get("tracks") or item.get("items") or [])
-        )
-        date_released = (
-            item.get("release_date_original")
-            or item.get("release_date")
-            or item.get("releaseDate")
-            or item.get("display_date")
-            or item.get("date")
-            or item.get("year")
-            or "Unknown"
-        )
-        return cls(str(item["id"]), name, _artist(item), str(num_tracks), date_released)
+def _year(date) -> str | None:
+    day = _day(date)
+    return day[:4] if day else None
 
 
-@dataclass(slots=True)
-class PlaylistSummary(Summary):
-    id: str
-    name: str
-    creator: str
-    num_tracks: int
-    description: str
-    media_type: ClassVar[str] = "playlist"
-
-    def summarize(self) -> str:
-        return f"{clean(self.name)} by {clean(self.creator)}"
-
-    def preview(self) -> str:
-        desc = clean(self.description, trunc=False)
-        wrapped = "\n".join(
-            textwrap.wrap(desc, os.get_terminal_size().columns - 4 or 70),
-        )
-        return f"{self.num_tracks} tracks\n\nDescription:\n{wrapped}\n\nID: {self.id}"
-
-    @classmethod
-    def from_item(cls, item: dict):
-        id = item.get("id") or item.get("uuid") or "Unknown"
-        name = item.get("name") or item.get("title") or "Unknown"
-        user = item.get("user") or {}
-        creator = (
-            (item.get("publisher_metadata") or {}).get("artist")
-            or (item.get("owner") or {}).get("name")
-            or user.get("username")
-            or user.get("name")
-            or "Unknown"
-        )
-        num_tracks = (
-            item.get("tracks_count")
-            or item.get("nb_tracks")
-            or item.get("numberOfTracks")
-            or len(item.get("tracks", []))
-            or -1
-        )
-        description = item.get("description") or "No description"
-        return cls(id, name, creator, num_tracks, description)
+def _duration(item: dict) -> str | None:
+    seconds = item.get("duration") or 0
+    if item.get("kind") in ("track", "playlist"):  # SoundCloud counts in ms
+        seconds //= 1000
+    hours, rest = divmod(int(seconds), 3600)
+    if not rest and not hours:
+        return None
+    minutes, seconds = divmod(rest, 60)
+    return f"{hours}:{minutes:02}:{seconds:02}" if hours else f"{minutes}:{seconds:02}"
 
 
-SUMMARY_TYPES: dict[str, type[Summary]] = {
-    "track": TrackSummary,
-    "album": AlbumSummary,
-    "artist": ArtistSummary,
-    "playlist": PlaylistSummary,
+def _genre(item: dict) -> str | None:
+    genre = item.get("genre") or _album(item).get("genre")
+    if isinstance(genre, dict):  # Qobuz
+        return genre.get("name")
+    if isinstance(genre, str):  # SoundCloud
+        return genre or None
+    names = [g.get("name") for g in item.get("genres") or [] if isinstance(g, dict)]
+    return ", ".join(n for n in names if n) or None
+
+
+def _label(item: dict) -> tuple[str, str | None]:
+    """The record label, or (Tidal) the copyright line, which names it."""
+    label = item.get("label") or _album(item).get("label")
+    if isinstance(label, dict):
+        label = label.get("name")
+    return ("Label", label) if label else ("Copyright", item.get("copyright"))
+
+
+def _key(item: dict) -> str | None:
+    """A track's musical key (Tidal), such as "A minor"."""
+    key, scale = item.get("key"), item.get("keyScale")
+    if key:
+        key = key.replace("Sharp", "♯").replace("Flat", "♭")
+    return f"{key} {scale.lower()}" if key and scale else key
+
+
+def _plain(text: str | None) -> str | None:
+    """A description without Tidal's [wimpLink] or HTML markup."""
+    text = re.sub(r"<br\s*/?>|</?p>", " ", text or "")  # line breaks
+    text = re.sub(r"\[/?wimpLink[^\]]*\]|<[^>]+>", "", text)  # links
+    return " ".join(html.unescape(text).split()) or None
+
+
+def _quality(item: dict) -> str | None:
+    """The best format the source says it has the item in."""
+    bits = item.get("maximum_bit_depth")
+    khz = item.get("maximum_sampling_rate")
+    if bits and khz and bits > 0 and khz > 0:  # Qobuz
+        return f"FLAC {bits}-bit / {khz:g} kHz"
+    # Tidal only says whether it's hi-res; the sample rate is in each track's
+    # stream info, a request of its own.
+    tags = (item.get("mediaMetadata") or {}).get("tags") or []
+    if "HIRES_LOSSLESS" in tags:
+        quality = "FLAC 24-bit, up to 192 kHz"
+    elif "LOSSLESS" in tags:
+        quality = "FLAC 16-bit / 44.1 kHz"
+    else:
+        return None
+    return quality + (", Dolby Atmos" if "DOLBY_ATMOS" in tags else "")
+
+
+def _explicit(item: dict) -> bool:
+    return bool(
+        item.get("parental_warning")
+        or item.get("explicit")
+        or item.get("explicit_lyrics")
+        or (item.get("publisher_metadata") or {}).get("explicit")
+    )
+
+
+def _image(item: dict) -> str | None:
+    """A cover (or picture) of the result, a few hundred pixels across."""
+    album = _album(item)
+    qobuz = item.get("image") if isinstance(item.get("image"), dict) else None
+    qobuz = qobuz or album.get("image")
+    if isinstance(qobuz, dict):
+        return qobuz.get("medium") or qobuz.get("small") or qobuz.get("thumbnail")
+    if images := item.get("images300") or item.get("images150") or item.get("images"):
+        return images[0]  # Qobuz playlist
+    for key in ("cover_medium", "picture_medium", "cover_small", "picture_small"):
+        if url := item.get(key) or album.get(key):  # Deezer
+            return url
+    uuid = (  # Tidal
+        item.get("cover")
+        or item.get("squareImage")
+        or item.get("picture")
+        or album.get("cover")
+    )
+    if isinstance(uuid, str) and "-" in uuid and "/" not in uuid:
+        return TIDAL_IMAGE.format(uuid=uuid.replace("-", "/"))
+    url = item.get("artwork_url") or (item.get("user") or {}).get("avatar_url")
+    return url and url.replace("-large.", "-t300x300.")  # SoundCloud
+
+
+def album_summary(item: dict) -> Summary:
+    title = (item.get("title") or "").strip()
+    version = (item.get("version") or "").strip()
+    date = (
+        item.get("release_date_original")
+        or item.get("releaseDate")
+        or item.get("release_date")
+        or item.get("display_date")
+    )
+    tracks = (
+        item.get("tracks_count") or item.get("numberOfTracks") or item.get("nb_tracks")
+    )
+    discs = item.get("media_count") or item.get("numberOfVolumes") or 1
+    if tracks and discs > 1:
+        tracks = f"{tracks} ({discs} discs)"
+    kind = str(item.get("record_type") or item.get("type") or "").upper()
+    return Summary(
+        "album",
+        str(item["id"]),
+        f"{title} ({version})" if version else title,
+        _artist(item),
+        year=_year(date),
+        explicit=_explicit(item),
+        details=_details(
+            ("Released", _day(date)),
+            ("Type", RELEASE_TYPES.get(kind)),
+            ("Tracks", tracks),
+            ("Length", _duration(item)),
+            ("Genre", _genre(item)),
+            _label(item),
+            ("Quality", _quality(item)),
+        ),
+        description=_plain(item.get("description")),
+        image_url=_image(item),
+    )
+
+
+def track_summary(item: dict) -> Summary:
+    name = (item.get("title") or item.get("name") or "Unknown").strip()
+    if (version := item.get("version")) and version not in name:
+        name = f"{name} ({version})"
+    album = _album(item)
+    date = (
+        item.get("release_date_original")
+        or album.get("release_date_original")
+        or item.get("streamStartDate")
+        or item.get("release_date")
+        or item.get("display_date")
+    )
+    return Summary(
+        "track",
+        str(item["id"]),
+        name,
+        _track_artists(item),
+        year=_year(date),
+        explicit=_explicit(item),
+        details=_details(
+            ("Album", album.get("title")),
+            ("Track", item.get("track_number") or item.get("trackNumber")),
+            ("Released", _day(date)),
+            ("Length", _duration(item)),
+            ("Genre", _genre(item)),
+            _label(item),
+            ("Composer", (item.get("composer") or {}).get("name")),
+            ("BPM", item.get("bpm")),
+            ("Key", _key(item)),
+            ("Quality", _quality(item)),
+        ),
+        description=_plain(item.get("description")),
+        image_url=_image(item),
+    )
+
+
+def artist_summary(item: dict) -> Summary:
+    roles = [r.get("category") for r in item.get("artistRoles") or []]  # Tidal
+    popularity = item.get("popularity")  # Tidal, 0-100
+    return Summary(
+        "artist",
+        str(item["id"]),
+        item.get("name") or _artist(item),
+        details=_details(
+            ("Albums", item.get("albums_count") or item.get("nb_album")),
+            ("Fans", item.get("nb_fan") or item.get("followers_count")),
+            ("Roles", ", ".join(r for r in roles if r)),
+            ("Popularity", popularity and f"{popularity}/100"),
+        ),
+        image_url=_image(item),
+    )
+
+
+def playlist_summary(item: dict) -> Summary:
+    user = item.get("user") or {}
+    creator = (
+        (item.get("owner") or {}).get("name")  # Qobuz
+        or user.get("name")  # Deezer
+        or user.get("username")  # SoundCloud
+        or (item.get("publisher_metadata") or {}).get("artist")
+        or ("TIDAL" if item.get("type") == "EDITORIAL" else None)
+        or "Unknown"
+    )
+    tracks = (
+        item.get("tracks_count")
+        or item.get("numberOfTracks")
+        or item.get("nb_tracks")
+        or item.get("track_count")
+        or len(item.get("tracks") or [])
+    )
+    updated = (
+        item.get("lastUpdated")
+        or item.get("updated_at")
+        or item.get("mod_date")
+        or item.get("last_modified")
+    )
+    return Summary(
+        "playlist",
+        str(item.get("id") or item.get("uuid") or "Unknown"),
+        item.get("name") or item.get("title") or "Unknown",
+        creator,
+        details=_details(
+            ("Tracks", tracks),
+            ("Length", _duration(item)),
+            ("Genre", _genre(item)),
+            ("Followers", item.get("users_count") or item.get("likes_count")),
+            ("Updated", _day(updated)),
+        ),
+        description=_plain(item.get("description")),
+        image_url=_image(item),
+    )
+
+
+SUMMARIES = {
+    "track": track_summary,
+    "album": album_summary,
+    "artist": artist_summary,
+    "playlist": playlist_summary,
 }
 
 
@@ -198,12 +337,12 @@ class SearchResults:
 
     @classmethod
     def from_pages(cls, source: str, media_type: str, pages: list[dict]):
-        summary_type = SUMMARY_TYPES.get(media_type)
-        if summary_type is None:
+        summarize = SUMMARIES.get(media_type)
+        if summarize is None:
             raise Exception(f"invalid media type {media_type}")
         return cls(
             [
-                summary_type.from_item(item)
+                summarize(item)
                 for page in pages
                 for item in _page_items(source, media_type, page)
             ]
@@ -216,12 +355,6 @@ class SearchResults:
         if isinstance(inds, int):
             inds = (inds,)
         return [self.results[i] for i in inds]
-
-    def preview(self, s: str) -> str:
-        ind = re.match(r"^\d+", s)
-        assert ind is not None
-        i = int(ind.group(0))
-        return self.results[i - 1].preview()
 
     def as_list(self, source: str) -> list[dict[str, str]]:
         return [

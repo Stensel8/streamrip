@@ -265,10 +265,14 @@ class Main:
         else:
             from simple_term_menu import TerminalMenu
 
+            from .search_menu import PREVIEW_SIZE, Previews
+
+            previews = Previews(search_results)
             menu = TerminalMenu(
                 search_results.summaries(),
-                preview_command=search_results.preview,
-                preview_size=0.5,
+                preview_command=previews,
+                preview_size=PREVIEW_SIZE,
+                preview_title=f"{source.capitalize()} {media_type}",
                 title=(
                     f"Results for {media_type} '{query}' from {source.capitalize()}\n"
                     "SPACE - select, ENTER - download, ESC - exit"
@@ -277,7 +281,10 @@ class Main:
                 clear_screen=True,
                 multi_select=True,
             )
-            chosen_ind = menu.show()
+            try:
+                chosen_ind = menu.show()
+            finally:
+                previews.close()
             if chosen_ind is None:
                 console.print("[yellow]No items chosen. Exiting.")
             else:
