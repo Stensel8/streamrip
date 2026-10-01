@@ -222,5 +222,9 @@ def test_qobuz_artists_split_from_performers():
         "performers": "X, Producer - Spiritbox, MainArtist - "
         "Tyler, The Creator, FeaturedArtist - Courtney LaPlante, MainArtist, Vocals"
     }
-    assert qobuz_artists(resp) == ["Spiritbox", "Tyler, The Creator", "Courtney LaPlante"]
+    assert qobuz_artists(resp) == [
+        "Spiritbox",
+        "Tyler, The Creator",
+        "Courtney LaPlante",
+    ]
     assert qobuz_artists({}) == []
