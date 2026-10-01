@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import contextlib
 import functools
 import hashlib
 import itertools
@@ -11,8 +12,7 @@ import tempfile
 import threading
 import time
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 import aiofiles
 import aiohttp
@@ -22,7 +22,11 @@ from Cryptodome.Cipher import AES, Blowfish
 from Cryptodome.Util import Counter
 
 from .. import converter
-from ..exceptions import FFmpegNotFoundError, NonStreamableError
+from ..exceptions import (
+    FFmpegNotFoundError,
+    NonStreamableError,
+    restriction_message,
+)
 from ..utils.ffmpeg_utils import find_ffmpeg
 
 logger = logging.getLogger("streamrip")
@@ -120,13 +124,12 @@ async def fast_async_download(path, url, headers, callback, resume: bool = False
         raise
 
 
-@dataclass(slots=True)
 class Downloadable(ABC):
     session: aiohttp.ClientSession
     url: str
     extension: str
     source: str = "Unknown"
-    _size_base: Optional[int] = None
+    _size: int | None = None
     # Set by Track for retries: continue a partial file instead of restarting.
     resume: bool = False
 
@@ -134,22 +137,11 @@ class Downloadable(ABC):
         await self._download(path, callback)
 
     async def size(self) -> int:
-        if hasattr(self, "_size") and self._size is not None:
-            return self._size
-
-        async with self.session.head(self.url) as response:
-            response.raise_for_status()
-            content_length = response.headers.get("Content-Length", 0)
-            self._size = int(content_length)
-            return self._size
-
-    @property
-    def _size(self):
-        return self._size_base
-
-    @_size.setter
-    def _size(self, v):
-        self._size_base = v
+        if self._size is None:
+            async with self.session.head(self.url) as response:
+                response.raise_for_status()
+                self._size = int(response.headers.get("Content-Length", 0))
+        return self._size
 
     @abstractmethod
     async def _download(self, path: str, callback: Callable[[int], None]):
@@ -169,9 +161,7 @@ class BasicDownloadable(Downloadable):
         self.session = session
         self.url = url
         self.extension = extension
-        self._size = None
-        self.source: str = source or "Unknown"
-        self.resume = False
+        self.source = source or "Unknown"
 
     async def _download(self, path: str, callback):
         await fast_async_download(
@@ -186,21 +176,14 @@ class DeezerDownloadable(Downloadable):
         logger.debug("Deezer info for downloadable: %s", info)
         self.session = session
         self.url = info["url"]
-        self.source: str = "deezer"
-        qualities_available = [
-            i for i, size in enumerate(info["quality_to_size"]) if size > 0
-        ]
-        if len(qualities_available) == 0:
-            raise NonStreamableError(
-                "Missing download info. Skipping.",
-            )
-        max_quality_available = max(qualities_available)
-        self.quality = min(info["quality"], max_quality_available)
-        self._size = info["quality_to_size"][self.quality]
-        if self.quality <= 1:
-            self.extension = "mp3"
-        else:
-            self.extension = "flac"
+        self.source = "deezer"
+        sizes = info["quality_to_size"]
+        available = [i for i, size in enumerate(sizes) if size > 0]
+        if not available:
+            raise NonStreamableError("Missing download info. Skipping.")
+        self.quality = min(info["quality"], max(available))
+        self._size = sizes[self.quality]
+        self.extension = "mp3" if self.quality <= 1 else "flac"
         self.id = str(info["id"])
 
     async def _download(self, path: str, callback):
@@ -220,11 +203,7 @@ class DeezerDownloadable(Downloadable):
             if self.is_encrypted.search(self.url) is None:
                 logger.debug(f"Deezer file at {self.url} not encrypted.")
                 await fast_async_download(
-                    path,
-                    self.url,
-                    self.session.headers,
-                    callback,
-                    resume=getattr(self, "resume", False),
+                    path, self.url, self.session.headers, callback, resume=self.resume
                 )
             else:
                 blowfish_key = self._generate_blowfish_key(self.id)
@@ -262,24 +241,14 @@ class DeezerDownloadable(Downloadable):
 
     @staticmethod
     def _decrypt_chunk(key, data):
-        """Decrypt a chunk of a Deezer stream.
-
-        :param key:
-        :param data:
-        """
+        """Decrypt one encrypted 2048-byte block of a Deezer stream."""
         return Blowfish.new(
-            key,
-            Blowfish.MODE_CBC,
-            b"\x00\x01\x02\x03\x04\x05\x06\x07",
+            key, Blowfish.MODE_CBC, b"\x00\x01\x02\x03\x04\x05\x06\x07"
         ).decrypt(data)
 
     @staticmethod
     def _generate_blowfish_key(track_id: str) -> bytes:
-        """Generate the blowfish key for Deezer downloads.
-
-        :param track_id:
-        :type track_id: str
-        """
+        """The Blowfish key a Deezer track's stream is encrypted with."""
         md5_hash = hashlib.md5(track_id.encode()).hexdigest()
         # good luck :)
         return "".join(
@@ -289,9 +258,7 @@ class DeezerDownloadable(Downloadable):
 
 
 class TidalDownloadable(Downloadable):
-    """A wrapper around BasicDownloadable that includes Tidal-specific
-    error messages.
-    """
+    """A Tidal track served as one file, decrypted if Tidal encrypted it."""
 
     def __init__(
         self,
@@ -303,78 +270,40 @@ class TidalDownloadable(Downloadable):
     ):
         self.session = session
         self.source = "tidal"
-        codec = codec.lower()
-        if codec in ("flac", "mqa"):
-            self.extension = "flac"
-        else:
-            self.extension = "m4a"
-
+        self.extension = "flac" if codec.lower() in ("flac", "mqa") else "m4a"
         if url is None:
-            # Turn CamelCase code into a readable sentence
             if restrictions:
-                words = re.findall(r"([A-Z][a-z]+)", restrictions[0]["code"])
-                raise NonStreamableError(
-                    words[0] + " " + " ".join(map(str.lower, words[1:])),
-                )
+                raise NonStreamableError(restriction_message(restrictions[0]["code"]))
             raise NonStreamableError(
                 f"Tidal download: dl_info = {url, codec, encryption_key}"
             )
         self.url = url
         self.enc_key = encryption_key
-        self.downloadable = BasicDownloadable(session, url, self.extension, "tidal")
 
     async def _download(self, path: str, callback):
-        self.downloadable.resume = getattr(self, "resume", False)
-        await self.downloadable._download(path, callback)
+        await fast_async_download(
+            path, self.url, self.session.headers, callback, resume=self.resume
+        )
         if self.enc_key is not None:
             dec_bytes = await self._decrypt_mqa_file(path, self.enc_key)
             async with aiofiles.open(path, "wb") as audio:
                 await audio.write(dec_bytes)
 
-    @property
-    def _size(self):
-        return self.downloadable._size
-
-    @_size.setter
-    def _size(self, v):
-        self.downloadable._size = v
-
     @staticmethod
-    async def _decrypt_mqa_file(in_path, encryption_key):
-        """Decrypt an MQA file.
-
-        :param in_path:
-        :param out_path:
-        :param encryption_key:
-        """
-
-        # Do not change this
-        master_key = "UIlTTEMmmLfGowo/UC60x2H45W6MdGgTRfo/umg4754="
-
-        # Decode the base64 strings to ascii strings
-        master_key = base64.b64decode(master_key)
+    async def _decrypt_mqa_file(in_path, encryption_key) -> bytes:
+        """Decrypt a file Tidal served encrypted (as it did MQA)."""
+        master_key = base64.b64decode("UIlTTEMmmLfGowo/UC60x2H45W6MdGgTRfo/umg4754=")
+        # The security token is an IV, then the file's key and nonce encrypted
+        # with the master key.
         security_token = base64.b64decode(encryption_key)
-
-        # Get the IV from the first 16 bytes of the securityToken
-        iv = security_token[:16]
-        encrypted_st = security_token[16:]
-
-        # Initialize decryptor
-        decryptor = AES.new(master_key, AES.MODE_CBC, iv)
-
-        # Decrypt the security token
-        decrypted_st = decryptor.decrypt(encrypted_st)
-
-        # Get the audio stream decryption key and nonce from the decrypted security token
-        key = decrypted_st[:16]
-        nonce = decrypted_st[16:24]
-
+        decrypted_st = AES.new(master_key, AES.MODE_CBC, security_token[:16]).decrypt(
+            security_token[16:]
+        )
+        key, nonce = decrypted_st[:16], decrypted_st[16:24]
         counter = Counter.new(64, prefix=nonce, initial_value=0)
-        decryptor = AES.new(key, AES.MODE_CTR, counter=counter)
-
         async with aiofiles.open(in_path, "rb") as enc_file:
-            dec_bytes = decryptor.decrypt(await enc_file.read())
-            return dec_bytes
+            encrypted = await enc_file.read()
+        return AES.new(key, AES.MODE_CTR, counter=counter).decrypt(encrypted)
 
 
 class TidalDASHDownloadable(Downloadable):
@@ -398,7 +327,6 @@ class TidalDASHDownloadable(Downloadable):
         self.init_url = init_url
         self.segment_urls = segment_urls
         self.extension = "flac" if codec.lower() in ("flac", "mqa") else "m4a"
-        self._size = None
 
     async def size(self) -> int:
         """Total size of the init segment plus every media segment.
@@ -504,36 +432,27 @@ class SoundcloudDownloadable(Downloadable):
     async def _download(self, path, callback):
         if self.file_type == "mp3":
             await self._download_mp3(path, callback)
-        elif self.file_type == "progressive":
-            await BasicDownloadable(
-                self.session, self.url, "mp3", source="soundcloud"
-            ).download(path, callback)
-        else:
-            await self._download_original(path, callback)
+            return
+        await fast_async_download(path, self.url, self.session.headers, callback)
+        if self.file_type == "original":
+            await converter.FLAC(path).convert()
 
-    async def _download_original(self, path: str, callback):
-        """Download the original file and convert it to FLAC."""
-        downloader = BasicDownloadable(
-            self.session, self.url, "flac", source="soundcloud"
-        )
-        await downloader.download(path, callback)
-        await converter.FLAC(path).convert()
+    async def _segments(self) -> list:
+        """The HLS playlist's segments, for an "mp3" stream."""
+        async with self.session.get(self.url) as resp:
+            return m3u8.loads(await resp.text("utf-8")).segments
 
     async def _download_mp3(self, path: str, callback):
         """Download every HLS segment concurrently, then concatenate them."""
-        # TODO: make progress bar reflect bytes
-        async with self.session.get(self.url) as resp:
-            content = await resp.text("utf-8")
-
-        parsed_m3u = m3u8.loads(content)
-        self._size = len(parsed_m3u.segments)
+        segments = await self._segments()
+        self._size = len(segments)  # progress counts segments, not bytes
         # Segments finish in any order; each has its own path, so they're
         # concatenated in playlist order, and all removed afterwards -- also
         # when one fails, or they pile up in the temp dir.
-        segment_paths = [generate_temp_path(s.uri) for s in parsed_m3u.segments]
+        segment_paths = [generate_temp_path(s.uri) for s in segments]
         tasks = [
             asyncio.create_task(self._download_segment(segment.uri, tmp, callback))
-            for segment, tmp in zip(parsed_m3u.segments, segment_paths)
+            for segment, tmp in zip(segments, segment_paths)
         ]
         try:
             await asyncio.gather(*tasks)
@@ -558,18 +477,15 @@ class SoundcloudDownloadable(Downloadable):
 
     async def size(self) -> int:
         if self.file_type == "mp3":
-            async with self.session.get(self.url) as resp:
-                content = await resp.text("utf-8")
-
-            parsed_m3u = m3u8.loads(content)
-            self._size = len(parsed_m3u.segments)
+            self._size = len(await self._segments())
         return await super().size()
 
 
 async def concat_audio_files(paths: list[str], out: str, ext: str, max_files_open=128):
-    """Concatenate audio files using FFmpeg. Batched by max files open.
+    """Concatenate audio files with ffmpeg, at most max_files_open at a time.
 
-    Recurses log_{max_file_open}(len(paths)) times.
+    Each batch is joined into an intermediate file, and those are joined the
+    same way, until one file is left.
     """
     ffmpeg_path = find_ffmpeg()
     if ffmpeg_path is None:
@@ -578,52 +494,37 @@ async def concat_audio_files(paths: list[str], out: str, ext: str, max_files_ope
             "run: pip install imageio-ffmpeg"
         )
 
-    # Base case
     if len(paths) == 1:
         shutil.move(paths[0], out)
         return
 
-    it = iter(paths)
-    num_batches = len(paths) // max_files_open + (
-        1 if len(paths) % max_files_open != 0 else 0
-    )
-    tempdir = tempfile.gettempdir()
+    batches = list(itertools.batched(paths, max_files_open))
     outpaths = [
-        os.path.join(
-            tempdir,
-            f"__streamrip_ffmpeg_{hash(paths[i * max_files_open])}.{ext}",
-        )
-        for i in range(num_batches)
+        os.path.join(tempfile.gettempdir(), f"__streamrip_ffmpeg_{hash(b[0])}.{ext}")
+        for b in batches
     ]
-
     for p in outpaths:
-        try:
-            os.remove(p)  # in case of failure
-        except FileNotFoundError:
-            pass
+        with contextlib.suppress(FileNotFoundError):
+            os.remove(p)  # left behind by a run that failed
 
-    proc_futures = []
-    for i in range(num_batches):
-        command = (
-            ffmpeg_path,
-            "-i",
-            f"concat:{'|'.join(itertools.islice(it, max_files_open))}",
-            "-acodec",
-            "copy",
-            "-loglevel",
-            "warning",
-            outpaths[i],
+    processes = await asyncio.gather(
+        *(
+            asyncio.create_subprocess_exec(
+                ffmpeg_path,
+                "-i",
+                f"concat:{'|'.join(batch)}",
+                "-acodec",
+                "copy",
+                "-loglevel",
+                "warning",
+                outpath,
+                stdin=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            for batch, outpath in zip(batches, outpaths)
         )
-        fut = asyncio.create_subprocess_exec(
-            *command, stdin=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE
-        )
-        proc_futures.append(fut)
-
-    # Create all processes concurrently
-    processes = await asyncio.gather(*proc_futures)
-
-    # wait for all of them to finish
-    results = await asyncio.gather(*[p.communicate() for p in processes])
+    )
+    results = await asyncio.gather(*(p.communicate() for p in processes))
     try:
         for proc, (_, stderr) in zip(processes, results):
             if proc.returncode != 0:

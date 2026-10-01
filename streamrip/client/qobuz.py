@@ -5,7 +5,7 @@ import logging
 import re
 import time
 from collections import OrderedDict
-from typing import List, Optional
+from typing import Optional
 
 from ..config import Config
 from ..exceptions import (
@@ -15,6 +15,7 @@ from ..exceptions import (
     InvalidAppSecretError,
     MissingCredentialsError,
     NonStreamableError,
+    restriction_message,
 )
 from .client import RETRY_STATUSES, Client, RequestClient, new_session
 from .downloadable import BasicDownloadable, Downloadable
@@ -40,6 +41,17 @@ def file_url_signature(
     return hashlib.md5(preimage.encode("utf-8")).hexdigest()
 
 
+# What the web player's bundle.js is scraped for: the app id, and secrets
+# split over a seed per timezone plus that timezone's info and extras.
+BUNDLE_URL_RE = re.compile(
+    r'<script src="(/resources/\d+\.\d+\.\d+-[a-z]\d{3}/bundle\.js)"></script>'
+)
+APP_ID_RE = re.compile(r'production:{api:{appId:"(?P<app_id>\d{9})",appSecret:"\w{32}')
+SEED_RE = re.compile(
+    r'[a-z]\.initialSeed\("(?P<seed>[\w=]+)",window\.utimezone\.(?P<timezone>[a-z]+)\)'
+)
+
+
 class QobuzSpoofer(RequestClient):
     """Spoofs the information required to stream tracks from Qobuz."""
 
@@ -47,18 +59,6 @@ class QobuzSpoofer(RequestClient):
 
     def __init__(self, verify_ssl: bool = True, client: Client | None = None):
         """Create a Spoofer."""
-        self.seed_timezone_regex = (
-            r'[a-z]\.initialSeed\("(?P<seed>[\w=]+)",window\.ut'
-            r"imezone\.(?P<timezone>[a-z]+)\)"
-        )
-        # note: {timezones} should be replaced with every capitalized timezone joined by a |
-        self.info_extras_regex = (
-            r'name:"\w+/(?P<timezone>{timezones})",info:"'
-            r'(?P<info>[\w=]+)",extras:"(?P<extras>[\w=]+)"'
-        )
-        self.app_id_regex = (
-            r'production:{api:{appId:"(?P<app_id>\d{9})",appSecret:"(\w{32})'
-        )
         self.session = None
         self.verify_ssl = verify_ssl
         self.client = client
@@ -70,63 +70,37 @@ class QobuzSpoofer(RequestClient):
         """Scrape Qobuz's web player bundle for its app id and secrets."""
         assert self.session is not None
         login_page = await self._get_text_with_retries("https://play.qobuz.com/login")
-
-        bundle_url_match = re.search(
-            r'<script src="(/resources/\d+\.\d+\.\d+-[a-z]\d{3}/bundle\.js)"></script>',
-            login_page,
-        )
-        assert bundle_url_match is not None
-        bundle_url = bundle_url_match.group(1)
-
-        self.bundle = await self._get_text_with_retries(
-            "https://play.qobuz.com" + bundle_url
+        bundle_url = BUNDLE_URL_RE.search(login_page)
+        assert bundle_url is not None
+        bundle = await self._get_text_with_retries(
+            "https://play.qobuz.com" + bundle_url.group(1)
         )
 
-        match = re.search(self.app_id_regex, self.bundle)
-        if match is None:
+        app_id = APP_ID_RE.search(bundle)
+        if app_id is None:
             raise Exception("Could not find app id.")
 
-        app_id = str(match.group("app_id"))
-
-        # get secrets
-        seed_matches = re.finditer(self.seed_timezone_regex, self.bundle)
-        secrets = OrderedDict()
-        for match in seed_matches:
-            seed, timezone = match.group("seed", "timezone")
-            secrets[timezone] = [seed]
-
-        """
-        The code that follows switches around the first and second timezone.
-        Qobuz uses two ternary (a shortened if statement) conditions that
-        should always return false. The way Javascript's ternary syntax
-        works, the second option listed is what runs if the condition returns
-        false. Because of this, we must prioritize the *second* seed/timezone
-        pair captured, not the first.
-        """
-
-        keypairs = list(secrets.items())
-        secrets.move_to_end(keypairs[1][0], last=False)
-
-        info_extras_regex = self.info_extras_regex.format(
-            timezones="|".join(timezone.capitalize() for timezone in secrets),
+        secrets = OrderedDict(
+            (m.group("timezone"), [m.group("seed")]) for m in SEED_RE.finditer(bundle)
         )
-        info_extras_matches = re.finditer(info_extras_regex, self.bundle)
-        for match in info_extras_matches:
-            timezone, info, extras = match.group("timezone", "info", "extras")
+        # The bundle picks between the first two seeds with ternaries that are
+        # always false, so the second one is the one in use: try it first.
+        secrets.move_to_end(list(secrets)[1], last=False)
+
+        timezones = "|".join(timezone.capitalize() for timezone in secrets)
+        info_extras = re.compile(
+            rf'name:"\w+/(?P<timezone>{timezones})",info:"(?P<info>[\w=]+)",'
+            r'extras:"(?P<extras>[\w=]+)"'
+        )
+        for m in info_extras.finditer(bundle):
+            timezone, info, extras = m.group("timezone", "info", "extras")
             secrets[timezone.lower()] += [info, extras]
 
-        for secret_pair in secrets:
-            secrets[secret_pair] = base64.standard_b64decode(
-                "".join(secrets[secret_pair])[:-44],
-            ).decode("utf-8")
-
-        vals: List[str] = list(secrets.values())
-        if "" in vals:
-            vals.remove("")
-
-        secrets_list = vals
-
-        return app_id, secrets_list
+        decoded = (
+            base64.standard_b64decode("".join(parts)[:-44]).decode("utf-8")
+            for parts in secrets.values()
+        )
+        return app_id.group("app_id"), [s for s in decoded if s]
 
     def _pause_owner(self) -> RequestClient:
         """Share the account pause with the API client during bootstrap."""
@@ -324,44 +298,24 @@ class QobuzClient(Client):
         logger.debug("Fetched %d/%d playlist tracks", len(items), total)
 
     async def get_label(self, label_id: str) -> dict:
-        c = self.config.session.qobuz
-        page_limit = 500
+        """A label with its whole catalog, fetched 500 albums at a time."""
         params = {
-            "app_id": str(c.app_id),
+            "app_id": str(self.config.session.qobuz.app_id),
             "label_id": label_id,
-            "limit": page_limit,
+            "limit": 500,
             "offset": 0,
             "extra": "albums",
         }
-        epoint = "label/get"
-        status, label_resp = await self._api_request(epoint, params)
-        assert status == 200
-        albums_count = label_resp["albums_count"]
-
-        if albums_count <= page_limit:
-            return label_resp
-
-        requests = [
-            self._api_request(
-                epoint,
-                {
-                    "app_id": str(c.app_id),
-                    "label_id": label_id,
-                    "limit": page_limit,
-                    "offset": offset,
-                    "extra": "albums",
-                },
+        label = await self._request_ok("label/get", params)
+        pages = await asyncio.gather(
+            *(
+                self._request_ok("label/get", {**params, "offset": offset})
+                for offset in range(500, label["albums_count"], 500)
             )
-            for offset in range(page_limit, albums_count, page_limit)
-        ]
-
-        results = await asyncio.gather(*requests)
-        items = label_resp["albums"]["items"]
-        for status, resp in results:
-            assert status == 200
-            items.extend(resp["albums"]["items"])
-
-        return label_resp
+        )
+        for page in pages:
+            label["albums"]["items"].extend(page["albums"]["items"])
+        return label
 
     async def search(self, media_type: str, query: str, limit: int = 500) -> list[dict]:
         if media_type not in ("artist", "album", "track", "playlist"):
@@ -408,11 +362,7 @@ class QobuzClient(Client):
                         quality - 1,
                     )
                     return await self.get_downloadable(item, quality - 1)
-                # Turn CamelCase code into a readable sentence
-                words = re.findall(r"([A-Z][a-z]+)", code)
-                raise NonStreamableError(
-                    words[0] + " " + " ".join(map(str.lower, words[1:])) + ".",
-                )
+                raise NonStreamableError(restriction_message(code) + ".")
             raise NonStreamableError
 
         return BasicDownloadable(
