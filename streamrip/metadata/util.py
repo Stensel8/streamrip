@@ -21,16 +21,16 @@ def deezer_artists(resp: dict) -> list[str]:
     return names or [safe_get(resp, "artist", "name", default="Unknown Artist")]
 
 
-_QOBUZ_ARTIST_ROLES = {"mainartist", "featuredartist"}
-
-
 def qobuz_artists(resp: dict) -> list[str]:
-    """The credited artists of a Qobuz track response, one name each.
+    """The credited artists of a Qobuz track response, one name each: the
+    main artists, then the featured ones (the order Tidal lists them in).
 
     Qobuz's "performer" is a single display string ("A, B"), but "performers"
-    lists every credit as "Name, Role[, Role] - Name, Role ...".
+    lists every credit as "Name, Role[, Role] - Name, Role ...", in no fixed
+    order: a clean and an explicit edition can list a feature first or last.
     """
-    names: list[str] = []
+    main: list[str] = []
+    featured: list[str] = []
     for credit in (resp.get("performers") or "").split(" - "):
         parts = [part.strip() for part in credit.split(",")]
         # Roles are single CamelCase words after the name, which may itself
@@ -39,9 +39,11 @@ def qobuz_artists(resp: dict) -> list[str]:
         while len(parts) > 1 and re.fullmatch(r"[A-Za-z]+", parts[-1]):
             roles.add(parts.pop().lower())
         name = ", ".join(parts)
-        if name and name not in names and roles & _QOBUZ_ARTIST_ROLES:
-            names.append(name)
-    return names
+        if name and "mainartist" in roles:
+            main.append(name)
+        elif name and "featuredartist" in roles:
+            featured.append(name)
+    return list(dict.fromkeys(main + featured))
 
 
 def safe_get(dictionary, *keys, default=None):

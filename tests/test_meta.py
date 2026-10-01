@@ -225,7 +225,19 @@ def test_qobuz_artists_split_from_performers():
     }
     assert qobuz_artists(resp) == [
         "Spiritbox",
-        "Tyler, The Creator",
         "Courtney LaPlante",
+        "Tyler, The Creator",
     ]
     assert qobuz_artists({}) == []
+
+
+def test_qobuz_artists_put_the_main_artist_first():
+    # The clean edition of this track lists its feature first; the explicit
+    # one lists it last. Both should tag the same artists in the same order.
+    from streamrip.metadata.util import qobuz_artists
+
+    clean = {
+        "performers": "Spiritbox, Vocals, FeaturedArtist - "
+        "Megan Thee Stallion, MainArtist, Vocals - X, Producer"
+    }
+    assert qobuz_artists(clean) == ["Megan Thee Stallion", "Spiritbox"]
