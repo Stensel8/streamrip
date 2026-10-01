@@ -5,6 +5,7 @@ import shutil
 import tempfile
 
 import aiohttp
+import requests
 from PIL import Image
 
 from ..client import BasicDownloadable
@@ -14,6 +15,41 @@ from ..metadata import Covers
 _artwork_tempdirs: set[str] = set()
 
 logger = logging.getLogger("streamrip")
+
+# One try plus two retries: a cover that fails once costs the whole album its
+# artwork (saved and embedded), and the usual cause -- a DNS or connection
+# hiccup -- is gone a few seconds later.
+ARTWORK_ATTEMPTS = 3
+
+
+def _worth_retrying(e: Exception) -> bool:
+    """Whether a failed cover download might work on another try."""
+    if isinstance(e, requests.HTTPError):
+        status = e.response.status_code if e.response is not None else 0
+        return status == 429 or status >= 500
+    return isinstance(
+        e,
+        requests.ConnectionError
+        | requests.Timeout
+        | requests.exceptions.ChunkedEncodingError
+        | requests.exceptions.ContentDecodingError,
+    )
+
+
+async def _download_cover(session: aiohttp.ClientSession, url: str, path: str):
+    """Download one cover image, retrying a network hiccup or two."""
+    for attempt in range(1, ARTWORK_ATTEMPTS + 1):
+        try:
+            await BasicDownloadable(session, url, "jpg").download(path, lambda _: None)
+            return
+        except Exception as e:
+            if attempt == ARTWORK_ATTEMPTS or not _worth_retrying(e):
+                raise
+            delay = 2**attempt
+            logger.warning(
+                f"Error downloading artwork, retrying in {delay}s: {type(e).__name__}"
+            )
+            await asyncio.sleep(delay)
 
 
 def remove_artwork_tempdirs():
@@ -73,12 +109,7 @@ async def download_artwork(
     if saved_cover_path is None and save_artwork:
         saved_cover_path = os.path.join(folder, "cover.jpg")
         assert l_url is not None
-        downloadables.append(
-            BasicDownloadable(session, l_url, "jpg").download(
-                saved_cover_path,
-                lambda _: None,
-            ),
-        )
+        downloadables.append(_download_cover(session, l_url, saved_cover_path))
 
     _, embed_url, embed_cover_path = covers.get_size(config.embed_size)
     if embed_cover_path is None and embed:
@@ -87,12 +118,7 @@ async def download_artwork(
         embed_dir = tempfile.mkdtemp(prefix="__artwork_", dir=folder)
         _artwork_tempdirs.add(embed_dir)
         embed_cover_path = os.path.join(embed_dir, f"cover{hash(embed_url)}.jpg")
-        downloadables.append(
-            BasicDownloadable(session, embed_url, "jpg").download(
-                embed_cover_path,
-                lambda _: None,
-            ),
-        )
+        downloadables.append(_download_cover(session, embed_url, embed_cover_path))
 
     if len(downloadables) == 0:
         return embed_cover_path, saved_cover_path

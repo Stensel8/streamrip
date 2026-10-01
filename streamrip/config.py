@@ -26,9 +26,8 @@ DEFAULT_CONFIG_PATH = os.path.join(APP_DIR, "config.toml")
 
 @dataclass(slots=True)
 class QobuzConfig:
-    use_auth_token: bool
-    email_or_userid: str
-    password_or_token: str
+    user_id: str
+    auth_token: str
     app_id: str
     quality: int
     download_booklets: bool

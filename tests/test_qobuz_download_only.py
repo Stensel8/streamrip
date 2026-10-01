@@ -35,9 +35,8 @@ class _FakeSession:
 def _make_client() -> QobuzClient:
     config = Config.defaults()
     c = config.session.qobuz
-    c.email_or_userid = "13103092"
-    c.password_or_token = "fake-token"
-    c.use_auth_token = True
+    c.user_id = "13103092"
+    c.auth_token = "fake-token"
     # Pre-seed app_id/secrets so login() skips the spoofer/network fetch.
     c.app_id = "123456789"
     c.secrets = ["fakesecret"]

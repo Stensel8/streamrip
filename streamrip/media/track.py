@@ -69,6 +69,18 @@ class Track(Media):
     # lossy copy.
     _skip_lossy_duplicate: bool = False
 
+    async def rip(self):
+        """Record failures from every processing phase for summaries and repair."""
+        try:
+            await super(Track, self).rip()
+        except TrackDownloadFailedError:
+            raise  # The exhausted download was already recorded.
+        except Exception:
+            self.db.set_failed(self.downloadable.source, "track", self.meta.info.id)
+            if self.is_single:
+                remove_title(id(self), self.config.session.cli.progress_bars)
+            raise
+
     async def preprocess(self):
         """Set the download path and skip it if a lossless copy already exists."""
         self._set_download_path()
@@ -104,7 +116,12 @@ class Track(Media):
                 # so a connection that keeps dropping near the end of a large
                 # FLAC still gets there (upstream #951, #1022).
                 self.downloadable.resume = attempt > 1
-                label = f"Track {self.meta.tracknumber} {quality}"
+                # Plain "Track N" rows don't say whose track it is -- which
+                # matters for labels, and for features on an artist's page.
+                label = (
+                    f"{self.meta.album.albumartist} - "
+                    f"Track {self.meta.tracknumber} {quality}"
+                )
                 if attempt > 1:
                     label += f" (retry {attempt - 1})"
                 try:
@@ -135,9 +152,6 @@ class Track(Media):
                         f"Persistent error downloading track '{self.meta.title}', "
                         f"skipping: {error}"
                     )
-                    self.db.set_failed(
-                        self.downloadable.source, "track", self.meta.info.id
-                    )
                     if os.path.isfile(self.download_path):
                         os.remove(self.download_path)
                     # postprocess() normally does this, but raising below
@@ -145,6 +159,9 @@ class Track(Media):
                     # progress display for the rest of the run.
                     if self.is_single:
                         remove_title(id(self), self.config.session.cli.progress_bars)
+                    self.db.set_failed(
+                        self.downloadable.source, "track", self.meta.info.id
+                    )
                     raise TrackDownloadFailedError(
                         f"{self.meta.title} ({self.meta.info.id})"
                     ) from e
@@ -152,7 +169,8 @@ class Track(Media):
     async def postprocess(self):
         """Tag, convert, and dedup the downloaded file, then mark it downloaded."""
         if self._skip_lossy_duplicate:
-            self.db.set_downloaded(self.meta.info.id)
+            self.db.set_downloaded(self.meta.info.id, new=False)
+            self.db.skipped_now += 1
             return
 
         if self.is_single:
@@ -288,6 +306,7 @@ async def fetch_track_meta(
     """
     if db.downloaded(track_id):
         logger.info(f"Skipping track {track_id}. Marked as downloaded in the database.")
+        db.skipped_now += 1
         return None
     source = client.source
     try:

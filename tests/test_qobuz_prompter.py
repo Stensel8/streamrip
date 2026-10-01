@@ -1,4 +1,4 @@
-import hashlib
+import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -56,9 +56,8 @@ async def test_default_browser_login_and_manual_credentials(
     launch.assert_called_with("https://play.qobuz.com/login")
     assert prompt.call_args.kwargs["password"] is True
     prompter.client.login.assert_awaited_once()
-    assert prompter.config.file.qobuz.use_auth_token is True
-    assert prompter.config.file.qobuz.email_or_userid == "123"
-    assert prompter.config.file.qobuz.password_or_token == "test-token"
+    assert prompter.config.file.qobuz.user_id == "123"
+    assert prompter.config.file.qobuz.auth_token == "test-token"
 
 
 async def test_snippet_capture_skips_manual_prompts(
@@ -75,9 +74,8 @@ async def test_snippet_capture_skips_manual_prompts(
 
     prompt.assert_called_once()
     prompter.client.login.assert_awaited_once()
-    assert prompter.config.file.qobuz.use_auth_token is True
-    assert prompter.config.file.qobuz.email_or_userid == "456"
-    assert prompter.config.file.qobuz.password_or_token == "captured-token"
+    assert prompter.config.file.qobuz.user_id == "456"
+    assert prompter.config.file.qobuz.auth_token == "captured-token"
 
 
 async def test_browser_automation_choice_skips_manual_prompts(
@@ -94,16 +92,14 @@ async def test_browser_automation_choice_skips_manual_prompts(
 
     prompt.assert_called_once()
     prompter.client.login.assert_awaited_once()
-    assert prompter.config.file.qobuz.use_auth_token is True
-    assert prompter.config.file.qobuz.email_or_userid == "789"
-    assert prompter.config.file.qobuz.password_or_token == "browser-captured-token"
+    assert prompter.config.file.qobuz.user_id == "789"
+    assert prompter.config.file.qobuz.auth_token == "browser-captured-token"
 
 
 async def test_saved_credentials_skip_browser(monkeypatch, prompter):
     cfg = prompter.config.session.qobuz
-    cfg.use_auth_token = True
-    cfg.email_or_userid = "123"
-    cfg.password_or_token = "saved-token"
+    cfg.user_id = "123"
+    cfg.auth_token = "saved-token"
     launch = MagicMock()
     monkeypatch.setattr("streamrip.rip.prompter.launch", launch)
     prompt = MagicMock()
@@ -114,15 +110,24 @@ async def test_saved_credentials_skip_browser(monkeypatch, prompter):
     prompter.client.login.assert_awaited_once()
 
 
-async def test_password_fallback_remains_available(monkeypatch, prompter):
+async def test_manual_entry_asks_again_until_both_are_filled(monkeypatch, prompter):
     monkeypatch.setattr("streamrip.rip.prompter.launch", MagicMock(return_value=0))
-    monkeypatch.setattr(
-        "streamrip.rip.prompter.Prompt.ask",
-        MagicMock(side_effect=["3", "", "test@example.com", "test-password"]),
-    )
+    prompt = MagicMock(side_effect=["3", "", " 123 ", "", " token "])
+    monkeypatch.setattr("streamrip.rip.prompter.Prompt.ask", prompt)
     await prompter.prompt_and_login()
     prompter.save()
     cfg = prompter.config.file.qobuz
-    assert cfg.use_auth_token is False
-    assert cfg.email_or_userid == "test@example.com"
-    assert cfg.password_or_token == hashlib.md5(b"test-password").hexdigest()
+    assert (cfg.user_id, cfg.auth_token) == ("123", "token")
+    assert prompt.call_count == 5
+
+
+def test_menu_offers_no_password_login(monkeypatch, prompter):
+    output = MagicMock()
+    monkeypatch.setattr("streamrip.rip.prompter.console.print", output)
+    monkeypatch.setattr("streamrip.rip.prompter.launch", MagicMock(return_value=0))
+    monkeypatch.setattr(
+        "streamrip.rip.prompter.Prompt.ask", MagicMock(side_effect=["3", "1", "t"])
+    )
+    asyncio.run(prompter._prompt_creds_and_set_session_config())
+    shown = " ".join(str(c.args[0]) for c in output.call_args_list).lower()
+    assert "email" not in shown and "password" not in shown

@@ -2,18 +2,20 @@
 
 import asyncio
 import contextlib
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import aiohttp
 import pytest
 
-from streamrip.client.client import new_session
-from streamrip.client.tidal import (
+from streamrip.client import client as client_module
+from streamrip.client.client import (
     MAX_API_ATTEMPTS,
     MAX_RETRY_DELAY,
     RATE_LIMIT_PAUSE,
-    TidalClient,
+    new_session,
 )
+from streamrip.client.tidal import TidalClient
 from streamrip.config import Config
 from streamrip.exceptions import ItemNotFoundError
 
@@ -48,7 +50,7 @@ class _Session:
         self.outcomes = list(outcomes)
         self.calls = 0
 
-    def get(self, url, params=None):
+    def get(self, url, params=None, headers=None):
         self.calls += 1
         outcome = self.outcomes.pop(0)
         if isinstance(outcome, BaseException):
@@ -59,10 +61,14 @@ class _Session:
 @pytest.fixture
 def sleeps(monkeypatch):
     slept = []
+    now = 0.0
 
     async def fake_sleep(delay):
+        nonlocal now
         slept.append(delay)
+        now += delay
 
+    monkeypatch.setattr(client_module, "time", SimpleNamespace(monotonic=lambda: now))
     monkeypatch.setattr(asyncio, "sleep", fake_sleep)
     return slept
 
@@ -117,7 +123,7 @@ async def test_persistent_server_error_raises_the_http_error(sleeps):
 async def test_rate_limit_waits_for_retry_after_and_pauses_later_requests(sleeps):
     c = _client(_Response(429, headers={"Retry-After": "7"}), _Response(), _Response())
     await c._api_request("tracks/1")
-    # This one never saw a 429 itself, but the account is still rate limited.
+    # The account pause has elapsed before the next request is sent.
     await c._api_request("tracks/2")
     assert c.session.calls == 3
     # +0-2s jitter, so concurrent requests don't all wake and re-trip it together.

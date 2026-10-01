@@ -58,7 +58,7 @@ def test_saving_credentials_secures_existing_or_recreated_file(tmp_path, remove_
     path = tmp_path / "config.toml"
     set_user_defaults(str(path))
     config = Config(str(path))
-    config.file.qobuz.password_or_token = "synthetic-qobuz-token"
+    config.file.qobuz.auth_token = "synthetic-qobuz-token"
     config.file.deezer.arl = "synthetic-deezer-cookie"
     config.file.tidal.refresh_token = "synthetic-tidal-token"
     config.file.set_modified()
@@ -71,7 +71,7 @@ def test_saving_credentials_secures_existing_or_recreated_file(tmp_path, remove_
 
     assert mode(path) == 0o600
     saved = Config(str(path)).file
-    assert saved.qobuz.password_or_token == "synthetic-qobuz-token"
+    assert saved.qobuz.auth_token == "synthetic-qobuz-token"
     assert saved.deezer.arl == "synthetic-deezer-cookie"
     assert saved.tidal.refresh_token == "synthetic-tidal-token"
 

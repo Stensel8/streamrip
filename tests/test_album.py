@@ -8,6 +8,7 @@ import pytest
 
 from streamrip.media import album as album_module
 from streamrip.media.album import RESOLVE_CONCURRENCY, Album, PendingAlbum
+from streamrip.media.artist import Artist
 
 
 def _meta(album="Album"):
@@ -77,6 +78,7 @@ def _pending_album(monkeypatch, tmp_path, tracklist, downloaded):
     client.source = "tidal"
     client.get_metadata = AsyncMock(return_value={})
     db = MagicMock()
+    db.skipped_now = 0
     db.downloaded.side_effect = lambda track_id: track_id in downloaded
     config = MagicMock()
     config.session.downloads.folder = str(tmp_path)
@@ -106,6 +108,11 @@ async def test_finished_album_is_skipped_without_cover_or_folder(
     assert album.tracks == []
     artwork.assert_not_awaited()
     assert not (tmp_path / "Encore").exists()
+    assert pending.db.skipped_now == 0
+    assert "already downloaded" not in caplog.text
+    with caplog.at_level(logging.INFO, logger="streamrip"):
+        await album.preprocess()
+    assert pending.db.skipped_now == 3
     assert "Encore: all 3 tracks already downloaded" in caplog.text
 
 
@@ -121,6 +128,11 @@ async def test_partly_downloaded_album_reports_once_and_keeps_the_rest(
     assert [t.id for t in album.tracks] == ["2", "3"]
     artwork.assert_awaited_once()
     assert (tmp_path / "Encore").is_dir()
+    assert pending.db.skipped_now == 0
+    assert "already downloaded" not in caplog.text
+    with caplog.at_level(logging.INFO, logger="streamrip"):
+        await album.preprocess()
+    assert pending.db.skipped_now == 1
     assert "Encore: skipping 1 of 3 tracks already downloaded" in caplog.text
     assert "Skipping track" not in caplog.text
 
@@ -207,3 +219,23 @@ async def test_finished_album_gets_no_booklets(monkeypatch, tmp_path):
     await (await pending.resolve()).preprocess()
 
     download.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("resolve_first", [False, True])
+@pytest.mark.parametrize("selected", [False, True])
+async def test_artist_counts_skips_only_for_selected_albums(
+    monkeypatch, tmp_path, resolve_first, selected
+):
+    """Filtering an album after resolution must not affect the run's skip total."""
+    pending, _ = _pending_album(monkeypatch, tmp_path, ["1", "2"], {"1", "2"})
+    pending.config.session.cli.progress_bars = False
+    filters = pending.config.session.artist_filters
+    filters.repeats = False
+    monkeypatch.setattr(Artist, "_wanted", lambda self, album, filters: selected)
+    artist = Artist("Artist", [pending], pending.client, pending.config)
+    if resolve_first:
+        await artist._resolve_then_download(filters)
+    else:
+        await artist._download_async(filters)
+    assert pending.db.skipped_now == (2 if selected else 0)

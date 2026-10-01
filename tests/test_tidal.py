@@ -12,6 +12,7 @@ from streamrip.client.tidal import (
 )
 from streamrip.config import Config
 from streamrip.exceptions import MissingCredentialsError, NonStreamableError
+from streamrip.metadata import ArtistMetadata
 from streamrip.metadata.util import tidal_quality_id
 from streamrip.rip.prompter import TidalPrompter
 
@@ -436,6 +437,15 @@ def _artist_replies(albums, eps=None):
     return reply
 
 
+async def _artist(albums, prefer_explicit=True):
+    """What the shared artist step keeps of this Tidal discography."""
+    c = _client()
+    c._api_request = AsyncMock(side_effect=_artist_replies(albums))
+    resp = await c.get_metadata("1", "artist")
+    kept = set(ArtistMetadata.from_resp(resp, "tidal", prefer_explicit).album_ids())
+    return {"albums": [a for a in resp["albums"] if a["id"] in kept]}
+
+
 @pytest.mark.asyncio
 async def test_artist_albums_drop_the_clean_copy_of_an_explicit_duplicate():
     """Tidal sometimes lists one album twice: once clean, once explicit."""
@@ -443,9 +453,7 @@ async def test_artist_albums_drop_the_clean_copy_of_an_explicit_duplicate():
         {"id": "1", "title": "STANS", "numberOfTracks": 12, "explicit": False},
         {"id": "2", "title": "STANS", "numberOfTracks": 12, "explicit": True},
     ]
-    c = _client()
-    c._api_request = AsyncMock(side_effect=_artist_replies(albums))
-    artist = await c.get_metadata("1", "artist")
+    artist = await _artist(albums)
     assert [a["id"] for a in artist["albums"]] == ["2"]
 
 
@@ -468,9 +476,7 @@ async def test_artist_albums_keep_the_higher_quality_copy_when_both_explicit():
             "audioQuality": "HI_RES_LOSSLESS",
         },
     ]
-    c = _client()
-    c._api_request = AsyncMock(side_effect=_artist_replies(albums))
-    artist = await c.get_metadata("1", "artist")
+    artist = await _artist(albums)
     assert [a["id"] for a in artist["albums"]] == ["2"]
 
 
@@ -493,9 +499,7 @@ async def test_artist_albums_ignore_bracket_style_when_matching_titles():
             "explicit": True,
         },
     ]
-    c = _client()
-    c._api_request = AsyncMock(side_effect=_artist_replies(albums))
-    artist = await c.get_metadata("1", "artist")
+    artist = await _artist(albums)
     assert [a["id"] for a in artist["albums"]] == ["2"]
 
 
@@ -506,9 +510,7 @@ async def test_artist_albums_with_different_track_counts_are_not_merged():
         {"id": "1", "title": "Houdini", "numberOfTracks": 1, "explicit": True},
         {"id": "2", "title": "Houdini", "numberOfTracks": 12, "explicit": True},
     ]
-    c = _client()
-    c._api_request = AsyncMock(side_effect=_artist_replies(albums))
-    artist = await c.get_metadata("1", "artist")
+    artist = await _artist(albums)
     assert {a["id"] for a in artist["albums"]} == {"1", "2"}
 
 
@@ -518,11 +520,7 @@ async def test_artist_album_duplicates_kept_when_prefer_explicit_is_off():
         {"id": "1", "title": "STANS", "numberOfTracks": 12, "explicit": False},
         {"id": "2", "title": "STANS", "numberOfTracks": 12, "explicit": True},
     ]
-    cfg = Config.defaults()
-    cfg.session.metadata.prefer_explicit = False
-    c = TidalClient(cfg)
-    c._api_request = AsyncMock(side_effect=_artist_replies(albums))
-    artist = await c.get_metadata("1", "artist")
+    artist = await _artist(albums, prefer_explicit=False)
     assert [a["id"] for a in artist["albums"]] == ["1", "2"]
 
 

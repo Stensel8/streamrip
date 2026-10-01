@@ -64,8 +64,8 @@ async def test_refresh_tokens_scans_scripts_from_the_end():
         "https://a-v2.sndcdn.com/assets/0-a.js": "no id here",
     }
 
-    def get(url):
-        resp = MagicMock()
+    def get(url, **_):
+        resp = MagicMock(status=200)
         resp.text = AsyncMock(return_value=pages[url])
         ctx = MagicMock()
         ctx.__aenter__ = AsyncMock(return_value=resp)

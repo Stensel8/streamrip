@@ -24,7 +24,8 @@ from streamrip.metadata import (
 
 
 @pytest.mark.skipif(
-    "QOBUZ_EMAIL" not in os.environ, reason="Qobuz credentials not found in env."
+    not (os.environ.get("QOBUZ_USER_ID") and os.environ.get("QOBUZ_AUTH_TOKEN")),
+    reason="Qobuz user ID and auth token are required.",
 )
 def test_pending_resolve(qobuz_client: QobuzClient):
     qobuz_client.config.session.downloads.folder = "./tests"
@@ -315,3 +316,62 @@ async def test_valid_disc_number_download_stays_in_album(
     assert Path(track.download_path).parent == expected
     assert Path(track.download_path).read_bytes() == Path(FIXTURES["flac"]).read_bytes()
     pending.db.set_failed.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("phase", ["preprocess", "postprocess"])
+@pytest.mark.parametrize("is_single", [False, True])
+async def test_processing_failures_are_counted_and_stored_for_repair(
+    tmp_path, monkeypatch, phase, is_single
+):
+    """Filesystem and tag failures contribute to totals for every track path."""
+    track = _make_track(str(tmp_path), "flac")
+    track.is_single = is_single
+    track.db = db.Database(db.Dummy(), db.Failed(str(tmp_path / "failed.db")))
+    monkeypatch.setattr(
+        Track, phase, AsyncMock(side_effect=OSError("processing failed"))
+    )
+    with pytest.raises(OSError, match="processing failed"):
+        await track.rip()
+    assert track.db.failed_now == 1
+    assert track.db.downloaded_now == 0
+    assert track.db.failed.all() == [("test", "track", "123")]
+
+
+@pytest.mark.asyncio
+async def test_exhausted_track_download_is_counted_only_once(tmp_path, monkeypatch):
+    """The outer processing handler preserves download failure accounting."""
+    from streamrip.exceptions import TrackDownloadFailedError
+
+    track = _make_track(str(tmp_path), "flac")
+    monkeypatch.setattr(
+        FakeDownloadable, "_download", AsyncMock(side_effect=OSError("download failed"))
+    )
+    monkeypatch.setattr("streamrip.media.track.asyncio.sleep", AsyncMock())
+    with pytest.raises(TrackDownloadFailedError):
+        await track.rip()
+    assert track.db.failed_now == 1
+    assert track.db.downloaded_now == 0
+
+
+@pytest.mark.asyncio
+async def test_partial_file_cleanup_failure_is_counted_once(tmp_path, monkeypatch):
+    """A cleanup error is counted by the outer handler, not twice."""
+    track = _make_track(str(tmp_path), "flac")
+    # A real failed table: the Dummy one never stores anything.
+    track.db = db.Database(db.Dummy(), db.Failed(str(tmp_path / "failed.db")))
+    monkeypatch.setattr(
+        FakeDownloadable, "_download", AsyncMock(side_effect=OSError("download failed"))
+    )
+    monkeypatch.setattr("streamrip.media.track.asyncio.sleep", AsyncMock())
+    monkeypatch.setattr("streamrip.media.track.os.path.isfile", lambda _: True)
+    monkeypatch.setattr(
+        "streamrip.media.track.os.remove",
+        MagicMock(side_effect=OSError("cleanup failed")),
+    )
+
+    with pytest.raises(OSError, match="cleanup failed"):
+        await track.rip()
+
+    assert track.db.failed_now == 1
+    assert track.db.failed.all() == [("test", "track", "123")]

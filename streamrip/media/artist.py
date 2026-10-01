@@ -4,6 +4,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from .. import progress
 from ..client import Client
 from ..config import ArtistFilterConfig, Config
 from ..console import console
@@ -15,30 +16,52 @@ from .media import Media, Pending
 
 logger = logging.getLogger("streamrip")
 
-# One album at a time: downloading several concurrently interleaves their
-# tracks in the progress display with no way to tell which track is from
-# which album, and it invites the streaming service's rate limit besides.
+# One album at a time. Top-level items (rip/main.py) already run one at a
+# time -- one artist's entire discography before the next artist starts --
+# so in practice this only ever gates albums within that single active
+# artist or label. It still has to be a semaphore and not a plain "await one
+# album, then the next" loop: _resolve_then_download() resolves a whole
+# discography's worth of albums concurrently (bounded by this) before it can
+# apply the repeats filter, and a shared module-level instance (rather than
+# one per Artist) means that resolve burst and an ordinary download never
+# stack on top of each other either.
 RESOLVE_CHUNK_SIZE = 1
+_album_window: asyncio.Semaphore | None = None
+
+
+def _get_album_window() -> asyncio.Semaphore:
+    """The shared album window, built lazily against the running loop.
+
+    Built at import time, it would bind to whatever loop happened to be
+    running on first construction (or none at all) and raise if a later
+    `asyncio.run()` -- a separate loop -- ever touched it, exactly like
+    `global_download_semaphore` (media/semaphore.py) already works around.
+    """
+    global _album_window
+    if _album_window is None:
+        _album_window = asyncio.Semaphore(RESOLVE_CHUNK_SIZE)
+    return _album_window
 
 
 async def rip_albums(
-    albums: list[PendingAlbum], wanted: Callable[[Album], bool] = lambda _: True
+    albums: list[PendingAlbum],
+    name: str,
+    enabled: bool,
+    wanted: Callable[[Album], bool] = lambda _: True,
 ):
-    """Resolve and download albums a few at a time; a failure costs one album."""
-    # Sliding window, not batches: the next album starts as soon as one finishes.
-    window = asyncio.Semaphore(RESOLVE_CHUNK_SIZE)
-
-    async def _rip(item: PendingAlbum):
-        """Resolve and download one album, dropping it if unwanted."""
-        async with window:
-            try:
-                album = await item.resolve()
-                if album is not None and wanted(album):
-                    await album.rip()
-            except Exception as e:
-                logger.error(f"Error downloading album: {type(e).__name__}: {e}")
-
-    await asyncio.gather(*map(_rip, albums))
+    """Resolve and download albums one at a time; a failure costs one album."""
+    window = _get_album_window()
+    with progress.get_source_callback(enabled, len(albums), name) as advance:
+        for item in albums:
+            async with window:
+                try:
+                    album = await item.resolve()
+                    if album is not None and wanted(album):
+                        await album.rip()
+                except Exception as e:
+                    logger.error(f"Error downloading album: {type(e).__name__}: {e}")
+                finally:
+                    advance(1)
 
 
 @dataclass(slots=True)
@@ -82,7 +105,7 @@ class Artist(Media):
         before it can pick one per group. Resolves still go through the same
         window as downloads, so this doesn't burst past the rate limit either.
         """
-        window = asyncio.Semaphore(RESOLVE_CHUNK_SIZE)
+        window = _get_album_window()
 
         async def _resolve(item: PendingAlbum) -> Album | None:
             """Resolve one album, returning None on failure."""
@@ -97,20 +120,27 @@ class Artist(Media):
         albums = [a for a in resolved if a is not None]
         if filters.repeats:
             albums = self._filter_repeats(albums)
+        albums = [a for a in albums if self._wanted(a, filters)]
 
-        async def _rip(album: Album):
-            """Download one already-resolved album."""
-            async with window:
-                try:
-                    await album.rip()
-                except Exception as e:
-                    logger.error(f"Error downloading album: {type(e).__name__}: {e}")
-
-        await asyncio.gather(*[_rip(a) for a in albums if self._wanted(a, filters)])
+        enabled = self.config is not None and self.config.session.cli.progress_bars
+        with progress.get_source_callback(enabled, len(albums), self.name) as advance:
+            for album in albums:
+                async with window:
+                    try:
+                        await album.rip()
+                    except Exception as e:
+                        logger.error(
+                            f"Error downloading album: {type(e).__name__}: {e}"
+                        )
+                    finally:
+                        advance(1)
 
     async def _download_async(self, filters: ArtistFilterConfig):
         """Resolve and download albums one at a time, without repeats filtering."""
-        await rip_albums(self.albums, lambda a: self._wanted(a, filters))
+        enabled = self.config is not None and self.config.session.cli.progress_bars
+        await rip_albums(
+            self.albums, self.name, enabled, lambda a: self._wanted(a, filters)
+        )
 
     def _wanted(self, a: Album, f: ArtistFilterConfig) -> bool:
         """Whether an album passes every enabled filter except repeats."""
@@ -195,7 +225,11 @@ class PendingArtist(Pending):
             return None
 
         try:
-            meta = ArtistMetadata.from_resp(resp, self.client.source)
+            meta = ArtistMetadata.from_resp(
+                resp,
+                self.client.source,
+                self.config.session.metadata.prefer_explicit,
+            )
         except Exception as e:
             logger.error(
                 f"Error building artist metadata: {e}",

@@ -69,9 +69,8 @@ def test_sample_config_data_fields(sample_config_data):
             lyrics=True,
         ),
         qobuz=QobuzConfig(
-            use_auth_token=False,
-            email_or_userid="test@gmail.com",
-            password_or_token="test_pwd",
+            user_id="123456789",
+            auth_token="test_token",
             app_id="12345",
             quality=3,
             download_booklets=True,

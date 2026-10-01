@@ -7,4 +7,4 @@ from .config import Config
 http.client._MAXHEADERS = 1000  # type: ignore[attr-defined]
 
 __all__ = ["Config", "converter", "db", "exceptions", "media", "metadata"]
-__version__ = "2.4.6"
+__version__ = "2.4.7"
