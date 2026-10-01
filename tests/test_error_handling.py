@@ -112,6 +112,42 @@ class TestErrorHandling:
             mock_media_failure.rip.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_main_rip_summary_counts_tracks_not_items(self, caplog):
+        """One artist is one item, but hundreds of tracks: say the latter."""
+        from streamrip.rip.main import Main
+
+        mock_config = MagicMock()
+        mock_config.session.downloads.requests_per_minute = 0
+        mock_config.session.database.downloads_enabled = False
+        mock_config.session.database.failed_downloads_enabled = False
+
+        with (
+            patch("streamrip.rip.main.QobuzClient"),
+            patch("streamrip.rip.main.TidalClient"),
+            patch("streamrip.rip.main.DeezerClient"),
+            patch("streamrip.rip.main.SoundcloudClient"),
+        ):
+            main = Main(mock_config)
+
+            async def rip_discography():
+                for n in range(40):
+                    main.database.set_downloaded(str(n))
+                main.database.set_failed("qobuz", "track", "rider")
+                main.database.skipped_now += 3
+
+            artist = MagicMock()
+            artist.rip = rip_discography
+            main.media = [artist]
+
+            await main.rip()
+
+            assert (
+                "Download completed: 40 track(s) downloaded, 3 already downloaded, "
+                "1 failed" in caplog.text
+            )
+            assert "item(s) downloaded" not in caplog.text
+
+    @pytest.mark.asyncio
     async def test_main_resolve_handles_a_failing_item(self, caplog):
         """One URL that fails to resolve must not stop the others."""
         from streamrip.rip.main import Main

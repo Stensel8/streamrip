@@ -3,6 +3,45 @@
 All notable changes in this fork of [nathom/streamrip](https://github.com/nathom/streamrip). Numbers can refer to
 upstream issues and pull requests.
 
+## 2.4.7
+
+### Downloading several artists
+
+- Items download one after another: a selected artist's (or label's) whole
+  discography finishes before the next one starts, one album at a time. This also helps to keep rate-limits under control.
+  Several artists used to run at once, which mixed their tracks together on
+  screen and ran into the rate limit until everything stalled.
+- A progress bar per artist or label shows how far through its discography
+  the run is (`32% • 12/37 albums`), and the screen is cleared when the next
+  artist starts. Track rows show whose track they are.
+- Every album gets a `Finished <artist> - <album> [quality]` line when done.
+  Albums of three tracks or fewer (singles, EPs) used to get no line at all.
+- The summary at the end counts tracks, downloaded, already downloaded and
+  failed, instead of "1 item(s) downloaded" for a whole discography, and
+  points to `streamrip repair` when something failed. The empty
+  "Downloading" line no longer stays behind after the run.
+
+### Qobuz
+
+- Artist discographies leave out releases by other artists now.
+- A release listed twice (a clean and an explicit copy, or two quality
+  tiers) downloads once, as Tidal already did.
+- Email/password login is gone; Qobuz stopped accepting it long ago. In the
+  config, `use_auth_token`, `email_or_userid` and `password_or_token` are
+  replaced by `user_id` and `auth_token`. Existing users should delete their config file.
+
+### Network
+
+- `requests_per_minute` spaces requests evenly over time, instead of sending them all at once. This helps to avoid hitting rate limits.
+- Qobuz and SoundCloud requests now retry connection errors, timeouts, 5xx
+  and rate limits (429) the way Tidal's already did. A single timeout used
+  to cost a Qobuz album or track. SoundCloud now honours
+  `requests_per_minute` at all.
+- Cover art downloads retry network errors, so a brief DNS or connection
+  failure no longer leaves an album without artwork. This is in line with the retry behavior for the track and album downloads that we already did.
+- Every request uses the same, current user agent (Chrome 155), including
+  Deezer's API calls, which still sent Chrome 79's before this change.
+
 ## 2.4.6
 
 - Update notices show which environment will be upgraded and use its active

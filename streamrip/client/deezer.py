@@ -10,7 +10,7 @@ from ..exceptions import (
     MissingCredentialsError,
     NonStreamableError,
 )
-from .client import Client, new_session
+from .client import DEFAULT_USER_AGENT, Client, new_session
 from .downloadable import DeezerDownloadable
 
 logger = logging.getLogger("streamrip")
@@ -37,6 +37,8 @@ class DeezerClient(Client):
     def __init__(self, config: Config):
         self.global_config = config
         self.client = deezer.Deezer()
+        # deezer-py's API and GW calls share this dict; its own is Chrome 79.
+        self.client.http_headers["User-Agent"] = DEFAULT_USER_AGENT
         self.logged_in = False
         self.config = config.session.deezer
         self._album_cache = {}

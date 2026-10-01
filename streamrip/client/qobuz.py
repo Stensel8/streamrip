@@ -16,7 +16,7 @@ from ..exceptions import (
     MissingCredentialsError,
     NonStreamableError,
 )
-from .client import Client, new_session
+from .client import RETRY_STATUSES, Client, RequestClient, new_session
 from .downloadable import BasicDownloadable, Downloadable
 
 logger = logging.getLogger("streamrip")
@@ -40,10 +40,12 @@ def file_url_signature(
     return hashlib.md5(preimage.encode("utf-8")).hexdigest()
 
 
-class QobuzSpoofer:
+class QobuzSpoofer(RequestClient):
     """Spoofs the information required to stream tracks from Qobuz."""
 
-    def __init__(self, verify_ssl: bool = True):
+    source = "qobuz"
+
+    def __init__(self, verify_ssl: bool = True, client: Client | None = None):
         """Create a Spoofer."""
         self.seed_timezone_regex = (
             r'[a-z]\.initialSeed\("(?P<seed>[\w=]+)",window\.ut'
@@ -59,12 +61,15 @@ class QobuzSpoofer:
         )
         self.session = None
         self.verify_ssl = verify_ssl
+        self.client = client
+        self.rate_limiter = (
+            client.rate_limiter if client is not None else self.get_rate_limiter(0)
+        )
 
     async def get_app_id_and_secrets(self) -> tuple[str, list[str]]:
         """Scrape Qobuz's web player bundle for its app id and secrets."""
         assert self.session is not None
-        async with self.session.get("https://play.qobuz.com/login") as req:
-            login_page = await req.text()
+        login_page = await self._get_text_with_retries("https://play.qobuz.com/login")
 
         bundle_url_match = re.search(
             r'<script src="(/resources/\d+\.\d+\.\d+-[a-z]\d{3}/bundle\.js)"></script>',
@@ -73,8 +78,9 @@ class QobuzSpoofer:
         assert bundle_url_match is not None
         bundle_url = bundle_url_match.group(1)
 
-        async with self.session.get("https://play.qobuz.com" + bundle_url) as req:
-            self.bundle = await req.text()
+        self.bundle = await self._get_text_with_retries(
+            "https://play.qobuz.com" + bundle_url
+        )
 
         match = re.search(self.app_id_regex, self.bundle)
         if match is None:
@@ -122,6 +128,10 @@ class QobuzSpoofer:
 
         return app_id, secrets_list
 
+    def _pause_owner(self) -> RequestClient:
+        """Share the account pause with the API client during bootstrap."""
+        return self.client._pause_owner() if self.client is not None else self
+
     async def __aenter__(self):
         """Open the spoofer's own HTTP session."""
         self.session = new_session(verify_ssl=self.verify_ssl)
@@ -151,12 +161,7 @@ class QobuzClient(Client):
         self.download_only: bool = False
 
     async def login(self):
-        """User credentials require either a user token OR a user email & password.
-
-        A hash of the password is stored in self.config.qobuz.password_or_token.
-        This data as well as the app_id is passed to self._get_user_auth_token() to get
-        the actual credentials for the user.
-        """
+        """Log in with the user id and user_auth_token saved in the config."""
         self.session = new_session(verify_ssl=self.config.session.downloads.verify_ssl)
         try:
             await self._login()
@@ -169,7 +174,7 @@ class QobuzClient(Client):
     async def _login(self):
         """Log in, fetching Qobuz's app id/secret first if not cached yet."""
         c = self.config.session.qobuz
-        if not c.email_or_userid or not c.password_or_token:
+        if not c.user_id or not c.auth_token:
             raise MissingCredentialsError
 
         assert not self.logged_in, "Already logged in"
@@ -208,37 +213,19 @@ class QobuzClient(Client):
         c = self.config.session.qobuz
         self.session.headers.update({"X-App-Id": str(c.app_id)})
 
-        if c.use_auth_token:
-            params = {
-                "user_id": c.email_or_userid,
-                "user_auth_token": c.password_or_token,
-                "app_id": str(c.app_id),
-            }
-        else:
-            params = {
-                "email": c.email_or_userid,
-                "password": c.password_or_token,
-                "app_id": str(c.app_id),
-            }
-
-        logger.debug(
-            "Logging into Qobuz with %s",
-            "a token" if c.use_auth_token else "a password",
-        )
+        params = {
+            "user_id": c.user_id,
+            "user_auth_token": c.auth_token,
+            "app_id": str(c.app_id),
+        }
         status, resp = await self._api_request("user/login", params)
         # The response carries the user_auth_token and the account profile.
         logger.debug("Login response keys: %s", sorted(resp))
 
         if status == 401:
-            if c.use_auth_token:
-                raise AuthenticationError(
-                    "Invalid Qobuz user id or user_auth_token. The token may have "
-                    "expired; log in again to get a fresh one."
-                )
             raise AuthenticationError(
-                "Invalid Qobuz email or password. Qobuz has moved its web login "
-                "behind a captcha, so password login may no longer work; log in "
-                "with a user id and user_auth_token instead."
+                "Invalid Qobuz user id or user_auth_token. The token may have "
+                "expired; log in again to get a fresh one."
             )
         elif status == 400:
             raise InvalidAppIdError(f"Qobuz rejected app id {c.app_id}")
@@ -433,20 +420,24 @@ class QobuzClient(Client):
         )
 
     async def _request_ok(self, epoint: str, params: dict) -> dict:
-        """_api_request that insists on HTTP 200, retrying once if Qobuz blips.
+        """_api_request that insists on HTTP 200, retrying once if search blips.
 
         Qobuz's search backend fails intermittently -- a 400 reading
         "Impossible to connect, please check your Algolia Application Id."
-        that succeeds moments later -- and its edge sometimes answers with a
-        502 HTML page. One short retry absorbs those; anything else is raised
-        with Qobuz's own message rather than a bare AssertionError.
+        that succeeds moments later. A 400 isn't something _api_request
+        retries (common 5xx already are), so one short retry here absorbs it
+        and preserves the fallback for other 5xx statuses;
+        anything else is raised with Qobuz's own message rather than a bare
+        AssertionError.
         """
         for attempt in (1, 2):
             status, page = await self._api_request(epoint, params)
             if status == 200:
                 return page
             message = (page.get("message") if isinstance(page, dict) else None) or ""
-            transient = status >= 500 or "Algolia" in message
+            transient = (
+                status >= 500 and status not in RETRY_STATUSES
+            ) or "Algolia" in message
             if attempt == 1 and transient:
                 logger.warning(
                     "Qobuz %s failed (HTTP %d: %s) -- retrying once",
@@ -516,7 +507,7 @@ class QobuzClient(Client):
 
     async def _get_app_id_and_secrets(self) -> tuple[str, list[str]]:
         async with QobuzSpoofer(
-            verify_ssl=self.config.session.downloads.verify_ssl
+            verify_ssl=self.config.session.downloads.verify_ssl, client=self
         ) as spoofer:
             return await spoofer.get_app_id_and_secrets()
 
@@ -566,21 +557,24 @@ class QobuzClient(Client):
         """Make a request to the API.
         returns: status code, json parsed response
         """
-        url = f"{QOBUZ_BASE_URL}/{epoint}"
-        # Only the endpoint: params carry credentials (user_auth_token, password)
+        # Only the endpoint: params carry credentials (user_auth_token)
         # and the request signature.
         logger.debug("api_request: endpoint=%s", epoint)
-        async with self.rate_limiter:
-            async with self.session.get(url, params=params) as response:
-                if "json" not in (response.content_type or ""):
-                    # An HTML error page, such as a 502 from Qobuz's edge.
-                    # aiohttp's ContentTypeError would quote the full request
-                    # URL, which carries user_auth_token -- so report the
-                    # status instead of letting that propagate.
-                    return response.status, {
-                        "message": f"non-JSON response ({response.content_type})"
-                    }
-                return response.status, await response.json()
+
+        async def read(response) -> tuple[int, dict]:
+            if "json" not in (response.content_type or ""):
+                # An HTML error page, such as a 502 from Qobuz's edge.
+                # aiohttp's ContentTypeError would quote the full request
+                # URL, which carries user_auth_token -- so report the
+                # status instead of letting that propagate.
+                return response.status, {
+                    "message": f"non-JSON response ({response.content_type})"
+                }
+            return response.status, await response.json()
+
+        return await self._get_with_retries(
+            f"{QOBUZ_BASE_URL}/{epoint}", read, params=params
+        )
 
     @staticmethod
     def get_quality(quality: int):

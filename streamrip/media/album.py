@@ -52,6 +52,7 @@ class Album(Media):
     folder: str
     db: Database
     client: Client | None = None
+    skipped_tracks: int = 0
 
     def _title(self) -> str:
         """Return the album's title, suffixed with its quality label."""
@@ -63,7 +64,18 @@ class Album(Media):
         return f"{self.meta.album} {quality}"
 
     async def preprocess(self):
-        """Register the album's title for progress display, then fetch booklets."""
+        """Count skips for this selected album, register progress, and fetch booklets."""
+        self.db.skipped_now += self.skipped_tracks
+        total = self.skipped_tracks + len(self.tracks)
+        if self.skipped_tracks and not self.tracks:
+            logger.info(
+                f"{self.meta.album}: all {total} tracks already downloaded, skipping"
+            )
+        elif self.skipped_tracks:
+            logger.info(
+                f"{self.meta.album}: skipping {self.skipped_tracks} of {total} tracks "
+                "already downloaded"
+            )
         progress.add_title(
             id(self), self._title(), self.config.session.cli.progress_bars
         )
@@ -82,10 +94,10 @@ class Album(Media):
 
     async def download(self):
         """Resolve and download every track of the album."""
-        big = len(self.tracks) > RESOLVE_CONCURRENCY
-        if big:
-            console.log(f"Resolving {len(self.tracks)} tracks: {self.meta.album}")
-        enabled = big and self.config.session.cli.progress_bars
+        enabled = (
+            len(self.tracks) > RESOLVE_CONCURRENCY
+            and self.config.session.cli.progress_bars
+        )
         with progress.get_resolve_callback(
             enabled, f"Obtaining album info: {self.meta.album}"
         ):
@@ -94,6 +106,11 @@ class Album(Media):
                 RESOLVE_CONCURRENCY,
                 self.config.session.metadata.prefer_explicit,
             )
+        # One line for every album, however small, so the scrollback is a
+        # complete record of the run -- failed tracks log their own errors.
+        # (An album with nothing left to download already logged a skip.)
+        if self.tracks:
+            console.log(f"Finished {self.meta.albumartist} - {self._title()}")
 
     async def postprocess(self):
         progress.remove_title(id(self), self.config.session.cli.progress_bars)
@@ -133,16 +150,9 @@ class PendingAlbum(Pending):
         # make a folder for an album with nothing left to download.
         todo = [track_id for track_id in tracklist if not self.db.downloaded(track_id)]
         done = len(tracklist) - len(todo)
-        if tracklist and not todo:
-            logger.info(f"{meta.album}: all {done} tracks already downloaded, skipping")
-        elif done:
-            logger.info(
-                f"{meta.album}: skipping {done} of {len(tracklist)} tracks "
-                "already downloaded"
-            )
         folder = album_folder(self.config, self.client.source, meta)
         if tracklist and not todo:
-            return Album(meta, [], self.config, folder, self.db)
+            return Album(meta, [], self.config, folder, self.db, skipped_tracks=done)
         os.makedirs(folder, exist_ok=True)
         embed_cover, _ = await download_artwork(
             self.client.session,
@@ -164,4 +174,12 @@ class PendingAlbum(Pending):
             for track_id in todo
         ]
         logger.debug("Pending tracks: %s", pending_tracks)
-        return Album(meta, pending_tracks, self.config, folder, self.db, self.client)
+        return Album(
+            meta,
+            pending_tracks,
+            self.config,
+            folder,
+            self.db,
+            self.client,
+            skipped_tracks=done,
+        )

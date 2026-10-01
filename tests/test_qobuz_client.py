@@ -1,4 +1,3 @@
-import hashlib
 import logging
 import os
 
@@ -16,10 +15,8 @@ logger = logging.getLogger("streamrip")
 @pytest.fixture(scope="session")
 def qobuz_client():
     config = Config.defaults()
-    config.session.qobuz.email_or_userid = os.environ["QOBUZ_EMAIL"]
-    config.session.qobuz.password_or_token = hashlib.md5(
-        os.environ["QOBUZ_PASSWORD"].encode("utf-8"),
-    ).hexdigest()
+    config.session.qobuz.user_id = os.environ["QOBUZ_USER_ID"]
+    config.session.qobuz.auth_token = os.environ["QOBUZ_AUTH_TOKEN"]
     if "QOBUZ_APP_ID" in os.environ and "QOBUZ_SECRETS" in os.environ:
         config.session.qobuz.app_id = os.environ["QOBUZ_APP_ID"]
         config.session.qobuz.secrets = os.environ["QOBUZ_SECRETS"].split(",")
@@ -38,7 +35,8 @@ def test_client_raises_missing_credentials():
 
 
 @pytest.mark.skipif(
-    "QOBUZ_EMAIL" not in os.environ, reason="Qobuz credentials not found in env."
+    not (os.environ.get("QOBUZ_USER_ID") and os.environ.get("QOBUZ_AUTH_TOKEN")),
+    reason="Qobuz user ID and auth token are required.",
 )
 def test_client_get_metadata(qobuz_client):
     meta = arun(qobuz_client.get_metadata("s9nzkwg2rh1nc", "album"))
@@ -48,7 +46,8 @@ def test_client_get_metadata(qobuz_client):
 
 
 @pytest.mark.skipif(
-    "QOBUZ_EMAIL" not in os.environ, reason="Qobuz credentials not found in env."
+    not (os.environ.get("QOBUZ_USER_ID") and os.environ.get("QOBUZ_AUTH_TOKEN")),
+    reason="Qobuz user ID and auth token are required.",
 )
 def test_client_get_downloadable(qobuz_client):
     d = arun(qobuz_client.get_downloadable("19512574", 3))
@@ -59,7 +58,8 @@ def test_client_get_downloadable(qobuz_client):
 
 
 @pytest.mark.skipif(
-    "QOBUZ_EMAIL" not in os.environ, reason="Qobuz credentials not found in env."
+    not (os.environ.get("QOBUZ_USER_ID") and os.environ.get("QOBUZ_AUTH_TOKEN")),
+    reason="Qobuz user ID and auth token are required.",
 )
 def test_client_search_limit(qobuz_client):
     res = qobuz_client.search("album", "rumours", limit=5)
@@ -70,7 +70,8 @@ def test_client_search_limit(qobuz_client):
 
 
 @pytest.mark.skipif(
-    "QOBUZ_EMAIL" not in os.environ, reason="Qobuz credentials not found in env."
+    not (os.environ.get("QOBUZ_USER_ID") and os.environ.get("QOBUZ_AUTH_TOKEN")),
+    reason="Qobuz user ID and auth token are required.",
 )
 def test_client_search_no_limit(qobuz_client):
     # Setting no limit has become impossible because `limit: int` now

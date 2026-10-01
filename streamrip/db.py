@@ -154,12 +154,20 @@ class Failed(DatabaseBase):
 class Database:
     downloads: DatabaseBase | Dummy
     failed: DatabaseBase | Dummy
+    # Tracks this run downloaded, failed on, and skipped as already downloaded,
+    # for the summary at the end of it.
+    downloaded_now: int = 0
+    failed_now: int = 0
+    skipped_now: int = 0
 
     def downloaded(self, item_id: str) -> bool:
         return self.downloads.contains(id=item_id)
 
-    def set_downloaded(self, item_id: str):
+    def set_downloaded(self, item_id: str, new: bool = True):
+        """Record a track as in the library; new: downloaded by this run."""
         self.downloads.add((item_id,))
+        self.downloaded_now += new
 
     def set_failed(self, source: str, media_type: str, id: str):
         self.failed.add((source, media_type, id))
+        self.failed_now += 1
