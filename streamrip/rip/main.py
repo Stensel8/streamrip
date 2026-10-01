@@ -64,21 +64,13 @@ class Main:
             "deezer": DeezerClient(config),
             "soundcloud": SoundcloudClient(config),
         }
-
-        self.database: db.Database
-
         c = self.config.session.database
-        if c.downloads_enabled:
-            downloads_db = db.Downloads(c.downloads_path)
-        else:
-            downloads_db = db.Dummy()
-
-        if c.failed_downloads_enabled:
-            failed_downloads_db = db.Failed(c.failed_downloads_path)
-        else:
-            failed_downloads_db = db.Dummy()
-
-        self.database = db.Database(downloads_db, failed_downloads_db)
+        self.database = db.Database(
+            db.Downloads(c.downloads_path) if c.downloads_enabled else db.Dummy(),
+            db.Failed(c.failed_downloads_path)
+            if c.failed_downloads_enabled
+            else db.Dummy(),
+        )
 
     async def add(self, url: str):
         """Add url as a pending item.
