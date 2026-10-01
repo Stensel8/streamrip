@@ -44,13 +44,9 @@ class SoundcloudClient(Client):
         # requiring it made every run re-scrape the website.
         if not client_id or not (await self._announce_success()):
             client_id, app_version = await self._refresh_tokens()
-            # update file and session configs and save to disk
-            cf = self.global_config.file.soundcloud
-            cs = self.global_config.session.soundcloud
-            cs.client_id = client_id
-            cs.app_version = app_version
-            cf.client_id = client_id
-            cf.app_version = app_version
+            # In this session, and in the config file written on exit.
+            for c in (self.config, self.global_config.file.soundcloud):
+                c.client_id, c.app_version = client_id, app_version
             self.global_config.file.set_modified()
 
         logger.debug(f"Current valid {client_id=} {app_version=}")
@@ -167,50 +163,37 @@ class SoundcloudClient(Client):
         return resp
 
     async def _get_playlist(self, item_id: str):
-        original_resp, status = await self._api_request(f"playlists/{item_id}")
+        """A playlist, with every track's id replaced by its custom id."""
+        resp, status = await self._api_request(f"playlists/{item_id}")
         assert status == 200
 
-        unresolved_tracks = [
-            track["id"] for track in original_resp["tracks"] if "media" not in track
-        ]
-
-        if len(unresolved_tracks) == 0:
-            return original_resp
-
-        batches = batched(unresolved_tracks, MAX_BATCH_SIZE)
-        requests = [
-            self._api_request(
-                "tracks",
-                params={"ids": ",".join(str(id) for id in filter_none(batch))},
+        # Only the first few tracks come with their metadata ("media"); fetch
+        # the rest, MAX_BATCH_SIZE at a time.
+        unresolved = [track["id"] for track in resp["tracks"] if "media" not in track]
+        responses = await asyncio.gather(
+            *(
+                self._api_request("tracks", params={"ids": ",".join(map(str, batch))})
+                for batch in itertools.batched(unresolved, MAX_BATCH_SIZE)
             )
-            for batch in batches
-        ]
-
-        # (list of track metadata, status code)
-        responses: list[tuple[list, int]] = await asyncio.gather(*requests)
-
+        )
         assert all(status == 200 for _, status in responses)
+        fetched = {track["id"]: track for tracks, _ in responses for track in tracks}
 
-        remaining_tracks = list(itertools.chain(*[resp for resp, _ in responses]))
-
-        # Insert the new metadata into the original response
-        track_map: dict[str, dict] = {track["id"]: track for track in remaining_tracks}
-        for i, track in enumerate(original_resp["tracks"]):
-            if "media" in track:  # track already has metadata
-                continue
-            this_track = track_map.get(track["id"])
-            if this_track is None:
-                raise Exception(f"Requested {track['id']} but got no response")
-            original_resp["tracks"][i] = this_track
-
-        # Overwrite all ids in playlist
-        for track in original_resp["tracks"]:
+        for i, track in enumerate(resp["tracks"]):
+            if "media" not in track:
+                if track["id"] not in fetched:
+                    raise Exception(f"Requested {track['id']} but got no response")
+                # A copy: a track listed twice must not get its id rewritten twice.
+                track = resp["tracks"][i] = dict(fetched[track["id"]])
+            # Also when nothing needed fetching: a small playlist comes
+            # complete, and a plain id can't be downloaded.
             track["id"] = self._get_custom_id(track)
 
-        return original_resp
+        return resp
 
     @classmethod
     def _get_custom_id(cls, resp: dict) -> str:
+        """The track's id and how to download it, as "id|how"."""
         item_id = resp["id"]
         assert "media" in resp, f"track {resp} should be resolved"
 
@@ -223,24 +206,17 @@ class SoundcloudClient(Client):
         # Prefer the plain progressive MP3 (one file), then HLS MP3 segments.
         # SoundCloud is phasing out MP3 HLS for many tracks, which used to trip
         # an assertion here.
-        transcodings = resp["media"].get("transcodings") or []
-        url = None
+        mp3 = [
+            tc
+            for tc in resp["media"].get("transcodings") or []
+            if (tc.get("format") or {}).get("mime_type") == "audio/mpeg"
+            and not tc.get("snipped")
+        ]
         for protocol in ("progressive", "hls"):
-            for tc in transcodings:
-                fmt = tc.get("format") or {}
-                if (
-                    fmt.get("protocol") == protocol
-                    and fmt.get("mime_type") == "audio/mpeg"
-                    and not tc.get("snipped")
-                ):
-                    url = tc["url"]
-                    break
-            if url is not None:
-                break
-
-        if url is None:
-            return f"{item_id}|{cls.NON_STREAMABLE}"
-        return f"{item_id}|{url}"
+            for tc in mp3:
+                if tc["format"].get("protocol") == protocol:
+                    return f"{item_id}|{tc['url']}"
+        return f"{item_id}|{cls.NON_STREAMABLE}"
 
     def _auth_params(self) -> dict:
         c = self.config
@@ -265,20 +241,14 @@ class SoundcloudClient(Client):
 
         return await self._get_with_retries(url, read, _params, headers)
 
-    async def _request_body(self, url, params=None, headers=None):
-        _params = self._auth_params()
-        if params is not None:
-            _params.update(params)
+    async def _announce_success(self) -> bool:
+        """Whether SoundCloud accepts the saved client id."""
 
         async def read(resp):
-            return await resp.content.read(), resp.status
+            return resp.status
 
-        return await self._get_with_retries(url, read, _params, headers)
-
-    async def _announce_success(self):
         url = f"{BASE}/announcements"
-        _, status = await self._request_body(url)
-        return status == 200
+        return await self._get_with_retries(url, read, self._auth_params()) == 200
 
     async def _refresh_tokens(self) -> tuple[str, str]:
         """Return a valid client_id, app_version pair.
@@ -329,12 +299,3 @@ def _find_client_id(script: str) -> str | None:
         if match is not None:
             return match.group(1)
     return None
-
-
-def batched(iterable, n, fillvalue=None):
-    args = [iter(iterable)] * n
-    return list(itertools.zip_longest(*args, fillvalue=fillvalue))
-
-
-def filter_none(iterable):
-    return (x for x in iterable if x is not None)
