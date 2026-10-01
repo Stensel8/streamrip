@@ -358,6 +358,8 @@ async def test_exhausted_track_download_is_counted_only_once(tmp_path, monkeypat
 async def test_partial_file_cleanup_failure_is_counted_once(tmp_path, monkeypatch):
     """A cleanup error is counted by the outer handler, not twice."""
     track = _make_track(str(tmp_path), "flac")
+    # A real failed table: the Dummy one never stores anything.
+    track.db = db.Database(db.Dummy(), db.Failed(str(tmp_path / "failed.db")))
     monkeypatch.setattr(
         FakeDownloadable, "_download", AsyncMock(side_effect=OSError("download failed"))
     )
