@@ -213,3 +213,14 @@ def test_soundcloud_track_metadata():
         "X",
     )
     assert (t.tracknumber, t.discnumber) == (1, 1)
+
+
+def test_qobuz_artists_split_from_performers():
+    from streamrip.metadata.util import qobuz_artists
+
+    resp = {
+        "performers": "X, Producer - Spiritbox, MainArtist - "
+        "Tyler, The Creator, FeaturedArtist - Courtney LaPlante, MainArtist, Vocals"
+    }
+    assert qobuz_artists(resp) == ["Spiritbox", "Tyler, The Creator", "Courtney LaPlante"]
+    assert qobuz_artists({}) == []

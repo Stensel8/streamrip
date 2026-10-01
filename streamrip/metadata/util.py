@@ -1,4 +1,5 @@
 import functools
+import re
 from typing import Optional, Type, TypeVar
 
 
@@ -18,6 +19,29 @@ def deezer_artists(resp: dict) -> list[str]:
     contributors = resp.get("contributors") or []
     names = [c["name"] for c in contributors if c.get("type") == "artist"]
     return names or [safe_get(resp, "artist", "name", default="Unknown Artist")]
+
+
+_QOBUZ_ARTIST_ROLES = {"mainartist", "featuredartist"}
+
+
+def qobuz_artists(resp: dict) -> list[str]:
+    """The credited artists of a Qobuz track response, one name each.
+
+    Qobuz's "performer" is a single display string ("A, B"), but "performers"
+    lists every credit as "Name, Role[, Role] - Name, Role ...".
+    """
+    names: list[str] = []
+    for credit in (resp.get("performers") or "").split(" - "):
+        parts = [part.strip() for part in credit.split(",")]
+        # Roles are single CamelCase words after the name, which may itself
+        # contain commas ("Tyler, The Creator").
+        roles: set[str] = set()
+        while len(parts) > 1 and re.fullmatch(r"[A-Za-z]+", parts[-1]):
+            roles.add(parts.pop().lower())
+        name = ", ".join(parts)
+        if name and name not in names and roles & _QOBUZ_ARTIST_ROLES:
+            names.append(name)
+    return names
 
 
 def safe_get(dictionary, *keys, default=None):
