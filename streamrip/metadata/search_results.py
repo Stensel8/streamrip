@@ -3,10 +3,24 @@ import re
 import textwrap
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import ClassVar
+
+
+def _artist(item: dict) -> str:
+    """The artist a search result of any source is credited to."""
+    artist = (
+        (item.get("performer") or {}).get("name")
+        or item.get("artist")
+        or (item.get("publisher_metadata") or {}).get("artist")
+    )
+    if isinstance(artist, dict):
+        artist = artist.get("name")
+    return artist or "Unknown"
 
 
 class Summary(ABC):
     id: str
+    media_type: ClassVar[str]
 
     @abstractmethod
     def summarize(self) -> str:
@@ -21,10 +35,6 @@ class Summary(ABC):
     def from_item(cls, item: dict) -> "Summary":
         pass
 
-    @abstractmethod
-    def media_type(self) -> str:
-        pass
-
     def __str__(self):
         return self.summarize()
 
@@ -34,9 +44,7 @@ class ArtistSummary(Summary):
     id: str
     name: str
     num_albums: str | None
-
-    def media_type(self):
-        return "artist"
+    media_type: ClassVar[str] = "artist"
 
     def summarize(self) -> str:
         return clean(self.name)
@@ -51,20 +59,8 @@ class ArtistSummary(Summary):
 
     @classmethod
     def from_item(cls, item: dict):
-        id = str(item["id"])
-        name = (
-            item.get("name")
-            or item.get("performer", {}).get("name")
-            or item.get("artist")
-            or item.get("artist", {}).get("name")
-            or (
-                item.get("publisher_metadata")
-                and item["publisher_metadata"].get("artist")
-            )
-            or "Unknown"
-        )
-        num_albums = item.get("albums_count")
-        return cls(id, name, num_albums)
+        name = item.get("name") or _artist(item)
+        return cls(str(item["id"]), name, item.get("albums_count"))
 
 
 @dataclass(slots=True)
@@ -73,12 +69,9 @@ class TrackSummary(Summary):
     name: str
     artist: str
     date_released: str | None
-
-    def media_type(self):
-        return "track"
+    media_type: ClassVar[str] = "track"
 
     def summarize(self) -> str:
-        # This char breaks the menu for some reason
         return f"{clean(self.name)} by {clean(self.artist)}"
 
     def preview(self) -> str:
@@ -86,31 +79,17 @@ class TrackSummary(Summary):
 
     @classmethod
     def from_item(cls, item: dict):
-        id = str(item["id"])
         name = item.get("title") or item.get("name") or "Unknown"
-        artist = (
-            item.get("performer", {}).get("name")
-            or item.get("artist")
-            or item.get("artist", {}).get("name")
-            or (
-                item.get("publisher_metadata")
-                and item["publisher_metadata"].get("artist")
-            )
-            or "Unknown"
-        )
-        if isinstance(artist, dict) and "name" in artist:
-            artist = artist["name"]
-
         date_released = (
             item.get("release_date")
             or item.get("streamStartDate")
-            or item.get("album", {}).get("release_date_original")
+            or (item.get("album") or {}).get("release_date_original")
             or item.get("display_date")
             or item.get("date")
             or item.get("year")
             or "Unknown"
         )
-        return cls(id, name.strip(), artist, date_released)  # type: ignore
+        return cls(str(item["id"]), name.strip(), _artist(item), date_released)
 
 
 @dataclass(slots=True)
@@ -120,9 +99,7 @@ class AlbumSummary(Summary):
     artist: str
     num_tracks: str
     date_released: str | None
-
-    def media_type(self):
-        return "album"
+    media_type: ClassVar[str] = "album"
 
     def summarize(self) -> str:
         return f"{clean(self.name)} by {clean(self.artist)}"
@@ -132,28 +109,14 @@ class AlbumSummary(Summary):
 
     @classmethod
     def from_item(cls, item: dict):
-        id = str(item["id"])
         title = (item.get("title") or "").strip()
         version = (item.get("version") or "").strip()
-        name = title + (" (" + version + ")" if version else "")
-        artist = (
-            item.get("performer", {}).get("name")
-            or item.get("artist", {}).get("name")
-            or item.get("artist")
-            or (
-                item.get("publisher_metadata")
-                and item["publisher_metadata"].get("artist")
-            )
-            or "Unknown"
-        )
+        name = f"{title} ({version})" if version else title
         num_tracks = (
-            item.get("tracks_count", 0)
-            or item.get("numberOfTracks", 0)
-            or len(
-                item.get("tracks", []) or item.get("items", []),
-            )
+            item.get("tracks_count")
+            or item.get("numberOfTracks")
+            or len(item.get("tracks") or item.get("items") or [])
         )
-
         date_released = (
             item.get("release_date_original")
             or item.get("release_date")
@@ -163,28 +126,7 @@ class AlbumSummary(Summary):
             or item.get("year")
             or "Unknown"
         )
-        return cls(id, name, artist, str(num_tracks), date_released)
-
-
-@dataclass(slots=True)
-class LabelSummary(Summary):
-    id: str
-    name: str
-
-    def media_type(self):
-        return "label"
-
-    def summarize(self) -> str:
-        return str(self)
-
-    def preview(self) -> str:
-        return str(self)
-
-    @classmethod
-    def from_item(cls, item: dict):
-        id = str(item["id"])
-        name = item["name"]
-        return cls(id, name)
+        return cls(str(item["id"]), name, _artist(item), str(num_tracks), date_released)
 
 
 @dataclass(slots=True)
@@ -194,11 +136,10 @@ class PlaylistSummary(Summary):
     creator: str
     num_tracks: int
     description: str
+    media_type: ClassVar[str] = "playlist"
 
     def summarize(self) -> str:
-        name = clean(self.name)
-        creator = clean(self.creator)
-        return f"{name} by {creator}"
+        return f"{clean(self.name)} by {clean(self.creator)}"
 
     def preview(self) -> str:
         desc = clean(self.description, trunc=False)
@@ -207,18 +148,16 @@ class PlaylistSummary(Summary):
         )
         return f"{self.num_tracks} tracks\n\nDescription:\n{wrapped}\n\nID: {self.id}"
 
-    def media_type(self):
-        return "playlist"
-
     @classmethod
     def from_item(cls, item: dict):
         id = item.get("id") or item.get("uuid") or "Unknown"
         name = item.get("name") or item.get("title") or "Unknown"
+        user = item.get("user") or {}
         creator = (
-            (item.get("publisher_metadata") and item["publisher_metadata"]["artist"])
-            or item.get("owner", {}).get("name")
-            or item.get("user", {}).get("username")
-            or item.get("user", {}).get("name")
+            (item.get("publisher_metadata") or {}).get("artist")
+            or (item.get("owner") or {}).get("name")
+            or user.get("username")
+            or user.get("name")
             or "Unknown"
         )
         num_tracks = (
@@ -232,45 +171,43 @@ class PlaylistSummary(Summary):
         return cls(id, name, creator, num_tracks, description)
 
 
+SUMMARY_TYPES: dict[str, type[Summary]] = {
+    "track": TrackSummary,
+    "album": AlbumSummary,
+    "artist": ArtistSummary,
+    "playlist": PlaylistSummary,
+}
+
+
+def _page_items(source: str, media_type: str, page: dict) -> list[dict]:
+    """The results in one page of a source's search response."""
+    if source == "soundcloud":
+        return page["collection"]
+    if source == "qobuz":
+        return page[f"{media_type}s"]["items"]
+    if source == "deezer":
+        return page["data"]
+    if source == "tidal":
+        return page["items"]
+    raise NotImplementedError(source)
+
+
 @dataclass(slots=True)
 class SearchResults:
     results: list[Summary]
 
     @classmethod
     def from_pages(cls, source: str, media_type: str, pages: list[dict]):
-        if media_type == "track":
-            summary_type = TrackSummary
-        elif media_type == "album":
-            summary_type = AlbumSummary
-        elif media_type == "label":
-            summary_type = LabelSummary
-        elif media_type == "artist":
-            summary_type = ArtistSummary
-        elif media_type == "playlist":
-            summary_type = PlaylistSummary
-        else:
+        summary_type = SUMMARY_TYPES.get(media_type)
+        if summary_type is None:
             raise Exception(f"invalid media type {media_type}")
-
-        results = []
-        for page in pages:
-            if source == "soundcloud":
-                items = page["collection"]
-                for item in items:
-                    results.append(summary_type.from_item(item))
-            elif source == "qobuz":
-                key = media_type + "s"
-                for item in page[key]["items"]:
-                    results.append(summary_type.from_item(item))
-            elif source == "deezer":
-                for item in page["data"]:
-                    results.append(summary_type.from_item(item))
-            elif source == "tidal":
-                for item in page["items"]:
-                    results.append(summary_type.from_item(item))
-            else:
-                raise NotImplementedError
-
-        return cls(results)
+        return cls(
+            [
+                summary_type.from_item(item)
+                for page in pages
+                for item in _page_items(source, media_type, page)
+            ]
+        )
 
     def summaries(self) -> list[str]:
         return [f"{i + 1}. {r.summarize()}" for i, r in enumerate(self.results)]
@@ -290,7 +227,7 @@ class SearchResults:
         return [
             {
                 "source": source,
-                "media_type": i.media_type(),
+                "media_type": i.media_type,
                 "id": i.id,
                 "desc": i.summarize(),
             }
@@ -299,8 +236,6 @@ class SearchResults:
 
 
 def clean(s: str, trunc=True) -> str:
+    """s without "|" or newlines (they break the menu), cut to 50 characters."""
     s = s.replace("|", "").replace("\n", "")
-    if trunc:
-        max_chars = 50
-        return s[:max_chars]
-    return s
+    return s[:50] if trunc else s

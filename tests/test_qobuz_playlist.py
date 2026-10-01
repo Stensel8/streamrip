@@ -24,24 +24,24 @@ def test_track_ids_preferred_over_truncated_inline_list():
         "track_ids": [1, 2, 3],
     }
     meta = PlaylistMetadata.from_resp(resp, "qobuz")
-    assert meta.ids() == ["1", "2", "3"]
+    assert meta.ids == ["1", "2", "3"]
 
 
 def test_empty_inline_list_falls_back_to_track_ids():
     resp = {"name": "New API shape", "tracks": {"items": []}, "track_ids": [7, 8]}
-    assert PlaylistMetadata.from_resp(resp, "qobuz").ids() == ["7", "8"]
+    assert PlaylistMetadata.from_resp(resp, "qobuz").ids == ["7", "8"]
 
 
 def test_inline_list_used_when_complete():
     resp = {"name": "Short", "tracks": {"items": [TRACK], "total": 1}}
     meta = PlaylistMetadata.from_resp(resp, "qobuz")
-    assert meta.ids() == [str(TRACK["id"])]
+    assert meta.ids == [str(TRACK["id"])]
 
 
 def test_malformed_track_does_not_sink_playlist():
     resp = {"name": "Mixed", "tracks": {"items": [{"id": 1}, TRACK]}}
     meta = PlaylistMetadata.from_resp(resp, "qobuz")
-    assert meta.ids() == [str(TRACK["id"])]
+    assert meta.ids == [str(TRACK["id"])]
 
 
 @pytest.mark.asyncio

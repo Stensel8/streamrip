@@ -136,8 +136,6 @@ class Container(Enum):
             if audio.tags is None:
                 audio.add_tags()
             return audio.tags
-        # unreachable
-        return {}
 
     def get_tag_pairs(self, meta, exclude=()) -> list[tuple]:
         """Return this container's (key, value) tag pairs for meta."""
@@ -168,27 +166,19 @@ class Container(Enum):
             audio[k] = v
 
     async def embed_cover(self, audio, cover_path):
+        """Embed the JPEG at cover_path as the front cover (picture type 3)."""
+        if self == Container.FLAC and os.path.getsize(cover_path) > FLAC_MAX_BLOCKSIZE:
+            raise Exception("Cover art too big for FLAC")
+        async with aiofiles.open(cover_path, "rb") as img:
+            data = await img.read()
         if self == Container.FLAC:
-            size = os.path.getsize(cover_path)
-            if size > FLAC_MAX_BLOCKSIZE:
-                raise Exception("Cover art too big for FLAC")
             cover = Picture()
-            cover.type = 3
-            cover.mime = "image/jpeg"
-            async with aiofiles.open(cover_path, "rb") as img:
-                cover.data = await img.read()
+            cover.type, cover.mime, cover.data = 3, "image/jpeg", data
             audio.add_picture(cover)
         elif self in (Container.MP3, Container.AIFF):
-            cover = APIC()
-            cover.type = 3
-            cover.mime = "image/jpeg"
-            async with aiofiles.open(cover_path, "rb") as img:
-                cover.data = await img.read()
-            audio.add(cover)
+            audio.add(APIC(type=3, mime="image/jpeg", data=data))
         elif self == Container.AAC:
-            async with aiofiles.open(cover_path, "rb") as img:
-                cover = MP4Cover(await img.read(), imageformat=MP4Cover.FORMAT_JPEG)
-            audio["covr"] = [cover]
+            audio["covr"] = [MP4Cover(data, imageformat=MP4Cover.FORMAT_JPEG)]
 
     def save_audio(self, audio, path):
         """Write the tagged audio object back to path."""

@@ -9,7 +9,6 @@ from .playlist import PlaylistMetadata
 from .search_results import (
     AlbumSummary,
     ArtistSummary,
-    LabelSummary,
     PlaylistSummary,
     SearchResults,
     Summary,
@@ -26,7 +25,6 @@ __all__ = [
     "ArtistSummary",
     "Covers",
     "LabelMetadata",
-    "LabelSummary",
     "PlaylistMetadata",
     "PlaylistSummary",
     "SearchResults",

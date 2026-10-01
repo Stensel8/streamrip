@@ -150,7 +150,7 @@ class PendingPlaylist(Pending):
             logger.error(f"Error creating playlist: {e}")
             return None
         name = meta.name
-        ids = meta.ids()
+        ids = meta.ids
         tracks = [
             PendingPlaylistTrack(
                 id,

@@ -291,7 +291,7 @@ class Main:
             else:
                 choices = search_results.get_choices(chosen_ind)
                 await self.add_all_by_id(
-                    [(source, item.media_type(), item.id) for item in choices],
+                    [(source, item.media_type, item.id) for item in choices],
                 )
 
     async def search_take_first(self, source: str, media_type: str, query: str):
@@ -299,7 +299,7 @@ class Main:
         search_results = await self._search(source, media_type, query, 1)
         if search_results is not None:
             first = search_results.results[0]
-            await self.add_by_id(source, first.media_type(), first.id)
+            await self.add_by_id(source, first.media_type, first.id)
 
     async def search_output_file(
         self, source: str, media_type: str, query: str, filepath: str, limit: int

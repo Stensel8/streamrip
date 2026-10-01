@@ -219,7 +219,7 @@ def test_tracks_uploaded_to_deezer_are_left_out_of_a_playlist():
     from streamrip.metadata import PlaylistMetadata
 
     resp = {"title": "Mix", "tracks": [{"id": 1}, {"id": -5}, {"id": "2"}]}
-    assert PlaylistMetadata.from_deezer(resp).ids() == ["1", "2"]
+    assert PlaylistMetadata.from_deezer(resp).ids == ["1", "2"]
 
 
 def test_playlist_folder_is_one_folder_and_follows_restrict_characters():
