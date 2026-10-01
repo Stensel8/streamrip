@@ -8,24 +8,9 @@ from streamrip.client.downloadable import BasicDownloadable
 from streamrip.client.qobuz import QobuzClient
 from streamrip.config import Config
 from streamrip.exceptions import MissingCredentialsError
+from streamrip.metadata.util import get_album_track_ids
 
 logger = logging.getLogger("streamrip")
-
-
-@pytest.fixture(scope="session")
-def qobuz_client():
-    config = Config.defaults()
-    config.session.qobuz.user_id = os.environ["QOBUZ_USER_ID"]
-    config.session.qobuz.auth_token = os.environ["QOBUZ_AUTH_TOKEN"]
-    if "QOBUZ_APP_ID" in os.environ and "QOBUZ_SECRETS" in os.environ:
-        config.session.qobuz.app_id = os.environ["QOBUZ_APP_ID"]
-        config.session.qobuz.secrets = os.environ["QOBUZ_SECRETS"].split(",")
-    client = QobuzClient(config)
-    arun(client.login())
-
-    yield client
-
-    arun(client.session.close())
 
 
 def test_client_raises_missing_credentials():
@@ -39,9 +24,10 @@ def test_client_raises_missing_credentials():
     reason="Qobuz user ID and auth token are required.",
 )
 def test_client_get_metadata(qobuz_client):
-    meta = arun(qobuz_client.get_metadata("s9nzkwg2rh1nc", "album"))
-    assert meta["title"] == "I Killed Your Dog"
-    assert len(meta["tracks"]["items"]) == 16
+    meta = arun(qobuz_client.get_metadata("0603497941032", "album"))
+    assert (meta["title"], meta["version"]) == ("Rumours", "2001 Remaster")
+    # album/get lists the track ids, not the tracks (July 2026).
+    assert len(get_album_track_ids("qobuz", meta)) == meta["tracks_count"] == 11
     assert meta["maximum_bit_depth"] == 24
 
 
