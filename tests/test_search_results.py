@@ -3,10 +3,12 @@
 The items below are trimmed from real Qobuz, Tidal and Deezer responses.
 """
 
+import io
 import os
 from types import SimpleNamespace
 
 import pytest
+from PIL import Image
 
 from streamrip.metadata.search_results import SearchResults
 from streamrip.rip import search_menu
@@ -43,6 +45,10 @@ TIDAL_TRACK = {
     "artists": [{"name": "Spiritbox", "type": "MAIN"}],
     "album": {"title": "Eternal Blue", "cover": "cabed6a2-cd16-4de7-b8b5-2e498a00d35e"},
 }
+
+
+def _has_cover(text: str) -> bool:
+    return any(block in text for block in search_menu.QUADRANTS[1:])
 
 
 def _one(source, media_type, page):
@@ -199,10 +205,10 @@ def test_preview_puts_the_cover_beside_the_details(monkeypatch):
     lines = preview.splitlines()
     rows = search_menu.cover_size(80, 30)
     assert rows == 10  # the details keep 60 of the 80 columns
-    assert "▀" in lines[0] and "Circle With Me" in lines[0]
+    assert _has_cover(lines[0]) and "Circle With Me" in lines[0]
     assert any("Genre" in line and "Metal" in line for line in lines)
     # More details than cover rows: the last ones line up under the details.
-    assert "▀" not in lines[-1]
+    assert not _has_cover(lines[-1])
     assert lines[-1].startswith(" " * (2 * rows + 2))
     assert "380483157" in lines[-1]
 
@@ -227,5 +233,20 @@ def test_preview_without_a_cover_still_shows_the_details(monkeypatch, error):
     finally:
         previews.close()
 
-    assert "▀" not in preview
+    assert not _has_cover(preview)
     assert preview.splitlines()[0].endswith("Circle With Me\x1b[0m")
+
+
+def test_cover_draws_an_edge_inside_a_character():
+    # Half blocks could only split a character top from bottom; a vertical
+    # edge through the middle of one blurred into an average of both sides.
+    image = Image.new("RGB", (4, 2), "white")
+    for x in (0, 2):  # each character's left half black
+        image.paste((0, 0, 0), (x, 0, x + 1, 2))
+    buf = io.BytesIO()
+    image.save(buf, "PNG")
+
+    (row,) = search_menu.cover_rows(buf.getvalue(), 1)
+
+    assert row.plain == "▌▌"
+    assert {span.style.color.triplet for span in row.spans} == {(0, 0, 0)}

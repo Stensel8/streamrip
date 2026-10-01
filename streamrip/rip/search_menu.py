@@ -7,7 +7,7 @@ import textwrap
 from concurrent.futures import ThreadPoolExecutor
 
 import requests
-from PIL import Image
+from PIL import Image, ImageFilter
 from rich.color import Color
 from rich.console import Console
 from rich.style import Style
@@ -38,28 +38,52 @@ def cover_size(columns: int, lines: int) -> int:
     )
 
 
-def cover_rows(data: bytes, rows: int) -> list[Text]:
-    """An image as rows of "▀": each character shows two pixels, the top one
-    in its color and the bottom one in its background.
-    """
-    size = rows * 2
-    image = Image.open(io.BytesIO(data)).convert("RGB")
-    image = image.resize((size, size), Image.Resampling.LANCZOS)
-    return [
-        Text.assemble(
-            *(
-                (
-                    "▀",
-                    Style(
-                        color=Color.from_rgb(*image.getpixel((x, y))),
-                        bgcolor=Color.from_rgb(*image.getpixel((x, y + 1))),
-                    ),
-                )
-                for x in range(size)
-            )
+# Quadrant blocks by which quarters of the cell they fill: top left 1, top
+# right 2, bottom left 4, bottom right 8.
+QUADRANTS = " ▘▝▀▖▌▞▛▗▚▐▜▄▙▟█"
+CORNERS = ((0, 0), (1, 0), (0, 1), (1, 1))
+
+
+def _mean(pixels: list) -> tuple[int, int, int]:
+    return tuple(sum(p[i] for p in pixels) // len(pixels) for i in range(3))
+
+
+def _cell(pixels: list) -> tuple[str, tuple, tuple]:
+    """The quadrant block, and its two colors, closest to a cell's 2x2 pixels."""
+    best = None
+    for mask in range(1, 8):  # the other 8 are these with the colors swapped
+        on = [p for i, p in enumerate(pixels) if mask >> i & 1]
+        off = [p for i, p in enumerate(pixels) if not mask >> i & 1]
+        fg, bg = _mean(on), _mean(off)
+        error = sum(
+            sum((a - b) ** 2 for a, b in zip(p, fg if mask >> i & 1 else bg))
+            for i, p in enumerate(pixels)
         )
-        for y in range(0, size, 2)
-    ]
+        if best is None or error < best[0]:
+            best = (error, QUADRANTS[mask], fg, bg)
+    return best[1:]
+
+
+def cover_rows(data: bytes, rows: int) -> list[Text]:
+    """An image as rows of quadrant blocks, two colors per character: twice
+    as sharp across as half blocks, which show only a top and bottom pixel.
+    """
+    columns = rows * 2  # a character is about twice as tall as it is wide
+    image = Image.open(io.BytesIO(data)).convert("RGB")
+    image = image.resize((columns * 2, rows * 2), Image.Resampling.LANCZOS)
+    # Shrinking this far softens every edge; win some of that back.
+    image = image.filter(ImageFilter.UnsharpMask(radius=1, percent=80, threshold=2))
+    lines = []
+    for y in range(rows):
+        line = Text()
+        for x in range(columns):
+            pixels = [image.getpixel((2 * x + dx, 2 * y + dy)) for dx, dy in CORNERS]
+            char, fg, bg = _cell(pixels)
+            line.append(
+                char, Style(color=Color.from_rgb(*fg), bgcolor=Color.from_rgb(*bg))
+            )
+        lines.append(line)
+    return lines
 
 
 def detail_rows(summary: Summary, width: int) -> list[Text]:
