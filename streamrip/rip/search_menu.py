@@ -7,7 +7,7 @@ import textwrap
 from concurrent.futures import ThreadPoolExecutor
 
 import requests
-from PIL import Image, ImageFilter
+from PIL import Image
 from rich.color import Color
 from rich.console import Console
 from rich.style import Style
@@ -71,8 +71,6 @@ def cover_rows(data: bytes, rows: int) -> list[Text]:
     columns = rows * 2  # a character is about twice as tall as it is wide
     image = Image.open(io.BytesIO(data)).convert("RGB")
     image = image.resize((columns * 2, rows * 2), Image.Resampling.LANCZOS)
-    # Shrinking this far softens every edge; win some of that back.
-    image = image.filter(ImageFilter.UnsharpMask(radius=1, percent=80, threshold=2))
     lines = []
     for y in range(rows):
         line = Text()
