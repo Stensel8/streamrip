@@ -55,18 +55,21 @@ MP4_KEY = {
 }
 
 
+def _names(names: list[str] | None, joined: str):
+    """Several artists as a real multi-valued tag, not one "A, B" string that
+    players would have to split up again (and mostly don't).
+    """
+    return names if names and len(names) > 1 else joined
+
+
 def _tag_values(meta: TrackMetadata) -> dict:
     """A track's tags by streamrip's own names, leaving out empty ones."""
     album = meta.album
     values = {
         "title": meta.title,
-        # Several artists are written as a real multi-valued tag, not one
-        # "A, B" string that players would have to split up again.
-        "artist": meta.artists
-        if meta.artists and len(meta.artists) > 1
-        else meta.artist,
+        "artist": _names(meta.artists, meta.artist),
         "album": album.album,
-        "albumartist": album.albumartist,
+        "albumartist": _names(album.albumartists, album.albumartist),
         "composer": meta.composer,
         "year": album.year,
         "description": album.description,

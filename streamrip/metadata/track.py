@@ -31,11 +31,11 @@ class TrackMetadata:
     composer: str | None
     isrc: str | None = None
     lyrics: str | None = ""
-    # Individual artist names, when the source distinguishes them (Tidal,
-    # Deezer). `artist` above stays a single display string (joined with
-    # ", ") for filenames and templates; the tagger writes this list as a
-    # real multi-valued ARTIST tag instead of baking the join into one
-    # string, which is what let players mis-split "A, B" back apart.
+    # Individual artist names, where the source lists them. `artist` above
+    # stays a single display string (joined with ", ") for filenames and
+    # templates; the tagger writes this list as a real multi-valued ARTIST
+    # tag instead of baking the join into one string, which players then
+    # show as one artist named "A, B".
     artists: list[str] | None = None
 
     @classmethod

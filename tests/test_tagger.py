@@ -92,7 +92,7 @@ def test_tag_flac_cover(sample_metadata):
 
 
 def test_tag_flac_multiple_artists(sample_metadata):
-    # Tracks with several credited artists (Tidal, Deezer) must land as
+    # Tracks with several credited artists must land as
     # separate ARTIST fields, not one "A, B" string a player has to
     # re-split on its own.
     sample_metadata.artists = ["The Kid LAROI", "Lil Mosey"]
@@ -101,6 +101,18 @@ def test_tag_flac_multiple_artists(sample_metadata):
     arun(tag_file(TEST_FLAC_COPY, sample_metadata, None))
     file = FLAC(TEST_FLAC_COPY)
     assert list(file["artist"]) == ["The Kid LAROI", "Lil Mosey"]
+    os.remove(TEST_FLAC_COPY)
+
+
+def test_tag_flac_multiple_album_artists(sample_metadata):
+    # The same for an album credited to several artists: one "A, B, C"
+    # ALBUMARTIST shows up in a library as a single artist of that name.
+    sample_metadata.album.albumartists = ["Slander", "Spiritbox", "Vastive"]
+    shutil.copy(TEST_FLAC_ORIGINAL, TEST_FLAC_COPY)
+    wipe_test_flac()
+    arun(tag_file(TEST_FLAC_COPY, sample_metadata, None))
+    file = FLAC(TEST_FLAC_COPY)
+    assert list(file["albumartist"]) == ["Slander", "Spiritbox", "Vastive"]
     os.remove(TEST_FLAC_COPY)
 
 

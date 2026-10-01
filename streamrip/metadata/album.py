@@ -53,6 +53,9 @@ class AlbumMetadata:
     description: str | None = None
     # Edition name, e.g. "Deluxe Edition". Only some sources provide one.
     version: str | None = None
+    # The album artists one by one, where the source lists them (like
+    # TrackMetadata.artists): written as separate ALBUMARTIST values.
+    albumartists: list[str] | None = None
 
     def get_genres(self) -> str:
         return ", ".join(self.genre)
@@ -102,10 +105,10 @@ class AlbumMetadata:
             album = f"{album} ({version})"
         genre = safe_get(resp, "genre", "name")
         date = resp.get("release_date_original") or resp.get("release_date")
-        if artists := resp.get("artists"):
-            albumartist = ", ".join(a["name"] for a in artists)
-        else:
-            albumartist = safe_get(resp, "artist", "name") or "Unknown Artist"
+        artists = [a["name"] for a in resp.get("artists") or []]
+        albumartist = (
+            ", ".join(artists) or safe_get(resp, "artist", "name") or "Unknown Artist"
+        )
         label = resp.get("label")
         if isinstance(label, dict):
             label = label["name"]
@@ -148,6 +151,7 @@ class AlbumMetadata:
             date=date,
             description=resp.get("description") or "",
             version=version,
+            albumartists=artists or None,
         )
 
     @classmethod
@@ -163,10 +167,11 @@ class AlbumMetadata:
             sampling_rate=44.1,
             bit_depth=16,
         )
+        artists = deezer_artists(resp)
         return cls(
             info,
             resp.get("title") or "Unknown Album",
-            ", ".join(deezer_artists(resp)),
+            ", ".join(artists),
             _year(date),
             genre=[
                 g["name"] for g in safe_get(resp, "genres", "data", default=[]) or []
@@ -175,6 +180,7 @@ class AlbumMetadata:
             tracktotal=resp.get("track_total") or resp.get("nb_tracks") or 0,
             disctotal=resp["tracks"][-1]["disk_number"] if resp["tracks"] else 1,
             date=date,
+            albumartists=artists,
         )
 
     @classmethod
@@ -190,15 +196,17 @@ class AlbumMetadata:
             sampling_rate=44.1,
             bit_depth=16,
         )
+        artists = deezer_artists(resp)
         return cls(
             info,
             album.get("title") or "Unknown Album",
-            ", ".join(deezer_artists(resp)),
+            ", ".join(artists),
             _year(date),
             genre=[],
             covers=Covers.from_deezer(album),
             tracktotal=1,
             date=date,
+            albumartists=artists,
         )
 
     @classmethod
@@ -247,7 +255,7 @@ class AlbumMetadata:
             bit_depth = (24 if quality == 3 else 16) if lossless else None
             sampling_rate = 44.1 if lossless else None
         date = resp.get("releaseDate")
-        artists = ", ".join(a["name"] for a in resp.get("artists") or [])
+        artists = [a["name"] for a in resp.get("artists") or []]
         info = AlbumInfo(
             id=str(resp["id"]),
             quality=quality,
@@ -259,7 +267,8 @@ class AlbumMetadata:
         return cls(
             info,
             resp.get("title") or "Unknown Album",
-            artists or safe_get(resp, "artist", "name", default="Unknown Artist"),
+            ", ".join(artists)
+            or safe_get(resp, "artist", "name", default="Unknown Artist"),
             _year(date),
             genre=[],
             covers=Covers.from_tidal(resp) or Covers(),
@@ -267,6 +276,7 @@ class AlbumMetadata:
             disctotal=resp.get("numberOfVolumes", 1),
             copyright=resp.get("copyright") or "",
             date=date,
+            albumartists=artists or None,
         )
 
     @classmethod

@@ -89,7 +89,7 @@ def test_tidal_album_folder_details_match_other_sources():
         16,
         44.1,
     )
-    assert m.albumartist == "A, B"
+    assert (m.albumartist, m.albumartists) == ("A, B", ["A", "B"])
     assert (m.tracktotal, m.disctotal) == (9, 2)
 
 
@@ -191,6 +191,7 @@ def test_deezer_track_metadata():
     t = TrackMetadata.from_deezer(album, resp)
     assert (t.info.id, t.info.explicit) == ("8", False)
     assert (t.artist, t.artists, album.albumartist) == ("A, B", ["A", "B"], "A, B")
+    assert album.albumartists == ["A", "B"]
     # Without contributors, the main artist.
     del resp["contributors"]
     assert TrackMetadata.from_deezer(album, resp).artists == ["A"]

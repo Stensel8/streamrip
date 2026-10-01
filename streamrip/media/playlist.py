@@ -77,7 +77,7 @@ class PendingPlaylistTrack(Pending):
             # track's own would split the playlist into one album per artist
             # (upstream PR #738).
             album.album = self.playlist_name
-            album.albumartist = "Various Artists"
+            album.albumartist, album.albumartists = "Various Artists", None
             album.compilation = "1"
 
         (cover_path, _), downloadable = await asyncio.gather(
