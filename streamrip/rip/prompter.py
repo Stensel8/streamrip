@@ -33,7 +33,7 @@ class CredentialPrompter(ABC):
 
     def __init__(self, config: Config, client: Client):
         self.config = config
-        self.client = self.type_check_client(client)
+        self.client = client
 
     @abstractmethod
     def has_creds(self) -> bool:
@@ -49,10 +49,6 @@ class CredentialPrompter(ABC):
     @abstractmethod
     def save(self):
         """Save current config to file"""
-        raise NotImplementedError
-
-    @abstractmethod
-    def type_check_client(self, client: Client):
         raise NotImplementedError
 
 
@@ -145,13 +141,9 @@ class QobuzPrompter(CredentialPrompter):
         cf.auth_token = c.auth_token
         self.config.file.set_modified()
 
-    def type_check_client(self, client) -> QobuzClient:
-        assert isinstance(client, QobuzClient)
-        return client
-
 
 class TidalPrompter(CredentialPrompter):
-    timeout_s: int = 600  # 5 mins to login
+    timeout_s: int = 600  # 10 minutes to log in
     client: TidalClient
 
     def has_creds(self) -> bool:
@@ -216,10 +208,6 @@ class TidalPrompter(CredentialPrompter):
         lane._update_authorization_from_config()
         lane.logged_in = True
 
-    def type_check_client(self, client) -> TidalClient:
-        assert isinstance(client, TidalClient)
-        return client
-
     def save(self):
         c = self.config.session.tidal
         cf = self.config.file.tidal
@@ -266,12 +254,12 @@ class DeezerPrompter(CredentialPrompter):
             f"[green]Credentials saved to config file at [bold cyan]{self.config.path}",
         )
 
-    def type_check_client(self, client) -> DeezerClient:
-        assert isinstance(client, DeezerClient)
-        return client
-
 
 class SoundcloudPrompter(CredentialPrompter):
+    """SoundCloud needs no login: its client id is scraped on its own."""
+
+    client: SoundcloudClient
+
     def has_creds(self) -> bool:
         return True
 
@@ -280,10 +268,6 @@ class SoundcloudPrompter(CredentialPrompter):
 
     def save(self):
         pass
-
-    def type_check_client(self, client) -> SoundcloudClient:
-        assert isinstance(client, SoundcloudClient)
-        return client
 
 
 PROMPTERS = {

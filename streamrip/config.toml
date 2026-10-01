@@ -193,7 +193,3 @@ fallback_source = ""
 progress_bars = true
 # The maximum number of search results to show in the interactive menu
 max_search_results = 100
-
-[misc]
-# Print a message if a new version of streamrip is available
-check_for_updates = true

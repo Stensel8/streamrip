@@ -163,13 +163,6 @@ class CliConfig:
     max_search_results: int
 
 
-@dataclass(slots=True)
-class MiscConfig:
-    """Options that don't belong to any other section."""
-
-    check_for_updates: bool
-
-
 HOME = Path.home()
 DEFAULT_DOWNLOADS_FOLDER = os.path.join(HOME, "StreamripDownloads")
 DEFAULT_DOWNLOADS_DB_PATH = os.path.join(APP_DIR, "downloads.db")
@@ -195,17 +188,18 @@ class ConfigData:
     cli: CliConfig
     database: DatabaseConfig
     conversion: ConversionConfig
-    misc: MiscConfig
 
     _modified: bool = False
 
     @classmethod
     def from_toml(cls, toml_str: str):
-        """Parse a config file. Raises if its schema doesn't match this version."""
+        """Parse a config file. Raises if its schema doesn't match this version.
+
+        Sections this version has no class for, like the [misc] of older
+        releases, are left alone.
+        """
         # TODO: handle the mistake where Windows people forget to escape backslash
         toml = parse(toml_str)
-        # Older releases wrote a schema version that MiscConfig no longer uses.
-        toml.get("misc", {}).pop("version", None)
         sections = {f.name: f.type(**toml[f.name]) for f in _section_fields()}  # type: ignore
         return cls(toml=toml, **sections)
 

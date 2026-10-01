@@ -17,6 +17,26 @@ from rich.text import Text
 from .console import console
 
 
+@dataclass(slots=True)
+class Handle:
+    """A progress task: `with handle as update:` advances it, and leaving
+    the block hides it.
+    """
+
+    update: Callable[[int], None]
+    done: Callable[[], None]
+
+    def __enter__(self):
+        return self.update
+
+    def __exit__(self, *_):
+        self.done()
+
+
+# What every progress function hands out when progress bars are disabled.
+NO_PROGRESS = Handle(lambda _: None, lambda: None)
+
+
 class ProgressManager:
     """Owns the Rich Live display shared by every download/resolve progress bar."""
 
@@ -56,8 +76,7 @@ class ProgressManager:
 
         # Keyed by id(), not title text: two releases can share a title.
         self.task_titles: dict[int, str] = {}
-        self.prefix = Text.assemble(("Downloading ", "bold cyan"), overflow="ellipsis")
-        self._text_cache = self.gen_title_text()
+        self._title = self._title_rule()
         # Explicit console=console: otherwise Live draws through Rich's own
         # default console, a different object than the one console.log() and
         # the logger's RichHandler print through, so neither knows the other
@@ -65,6 +84,8 @@ class ProgressManager:
         # instead of Rich's usual "pause the live area, print above it".
         # transient: erased when stopped, rather than leaving its last frame --
         # by then an empty "Downloading" rule -- under the run's output.
+        # The Live redraws itself 10 times a second, progress bars included;
+        # only a new title needs a new renderable.
         self.live = Live(
             self._group(), console=console, refresh_per_second=10, transient=True
         )
@@ -72,73 +93,24 @@ class ProgressManager:
     def _group(self) -> Group:
         """Return the renderable group the Live display shows."""
         return Group(
-            self.get_title_text(),
-            self.source_progress,
-            self.resolve_progress,
-            self.progress,
+            self._title, self.source_progress, self.resolve_progress, self.progress
         )
 
     def _ensure_started(self):
         """Start the Live display on its first use."""
         if not self.started:
+            self.live.update(self._group())
             self.live.start()
             self.started = True
 
-    def _refresh(self):
-        """Redraw the Live display, if it has been started."""
-        if self.started:
-            self.live.update(self._group())
-
-    def get_callback(self, total: int, desc: str):
-        """Return a Handle that drives a new download progress bar task."""
+    def _add_task(self, progress: Progress, desc: str, **task) -> Handle:
+        """Add a task to one of the progress bars, hidden again when done."""
         self._ensure_started()
-
-        task = self.progress.add_task(f"[cyan]{desc}", total=total)
-
-        def _callback_update(x: int):
-            """Advance the task by x and redraw."""
-            self.progress.update(task, advance=x)
-            self._refresh()
-
-        def _callback_done():
-            """Hide the task once its download is done."""
-            self.progress.update(task, visible=False)
-
-        return Handle(_callback_update, _callback_done)
-
-    def get_source_callback(self, total: int, desc: str):
-        """Return a Handle that drives a new artist/label album-count bar."""
-        self._ensure_started()
-
-        task = self.source_progress.add_task(f"[cyan]{desc}", total=total)
-
-        def _callback_advance(x: int):
-            """Advance the task by x and redraw."""
-            self.source_progress.update(task, advance=x)
-            self._refresh()
-
-        def _callback_done():
-            """Hide the task once the catalog is done."""
-            self.source_progress.update(task, visible=False)
-
-        return Handle(_callback_advance, _callback_done)
-
-    def get_resolve_callback(self, desc: str):
-        """Return a Handle that drives a new resolve spinner task."""
-        self._ensure_started()
-
-        task = self.resolve_progress.add_task(f"[cyan]{desc}")
-        self._refresh()
-
-        def _done():
-            """Hide the task once resolving is done."""
-            self.resolve_progress.update(task, visible=False)
-
-        return Handle(lambda _: None, _done)
-
-    def cleanup(self):
-        if self.started:
-            self.live.stop()
+        task_id = progress.add_task(f"[cyan]{desc}", **task)
+        return Handle(
+            lambda n: progress.update(task_id, advance=n),
+            lambda: progress.update(task_id, visible=False),
+        )
 
     def clear_screen(self):
         """Wipe the terminal; the live display restarts on its next use."""
@@ -155,99 +127,72 @@ class ProgressManager:
         """Show title as the active album/playlist under the given key."""
         self._ensure_started()
         self.task_titles[key] = title.strip()
-        self._text_cache = self.gen_title_text()
-        self._refresh()
+        self._update_title()
 
     def remove_title(self, key: int):
         """Stop showing the title registered under the given key."""
         self.task_titles.pop(key, None)
-        self._text_cache = self.gen_title_text()
-        self._refresh()
+        self._update_title()
 
-    def gen_title_text(self) -> Rule:
+    def _update_title(self):
+        self._title = self._title_rule()
+        if self.started:
+            self.live.update(self._group())
+
+    def _title_rule(self) -> Rule:
         """Render the currently active title(s) as a Rule."""
         # A specific name is only trustworthy when it's the only one active:
-        # with several albums in flight (several artists selected at once),
-        # which one actually has tracks moving in the progress list below has
-        # nothing to do with which one's title was added last, so naming that
-        # one here just claims the wrong album is what's downloading. Each
-        # track row already carries its own artist/album, so once there's
-        # more than one, a plain count is the only claim this line can back up.
+        # with several albums in flight, which one has tracks moving in the
+        # list below has nothing to do with whose title was added last. Each
+        # track row names its own artist, so several get a plain count.
         titles = list(self.task_titles.values())
         if len(titles) > 1:
             shown = f"{len(titles)} albums/playlists"
         else:
             shown = titles[0] if titles else ""
-        t = self.prefix + Text(shown)
-        return Rule(t)
-
-    def get_title_text(self) -> Rule:
-        return self._text_cache
+        prefix = Text.assemble(("Downloading ", "bold cyan"), overflow="ellipsis")
+        return Rule(prefix + Text(shown))
 
 
-@dataclass(slots=True)
-class Handle:
-    update: Callable[[int], None]
-    done: Callable[[], None]
-
-    def __enter__(self):
-        return self.update
-
-    def __exit__(self, *_):
-        self.done()
-
-
-# global instance
 _p = ProgressManager()
 
 
 def get_progress_callback(enabled: bool, total: int, desc: str) -> Handle:
-    global _p
-    if not enabled:
-        return Handle(lambda _: None, lambda: None)
-    return _p.get_callback(total, desc)
+    """Return a download progress Handle, or a no-op one if disabled."""
+    return _p._add_task(_p.progress, desc, total=total) if enabled else NO_PROGRESS
 
 
 def get_source_callback(enabled: bool, total: int, desc: str) -> Handle:
     """Return an artist/label album-count Handle, or a no-op one if disabled."""
-    global _p
     if not enabled:
-        return Handle(lambda _: None, lambda: None)
-    return _p.get_source_callback(total, desc)
+        return NO_PROGRESS
+    return _p._add_task(_p.source_progress, desc, total=total)
 
 
 def get_resolve_callback(enabled: bool, desc: str) -> Handle:
     """Return a resolve progress Handle, or a no-op one if disabled."""
-    global _p
-    if not enabled:
-        return Handle(lambda _: None, lambda: None)
-    return _p.get_resolve_callback(desc)
+    return _p._add_task(_p.resolve_progress, desc) if enabled else NO_PROGRESS
 
 
 def add_title(key: int, title: str, enabled: bool = True):
     """Show title as the active album/playlist, unless disabled."""
-    if not enabled:
-        return
-    global _p
-    _p.add_title(key, title)
+    if enabled:
+        _p.add_title(key, title)
 
 
 def remove_title(key: int, enabled: bool = True):
     """Stop showing the title registered under key, unless disabled."""
-    if not enabled:
-        return
-    global _p
-    _p.remove_title(key)
+    if enabled:
+        _p.remove_title(key)
 
 
 def clear_screen(enabled: bool = True):
     """Wipe the terminal, unless disabled."""
-    if not enabled:
-        return
-    global _p
-    _p.clear_screen()
+    if enabled:
+        _p.clear_screen()
 
 
 def clear_progress():
-    global _p
-    _p.cleanup()
+    """Stop the live display, if it was started."""
+    if _p.started:
+        _p.live.stop()
