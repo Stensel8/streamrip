@@ -281,8 +281,9 @@ class AlbumMetadata:
 
     @classmethod
     def from_tidal_playlist_track_resp(cls, resp: dict) -> AlbumMetadata | None:
-        """Album metadata from a track response. That only carries the album's
-        id, title and cover, so the rest is taken from the track itself.
+        """Album metadata from a track response, when the album's own could
+        not be fetched. That only carries the album's id, title and cover, so
+        the rest is taken from the track itself.
         """
         return cls.from_tidal(
             resp["album"]
@@ -303,6 +304,9 @@ class AlbumMetadata:
         if source == "qobuz":
             return cls.from_qobuz(resp["album"])
         if source == "tidal":
+            if "numberOfTracks" in resp["album"]:
+                # The album's own response (TidalClient._album_of).
+                return cls.from_tidal(resp["album"])
             return cls.from_tidal_playlist_track_resp(resp)
         if source == "soundcloud":
             return cls.from_soundcloud(resp)

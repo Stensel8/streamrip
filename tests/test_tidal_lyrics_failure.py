@@ -22,6 +22,7 @@ def _client(*, lyrics_error=None, track_error=None):
     client.global_config = MagicMock()
     client.global_config.session.conversion.enabled = False
     client.config = MagicMock()
+    client._albums = {}
 
     async def request(path, params=None, base=None):
         if path.endswith("/lyrics"):

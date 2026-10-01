@@ -13,10 +13,11 @@ from streamrip.client.tidal import (
 from streamrip.config import Config
 from streamrip.exceptions import (
     AuthenticationError,
+    ItemNotFoundError,
     MissingCredentialsError,
     NonStreamableError,
 )
-from streamrip.metadata import ArtistMetadata
+from streamrip.metadata import AlbumMetadata, ArtistMetadata, TrackMetadata
 from streamrip.metadata.util import tidal_quality_id
 from streamrip.rip.prompter import TidalPrompter
 
@@ -651,3 +652,96 @@ async def test_device_login_rejection_says_why(monkeypatch):
 
     with pytest.raises(AuthenticationError, match="access_denied"):
         await TidalPrompter(cfg, client)._device_login(client)
+
+
+MEGAN_ACT_II = {
+    "id": 2,
+    "title": "MEGAN: ACT II",
+    "cover": None,
+    "allowStreaming": True,
+    "audioQuality": "LOSSLESS",
+    "releaseDate": "2024-10-25",
+    "numberOfTracks": 18,
+    "numberOfVolumes": 1,
+    "artists": [{"id": 9, "name": "Megan Thee Stallion"}],
+}
+
+
+def _track_replies(album_error: Exception | None = None, album_id: int = 2):
+    """A feature on someone's album, and how many times the album was asked."""
+    asked = []
+
+    async def reply(path, params=None, base=None):
+        if path.startswith("albums/"):
+            asked.append(path)
+            if album_error:
+                raise album_error
+            return dict(MEGAN_ACT_II)
+        if path.endswith("/lyrics"):
+            raise ItemNotFoundError("no lyrics")
+        return {
+            "id": int(path.split("/")[1]),
+            "title": "TYG (feat. Spiritbox)",
+            "allowStreaming": True,
+            "trackNumber": 8,
+            "volumeNumber": 1,
+            "streamStartDate": "2024-10-25T00:00:00.000+0000",
+            "album": {"id": album_id, "title": "MEGAN: ACT II", "cover": None},
+            "artist": {"id": 9, "name": "Megan Thee Stallion"},
+            "artists": [
+                {"id": 9, "name": "Megan Thee Stallion"},
+                {"id": 7, "name": "Spiritbox"},
+            ],
+        }
+
+    return reply, asked
+
+
+@pytest.mark.asyncio
+async def test_a_single_is_tagged_with_its_albums_own_artists():
+    # The track's own artists used to stand in for the album's, so a
+    # feature filed the whole album under "Megan Thee Stallion, Spiritbox".
+    c = _client()
+    reply, asked = _track_replies()
+    c._api_request = AsyncMock(side_effect=reply)
+
+    resp = await c.get_metadata("8", "track")
+    album = AlbumMetadata.from_track_resp(resp, "tidal")
+    track = TrackMetadata.from_tidal(album, resp)
+
+    assert (album.albumartist, album.albumartists) == (
+        "Megan Thee Stallion",
+        ["Megan Thee Stallion"],
+    )
+    assert (album.tracktotal, album.date) == (18, "2024-10-25")
+    assert track.artists == ["Megan Thee Stallion", "Spiritbox"]
+    await c.get_metadata("9", "track")  # another track of the same album
+    assert asked == ["albums/2"]
+
+
+@pytest.mark.asyncio
+async def test_a_single_whose_album_cannot_be_fetched_still_downloads():
+    c = _client()
+    reply, _ = _track_replies(album_error=ItemNotFoundError("gone"))
+    c._api_request = AsyncMock(side_effect=reply)
+
+    resp = await c.get_metadata("8", "track")
+    album = AlbumMetadata.from_track_resp(resp, "tidal")
+
+    # As before: the album stub, filled in from the track.
+    assert album.albumartist == "Megan Thee Stallion, Spiritbox"
+
+
+@pytest.mark.asyncio
+async def test_tracks_of_a_downloaded_album_need_no_album_request():
+    c = _client()
+    c._api_request = _album_replies(["LOSSLESS"])
+    await c.get_metadata("1", "album")
+    reply, asked = _track_replies(album_id=1)
+    c._api_request = AsyncMock(side_effect=reply)
+
+    resp = await c.get_metadata("11", "track")
+
+    assert asked == []
+    assert resp["album"]["id"] == 1
+    assert "tracks" not in resp["album"]

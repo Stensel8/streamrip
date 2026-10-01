@@ -118,6 +118,8 @@ class TidalClient(Client):
             )
             # Tracks Tidal says have no hi-res master; see _note_hires_tags.
             self._no_hires: set[str] = set()
+            # Albums by id, for the tracks of them; see _album_of.
+            self._albums: dict[str, dict] = {}
         # HTTP Basic auth for the token endpoint. Built by hand because
         # aiohttp.BasicAuth is deprecated as of aiohttp 3.14.
         credentials = f"{self.client_id}:{self.client_secret}".encode()
@@ -198,10 +200,14 @@ class TidalClient(Client):
         item = await self._api_request(url)
         if media_type == "track":
             self._note_hires_tags([item])
+            item["album"] = await self._album_of(item)
         if media_type in ("playlist", "album"):
             item["tracks"] = await self._get_tracks(url)
             if media_type == "album":
                 await self._add_hires_format(item)
+                # Its tracks' requests then need no album request of their own.
+                album = {k: v for k, v in item.items() if k != "tracks"}
+                self._albums[str(item["id"])] = album
         elif media_type == "artist":
             logger.debug("filtering eps")
             album_resp, ep_resp = await asyncio.gather(
@@ -243,6 +249,24 @@ class TidalClient(Client):
 
         logger.debug(item)
         return item
+
+    async def _album_of(self, track: dict) -> dict:
+        """The track's album with its own metadata.
+
+        A track response only names its album (id, title, cover); its
+        artists, track and disc count and release date are the album's own,
+        so a single or a playlist track would otherwise be tagged with the
+        track's artists as album artists. One request per album, and none
+        if fetching it fails: then the track's own album stub is used.
+        """
+        stub = track.get("album") or {}
+        album_id = str(stub.get("id") or "")
+        if album_id and album_id not in self._albums:
+            try:
+                self._albums[album_id] = await self._api_request(f"albums/{album_id}")
+            except Exception as e:
+                logger.debug(f"Could not fetch album {album_id}: {e}")
+        return self._albums.get(album_id, stub)
 
     async def _get_tracks(self, url: str) -> list[dict]:
         """The tracks of an album or playlist, fetched 100 at a time.
