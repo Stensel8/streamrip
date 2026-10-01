@@ -152,9 +152,6 @@ class Track(Media):
                         f"Persistent error downloading track '{self.meta.title}', "
                         f"skipping: {error}"
                     )
-                    self.db.set_failed(
-                        self.downloadable.source, "track", self.meta.info.id
-                    )
                     if os.path.isfile(self.download_path):
                         os.remove(self.download_path)
                     # postprocess() normally does this, but raising below
@@ -162,6 +159,9 @@ class Track(Media):
                     # progress display for the rest of the run.
                     if self.is_single:
                         remove_title(id(self), self.config.session.cli.progress_bars)
+                    self.db.set_failed(
+                        self.downloadable.source, "track", self.meta.info.id
+                    )
                     raise TrackDownloadFailedError(
                         f"{self.meta.title} ({self.meta.info.id})"
                     ) from e
