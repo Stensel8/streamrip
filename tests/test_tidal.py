@@ -11,7 +11,11 @@ from streamrip.client.tidal import (
     TidalClient,
 )
 from streamrip.config import Config
-from streamrip.exceptions import MissingCredentialsError, NonStreamableError
+from streamrip.exceptions import (
+    AuthenticationError,
+    MissingCredentialsError,
+    NonStreamableError,
+)
 from streamrip.metadata import ArtistMetadata
 from streamrip.metadata.util import tidal_quality_id
 from streamrip.rip.prompter import TidalPrompter
@@ -558,7 +562,7 @@ async def test_album_items_are_paged_and_videos_left_out():
 
 def _mock_login(lane: TidalClient) -> None:
     lane.session = MagicMock()
-    lane._get_device_code = AsyncMock(return_value=("code", "link.tidal.com/X"))
+    lane._get_device_code = AsyncMock(return_value=("code", "link.tidal.com/X", 300))
     lane._get_auth_status = AsyncMock(
         return_value=(
             0,
@@ -618,3 +622,32 @@ async def test_prompter_leaves_a_working_login_alone(monkeypatch):
     client.hires_lane._get_device_code.assert_not_called()
     assert cfg.session.tidal.hires_access_token == "still-good"
     assert cfg.session.tidal.access_token == f"at-{DEFAULT_CLIENT_ID}"
+
+
+@pytest.mark.asyncio
+async def test_device_login_stops_when_tidal_lets_the_link_expire(monkeypatch):
+    # Tidal keeps a device code valid for expiresIn seconds (300). Waiting
+    # longer only ever got its error back, reported as a rejected login.
+    monkeypatch.setattr("streamrip.rip.prompter.launch", lambda *_: None)
+    monkeypatch.setattr("streamrip.rip.prompter.console", MagicMock())
+    cfg = Config.defaults()
+    client = TidalClient(cfg)
+    _mock_login(client)
+    client._get_device_code = AsyncMock(return_value=("code", "link.tidal.com/X", 0))
+
+    with pytest.raises(AuthenticationError, match="expired"):
+        await TidalPrompter(cfg, client)._device_login(client)
+    client._get_auth_status.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_device_login_rejection_says_why(monkeypatch):
+    monkeypatch.setattr("streamrip.rip.prompter.launch", lambda *_: None)
+    monkeypatch.setattr("streamrip.rip.prompter.console", MagicMock())
+    cfg = Config.defaults()
+    client = TidalClient(cfg)
+    _mock_login(client)
+    client._get_auth_status = AsyncMock(return_value=(1, {"error": "access_denied"}))
+
+    with pytest.raises(AuthenticationError, match="access_denied"):
+        await TidalPrompter(cfg, client)._device_login(client)

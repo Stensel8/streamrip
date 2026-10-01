@@ -488,7 +488,7 @@ class TidalClient(Client):
 
     async def _get_auth_status(self, device_code) -> tuple[int, dict[str, int | str]]:
         """Whether the device login is done: (0, its tokens), (2, {}) while it
-        is still pending, or (1, {}) if Tidal refused it.
+        is still pending, or (1, {"error": why}) if Tidal refused it.
         """
         data = {
             "client_id": self.client_id,
@@ -500,10 +500,10 @@ class TidalClient(Client):
         resp = await self._api_post(f"{AUTH_URL}/token", data, auth=True)
 
         if "status" in resp and resp["status"] != 200:
-            if resp["status"] == 400 and resp["sub_status"] == 1002:
+            if resp["status"] == 400 and resp.get("sub_status") == 1002:
                 return 2, {}
-            else:
-                return 1, {}
+            error = resp.get("error_description") or resp.get("error")
+            return 1, {"error": error or f"HTTP {resp['status']}"}
 
         return 0, {
             "user_id": resp["user"]["userId"],
@@ -545,8 +545,10 @@ class TidalClient(Client):
         self.save_login()
         self._update_authorization_from_config()
 
-    async def _get_device_code(self) -> tuple[str, str]:
-        """Get the device code that will be used to log in on the browser."""
+    async def _get_device_code(self) -> tuple[str, str, int]:
+        """A device login: its code, the link to log in at, and how many
+        seconds Tidal keeps it valid.
+        """
         self._ensure_session()
         data = {
             "client_id": self.client_id,
@@ -557,7 +559,11 @@ class TidalClient(Client):
         if resp.get("status", 200) != 200:
             raise Exception(f"Device authorization failed {resp}")
 
-        return resp["deviceCode"], resp["verificationUriComplete"]
+        return (
+            resp["deviceCode"],
+            resp["verificationUriComplete"],
+            int(resp.get("expiresIn", 300)),
+        )
 
     # ---------- API Request Utilities ---------------
 

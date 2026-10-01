@@ -143,7 +143,6 @@ class QobuzPrompter(CredentialPrompter):
 
 
 class TidalPrompter(CredentialPrompter):
-    timeout_s: int = 600  # 10 minutes to log in
     client: TidalClient
 
     def has_creds(self) -> bool:
@@ -169,32 +168,33 @@ class TidalPrompter(CredentialPrompter):
                 "Tidal serves hi-res and CD quality through two separate logins. "
                 f"This one is for {'CD quality' if lane is self.client else 'hi-res'}."
             )
-        device_code, uri = await lane._get_device_code()
+        device_code, uri, expires_in = await lane._get_device_code()
         login_link = uri if uri.startswith("http") else f"https://{uri}"
 
+        # Tidal says how long the link stays valid (5 minutes, lately).
         console.print(
             f"Go to [blue underline]{login_link}[/blue underline] to log into Tidal "
-            f"within {self.timeout_s // 60} minutes.",
+            f"within {expires_in // 60} minutes.",
         )
         _open_login_link(login_link)
 
-        start = time.time()
-        info: dict = {}
+        # A few seconds early: Tidal's clock started before its answer arrived.
+        deadline = time.time() + expires_in - 5
         while True:
-            if time.time() - start > self.timeout_s:
-                raise AuthenticationError("Timed out waiting for the Tidal login.")
+            if time.time() > deadline:
+                raise AuthenticationError(
+                    "The Tidal login link expired before it was used. Run "
+                    "streamrip again for a new one."
+                )
             status, info = await lane._get_auth_status(device_code)
-            if status == 2:
-                # pending
-                await asyncio.sleep(4)
-                continue
             if status == 0:
-                # successful
                 break
-            raise AuthenticationError(
-                "Tidal rejected the device login. Try again, or check the "
-                "[tidal] client settings in the config."
-            )
+            if status == 1:
+                raise AuthenticationError(
+                    f"Tidal rejected the device login ({info['error']}). Try "
+                    "again, or check the [tidal] client settings in the config."
+                )
+            await asyncio.sleep(4)  # still waiting for the login
 
         c = self.config.session.tidal
         c.user_id = info["user_id"]  # type: ignore
