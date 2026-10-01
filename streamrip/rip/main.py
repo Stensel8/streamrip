@@ -21,12 +21,8 @@ from ..media import (
     Label,
     Media,
     Pending,
-    PendingAlbum,
-    PendingArtist,
-    PendingLabel,
     PendingLastfmPlaylist,
-    PendingPlaylist,
-    PendingSingle,
+    pending_item,
     remove_artwork_tempdirs,
 )
 from ..media.media import resolve_or_none
@@ -100,30 +96,17 @@ class Main:
         logger.debug("Added url=%s", url)
 
     async def add_by_id(self, source: str, media_type: str, id: str):
-        client = await self.get_logged_in_client(source)
-        self._add_by_id_client(client, media_type, id)
+        await self.add_all_by_id([(source, media_type, id)])
 
     async def add_all_by_id(self, info: list[tuple[str, str, str]]):
         sources = set(s for s, _, _ in info)
         clients = {s: await self.get_logged_in_client(s) for s in sources}
         for source, media_type, id in info:
-            self._add_by_id_client(clients[source], media_type, id)
-
-    def _add_by_id_client(self, client: Client, media_type: str, id: str):
-        if media_type == "track":
-            item = PendingSingle(id, client, self.config, self.database)
-        elif media_type == "album":
-            item = PendingAlbum(id, client, self.config, self.database)
-        elif media_type == "playlist":
-            item = PendingPlaylist(id, client, self.config, self.database)
-        elif media_type == "label":
-            item = PendingLabel(id, client, self.config, self.database)
-        elif media_type == "artist":
-            item = PendingArtist(id, client, self.config, self.database)
-        else:
-            raise Exception(media_type)
-
-        self.pending.append(item)
+            self.pending.append(
+                pending_item(
+                    media_type, id, clients[source], self.config, self.database
+                )
+            )
 
     async def add_all(self, urls: list[str]):
         """Add multiple urls concurrently as pending items."""

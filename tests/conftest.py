@@ -3,7 +3,6 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-import streamrip.media.artist as artist_module
 import streamrip.media.semaphore as semaphore_module
 from streamrip import __version__
 from streamrip.console import console
@@ -20,20 +19,6 @@ def _reset_global_download_semaphore():
     semaphore_module._global_semaphore = None
     yield
     semaphore_module._global_semaphore = None
-
-
-@pytest.fixture(autouse=True)
-def _reset_album_window():
-    """The shared album window (media/artist.py) is built lazily against
-    whatever event loop is running on first use, and each test function
-    gets its own fresh loop (asyncio_default_fixture_loop_scope = "function"
-    in pyproject.toml) -- without a reset, the first test to touch it binds
-    the semaphore to its loop, and every later test's acquire() raises
-    "bound to a different event loop".
-    """
-    artist_module._album_window = None
-    yield
-    artist_module._album_window = None
 
 
 @pytest.fixture(autouse=True)

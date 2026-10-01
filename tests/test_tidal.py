@@ -442,7 +442,7 @@ async def _artist(albums, prefer_explicit=True):
     c = _client()
     c._api_request = AsyncMock(side_effect=_artist_replies(albums))
     resp = await c.get_metadata("1", "artist")
-    kept = set(ArtistMetadata.from_resp(resp, "tidal", prefer_explicit).album_ids())
+    kept = set(ArtistMetadata.from_resp(resp, "tidal", prefer_explicit).ids)
     return {"albums": [a for a in resp["albums"] if a["id"] in kept]}
 
 

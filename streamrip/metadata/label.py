@@ -9,19 +9,14 @@ logger = logging.getLogger("streamrip")
 @dataclass(slots=True)
 class LabelMetadata:
     name: str
+    # The label's album ids.
     ids: list[str]
-
-    def album_ids(self):
-        return self.ids
 
     @classmethod
     def from_resp(cls, resp: dict, source: str) -> LabelMetadata:
         logger.debug(resp)
         if source == "qobuz":
             return cls(resp["name"], [a["id"] for a in resp["albums"]["items"]])
-        elif source == "tidal":
+        if source in ("tidal", "deezer"):
             return cls(resp["name"], [a["id"] for a in resp["albums"]])
-        elif source == "deezer":
-            return cls(resp["name"], [a["id"] for a in resp["albums"]])
-        else:
-            raise NotImplementedError
+        raise NotImplementedError

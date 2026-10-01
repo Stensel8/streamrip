@@ -3,12 +3,11 @@ from dataclasses import dataclass
 
 from ..client import Client
 from ..config import Config
-from ..console import console
 from ..db import Database
 from ..exceptions import NonStreamableError
 from ..metadata import LabelMetadata
 from .album import PendingAlbum
-from .artist import rip_albums
+from .artist import announce, rip_albums
 from .media import Media, Pending
 
 logger = logging.getLogger("streamrip")
@@ -23,23 +22,11 @@ class Label(Media):
     client: Client
     config: Config
 
-    async def preprocess(self):
-        pass
-
     async def download(self):
         """Resolve and download every album in the label's catalog."""
-        # Fetching each album's tracklist happens a few at a time before the
-        # first progress bar appears, which for a label with a large
-        # catalog can take a while with nothing on screen to show for it.
-        console.print(
-            f"[bold]{self.name}[/bold]: found {len(self.albums)} release(s), "
-            "resolving and downloading..."
-        )
+        announce(self.name, self.albums)
         enabled = self.config is not None and self.config.session.cli.progress_bars
         await rip_albums(self.albums, self.name, enabled)
-
-    async def postprocess(self):
-        pass
 
 
 @dataclass(slots=True)
@@ -62,6 +49,6 @@ class PendingLabel(Pending):
             return None
         albums = [
             PendingAlbum(album_id, self.client, self.config, self.db)
-            for album_id in meta.album_ids()
+            for album_id in meta.ids
         ]
         return Label(meta.name, albums, self.client, self.config)
