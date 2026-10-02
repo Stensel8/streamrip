@@ -380,3 +380,57 @@ async def test_partial_file_cleanup_failure_is_counted_once(tmp_path, monkeypatc
 
     assert track.db.failed_now == 1
     assert track.db.failed.all() == [("test", "track", "123")]
+
+
+@pytest.mark.asyncio
+async def test_truncated_download_is_retried_from_scratch(tmp_path, monkeypatch):
+    """A download that ends without error but short is fetched again."""
+    from mutagen.flac import FLAC
+
+    track = _make_track(str(tmp_path), "flac")
+    attempts = []
+
+    async def download(self, path, callback):
+        attempts.append(os.path.exists(path))
+        shutil.copy(FIXTURES["flac"], path)
+        if len(attempts) == 1:
+            # The header announces a minute; the file holds a fraction of it.
+            audio = FLAC(path)
+            audio.info.total_samples = audio.info.sample_rate * 60
+            audio.save()
+
+    monkeypatch.setattr(FakeDownloadable, "_download", download)
+    monkeypatch.setattr("streamrip.media.track.asyncio.sleep", AsyncMock())
+
+    await track.preprocess()
+    await track.download()
+
+    # Retried once, and the truncated file was gone before the retry.
+    assert attempts == [False, False]
+    assert FLAC(track.download_path).info.length < 1
+
+
+@pytest.mark.asyncio
+async def test_always_truncated_download_fails(tmp_path, monkeypatch):
+    from mutagen.flac import FLAC
+
+    from streamrip.exceptions import TrackDownloadFailedError
+
+    track = _make_track(str(tmp_path), "flac")
+    track.db = db.Database(db.Dummy(), db.Failed(str(tmp_path / "failed.db")))
+
+    async def download(self, path, callback):
+        shutil.copy(FIXTURES["flac"], path)
+        audio = FLAC(path)
+        audio.info.total_samples = audio.info.sample_rate * 60
+        audio.save()
+
+    monkeypatch.setattr(FakeDownloadable, "_download", download)
+    monkeypatch.setattr("streamrip.media.track.asyncio.sleep", AsyncMock())
+
+    await track.preprocess()
+    with pytest.raises(TrackDownloadFailedError):
+        await track.download()
+
+    assert not os.path.exists(track.download_path)
+    assert track.db.failed.all() == [("test", "track", "123")]

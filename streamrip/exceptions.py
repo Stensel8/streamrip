@@ -60,6 +60,10 @@ class APIError(Exception):
     """
 
 
+class IncompleteDownloadError(Exception):
+    """A download finished without error but the file is truncated."""
+
+
 class TrackDownloadFailedError(Exception):
     """Raised when a track fails to download after retrying.
 
