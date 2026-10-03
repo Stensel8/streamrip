@@ -1,0 +1,9 @@
+name: streamrip CodeQL
+
+# The default queries plus the extra security ones (lower precision, more findings).
+queries:
+  - uses: security-extended
+
+# Not shipped, and full of fake tokens and URLs. Remove this to scan the tests too.
+paths-ignore:
+  - tests
