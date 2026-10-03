@@ -17,7 +17,6 @@ from streamrip.config import (
     FilepathsConfig,
     LastFmConfig,
     MetadataConfig,
-    MiscConfig,
     QobuzConfig,
     SoundcloudConfig,
     TidalConfig,
@@ -57,6 +56,7 @@ def test_sample_config_data_modification(sample_config_data):
 
 
 def test_sample_config_data_fields(sample_config_data):
+    """A ConfigData written out by hand has the sections of the sample config."""
     test_config = ConfigData(
         toml=None,  # type: ignore
         downloads=DownloadsConfig(
@@ -137,7 +137,6 @@ def test_sample_config_data_fields(sample_config_data):
             bit_depth=24,
             lossy_bitrate=320,
         ),
-        misc=MiscConfig(check_for_updates=True),
         _modified=False,
     )
     assert sample_config_data.downloads == test_config.downloads
@@ -207,12 +206,15 @@ def test_default_quality_is_the_highest_of_every_source():
     assert session.deezer.quality == 2  # FLAC
 
 
-def test_legacy_misc_version_is_ignored():
+def test_old_misc_section_still_loads():
+    """A config with an old [misc] section still loads.
+
+    Older releases wrote it: a schema version, and a check_for_updates switch the update
+    check never read.
+    """
     with open(SAMPLE_CONFIG) as f:
         doc = tomlkit.parse(f.read())
     doc["misc"]["version"] = "2.3.3"
     data = ConfigData.from_toml(tomlkit.dumps(doc))
-    assert data.misc.check_for_updates == doc["misc"]["check_for_updates"]
-    assert "version" not in data.toml["misc"]
     data.update_toml()
-    assert "version" not in data.toml["misc"]
+    assert data.toml["misc"]["version"] == "2.3.3"

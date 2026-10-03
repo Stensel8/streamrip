@@ -7,14 +7,7 @@ from abc import ABC, abstractmethod
 from ..client import Client, SoundcloudClient, new_session
 from ..config import Config
 from ..db import Database
-from ..media import (
-    Pending,
-    PendingAlbum,
-    PendingArtist,
-    PendingLabel,
-    PendingPlaylist,
-    PendingSingle,
-)
+from ..media import Pending, PendingArtist, PendingPlaylist, pending_item
 
 logger = logging.getLogger("streamrip")
 URL_REGEX = re.compile(
@@ -75,20 +68,13 @@ class GenericURL(URL):
         config: Config,
         db: Database,
     ) -> Pending:
+        """Make the pending item this URL names.
+
+        Its source, media type and id come from the match.
+        """
         source, media_type, item_id = self.match.groups()
         assert client.source == source
-
-        if media_type == "track":
-            return PendingSingle(item_id, client, config, db)
-        elif media_type == "album":
-            return PendingAlbum(item_id, client, config, db)
-        elif media_type == "playlist":
-            return PendingPlaylist(item_id, client, config, db)
-        elif media_type == "artist":
-            return PendingArtist(item_id, client, config, db)
-        elif media_type == "label":
-            return PendingLabel(item_id, client, config, db)
-        raise NotImplementedError
+        return pending_item(media_type, item_id, client, config, db)
 
 
 class QobuzInterpreterURL(URL):
@@ -122,11 +108,8 @@ class QobuzInterpreterURL(URL):
 
     @staticmethod
     async def extract_interpreter_url(url: str, verify_ssl: bool = True) -> str:
-        """Extract artist ID from a Qobuz interpreter url.
-
-        :param url: Urls of the form "https://www.qobuz.com/us-en/interpreter/{artist}/download-streaming-albums"
-        :type url: str
-        :rtype: str
+        """The artist id on a Qobuz interpreter page, such as
+        https://www.qobuz.com/us-en/interpreter/{artist}/download-streaming-albums
         """
         # Public pages must never inherit the API session's account credentials.
         url = url.replace("http://", "https://", 1)
@@ -176,30 +159,16 @@ class DeezerDynamicURL(URL):
         config: Config,
         db: Database,
     ) -> Pending:
+        """Follow the dynamic link to the item it points at and make that pending."""
         url = self.match.group(0)  # entire dynamic link
         media_type, item_id = await self._extract_info_from_dynamic_link(url, client)
-        if media_type == "track":
-            return PendingSingle(item_id, client, config, db)
-        elif media_type == "album":
-            return PendingAlbum(item_id, client, config, db)
-        elif media_type == "playlist":
-            return PendingPlaylist(item_id, client, config, db)
-        elif media_type == "artist":
-            return PendingArtist(item_id, client, config, db)
-        elif media_type == "label":
-            return PendingLabel(item_id, client, config, db)
-        raise NotImplementedError
+        return pending_item(media_type, item_id, client, config, db)
 
     @classmethod
     async def _extract_info_from_dynamic_link(
         cls, url: str, client: Client
     ) -> tuple[str, str]:
-        """Extract the item's type and ID from a dynamic link.
-
-        :param url:
-        :type url: str
-        :rtype: Tuple[str, str] (media type, item id)
-        """
+        """The (media type, item id) a Deezer share link points to."""
         async with client.session.get(url) as resp:
             # Share links redirect to the regular www.deezer.com URL, which is
             # the most reliable place to read the id from; fall back to the
@@ -253,18 +222,15 @@ class SoundcloudURL(URL):
         config: Config,
         db: Database,
     ) -> Pending:
+        """Resolve the URL on SoundCloud: a track or a playlist, nothing else."""
         resolved = await client.resolve_url(self.url)
-        media_type = resolved["kind"]
-        item_id = str(resolved["id"])
-        if media_type == "track":
-            return PendingSingle(item_id, client, config, db)
-        elif media_type == "playlist":
-            return PendingPlaylist(item_id, client, config, db)
-        else:
-            raise NotImplementedError(media_type)
+        if resolved["kind"] not in ("track", "playlist"):
+            raise NotImplementedError(resolved["kind"])
+        return pending_item(resolved["kind"], str(resolved["id"]), client, config, db)
 
     @classmethod
     def from_str(cls, url: str):
+        """The SoundCloud URL in `url`, or None if it isn't one."""
         soundcloud_url = SOUNDCLOUD_URL_REGEX.match(url)
         if soundcloud_url is None:
             return None
@@ -272,14 +238,7 @@ class SoundcloudURL(URL):
 
 
 def parse_url(url: str) -> URL | None:
-    """Return a URL type given a url string.
-
-    Args:
-    ----
-        url (str): Url to parse
-
-    Returns: A URL type, or None if nothing matched.
-    """
+    """The URL type that matches url, or None if none does."""
     url = url.strip()
     parsed_urls: list[URL | None] = [
         GenericURL.from_str(url),

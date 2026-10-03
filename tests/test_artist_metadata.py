@@ -24,7 +24,8 @@ def _album(id, title, artists=(ME,), n=12, version=None, explicit=False, bits=16
 
 
 def _ids(resp, source="qobuz", prefer_explicit=True):
-    return ArtistMetadata.from_resp(resp, source, prefer_explicit).album_ids()
+    """The album ids of an artist response."""
+    return ArtistMetadata.from_resp(resp, source, prefer_explicit).ids
 
 
 def test_qobuz_leaves_out_other_artists_covers_but_keeps_collaborations():

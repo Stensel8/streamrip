@@ -27,8 +27,13 @@ from streamrip.metadata import (
     not (os.environ.get("QOBUZ_USER_ID") and os.environ.get("QOBUZ_AUTH_TOKEN")),
     reason="Qobuz user ID and auth token are required.",
 )
-def test_pending_resolve(qobuz_client: QobuzClient):
-    qobuz_client.config.session.downloads.folder = "./tests"
+def test_pending_resolve(qobuz_client: QobuzClient, tmp_path):
+    """A single resolves into a Track in its album folder, with the cover next to it
+    (needs a Qobuz account).
+    """
+    session = qobuz_client.config.session
+    session.downloads.folder = str(tmp_path)
+    session.filepaths.add_singles_to_folder = True
     p = PendingSingle(
         "19512574",
         qobuz_client,
@@ -36,14 +41,14 @@ def test_pending_resolve(qobuz_client: QobuzClient):
         db.Database(db.Dummy(), db.Dummy()),
     )
     t = arun(p.resolve())
-    dir = "tests/tests/Fleetwood Mac - Rumours (1977) [FLAC] [24B-96kHz]"
-    assert os.path.isdir(dir)
-    assert os.path.isfile(os.path.join(dir, "cover.jpg"))
-    assert os.path.isfile(t.cover_path)
     assert isinstance(t, Track)
     assert isinstance(t.downloadable, Downloadable)
-    assert t.cover_path is not None
-    shutil.rmtree(dir)
+    folder = (
+        tmp_path / "Fleetwood Mac - Rumours (2001 Remaster) (1977) [FLAC] [24B-96kHz]"
+    )
+    assert t.folder == str(folder)
+    assert (folder / "cover.jpg").is_file()
+    assert t.cover_path is not None and os.path.isfile(t.cover_path)
 
 
 FIXTURES = {

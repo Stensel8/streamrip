@@ -21,12 +21,8 @@ from ..media import (
     Label,
     Media,
     Pending,
-    PendingAlbum,
-    PendingArtist,
-    PendingLabel,
     PendingLastfmPlaylist,
-    PendingPlaylist,
-    PendingSingle,
+    pending_item,
     remove_artwork_tempdirs,
 )
 from ..media.media import resolve_or_none
@@ -57,6 +53,7 @@ class Main:
     """
 
     def __init__(self, config: Config):
+        """Set up the clients, the databases and an empty pipeline for one run."""
         # Data pipeline:
         # input URL -> (URL) -> (Pending) -> (Media) -> (Downloadable) -> audio file
         self.pending: list[Pending] = []
@@ -68,21 +65,13 @@ class Main:
             "deezer": DeezerClient(config),
             "soundcloud": SoundcloudClient(config),
         }
-
-        self.database: db.Database
-
         c = self.config.session.database
-        if c.downloads_enabled:
-            downloads_db = db.Downloads(c.downloads_path)
-        else:
-            downloads_db = db.Dummy()
-
-        if c.failed_downloads_enabled:
-            failed_downloads_db = db.Failed(c.failed_downloads_path)
-        else:
-            failed_downloads_db = db.Dummy()
-
-        self.database = db.Database(downloads_db, failed_downloads_db)
+        self.database = db.Database(
+            db.Downloads(c.downloads_path) if c.downloads_enabled else db.Dummy(),
+            db.Failed(c.failed_downloads_path)
+            if c.failed_downloads_enabled
+            else db.Dummy(),
+        )
 
     async def add(self, url: str):
         """Add url as a pending item.
@@ -100,30 +89,22 @@ class Main:
         logger.debug("Added url=%s", url)
 
     async def add_by_id(self, source: str, media_type: str, id: str):
-        client = await self.get_logged_in_client(source)
-        self._add_by_id_client(client, media_type, id)
+        """Queue one item by its id."""
+        await self.add_all_by_id([(source, media_type, id)])
 
     async def add_all_by_id(self, info: list[tuple[str, str, str]]):
+        """Queue items given as (source, media type, id).
+
+        Each source is logged in to once.
+        """
         sources = set(s for s, _, _ in info)
         clients = {s: await self.get_logged_in_client(s) for s in sources}
         for source, media_type, id in info:
-            self._add_by_id_client(clients[source], media_type, id)
-
-    def _add_by_id_client(self, client: Client, media_type: str, id: str):
-        if media_type == "track":
-            item = PendingSingle(id, client, self.config, self.database)
-        elif media_type == "album":
-            item = PendingAlbum(id, client, self.config, self.database)
-        elif media_type == "playlist":
-            item = PendingPlaylist(id, client, self.config, self.database)
-        elif media_type == "label":
-            item = PendingLabel(id, client, self.config, self.database)
-        elif media_type == "artist":
-            item = PendingArtist(id, client, self.config, self.database)
-        else:
-            raise Exception(media_type)
-
-        self.pending.append(item)
+            self.pending.append(
+                pending_item(
+                    media_type, id, clients[source], self.config, self.database
+                )
+            )
 
     async def add_all(self, urls: list[str]):
         """Add multiple urls concurrently as pending items."""
@@ -290,10 +271,14 @@ class Main:
         else:
             from simple_term_menu import TerminalMenu
 
+            from .search_menu import PREVIEW_SIZE, Previews
+
+            previews = Previews(search_results)
             menu = TerminalMenu(
                 search_results.summaries(),
-                preview_command=search_results.preview,
-                preview_size=0.5,
+                preview_command=previews,
+                preview_size=PREVIEW_SIZE,
+                preview_title=f"{source.capitalize()} {media_type}",
                 title=(
                     f"Results for {media_type} '{query}' from {source.capitalize()}\n"
                     "SPACE - select, ENTER - download, ESC - exit"
@@ -302,13 +287,16 @@ class Main:
                 clear_screen=True,
                 multi_select=True,
             )
-            chosen_ind = menu.show()
+            try:
+                chosen_ind = menu.show()
+            finally:
+                previews.close()
             if chosen_ind is None:
                 console.print("[yellow]No items chosen. Exiting.")
             else:
                 choices = search_results.get_choices(chosen_ind)
                 await self.add_all_by_id(
-                    [(source, item.media_type(), item.id) for item in choices],
+                    [(source, item.media_type, item.id) for item in choices],
                 )
 
     async def search_take_first(self, source: str, media_type: str, query: str):
@@ -316,7 +304,7 @@ class Main:
         search_results = await self._search(source, media_type, query, 1)
         if search_results is not None:
             first = search_results.results[0]
-            await self.add_by_id(source, first.media_type(), first.id)
+            await self.add_by_id(source, first.media_type, first.id)
 
     async def search_output_file(
         self, source: str, media_type: str, query: str, filepath: str, limit: int

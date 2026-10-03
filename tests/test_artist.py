@@ -3,7 +3,7 @@ import asyncio
 import pytest
 
 from streamrip.config import ArtistFilterConfig
-from streamrip.media.artist import RESOLVE_CHUNK_SIZE, Artist
+from streamrip.media.artist import Artist
 from streamrip.media.label import Label
 
 
@@ -44,9 +44,8 @@ NO_FILTERS = ArtistFilterConfig(
 
 @pytest.mark.asyncio
 async def test_albums_rip_strictly_one_at_a_time():
-    """RESOLVE_CHUNK_SIZE == 1: no album's tracks start until the last
-    album's are done downloading, so the progress display never shows two
-    albums' tracks at once.
+    """No album's tracks start until the last album's are done downloading,
+    so the progress display never shows two albums' tracks at once.
     """
     concurrent = 0
     max_concurrent = 0
@@ -63,7 +62,7 @@ async def test_albums_rip_strictly_one_at_a_time():
         async def resolve(self):
             return Album()
 
-    albums = [Pending() for _ in range(RESOLVE_CHUNK_SIZE * 3 + 1)]
+    albums = [Pending() for _ in range(4)]
     artist = Artist(name="Test Artist", albums=albums, client=None, config=None)
 
     await asyncio.wait_for(artist._download_async(NO_FILTERS), 5)
@@ -107,12 +106,12 @@ async def test_resolve_then_download_chunks_the_resolve_phase():
     """
     _FakePendingAlbum._concurrent = 0
     _FakePendingAlbum._max_concurrent = 0
-    albums = [_FakePendingAlbum() for _ in range(RESOLVE_CHUNK_SIZE * 3 + 1)]
+    albums = [_FakePendingAlbum() for _ in range(4)]
     artist = Artist(name="Test Artist", albums=albums, client=None, config=None)
 
     await artist._resolve_then_download(NO_FILTERS)
 
-    assert _FakePendingAlbum._max_concurrent <= RESOLVE_CHUNK_SIZE
+    assert _FakePendingAlbum._max_concurrent == 1
 
 
 @pytest.mark.asyncio

@@ -18,10 +18,13 @@ TRACK = {"id": 1, "title": "t", "album": {"id": 2}}
 
 
 def _client(*, lyrics_error=None, track_error=None):
+    """A Tidal client whose lyrics or track request fails as asked."""
     client = TidalClient.__new__(TidalClient)
     client.global_config = MagicMock()
     client.global_config.session.conversion.enabled = False
     client.config = MagicMock()
+    client._albums = {}
+    client._album_requests = {}
 
     async def request(path, params=None, base=None):
         if path.endswith("/lyrics"):

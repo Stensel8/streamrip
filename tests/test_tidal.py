@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import logging
 from unittest.mock import AsyncMock, MagicMock
@@ -11,8 +12,13 @@ from streamrip.client.tidal import (
     TidalClient,
 )
 from streamrip.config import Config
-from streamrip.exceptions import MissingCredentialsError, NonStreamableError
-from streamrip.metadata import ArtistMetadata
+from streamrip.exceptions import (
+    AuthenticationError,
+    ItemNotFoundError,
+    MissingCredentialsError,
+    NonStreamableError,
+)
+from streamrip.metadata import AlbumMetadata, ArtistMetadata, TrackMetadata
 from streamrip.metadata.util import tidal_quality_id
 from streamrip.rip.prompter import TidalPrompter
 
@@ -442,7 +448,7 @@ async def _artist(albums, prefer_explicit=True):
     c = _client()
     c._api_request = AsyncMock(side_effect=_artist_replies(albums))
     resp = await c.get_metadata("1", "artist")
-    kept = set(ArtistMetadata.from_resp(resp, "tidal", prefer_explicit).album_ids())
+    kept = set(ArtistMetadata.from_resp(resp, "tidal", prefer_explicit).ids)
     return {"albums": [a for a in resp["albums"] if a["id"] in kept]}
 
 
@@ -557,8 +563,9 @@ async def test_album_items_are_paged_and_videos_left_out():
 
 
 def _mock_login(lane: TidalClient) -> None:
+    """Make a lane log in without a network."""
     lane.session = MagicMock()
-    lane._get_device_code = AsyncMock(return_value=("code", "link.tidal.com/X"))
+    lane._get_device_code = AsyncMock(return_value=("code", "link.tidal.com/X", 300))
     lane._get_auth_status = AsyncMock(
         return_value=(
             0,
@@ -604,6 +611,7 @@ async def test_prompter_logs_both_lanes_in_and_saves_them(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_prompter_leaves_a_working_login_alone(monkeypatch):
+    """A lane whose saved login still works isn't asked to log in again."""
     monkeypatch.setattr("streamrip.rip.prompter.launch", lambda *_: None)
     monkeypatch.setattr("streamrip.rip.prompter.console", MagicMock())
     cfg = Config.defaults()
@@ -618,3 +626,213 @@ async def test_prompter_leaves_a_working_login_alone(monkeypatch):
     client.hires_lane._get_device_code.assert_not_called()
     assert cfg.session.tidal.hires_access_token == "still-good"
     assert cfg.session.tidal.access_token == f"at-{DEFAULT_CLIENT_ID}"
+
+
+@pytest.mark.asyncio
+async def test_device_login_stops_when_tidal_lets_the_link_expire(monkeypatch):
+    """The device login stops when the link expires.
+
+    Tidal keeps a device code valid for expiresIn seconds (300). Waiting longer only
+    ever got its error back, reported as a rejected login.
+    """
+    monkeypatch.setattr("streamrip.rip.prompter.launch", lambda *_: None)
+    monkeypatch.setattr("streamrip.rip.prompter.console", MagicMock())
+    cfg = Config.defaults()
+    client = TidalClient(cfg)
+    _mock_login(client)
+    client._get_device_code = AsyncMock(return_value=("code", "link.tidal.com/X", 0))
+
+    with pytest.raises(AuthenticationError, match="expired"):
+        await TidalPrompter(cfg, client)._device_login(client)
+    client._get_auth_status.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_device_login_rejection_says_why(monkeypatch):
+    """A rejected device login says why."""
+    monkeypatch.setattr("streamrip.rip.prompter.launch", lambda *_: None)
+    monkeypatch.setattr("streamrip.rip.prompter.console", MagicMock())
+    cfg = Config.defaults()
+    client = TidalClient(cfg)
+    _mock_login(client)
+    client._get_auth_status = AsyncMock(return_value=(1, {"error": "access_denied"}))
+
+    with pytest.raises(AuthenticationError, match="access_denied"):
+        await TidalPrompter(cfg, client)._device_login(client)
+
+
+MEGAN_ACT_II = {
+    "id": 2,
+    "title": "MEGAN: ACT II",
+    "cover": None,
+    "allowStreaming": True,
+    "audioQuality": "LOSSLESS",
+    "releaseDate": "2024-10-25",
+    "numberOfTracks": 18,
+    "numberOfVolumes": 1,
+    "artists": [{"id": 9, "name": "Megan Thee Stallion"}],
+}
+
+
+def _track_replies(album_error: Exception | None = None, album_id: int = 2):
+    """A feature on someone's album, and how many times the album was asked."""
+    asked = []
+
+    async def reply(path, params=None, base=None):
+        """Answer album, lyrics and track requests."""
+        if path.startswith("albums/"):
+            asked.append(path)
+            if album_error:
+                raise album_error
+            return dict(MEGAN_ACT_II)
+        if path.endswith("/lyrics"):
+            raise ItemNotFoundError("no lyrics")
+        return {
+            "id": int(path.split("/")[1]),
+            "title": "TYG (feat. Spiritbox)",
+            "allowStreaming": True,
+            "trackNumber": 8,
+            "volumeNumber": 1,
+            "streamStartDate": "2024-10-25T00:00:00.000+0000",
+            "album": {"id": album_id, "title": "MEGAN: ACT II", "cover": None},
+            "artist": {"id": 9, "name": "Megan Thee Stallion"},
+            "artists": [
+                {"id": 9, "name": "Megan Thee Stallion"},
+                {"id": 7, "name": "Spiritbox"},
+            ],
+        }
+
+    return reply, asked
+
+
+@pytest.mark.asyncio
+async def test_a_single_is_tagged_with_its_albums_own_artists():
+    """A single is tagged with its album's own artists.
+
+    The track's artists used to stand in for the album's, so a feature filed the whole
+    album under "Megan Thee Stallion, Spiritbox".
+    """
+    c = _client()
+    reply, asked = _track_replies()
+    c._api_request = AsyncMock(side_effect=reply)
+
+    resp = await c.get_metadata("8", "track")
+    album = AlbumMetadata.from_track_resp(resp, "tidal")
+    track = TrackMetadata.from_tidal(album, resp)
+
+    assert (album.albumartist, album.albumartists) == (
+        "Megan Thee Stallion",
+        ["Megan Thee Stallion"],
+    )
+    assert (album.tracktotal, album.date) == (18, "2024-10-25")
+    assert track.artists == ["Megan Thee Stallion", "Spiritbox"]
+    await c.get_metadata("9", "track")  # another track of the same album
+    assert asked == ["albums/2"]
+
+
+@pytest.mark.asyncio
+async def test_a_single_whose_album_cannot_be_fetched_still_downloads():
+    """A single whose album can't be fetched is still tagged, from its album stub."""
+    c = _client()
+    reply, _ = _track_replies(album_error=ItemNotFoundError("gone"))
+    c._api_request = AsyncMock(side_effect=reply)
+
+    resp = await c.get_metadata("8", "track")
+    album = AlbumMetadata.from_track_resp(resp, "tidal")
+
+    # As before: the album stub, filled in from the track.
+    assert album.albumartist == "Megan Thee Stallion, Spiritbox"
+
+
+@pytest.mark.asyncio
+async def test_tracks_of_a_downloaded_album_need_no_album_request():
+    """Tracks of an album downloaded as a whole need no album request of their own."""
+    c = _client()
+    c._api_request = _album_replies(["LOSSLESS"])
+    await c.get_metadata("1", "album")
+    reply, asked = _track_replies(album_id=1)
+    c._api_request = AsyncMock(side_effect=reply)
+
+    resp = await c.get_metadata("11", "track")
+
+    assert asked == []
+    assert resp["album"]["id"] == 1
+    assert "tracks" not in resp["album"]
+
+
+def _slow(reply):
+    """A reply that takes a moment, as a request does: tracks resolving
+    together all reach the album check before the first answer is back."""
+
+    async def slow(path, params=None, base=None):
+        """Answer after yielding once, as a real request would."""
+        await asyncio.sleep(0)
+        return await reply(path, params, base)
+
+    return slow
+
+
+@pytest.mark.asyncio
+async def test_tracks_resolving_together_ask_for_their_album_once():
+    """Tracks that resolve together share one request for their album."""
+    c = _client()
+    reply, asked = _track_replies()
+    c._api_request = AsyncMock(side_effect=_slow(reply))
+
+    await asyncio.gather(*(c.get_metadata(str(i), "track") for i in range(8, 28)))
+
+    assert asked == ["albums/2"]
+
+
+@pytest.mark.asyncio
+async def test_a_failed_album_request_is_not_repeated_by_every_track():
+    """A failed album request isn't repeated by each track."""
+    c = _client()
+    reply, asked = _track_replies(album_error=ItemNotFoundError("gone"))
+    c._api_request = AsyncMock(side_effect=_slow(reply))
+
+    resps = await asyncio.gather(
+        *(c.get_metadata(str(i), "track") for i in range(8, 18))
+    )
+
+    assert asked == ["albums/2"]
+    # Each track still downloads, from its own album stub.
+    assert all("numberOfTracks" not in r["album"] for r in resps)
+
+
+@pytest.mark.asyncio
+async def test_only_a_hires_track_keeps_the_cached_hires_format():
+    """Only a hi-res track keeps the hi-res format cached with its album."""
+    c = _client()
+    # The album was downloaded as a hi-res album earlier in the run: its cached
+    # copy carries the format of the track that was asked about.
+    c._albums["2"] = MEGAN_ACT_II | {
+        "streamQuality": {"bitDepth": 24, "sampleRate": 96000}
+    }
+    reply, _ = _track_replies()
+
+    async def tracks(path, params=None, base=None):
+        """Answer as Tidal does: LOSSLESS for every track, hi-res only in the tags."""
+        resp = await reply(path, params, base)
+        # As Tidal answers: LOSSLESS for every track, hi-res only in the tags.
+        tags = {
+            "tracks/8": ["LOSSLESS"],
+            "tracks/9": ["LOSSLESS", "HIRES_LOSSLESS"],
+        }.get(path)
+        if path.startswith("tracks/") and not path.endswith("/lyrics"):
+            resp["audioQuality"] = "LOSSLESS"
+            if tags is not None:
+                resp["mediaMetadata"] = {"tags": tags}
+        return resp
+
+    c._api_request = AsyncMock(side_effect=tracks)
+
+    async def label(track_id):
+        """The bit depth and sampling rate a track's album is labelled with."""
+        resp = await c.get_metadata(track_id, "track")
+        info = AlbumMetadata.from_track_resp(resp, "tidal").info
+        return info.bit_depth, info.sampling_rate
+
+    assert await label("8") == (16, 44.1)  # lossless only
+    assert await label("9") == (24, 96)  # hi-res
+    assert await label("10") == (24, 96)  # no tag data: could be hi-res

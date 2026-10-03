@@ -87,6 +87,7 @@ class DeezerClient(Client):
             raise Exception(f"Media type {media_type} not available on deezer")
 
     async def get_track(self, item_id: str) -> dict:
+        """A track's metadata, with its album and, when wanted, its lyrics."""
         try:
             item = await asyncio.to_thread(self.client.api.get_track, item_id)
         except Exception as e:
@@ -98,6 +99,7 @@ class DeezerClient(Client):
         except Exception as e:
             # Geo-restricted or removed albums: tag from the track metadata.
             logger.debug(f"Album {album_id} unavailable for track {item_id}: {e}")
+            item["album"]["stream_quality"] = self._target_quality()
 
         if self.global_config.session.downloads.lyrics:
             try:
@@ -132,17 +134,21 @@ class DeezerClient(Client):
         return "\n".join(lines)
 
     async def get_album(self, item_id: str) -> dict:
+        """An album's metadata, tracks and quality, cached per run."""
         item_id = str(item_id)
         if item_id in self._album_cache:
             logger.debug("Deezer album cache hit for album ID %s", item_id)
             return self._album_cache[item_id]
-        album_metadata, album_tracks = await asyncio.gather(
+        album_metadata, album_tracks, stream_quality = await asyncio.gather(
             asyncio.to_thread(self.client.api.get_album, item_id),
             asyncio.to_thread(self.client.api.get_album_tracks, item_id),
+            self._album_quality(item_id),
             return_exceptions=True,
         )
         if isinstance(album_metadata, BaseException):
             raise NonStreamableError(album_metadata)
+        if isinstance(stream_quality, BaseException):
+            stream_quality = self._target_quality()
         if isinstance(album_tracks, BaseException):
             # Old album ids redirect to a re-release on the website, and the
             # API answers /album/<old id> with the new album but has no
@@ -156,6 +162,7 @@ class DeezerClient(Client):
             )
         album_metadata["tracks"] = album_tracks["data"]
         album_metadata["track_total"] = len(album_tracks["data"])
+        album_metadata["stream_quality"] = stream_quality
         self._album_cache[item_id] = album_metadata
         return album_metadata
 
@@ -423,4 +430,41 @@ class DeezerClient(Client):
             return 2
         if user.get("can_stream_hq"):
             return 1
+        return 0
+
+    def _target_quality(self) -> int:
+        """The tier tracks are asked for: the configured one, within the account."""
+        wanted = max(0, min(self.config.quality, self.max_quality))
+        return min(wanted, self._account_max_quality())
+
+    async def _album_quality(self, album_id: str) -> int:
+        """The tier an album comes in, for its folder name and labels.
+
+        Tracks are asked for the target tier and fall back one by one, so the
+        stable answer is the best tier every track has: one track without FLAC
+        makes it an MP3 album, and the name no longer depends on which tracks
+        a re-run still has to fetch. A FILESIZE of 0 can be wrong (Deezer
+        reports it for formats it does serve), but this only names a folder.
+        """
+        target = self._target_quality()
+        if target == 0 or not self.config.lower_quality_if_not_available:
+            return target
+        try:
+            rows = await asyncio.to_thread(self.client.gw.get_album_tracks, album_id)
+        except Exception as e:
+            logger.debug("No file sizes for Deezer album %s: %s", album_id, e)
+            return target
+        # One size per tier: FILESIZE_MP3_128, FILESIZE_MP3_320, FILESIZE_FLAC.
+        sizes = [
+            [
+                int(row.get(f"FILESIZE_{fmt}", 0))
+                for fmt in ("MP3_128", "MP3_320", "FLAC")
+            ]
+            for row in rows
+        ]
+        # A track with no size at all is delisted: its fallback track decides.
+        sizes = [s for s in sizes if any(s)]
+        for tier in range(target, 0, -1):
+            if all(s[tier] for s in sizes):
+                return tier
         return 0

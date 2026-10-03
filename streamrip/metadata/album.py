@@ -17,10 +17,29 @@ logger = logging.getLogger("streamrip")
 
 genre_clean = re.compile(r"([^\u2192\/]+)")
 
+# A bracket of a folder format that is only about bit depth and sampling rate:
+# their placeholders, units and separators, and nothing else.
+_QUALITY_BRACKET = re.compile(
+    r"\s*\[(?=[^\]]*\{(?:bit_depth|sampling_rate)\})"
+    r"(?:\{(?:bit_depth|sampling_rate)\}|bits?|kHz|Hz|B|[\s/_.,@x-])*\]"
+)
+
 
 def _year(date: str | None) -> str:
     """Return the 4-digit year prefix of an ISO date, or "Unknown"."""
     return date[:4] if date else "Unknown"
+
+
+def _deezer_quality(tier: int) -> dict:
+    """The quality fields of a Deezer AlbumInfo: tiers 0 and 1 are MP3, 2 is FLAC."""
+    if tier >= 2:
+        return {
+            "quality": 2,
+            "container": "FLAC",
+            "sampling_rate": 44.1,
+            "bit_depth": 16,
+        }
+    return {"quality": tier, "container": "MP3"}
 
 
 @dataclass(slots=True)
@@ -53,6 +72,9 @@ class AlbumMetadata:
     description: str | None = None
     # Edition name, e.g. "Deluxe Edition". Only some sources provide one.
     version: str | None = None
+    # The album artists one by one, where the source lists them (like
+    # TrackMetadata.artists): written as separate ALBUMARTIST values.
+    albumartists: list[str] | None = None
 
     def get_genres(self) -> str:
         return ", ".join(self.genre)
@@ -66,12 +88,20 @@ class AlbumMetadata:
         return _copyright
 
     def format_folder_path(self, formatter: str) -> str:
+        """Render `formatter` into this album's folder name."""
         # Available keys: "albumartist", "title", "year", "bit_depth", "sampling_rate",
         # "id", "albumcomposer", "container", "tracktotal", and "version".
         #
         # Two different editions of the same album can otherwise render to the
         # same folder and get merged together -- "tracktotal" and "version"
         # give a readable way to tell them apart without resorting to "id".
+
+        # A lossy album has no bit depth or sampling rate to put in a folder
+        # name: drop a bracket that is only about them, not "[UnknownB-UnknownkHz]".
+        # One that says anything else too ("[{container} {bit_depth}B]",
+        # "[Deluxe {bit_depth}B]") stays.
+        if not (self.info.bit_depth and self.info.sampling_rate):
+            formatter = _QUALITY_BRACKET.sub("", formatter)
 
         none_str = "Unknown"
         info: dict[str, str | int | float] = {
@@ -102,10 +132,10 @@ class AlbumMetadata:
             album = f"{album} ({version})"
         genre = safe_get(resp, "genre", "name")
         date = resp.get("release_date_original") or resp.get("release_date")
-        if artists := resp.get("artists"):
-            albumartist = ", ".join(a["name"] for a in artists)
-        else:
-            albumartist = safe_get(resp, "artist", "name") or "Unknown Artist"
+        artists = [a["name"] for a in resp.get("artists") or []]
+        albumartist = (
+            ", ".join(artists) or safe_get(resp, "artist", "name") or "Unknown Artist"
+        )
         label = resp.get("label")
         if isinstance(label, dict):
             label = label["name"]
@@ -148,6 +178,7 @@ class AlbumMetadata:
             date=date,
             description=resp.get("description") or "",
             version=version,
+            albumartists=artists or None,
         )
 
     @classmethod
@@ -156,17 +187,15 @@ class AlbumMetadata:
         date = resp.get("release_date")
         info = AlbumInfo(
             id=str(resp["id"]),
-            quality=2,
-            container="FLAC",
             label=resp.get("label"),
             explicit=bool(resp.get("parental_warning") or resp.get("explicit_lyrics")),
-            sampling_rate=44.1,
-            bit_depth=16,
+            **_deezer_quality(resp.get("stream_quality", 2)),
         )
+        artists = deezer_artists(resp)
         return cls(
             info,
             resp.get("title") or "Unknown Album",
-            ", ".join(deezer_artists(resp)),
+            ", ".join(artists),
             _year(date),
             genre=[
                 g["name"] for g in safe_get(resp, "genres", "data", default=[]) or []
@@ -175,6 +204,7 @@ class AlbumMetadata:
             tracktotal=resp.get("track_total") or resp.get("nb_tracks") or 0,
             disctotal=resp["tracks"][-1]["disk_number"] if resp["tracks"] else 1,
             date=date,
+            albumartists=artists,
         )
 
     @classmethod
@@ -184,21 +214,20 @@ class AlbumMetadata:
         date = album.get("release_date")
         info = AlbumInfo(
             id=str(album["id"]),
-            quality=2,
-            container="FLAC",
             explicit=bool(resp.get("explicit_lyrics")),
-            sampling_rate=44.1,
-            bit_depth=16,
+            **_deezer_quality(album.get("stream_quality", 2)),
         )
+        artists = deezer_artists(resp)
         return cls(
             info,
             album.get("title") or "Unknown Album",
-            ", ".join(deezer_artists(resp)),
+            ", ".join(artists),
             _year(date),
             genre=[],
             covers=Covers.from_deezer(album),
             tracktotal=1,
             date=date,
+            albumartists=artists,
         )
 
     @classmethod
@@ -247,7 +276,7 @@ class AlbumMetadata:
             bit_depth = (24 if quality == 3 else 16) if lossless else None
             sampling_rate = 44.1 if lossless else None
         date = resp.get("releaseDate")
-        artists = ", ".join(a["name"] for a in resp.get("artists") or [])
+        artists = [a["name"] for a in resp.get("artists") or []]
         info = AlbumInfo(
             id=str(resp["id"]),
             quality=quality,
@@ -259,7 +288,8 @@ class AlbumMetadata:
         return cls(
             info,
             resp.get("title") or "Unknown Album",
-            artists or safe_get(resp, "artist", "name", default="Unknown Artist"),
+            ", ".join(artists)
+            or safe_get(resp, "artist", "name", default="Unknown Artist"),
             _year(date),
             genre=[],
             covers=Covers.from_tidal(resp) or Covers(),
@@ -267,12 +297,14 @@ class AlbumMetadata:
             disctotal=resp.get("numberOfVolumes", 1),
             copyright=resp.get("copyright") or "",
             date=date,
+            albumartists=artists or None,
         )
 
     @classmethod
     def from_tidal_playlist_track_resp(cls, resp: dict) -> AlbumMetadata | None:
-        """Album metadata from a track response. That only carries the album's
-        id, title and cover, so the rest is taken from the track itself.
+        """Album metadata from a track response, when the album's own could
+        not be fetched. That only carries the album's id, title and cover, so
+        the rest is taken from the track itself.
         """
         return cls.from_tidal(
             resp["album"]
@@ -290,9 +322,13 @@ class AlbumMetadata:
 
     @classmethod
     def from_track_resp(cls, resp: dict, source: str) -> AlbumMetadata | None:
+        """The album metadata inside a track response, as `source` gives it."""
         if source == "qobuz":
             return cls.from_qobuz(resp["album"])
         if source == "tidal":
+            if "numberOfTracks" in resp["album"]:
+                # The album's own response (TidalClient._album_of).
+                return cls.from_tidal(resp["album"])
             return cls.from_tidal_playlist_track_resp(resp)
         if source == "soundcloud":
             return cls.from_soundcloud(resp)

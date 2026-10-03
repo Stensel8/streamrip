@@ -99,10 +99,8 @@ def _tidal_albums(resp: dict, prefer_explicit: bool) -> list[dict]:
 @dataclass(slots=True)
 class ArtistMetadata:
     name: str
+    # The artist's album ids.
     ids: list[str]
-
-    def album_ids(self):
-        return self.ids
 
     @classmethod
     def from_resp(

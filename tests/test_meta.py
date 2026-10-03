@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from streamrip.metadata import AlbumMetadata, TrackMetadata
 
 with open("tests/qobuz_album_resp.json") as f:
@@ -83,13 +85,16 @@ def test_tidal_album_with_null_copyright_and_no_date():
 
 
 def test_tidal_album_folder_details_match_other_sources():
+    """A Tidal album gets a container, bit depth and rate like other sources, and its
+    artists one by one.
+    """
     m = AlbumMetadata.from_tidal(_tidal_album())
     assert (m.info.container, m.info.bit_depth, m.info.sampling_rate) == (
         "FLAC",
         16,
         44.1,
     )
-    assert m.albumartist == "A, B"
+    assert (m.albumartist, m.albumartists) == ("A, B", ["A", "B"])
     assert (m.tracktotal, m.disctotal) == (9, 2)
 
 
@@ -166,6 +171,7 @@ def test_tidal_track_metadata():
 
 
 def test_deezer_track_metadata():
+    """A Deezer track's id, explicit flag and artists come from its response."""
     resp = {
         "id": 8,
         "title": "Song",
@@ -191,12 +197,50 @@ def test_deezer_track_metadata():
     t = TrackMetadata.from_deezer(album, resp)
     assert (t.info.id, t.info.explicit) == ("8", False)
     assert (t.artist, t.artists, album.albumartist) == ("A, B", ["A", "B"], "A, B")
+    assert album.albumartists == ["A", "B"]
     # Without contributors, the main artist.
     del resp["contributors"]
     assert TrackMetadata.from_deezer(album, resp).artists == ["A"]
 
 
+def test_deezer_album_labels_follow_the_stream_quality():
+    """A Deezer album's labels follow the quality it is streamed in: FLAC, or MP3
+    without a bit depth.
+    """
+    resp = {
+        "id": 5,
+        "title": "Album",
+        "release_date": "2020-01-01",
+        "artist": {"name": "A"},
+        "tracks": [],
+        **{f"cover_{s}": "u" for s in ("xl", "big", "medium", "small")},
+    }
+    fmt = "{albumartist} - {title} ({year}) [{container}] [{bit_depth}B-{sampling_rate}kHz]"
+
+    # Without word from the client, Deezer's lossless tier.
+    flac = AlbumMetadata.from_deezer(resp)
+    assert (flac.info.container, flac.info.bit_depth, flac.info.sampling_rate) == (
+        "FLAC",
+        16,
+        44.1,
+    )
+    assert flac.format_folder_path(fmt) == "A - Album (2020) [FLAC] [16B-44.1kHz]"
+
+    # An MP3 tier has no bit depth: its folder name drops that bracket instead
+    # of saying "[UnknownB-UnknownkHz]".
+    mp3 = AlbumMetadata.from_deezer(resp | {"stream_quality": 1})
+    assert (mp3.info.container, mp3.info.bit_depth, mp3.info.sampling_rate) == (
+        "MP3",
+        None,
+        None,
+    )
+    assert mp3.format_folder_path(fmt) == "A - Album (2020) [MP3]"
+
+
 def test_soundcloud_track_metadata():
+    """A SoundCloud track's id, explicit flag, title, artist and ISRC come from its
+    response.
+    """
     resp = {
         "id": "123|_original_download",
         "title": " Song",
@@ -213,3 +257,77 @@ def test_soundcloud_track_metadata():
         "X",
     )
     assert (t.tracknumber, t.discnumber) == (1, 1)
+
+
+def test_qobuz_artists_split_from_performers():
+    """Qobuz track artists are split out of its performers credits."""
+    from streamrip.metadata.util import qobuz_artists
+
+    resp = {
+        "performers": "X, Producer - Spiritbox, MainArtist - "
+        "Tyler, The Creator, FeaturedArtist - Courtney LaPlante, MainArtist, Vocals"
+    }
+    assert qobuz_artists(resp) == [
+        "Spiritbox",
+        "Courtney LaPlante",
+        "Tyler, The Creator",
+    ]
+    assert qobuz_artists({}) == []
+
+
+def test_qobuz_artists_keep_a_name_suffix_with_the_name():
+    """A comma and a suffix, as in "Smith, Jr", belong to the name, not to a role."""
+    from streamrip.metadata.util import qobuz_artists
+
+    resp = {"performers": "Smith, Jr, MainArtist - Jones, III, FeaturedArtist, Vocals"}
+    assert qobuz_artists(resp) == ["Smith, Jr", "Jones, III"]
+
+
+def test_qobuz_artists_put_the_main_artist_first():
+    """Main artists come first, then featured ones.
+
+    The clean edition of this track lists its feature first and the explicit one last.
+    Both should tag the same artists in the same order.
+    """
+    from streamrip.metadata.util import qobuz_artists
+
+    clean = {
+        "performers": "Spiritbox, Vocals, FeaturedArtist - "
+        "Megan Thee Stallion, MainArtist, Vocals - X, Producer"
+    }
+    assert qobuz_artists(clean) == ["Megan Thee Stallion", "Spiritbox"]
+
+
+@pytest.mark.parametrize(
+    ("fmt", "folder"),
+    [
+        # A bracket that is only bit depth and sampling rate has nothing to say.
+        (
+            "{albumartist} - {title} [{container}] [{bit_depth}B-{sampling_rate}kHz]",
+            "A - Album [MP3]",
+        ),
+        ("{albumartist} - {title} [{bit_depth}bit-{sampling_rate}kHz]", "A - Album"),
+        # One that also holds the container keeps it: it's still the format.
+        (
+            "{albumartist} - {title} [{container} {bit_depth}B-{sampling_rate}kHz]",
+            "A - Album [MP3 UnknownB-UnknownkHz]",
+        ),
+        # So does one that says anything else, like an edition.
+        (
+            "{albumartist} - {title} [Deluxe {bit_depth}B]",
+            "A - Album [Deluxe UnknownB]",
+        ),
+    ],
+)
+def test_lossy_folder_names_drop_only_brackets_that_are_all_quality(fmt, folder):
+    """A lossy album's folder name loses only the brackets that are all about quality."""
+    resp = {
+        "id": 5,
+        "title": "Album",
+        "artist": {"name": "A"},
+        "tracks": [],
+        "stream_quality": 1,
+        **{f"cover_{s}": "u" for s in ("xl", "big", "medium", "small")},
+    }
+
+    assert AlbumMetadata.from_deezer(resp).format_folder_path(fmt) == folder

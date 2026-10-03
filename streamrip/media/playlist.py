@@ -77,7 +77,7 @@ class PendingPlaylistTrack(Pending):
             # track's own would split the playlist into one album per artist
             # (upstream PR #738).
             album.album = self.playlist_name
-            album.albumartist = "Various Artists"
+            album.albumartist, album.albumartists = "Various Artists", None
             album.compilation = "1"
 
         (cover_path, _), downloadable = await asyncio.gather(
@@ -150,7 +150,7 @@ class PendingPlaylist(Pending):
             logger.error(f"Error creating playlist: {e}")
             return None
         name = meta.name
-        ids = meta.ids()
+        ids = meta.ids
         tracks = [
             PendingPlaylistTrack(
                 id,
@@ -287,10 +287,6 @@ class PendingLastfmPlaylist(Pending):
 
         Each page contains 50 results. Playlists above LASTFM_MAX_TRACKS
         are rejected, and pages are fetched one at a time to bound pending work.
-
-        :param url:
-        :type url: str
-        :rtype: tuple[str, list[tuple[str, str]]]
         """
         logger.debug("Fetching lastfm playlist")
 
@@ -300,12 +296,11 @@ class PendingLastfmPlaylist(Pending):
             r'<h1 class="playlisting-playlist-header-title">([^<]+)</h1>',
         )
 
-        def find_title_artist_pairs(page_text):
-            info: list[tuple[str, str]] = []
-            titles = title_tags.findall(page_text)  # [2:]
-            for i in range(0, len(titles) - 1, 2):
-                info.append((html.unescape(titles[i]), html.unescape(titles[i + 1])))
-            return info
+        def find_title_artist_pairs(page_text) -> list[tuple[str, str]]:
+            """The (title, artist) pairs of a last.fm playlist page."""
+            # Each track is a link with its title, then one with its artist.
+            titles = [html.unescape(t) for t in title_tags.findall(page_text)]
+            return list(zip(titles[::2], titles[1::2]))
 
         async def fetch(session: aiohttp.ClientSession, url, **kwargs):
             async with session.get(url, **kwargs) as resp:
@@ -324,7 +319,7 @@ class PendingLastfmPlaylist(Pending):
 
             total_tracks_match = re_total_tracks.search(page)
             if total_tracks_match is None:
-                raise Exception("Error parsing lastfm page: %s", page)
+                raise Exception("Error finding the track count on the last.fm page")
             total_tracks = int(total_tracks_match.group(1))
             if total_tracks > LASTFM_MAX_TRACKS:
                 raise ValueError(

@@ -23,35 +23,18 @@ import asyncio
 import json
 import logging
 import secrets
-import shutil
-import sys
 
 from aiohttp import web
 
 from ..console import console
-from .interactive import Confirm
+from .browser_login import (
+    LOGIN_TIMEOUT_S,
+    BrowserLoginError,
+    login_page,
+    wait_for_login,
+)
 
 logger = logging.getLogger("streamrip")
-
-# Playwright's own channel names for already-installed browsers, tried
-# first; then common binary names on PATH for browsers Playwright doesn't
-# recognize as a channel (Brave, Vivaldi, plain Chromium builds, ...).
-# Either way nothing is ever downloaded -- if none of these are found, the
-# caller should fall back to the console-snippet or manual capture instead.
-_CHROME_CHANNELS = ("chrome", "msedge")
-_CHROME_BINARY_NAMES = (
-    "google-chrome",
-    "google-chrome-stable",
-    "chromium",
-    "chromium-browser",
-    "brave-browser",
-    "brave",
-    "brave-origin",
-    "microsoft-edge",
-    "microsoft-edge-stable",
-    "vivaldi",
-    "vivaldi-stable",
-)
 
 # Qobuz's login page sets no restrictive Content-Security-Policy (checked
 # 2026-09-30: `default-src * 'unsafe-inline' 'unsafe-eval' data: blob:`), so
@@ -85,7 +68,7 @@ _SNIPPET_TEMPLATE = """\
 """
 
 
-class QobuzTokenCaptureError(Exception):
+class QobuzTokenCaptureError(BrowserLoginError):
     """Raised when automatic Qobuz token capture fails or times out."""
 
 
@@ -164,136 +147,48 @@ async def capture_qobuz_auth_token(timeout_s: int = 300) -> tuple[str, str]:
         await runner.cleanup()
 
 
-async def _launch_installed_chromium(pw, headless: bool):
-    """Try to drive a browser already on this machine. Never downloads.
+async def _read_token(page) -> tuple[str, str] | None:
+    """(user_id, token) once Qobuz's web player has saved them, else None."""
+    from playwright.async_api import Error as PlaywrightError
 
-    Returns (browser, name) or (None, None) if nothing usable was found.
-    """
-    for channel in _CHROME_CHANNELS:
-        try:
-            browser = await pw.chromium.launch(channel=channel, headless=headless)
-            return browser, channel
-        except Exception:
-            continue
-    for name in _CHROME_BINARY_NAMES:
-        path = shutil.which(name)
-        if not path:
-            continue
-        try:
-            browser = await pw.chromium.launch(executable_path=path, headless=headless)
-            return browser, name
-        except Exception:
-            continue
-    return None, None
-
-
-async def _download_playwright_chromium() -> None:
-    """Run `playwright install chromium`. Only called after the user agrees."""
-    console.print(
-        "[cyan]Downloading a browser for Qobuz auto-login (one-time, ~150 MB)...[/cyan]"
-    )
-    proc = await asyncio.create_subprocess_exec(
-        sys.executable,
-        "-m",
-        "playwright",
-        "install",
-        "chromium",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT,
-    )
-    out, _ = await proc.communicate()
-    if proc.returncode != 0:
-        raise QobuzTokenCaptureError(
-            "Could not download a browser automatically "
-            f"(exit {proc.returncode}): {out.decode(errors='replace')[-500:]}"
-        )
+    try:
+        raw = await page.evaluate("() => localStorage.getItem('localuser')")
+    except PlaywrightError:
+        # Qobuz reloads the page on login, which tears down the execution
+        # context mid-poll; the next tick runs against the page that comes
+        # after, once it's settled.
+        return None
+    try:
+        data = json.loads(raw) if raw else None
+    except ValueError:
+        return None
+    if data and data.get("id") and data.get("token"):
+        return str(data["id"]), str(data["token"])
+    return None
 
 
 async def capture_qobuz_auth_token_via_browser(
-    timeout_s: int = 120,
+    timeout_s: int = LOGIN_TIMEOUT_S,
     login_url: str = "https://play.qobuz.com/login",
     headless: bool = False,
 ) -> tuple[str, str]:
     """Log in inside a freshly isolated browser window and read the token.
 
-    Prefers driving a Chrome-family browser already on this machine (Chrome,
-    Edge, Brave, Chromium, Vivaldi, ...) in a throwaway profile, so the
-    login page is always fresh -- there's no existing session to work
-    around, unlike `capture_qobuz_auth_token`'s console snippet. Playwright
-    can't drive an already-installed Firefox or LibreWolf the same way (it
-    needs its own specially patched build for that engine), so if no
-    Chrome-family browser is found, this asks before downloading one --
-    that download is Playwright's own browser, not the one you use day to
-    day, and it's worth being upfront about that.
+    Drives a throwaway browser profile (see browser_login), so the login
+    page is always fresh -- there's no existing session to work around,
+    unlike `capture_qobuz_auth_token`'s console snippet.
 
     `login_url` and `headless` exist for tests; real callers should leave
     them at their defaults (the real Qobuz login page, and a visible
     window, since this drives your actual login).
 
-    Raises QobuzTokenCaptureError if no browser could be used (nothing
-    found and the download was declined or failed) or no login happened
-    within `timeout_s`; callers should fall back to another login method.
+    Raises QobuzTokenCaptureError if no browser could be used or no login
+    happened within `timeout_s`; callers should fall back to another login
+    method.
     """
-    try:
-        from playwright.async_api import Error as PlaywrightError
-        from playwright.async_api import async_playwright
-    except ImportError as e:
-        raise QobuzTokenCaptureError(
-            "Playwright isn't available; use another login method."
-        ) from e
-
-    try:
-        async with async_playwright() as pw:
-            browser, found_as = await _launch_installed_chromium(pw, headless)
-            if browser is not None:
-                console.print(
-                    f"[cyan]Driving your installed browser ({found_as})…[/cyan]"
-                )
-            else:
-                if not Confirm.ask(
-                    "\n[yellow]No installed Chrome, Edge, Brave, or Chromium "
-                    "found.[/yellow] Playwright would need to download its own "
-                    "browser (not the one you use day to day) to log in "
-                    "automatically -- about 150 MB, once. Download it?",
-                    default=False,
-                ):
-                    raise QobuzTokenCaptureError(
-                        "Skipped downloading a browser; use another login method."
-                    )
-                await _download_playwright_chromium()
-                browser = await pw.chromium.launch(headless=headless)
-                console.print("[cyan]Using the downloaded browser…[/cyan]")
-
-            try:
-                context = await browser.new_context()
-                page = await context.new_page()
-                await page.goto(login_url)
-
-                deadline = asyncio.get_event_loop().time() + timeout_s
-                while asyncio.get_event_loop().time() < deadline:
-                    try:
-                        raw = await page.evaluate(
-                            "() => localStorage.getItem('localuser')"
-                        )
-                    except PlaywrightError:
-                        # Qobuz reloads the page on login, which tears down the
-                        # execution context mid-poll; the next tick runs against
-                        # the page that comes after, once it's settled.
-                        await asyncio.sleep(1)
-                        continue
-                    if raw:
-                        try:
-                            data = json.loads(raw)
-                        except ValueError:
-                            data = None
-                        if data and data.get("id") and data.get("token"):
-                            return str(data["id"]), str(data["token"])
-                    await asyncio.sleep(1)
-
-                raise QobuzTokenCaptureError(f"No login detected within {timeout_s}s.")
-            finally:
-                await browser.close()
-    except QobuzTokenCaptureError:
-        raise
-    except Exception as exc:
-        raise QobuzTokenCaptureError(f"Browser capture failed: {exc}") from exc
+    async with login_page(
+        "Qobuz", login_url, QobuzTokenCaptureError, "the login token", headless
+    ) as page:
+        return await wait_for_login(
+            lambda: _read_token(page), timeout_s, QobuzTokenCaptureError
+        )
