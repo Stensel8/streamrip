@@ -89,10 +89,12 @@ class AlbumMetadata:
         # give a readable way to tell them apart without resorting to "id".
 
         # A lossy album has no bit depth or sampling rate to put in a folder
-        # name: drop the bracket that asks for them, not "[UnknownB-UnknownkHz]".
+        # name: drop a bracket that is only about them, not "[UnknownB-UnknownkHz]".
+        # One that holds anything else too ("[{container} {bit_depth}B]") stays.
         if not (self.info.bit_depth and self.info.sampling_rate):
+            quality = r"\{(?:bit_depth|sampling_rate)\}"
             formatter = re.sub(
-                r"\s*\[[^\]]*\{(?:bit_depth|sampling_rate)\}[^\]]*\]", "", formatter
+                rf"\s*\[(?=[^\]]*{quality})(?:[^\]{{}}]|{quality})*\]", "", formatter
             )
 
         none_str = "Unknown"

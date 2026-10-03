@@ -1,3 +1,4 @@
+import pytest
 import json
 
 from streamrip.metadata import AlbumMetadata, TrackMetadata
@@ -272,3 +273,32 @@ def test_qobuz_artists_put_the_main_artist_first():
         "Megan Thee Stallion, MainArtist, Vocals - X, Producer"
     }
     assert qobuz_artists(clean) == ["Megan Thee Stallion", "Spiritbox"]
+
+
+@pytest.mark.parametrize(
+    ("fmt", "folder"),
+    [
+        # A bracket that is only bit depth and sampling rate has nothing to say.
+        (
+            "{albumartist} - {title} [{container}] [{bit_depth}B-{sampling_rate}kHz]",
+            "A - Album [MP3]",
+        ),
+        ("{albumartist} - {title} [{bit_depth}bit-{sampling_rate}kHz]", "A - Album"),
+        # One that also holds the container keeps it: it's still the format.
+        (
+            "{albumartist} - {title} [{container} {bit_depth}B-{sampling_rate}kHz]",
+            "A - Album [MP3 UnknownB-UnknownkHz]",
+        ),
+    ],
+)
+def test_lossy_folder_names_drop_only_brackets_that_are_all_quality(fmt, folder):
+    resp = {
+        "id": 5,
+        "title": "Album",
+        "artist": {"name": "A"},
+        "tracks": [],
+        "stream_quality": 1,
+        **{f"cover_{s}": "u" for s in ("xl", "big", "medium", "small")},
+    }
+
+    assert AlbumMetadata.from_deezer(resp).format_folder_path(fmt) == folder
