@@ -4,9 +4,9 @@ Deezer has no sign-in for outside apps: what streamrip logs in with is the
 `arl` cookie of a logged-in web session, and an email/password login is
 behind a captcha. The cookie is HttpOnly, so unlike Qobuz's token it can't be
 read by a script on the page -- only by the browser's owner. Playwright
-drives a throwaway browser profile (see browser_login) and reads that one
-cookie once you've logged in yourself; streamrip never sees your password and
-leaves every other cookie of the session alone.
+drives a throwaway browser profile (see browser_login) and, once you've
+logged in yourself, hands over the cookies of the page; streamrip keeps the
+arl and discards the rest unread. It never sees your password.
 """
 
 from .browser_login import (

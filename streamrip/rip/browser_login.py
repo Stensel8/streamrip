@@ -164,8 +164,8 @@ async def login_page(
             await page.goto(login_url)
             console.print(
                 f"\n[cyan]Log in to {service} in the browser window that just "
-                f"opened.[/cyan]\nstreamrip never sees your password: it only "
-                f"reads {reads} once you're logged in.\n"
+                f"opened.[/cyan]\nstreamrip never sees your password and "
+                f"keeps only {reads} once you're logged in.\n"
             )
             yield page
     except error:

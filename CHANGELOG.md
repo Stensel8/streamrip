@@ -11,7 +11,7 @@ Thanks to [@berettavexee](https://github.com/berettavexee) for the Deezer qualit
 
 - Logging in no longer means digging the `arl` cookie out of DevTools. streamrip
   offers a choice: an isolated browser window where you log in yourself and
-  streamrip reads only the `arl` cookie (never your password), or entering it by
+  streamrip keeps only the `arl` cookie and never sees your password, or entering it by
   hand, with the steps printed. Entering it by hand is the default, because the
   browser option may have to download a browser first. Deezer has no sign-in for
   outside apps, and its email and password login is behind a captcha.

@@ -118,7 +118,7 @@ in the config. A login that stops working is asked for again.
   is behind a captcha. What streamrip logs in with is the `arl` cookie of a
   logged-in web session, so it offers a choice of how to get it:
   1. **An isolated browser window**, the same one Qobuz uses (see above). You
-     log in there yourself; streamrip only reads the `arl` cookie once you're
+     log in there yourself; streamrip keeps only the `arl` cookie once you're
      in, and never sees your password.
   2. **By hand**: copy the `arl` cookie from your browser's DevTools
      ([how to find it](https://github.com/nathom/streamrip/wiki/Finding-Your-Deezer-ARL-Cookie)).
