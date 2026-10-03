@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+from aiohttp import web
 from PIL import Image
 from textual.widgets import Input, OptionList, Static
 
@@ -389,28 +390,18 @@ async def test_delayed_encoder_failure_falls_back_for_later_covers(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_cache_http_download_failure_and_close():
-    from aiohttp import web
-
+async def test_cache_http_download_failure_and_close(serve):
     async def cover(request):
         return web.Response(body=png(), content_type="image/png")
 
-    app = web.Application()
-    app.router.add_get("/cover", cover)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, "127.0.0.1", 0)
-    await site.start()
-    host, port = runner.addresses[0]
-    url = f"http://{host}:{port}"
+    url = await serve({"/cover": cover})
     cache = CoverCache()
     try:
-        assert await cache.get((url + "/missing", url + "/cover")) is not None
-        assert cache.images[url + "/missing"] is None
+        assert await cache.get((url + "missing", url + "cover")) is not None
+        assert cache.images[url + "missing"] is None
         session = cache.session
     finally:
         await cache.close()
-        await runner.cleanup()
     assert session.closed
 
 

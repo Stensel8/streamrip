@@ -14,18 +14,6 @@ from streamrip.rip.deezer_arl_capture import (
 pytestmark = pytest.mark.asyncio
 
 
-async def _serve(handlers: dict) -> tuple[web.AppRunner, str]:
-    """Serve `handlers` on a free local port; returns the runner and the base URL."""
-    app = web.Application()
-    for path, handler in handlers.items():
-        app.router.add_get(path, handler)
-    runner = web.AppRunner(app, access_log=None)
-    await runner.setup()
-    site = web.TCPSite(runner, "127.0.0.1", 0)
-    await site.start()
-    return runner, f"http://127.0.0.1:{site.port}/"
-
-
 def _page(html="<p>login</p>", cookies=None):
     """A handler that serves html and sets the given HttpOnly cookies."""
 
@@ -39,63 +27,47 @@ def _page(html="<p>login</p>", cookies=None):
     return handler
 
 
-async def test_reads_the_httponly_arl_cookie():
+async def test_reads_the_httponly_arl_cookie(serve):
     """The arl is read although it is HttpOnly."""
-    runner, url = await _serve({"/": _page(cookies={"arl": "the-arl"})})
-    try:
-        arl = await capture_deezer_arl_via_browser(
-            timeout_s=15, login_url=url, headless=True
-        )
-    finally:
-        await runner.cleanup()
+    url = await serve({"/": _page(cookies={"arl": "the-arl"})})
+    arl = await capture_deezer_arl_via_browser(
+        timeout_s=15, login_url=url, headless=True
+    )
 
     assert arl == "the-arl"
 
 
-async def test_catches_an_arl_that_appears_after_a_delay():
+async def test_catches_an_arl_that_appears_after_a_delay(serve):
     """An arl set a moment after the page loads is still caught."""
     html = "<script>setTimeout(() => fetch('/logged-in'), 1500)</script>"
-    runner, url = await _serve(
+    url = await serve(
         {"/": _page(html), "/logged-in": _page(cookies={"arl": "delayed-arl"})}
     )
-    try:
-        arl = await capture_deezer_arl_via_browser(
-            timeout_s=15, login_url=url, headless=True
-        )
-    finally:
-        await runner.cleanup()
+    arl = await capture_deezer_arl_via_browser(
+        timeout_s=15, login_url=url, headless=True
+    )
 
     assert arl == "delayed-arl"
 
 
-async def test_other_cookies_of_the_session_are_not_enough():
+async def test_other_cookies_of_the_session_are_not_enough(serve):
     """Only the arl counts as a login.
 
     A logged-in session carries a jwt, a refresh token and payment details too, and none
     of those are wanted.
     """
-    runner, url = await _serve(
+    url = await serve(
         {"/": _page(cookies={"sid": "s", "jwt": "j", "refresh-token": "r"})}
     )
-    try:
-        with pytest.raises(DeezerArlCaptureError, match="No login detected"):
-            await capture_deezer_arl_via_browser(
-                timeout_s=2, login_url=url, headless=True
-            )
-    finally:
-        await runner.cleanup()
+    with pytest.raises(DeezerArlCaptureError, match="No login detected"):
+        await capture_deezer_arl_via_browser(timeout_s=2, login_url=url, headless=True)
 
 
-async def test_times_out_when_never_logged_in():
+async def test_times_out_when_never_logged_in(serve):
     """Without a login the capture gives up with its own error."""
-    runner, url = await _serve({"/": _page()})
-    try:
-        with pytest.raises(DeezerArlCaptureError):
-            await capture_deezer_arl_via_browser(
-                timeout_s=2, login_url=url, headless=True
-            )
-    finally:
-        await runner.cleanup()
+    url = await serve({"/": _page()})
+    with pytest.raises(DeezerArlCaptureError):
+        await capture_deezer_arl_via_browser(timeout_s=2, login_url=url, headless=True)
 
 
 def _failing_browser(error: Exception):

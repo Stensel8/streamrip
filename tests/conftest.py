@@ -3,6 +3,7 @@ from contextlib import nullcontext
 from unittest.mock import AsyncMock
 
 import pytest
+from aiohttp import web
 from util import arun
 
 import streamrip.media.semaphore as semaphore_module
@@ -74,3 +75,28 @@ def _no_live_spinners(monkeypatch):
     is actually checking. Swap it for a plain no-op context manager.
     """
     monkeypatch.setattr(console, "status", lambda *a, **k: nullcontext())
+
+
+@pytest.fixture
+async def serve():
+    """Start a local server on a free port: `await serve({"/path": handler})`.
+
+    Gives its base URL, ending in a slash. Every server started is stopped after
+    the test.
+    """
+    runners = []
+
+    async def start(handlers: dict) -> str:
+        app = web.Application()
+        for path, handler in handlers.items():
+            app.router.add_get(path, handler)
+        runner = web.AppRunner(app, access_log=None)
+        await runner.setup()
+        runners.append(runner)
+        await web.TCPSite(runner, "127.0.0.1", 0).start()
+        host, port = runner.addresses[0][:2]
+        return f"http://{host}:{port}/"
+
+    yield start
+    for runner in runners:
+        await runner.cleanup()
