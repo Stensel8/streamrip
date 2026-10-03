@@ -3,6 +3,97 @@
 All notable changes in this fork of [nathom/streamrip](https://github.com/nathom/streamrip). Numbers can refer to
 upstream issues and pull requests.
 
+## 2.4.8
+
+Thanks to [@berettavexee](https://github.com/berettavexee) for the Deezer quality fix and the FLAC cover fix below.
+
+### Deezer
+
+- Logging in no longer means digging the `arl` cookie out of DevTools. streamrip
+  offers a choice: an isolated browser window where you log in yourself and
+  streamrip reads only the `arl` cookie (never your password), or entering it by
+  hand, with the steps printed. Entering it by hand is the default, because the
+  browser option may have to download a browser first. Deezer has no sign-in for
+  outside apps, and its email and password login is behind a captcha.
+- The quality comes from asking Deezer, not from `FILESIZE_*`. Those fields are
+  often 0 for a format Deezer does serve, which made streamrip download such
+  tracks as MP3 320, or skip them ("Missing download info"). Each quality is
+  requested from the wanted one down and the first that returns a URL is used;
+  the file extension comes from the CDN URL. A quality Deezer lists a size for
+  but gives no URL for (a rate limit, say) fails the track instead of silently
+  falling back to a lower one
+  ([PR #26](https://github.com/Stensel8/streamrip/pull/26), by
+  [@berettavexee](https://github.com/berettavexee), with a follow-up for the
+  rate-limit case).
+- Album folders and labels name the quality the tracks come in. They always said
+  `[FLAC] [16B-44.1kHz]`, so `-q 1` gave a FLAC-named folder full of MP3s. It is
+  now your configured quality within what your subscription allows, lowered to
+  the best quality every track of the album has: one track without FLAC makes it
+  an MP3 album. Such a folder can still hold a FLAC, since every track is asked
+  for the best quality it has.
+- Lossy albums leave the empty `[UnknownB-UnknownkHz]` out of the folder name.
+  This also applies to Tidal AAC and SoundCloud.
+
+### Tagging
+
+- Qobuz writes several track artists as separate `ARTIST` values, main artists
+  first and then the featured ones, in the same order as Tidal. Qobuz lists
+  credits in no fixed order, so the clean and the explicit edition of a track
+  used to tag different artists.
+- Several album artists are written as separate `ALBUMARTIST` values for every
+  source, instead of one `A, B, C` string. Libraries that split multi-valued
+  tags (Music Assistant reads them through ffprobe) showed a release credited to
+  several artists as one extra artist. Folder names still use the joined string.
+- Tagging a FLAC a second time after conversion (FLAC to FLAC) no longer embeds
+  the cover twice ([PR #27](https://github.com/Stensel8/streamrip/pull/27), by
+  [@berettavexee](https://github.com/berettavexee)).
+
+### Tidal
+
+- Singles and playlist tracks are tagged with their album's own metadata. A
+  track response only names its album, so a feature credit ended up in the album
+  artist, the track count was missing and the stream date stood in for the
+  release date. The album is fetched once per album; if that request fails, the
+  old behaviour is the fallback.
+- The device login waits for the link's real lifetime (5 minutes, not the
+  "10 minutes" it announced), says so when the link expired, and a real
+  rejection includes Tidal's own description.
+
+### SoundCloud
+
+- Small playlists, which come with every track's metadata up front, no longer
+  fail every track with "not enough values to unpack".
+
+### Search
+
+- The preview in `streamrip search` shows the same details for every source, next
+  to the cover: a track's album, number, release date, length, genre, label,
+  composer, BPM, key and quality, and likewise for albums, artists and
+  playlists. Covers are drawn with quadrant blocks, twice the detail across of
+  half blocks.
+
+### Logging in and progress
+
+- Qobuz and Deezer log in through the same browser helper: the same window, the
+  same 5-minute wait (Qobuz's was 2 minutes) and the same "Credentials saved to
+  config file" message.
+- A download whose size is unknown gets a pulsing bar. A total of 0 made it look
+  finished: a full bar without a spinner.
+
+### Config
+
+- `[misc] check_for_updates` is gone: the update check runs before every command
+  by design and never read it. Config files with a `[misc]` section still load,
+  and so do ones without.
+
+### Internals
+
+- Less code, same behaviour: `Downloadable` is a plain base class, the media
+  types are one table, the redundant album semaphore is gone, playlists hold
+  track ids instead of full metadata, and the progress bars, Tidal client and
+  SoundCloud helpers share their code. The live Qobuz tests run again (set
+  `QOBUZ_USER_ID` and `QOBUZ_AUTH_TOKEN`).
+
 ## 2.4.7
 
 ### Downloading several artists
