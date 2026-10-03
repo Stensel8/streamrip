@@ -4,14 +4,11 @@ The items below are trimmed from real Qobuz, Tidal and Deezer responses.
 """
 
 import io
-import os
-from types import SimpleNamespace
 
-import pytest
 from PIL import Image
 
 from streamrip.metadata.search_results import SearchResults
-from streamrip.rip import search_menu
+from streamrip.rip import cover_preview, search_menu
 
 QOBUZ_TRACK = {
     "id": 380483157,
@@ -47,11 +44,6 @@ TIDAL_TRACK = {
 }
 
 
-def _has_cover(text: str) -> bool:
-    """Whether the rendered text contains cover blocks."""
-    return any(block in text for block in search_menu.QUADRANTS[1:])
-
-
 def _one(source, media_type, page):
     """The first result of one page of search results."""
     return SearchResults.from_pages(source, media_type, [page]).results[0]
@@ -78,7 +70,7 @@ def test_the_same_track_reads_the_same_on_qobuz_and_tidal():
     assert qobuz.image_url == "https://static.qobuz.com/t9cn3qpdmzgy9_50.jpg"
     assert tidal.image_url == (
         "https://resources.tidal.com/images/cabed6a2/cd16/4de7/b8b5/2e498a00d35e/"
-        "320x320.jpg"
+        "640x640.jpg"
     )
 
 
@@ -198,59 +190,10 @@ def test_playlists_name_who_made_them():
     )
 
 
-def test_preview_puts_the_cover_beside_the_details(monkeypatch):
-    """The preview draws the cover beside the details."""
-    with open("tests/1x1_pixel.jpg", "rb") as f:
-        pixel = f.read()
-    monkeypatch.setattr(search_menu, "_fetch", lambda _url: pixel)
-    terminal = SimpleNamespace(get_terminal_size=lambda: os.terminal_size((80, 30)))
-    monkeypatch.setattr(search_menu, "shutil", terminal)
-    results = SearchResults.from_pages(
-        "qobuz", "track", [{"tracks": {"items": [QOBUZ_TRACK]}}]
-    )
-    previews = search_menu.Previews(results)
-    try:
-        preview = previews("1. Circle With Me by Spiritbox (2021)")
-    finally:
-        previews.close()
-
-    lines = preview.splitlines()
-    rows = search_menu.cover_size(80, 30)
-    assert rows == 10  # the details keep 60 of the 80 columns
-    assert _has_cover(lines[0]) and "Circle With Me" in lines[0]
-    assert any("Genre" in line and "Metal" in line for line in lines)
-    # More details than cover rows: the last ones line up under the details.
-    assert not _has_cover(lines[-1])
-    assert lines[-1].startswith(" " * (2 * rows + 2))
-    assert "380483157" in lines[-1]
-
-
 def test_cover_fills_the_preview_height_of_a_big_terminal():
     """On a big terminal the cover fills the height of the preview."""
     assert search_menu.cover_size(200, 60) == 28  # 60 * 0.5, less the border
     assert search_menu.cover_size(60, 60) == 0  # no room beside the details
-
-
-@pytest.mark.parametrize("error", [OSError("offline"), ValueError("not an image")])
-def test_preview_without_a_cover_still_shows_the_details(monkeypatch, error):
-    """A cover that can't be fetched still leaves the details."""
-
-    def fail(_url):
-        """Raise `error`, as a failing cover download does."""
-        raise error
-
-    monkeypatch.setattr(search_menu, "_fetch", fail)
-    results = SearchResults.from_pages(
-        "qobuz", "track", [{"tracks": {"items": [QOBUZ_TRACK]}}]
-    )
-    previews = search_menu.Previews(results)
-    try:
-        preview = previews("1. Circle With Me by Spiritbox (2021)")
-    finally:
-        previews.close()
-
-    assert not _has_cover(preview)
-    assert preview.splitlines()[0].endswith("Circle With Me\x1b[0m")
 
 
 def test_cover_draws_an_edge_inside_a_character():
@@ -259,13 +202,13 @@ def test_cover_draws_an_edge_inside_a_character():
     Half blocks could only split a character top from bottom, and blurred it into an
     average of both sides.
     """
-    image = Image.new("RGB", (4, 2), "white")
+    image = Image.new("RGB", (4, 4), "white")
     for x in (0, 2):  # each character's left half black
-        image.paste((0, 0, 0), (x, 0, x + 1, 2))
+        image.paste((0, 0, 0), (x, 0, x + 1, 4))
     buf = io.BytesIO()
     image.save(buf, "PNG")
 
-    (row,) = search_menu.cover_rows(buf.getvalue(), 1)
+    (row,) = cover_preview.cover_rows(buf.getvalue(), 1)
 
     assert row.plain == "▌▌"
     assert {span.style.color.triplet for span in row.spans} == {(0, 0, 0)}

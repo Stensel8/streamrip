@@ -155,6 +155,47 @@ Every command has a `--help`.
 
 ![streamrip interactive search](https://github.com/Stensel8/streamrip/blob/dev/demo/playlist_search.png?raw=true)
 
+## Cover previews in search
+
+Interactive search shows the selected result's cover beside its metadata. On a
+terminal with SIXEL or compatible Kitty graphics support, the cover is rendered
+as an image. Other terminals use colored quadrant blocks. Both Linux and Windows
+use the same menu; the terminal, rather than PowerShell or the Linux distribution,
+determines whether images are available.
+
+Renderer selection is automatic and requires no configuration. If image rendering
+fails, the preview falls back to quadrant blocks. Missing or unreadable artwork
+leaves the metadata and selection available.
+The Python dependencies are installed with streamrip; Chafa is not required.
+Use arrows to browse, SPACE to mark results, ENTER to download, and `/` to filter.
+ESC clears a visible filter, then exits; Ctrl-C exits immediately. Marked results
+remain selected when filtered out. ENTER also includes the highlighted result, matching the previous Linux menu;
+without marks it downloads that result alone.
+
+Graphics support varies by terminal and configuration. Windows Terminal 1.22+
+has SIXEL support; GNOME Terminal/Ptyxis depend on their VTE build and settings.
+SSH/tmux can also affect detection. Unsupported terminals automatically use blocks.
+For details, see the [textual-image support matrix](https://github.com/lnqs/textual-image#supported-terminals).
+
+### Offline preview check for testers
+
+After `poetry install --all-extras` in this checkout, run:
+
+```sh
+poetry run python demo/cover_preview.py
+```
+
+This shows generated artwork without credentials, network calls, or downloads.
+The metadata reports whether the terminal selected pixels or blocks. Inspect the
+circular fine lines and lettering at your usual terminal size. Browse between the
+covers, mark results, filter, resize to a narrow window and back, then exit.
+Check that the cover stays left of the metadata and old images disappear.
+
+For Windows testers, run the same command in Windows Terminal with PowerShell
+7. Report the terminal version, display scaling/font, chosen renderer, and any
+flicker or leftover image after resize/exit. Linux headless tests do not establish
+visual compatibility with Windows, Ptyxis or GNOME Terminal.
+
 ## Contributing
 
 Report problems in the [issue tracker](https://github.com/Stensel8/streamrip/issues),
