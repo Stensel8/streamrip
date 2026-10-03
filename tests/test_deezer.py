@@ -290,6 +290,30 @@ def test_deezer_no_fallback_when_disabled(mock_deezer_client):
     assert mock_deezer_client.client.get_track_url.call_count == 1
 
 
+def test_deezer_listed_size_without_url_does_not_downgrade(mock_deezer_client):
+    """Unit test: a size but no URL is a failed request, not a missing format.
+
+    deezer-py turns an HTTP error (a 429, say) into None, the same answer as
+    "not served". With a FILESIZE listed for the tier it must not be read as
+    a gap: stepping down would silently swap the FLAC for an MP3.
+    """
+    mock_deezer_client.client.gw.get_track.return_value = {
+        "FILESIZE_FLAC": 25000000,
+        "FILESIZE_MP3_320": 5000000,
+        "FILESIZE_MP3_128": 2000000,
+        "TRACK_TOKEN": "test_token",
+    }
+    mock_deezer_client.client.get_track_url.side_effect = _urls_for(
+        "MP3_320", "MP3_128"
+    )
+
+    with pytest.raises(NonStreamableError):
+        arun(mock_deezer_client.get_downloadable("123", quality=2))
+
+    # The MP3 tiers were never asked for
+    assert mock_deezer_client.client.get_track_url.call_count == 1
+
+
 def test_deezer_wrong_license_steps_down(mock_deezer_client):
     """Unit test: a tier the account may not stream falls back to the next one"""
 
