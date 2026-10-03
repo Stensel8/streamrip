@@ -277,17 +277,12 @@ class TidalClient(Client):
         album = self._albums.get(album_id)
         if album is None:
             return stub
-        # An album only reports LOSSLESS, hi-res or not (see _add_hires_format);
-        # the track knows better, so its label doesn't drop to 16-bit.
-        best = max(
-            album.get("audioQuality"),
-            track.get("audioQuality"),
-            key=lambda quality: TIDAL_QUALITY_IDS.get(quality, 0),
-        )
-        album = album | {"audioQuality": best} if best else album
-        if TIDAL_QUALITY_IDS.get(best, 0) < HIRES_TIER:
-            # The cached album carries the format of whichever of its tracks
-            # was asked for (see _add_hires_format): not this one's.
+        # The cached album carries the format of whichever of its tracks was
+        # asked for (see _add_hires_format); only a hi-res track keeps it. Tidal
+        # says so in the tags -- a track's audioQuality is LOSSLESS either way --
+        # and a track without tag data is still taken as possibly hi-res.
+        tags = (track.get("mediaMetadata") or {}).get("tags")
+        if tags is not None and "HIRES_LOSSLESS" not in tags:
             album = {
                 key: value for key, value in album.items() if key != "streamQuality"
             }
