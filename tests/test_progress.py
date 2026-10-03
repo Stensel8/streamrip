@@ -31,3 +31,16 @@ def test_source_bar_keeps_its_total(manager):
 def test_disabled_progress_adds_no_task(manager):
     progress.get_progress_callback(False, 1000, "track")
     assert not manager.progress.tasks
+
+
+def test_a_new_run_after_the_display_was_cleared_starts_it_again(manager):
+    # Stopped, it has to be started again, or a second Main in the same
+    # process would show no bars at all.
+    progress.get_progress_callback(True, 10, "one")
+    assert manager.started
+
+    progress.clear_progress()
+    assert not manager.started
+
+    progress.get_progress_callback(True, 10, "two")
+    assert manager.started

@@ -199,6 +199,7 @@ def clear_screen(enabled: bool = True):
 
 
 def clear_progress():
-    """Stop the live display, if it was started."""
+    """Stop the live display, if it was started; the next bar starts it again."""
     if _p.started:
         _p.live.stop()
+        _p.started = False
