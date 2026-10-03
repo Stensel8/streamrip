@@ -1,6 +1,7 @@
 import os
 from unittest.mock import Mock
 
+import deezer
 import pytest
 from util import arun
 
@@ -43,27 +44,74 @@ def mock_deezer_client():
 # ===== UNIT TESTS =====
 
 
+def _urls_for(*formats):
+    """get_track_url stand-in serving only the given formats."""
+    return lambda token, fmt: (
+        f"https://cdn/x.{'flac' if fmt == 'FLAC' else 'mp3'}"
+        if fmt in formats
+        else None
+    )
+
+
 def test_deezer_fallback_logic_with_mock_data(mock_deezer_client):
-    """Unit test: fallback logic works with mocked track data"""
-    # Mock track info where FLAC is unavailable but MP3_320 is available
-    # quality_map: [(9, "MP3_128"), (3, "MP3_320"), (1, "FLAC")]
-    # So FILESIZE_MP3_128 = quality 0, FILESIZE_MP3_320 = quality 1, FILESIZE_FLAC = quality 2
+    """Unit test: a tier Deezer doesn't serve falls back to the next one down"""
     mock_track_info = {
-        "FILESIZE_FLAC": 0,  # FLAC unavailable (quality 2)
-        "FILESIZE_MP3_320": 5000000,  # MP3_320 available (quality 1)
-        "FILESIZE_MP3_128": 2000000,  # MP3_128 available (quality 0)
+        "FILESIZE_FLAC": 0,
+        "FILESIZE_MP3_320": 5000000,
+        "FILESIZE_MP3_128": 2000000,
         "TRACK_TOKEN": "test_token",
     }
 
-    # Mock the client methods
     mock_deezer_client.client.gw.get_track.return_value = mock_track_info
-    mock_deezer_client.client.get_track_url.return_value = "https://test.mp3"
+    mock_deezer_client.client.get_track_url.side_effect = _urls_for(
+        "MP3_320", "MP3_128"
+    )
 
-    # Test fallback behavior
     downloadable = arun(mock_deezer_client.get_downloadable("123", quality=2))
 
-    # Should have fallen back to quality 1 (MP3_320) since FLAC is unavailable
+    # No FLAC URL, so it fell back to quality 1 (MP3_320)
     assert downloadable.quality == 1
+    assert downloadable.extension == "mp3"
+
+
+def test_deezer_zero_filesize_does_not_downgrade(mock_deezer_client):
+    """Unit test: FILESIZE_FLAC = 0 is not "FLAC unavailable".
+
+    Deezer often reports 0 for a format it serves. Trusting it downloaded
+    those tracks as MP3 320 although the FLAC was there.
+    """
+    mock_deezer_client.client.gw.get_track.return_value = {
+        "FILESIZE_FLAC": 0,
+        "FILESIZE_MP3_320": 5000000,
+        "FILESIZE_MP3_128": 2000000,
+        "TRACK_TOKEN": "test_token",
+    }
+    mock_deezer_client.client.get_track_url.side_effect = _urls_for(
+        "FLAC", "MP3_320", "MP3_128"
+    )
+
+    downloadable = arun(mock_deezer_client.get_downloadable("123", quality=2))
+
+    assert downloadable.quality == 2
+    assert downloadable.extension == "flac"
+    assert mock_deezer_client.client.get_track_url.call_args.args[1] == "FLAC"
+
+
+def test_deezer_all_zero_filesizes_still_download(mock_deezer_client):
+    """Unit test: a track with no FILESIZE at all but a URL is not skipped"""
+    mock_deezer_client.client.gw.get_track.return_value = {
+        "FILESIZE_FLAC": 0,
+        "FILESIZE_MP3_320": 0,
+        "FILESIZE_MP3_128": 0,
+        "TRACK_TOKEN": "test_token",
+    }
+    mock_deezer_client.client.get_track_url.side_effect = _urls_for("FLAC")
+
+    downloadable = arun(mock_deezer_client.get_downloadable("123", quality=2))
+
+    assert downloadable.quality == 2
+    assert downloadable.extension == "flac"
+    assert arun(downloadable.size()) == 0
 
 
 def test_deezer_no_fallback_when_quality_available(mock_deezer_client):
@@ -88,22 +136,27 @@ def test_deezer_no_fallback_when_quality_available(mock_deezer_client):
 
 def test_deezer_fallback_to_lowest_available_quality(mock_deezer_client):
     """Unit test: fallback walks down quality list until finding available quality"""
-    # Mock track info where only MP3_128 is available
-    # quality_map: [(9, "MP3_128"), (3, "MP3_320"), (1, "FLAC")]
     mock_track_info = {
-        "FILESIZE_FLAC": 0,  # FLAC unavailable (quality 2)
-        "FILESIZE_MP3_320": 0,  # MP3_320 unavailable (quality 1)
-        "FILESIZE_MP3_128": 2000000,  # MP3_128 available (quality 0)
+        "FILESIZE_FLAC": 0,
+        "FILESIZE_MP3_320": 0,
+        "FILESIZE_MP3_128": 2000000,
         "TRACK_TOKEN": "test_token",
     }
 
     mock_deezer_client.client.gw.get_track.return_value = mock_track_info
-    mock_deezer_client.client.get_track_url.return_value = "https://test.mp3"
+    mock_deezer_client.client.get_track_url.side_effect = _urls_for("MP3_128")
 
     downloadable = arun(mock_deezer_client.get_downloadable("123", quality=2))
 
     # Should have fallen back to quality 0 (MP3_128) since higher qualities unavailable
     assert downloadable.quality == 0
+    assert [
+        c.args[1] for c in mock_deezer_client.client.get_track_url.call_args_list
+    ] == [
+        "FLAC",
+        "MP3_320",
+        "MP3_128",
+    ]
 
 
 def test_deezer_no_url_raises_instead_of_building_legacy_cdn_url(mock_deezer_client):
@@ -212,20 +265,19 @@ def test_deezer_fallback_is_not_followed_twice(mock_deezer_client):
 
 def test_deezer_no_fallback_when_disabled(mock_deezer_client):
     """Unit test: no fallback when lower_quality_if_not_available is False"""
-    # Disable fallback
     mock_deezer_client.config.lower_quality_if_not_available = False
 
-    # Mock track info where FLAC is unavailable
-    # quality_map: [(9, "MP3_128"), (3, "MP3_320"), (1, "FLAC")]
     mock_track_info = {
-        "FILESIZE_FLAC": 0,  # FLAC unavailable (quality 2)
-        "FILESIZE_MP3_320": 5000000,  # MP3_320 available (quality 1)
-        "FILESIZE_MP3_128": 2000000,  # MP3_128 available (quality 0)
+        "FILESIZE_FLAC": 0,
+        "FILESIZE_MP3_320": 5000000,
+        "FILESIZE_MP3_128": 2000000,
         "TRACK_TOKEN": "test_url",
     }
 
     mock_deezer_client.client.gw.get_track.return_value = mock_track_info
-    mock_deezer_client.client.get_track_url.return_value = "https://test.mp3"
+    mock_deezer_client.client.get_track_url.side_effect = _urls_for(
+        "MP3_320", "MP3_128"
+    )
 
     # Should raise an error when requested quality is unavailable and fallback is disabled
     with pytest.raises(
@@ -233,6 +285,54 @@ def test_deezer_no_fallback_when_disabled(mock_deezer_client):
         match="The requested quality 2 is not available and fallback is disabled",
     ):
         arun(mock_deezer_client.get_downloadable("123", quality=2))
+
+    # The lower tiers were never asked for
+    assert mock_deezer_client.client.get_track_url.call_count == 1
+
+
+def test_deezer_listed_size_without_url_does_not_downgrade(mock_deezer_client):
+    """Unit test: a size but no URL is a failed request, not a missing format.
+
+    deezer-py turns an HTTP error (a 429, say) into None, the same answer as
+    "not served". With a FILESIZE listed for the tier it must not be read as
+    a gap: stepping down would silently swap the FLAC for an MP3.
+    """
+    mock_deezer_client.client.gw.get_track.return_value = {
+        "FILESIZE_FLAC": 25000000,
+        "FILESIZE_MP3_320": 5000000,
+        "FILESIZE_MP3_128": 2000000,
+        "TRACK_TOKEN": "test_token",
+    }
+    mock_deezer_client.client.get_track_url.side_effect = _urls_for(
+        "MP3_320", "MP3_128"
+    )
+
+    with pytest.raises(NonStreamableError):
+        arun(mock_deezer_client.get_downloadable("123", quality=2))
+
+    # The MP3 tiers were never asked for
+    assert mock_deezer_client.client.get_track_url.call_count == 1
+
+
+def test_deezer_wrong_license_steps_down(mock_deezer_client):
+    """Unit test: a tier the account may not stream falls back to the next one"""
+
+    def get_track_url(token, fmt):
+        if fmt == "FLAC":
+            raise deezer.WrongLicense(fmt)
+        return "https://cdn/x.mp3"
+
+    mock_deezer_client.client.gw.get_track.return_value = {
+        "FILESIZE_FLAC": 25000000,
+        "FILESIZE_MP3_320": 5000000,
+        "FILESIZE_MP3_128": 2000000,
+        "TRACK_TOKEN": "test_token",
+    }
+    mock_deezer_client.client.get_track_url.side_effect = get_track_url
+
+    downloadable = arun(mock_deezer_client.get_downloadable("123", quality=2))
+
+    assert downloadable.quality == 1
 
 
 def test_deezer_album_cache(mock_deezer_client):
