@@ -17,6 +17,8 @@ def qobuz_client():
     """A logged-in Qobuz client, for the tests that need a real account
     (QOBUZ_USER_ID and QOBUZ_AUTH_TOKEN; they're skipped without them).
     """
+    if "QOBUZ_USER_ID" not in os.environ or "QOBUZ_AUTH_TOKEN" not in os.environ:
+        pytest.skip("Qobuz user ID and auth token are required.")
     config = Config.defaults()
     config.session.qobuz.user_id = os.environ["QOBUZ_USER_ID"]
     config.session.qobuz.auth_token = os.environ["QOBUZ_AUTH_TOKEN"]
