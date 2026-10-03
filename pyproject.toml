@@ -6,12 +6,13 @@ authors = [{ name = "nathom", email = "nathanthomas707@gmail.com" }]
 maintainers = [{ name = "Stensel8" }]
 license = "GPL-3.0-only"
 readme = "README.md"
-requires-python = ">=3.14,<4.0"
+requires-python = ">=3.14,<3.16"
 keywords = ["hi-res", "free", "music", "download"]
 classifiers = [
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: 3.15",
 ]
 dependencies = [
   "mutagen>=1.47,<2",
