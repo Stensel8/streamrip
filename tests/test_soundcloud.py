@@ -1,5 +1,6 @@
 from unittest.mock import AsyncMock, MagicMock
 
+import aiohttp
 import pytest
 
 from streamrip.client.soundcloud import SoundcloudClient, _find_client_id
@@ -205,3 +206,77 @@ async def test_hls_segments_are_cleaned_up_when_one_fails(hls):
         await make(failing={"https://seg/1.mp3"})._download(str(out), lambda _: None)
 
     assert list(temp.iterdir()) == []
+
+
+def _client_answering(responses):
+    """A client whose API calls answer from {url suffix: (json, status)}."""
+    client = SoundcloudClient(Config.defaults())
+    client.session = MagicMock()
+
+    async def answer(path_or_url, params=None, headers=None):
+        for suffix, value in responses.items():
+            if path_or_url.endswith(suffix):
+                return value
+        raise AssertionError(f"unexpected request {path_or_url}")
+
+    client._api_request = AsyncMock(side_effect=answer)
+    client._request = AsyncMock(side_effect=answer)
+    return client
+
+
+@pytest.mark.asyncio
+async def test_refused_original_falls_back_to_the_mp3_stream():
+    """Anonymously, tracks/<id>/download answers 401 even for downloadable
+    tracks (soundcloud.com/forss/flickermood, the API docs' own example), which
+    failed them outright. Their MP3 stream is used instead."""
+    client = _client_answering(
+        {
+            "tracks/293/download": ({}, 401),
+            "tracks/293": (
+                _track(
+                    _tc("progressive", "audio/mpeg", "https://x/stream/progressive")
+                ),
+                200,
+            ),
+            "/stream/progressive": ({"url": "https://cdn/signed.mp3"}, 200),
+        }
+    )
+
+    d = await client.get_downloadable("293|_original_download", None)
+
+    assert d.url == "https://cdn/signed.mp3"
+    assert d.extension == "mp3"
+
+
+@pytest.mark.asyncio
+async def test_refused_original_without_a_stream_is_non_streamable():
+    from streamrip.exceptions import NonStreamableError
+
+    client = _client_answering(
+        {"tracks/293/download": ({}, 401), "tracks/293": (_track(), 200)}
+    )
+    with pytest.raises(NonStreamableError, match="no MP3 stream"):
+        await client.get_downloadable("293|_original_download", None)
+
+
+@pytest.mark.asyncio
+async def test_an_error_answer_that_is_not_json_reports_its_status():
+    """That 401 has an empty body; resp.json() raised ContentTypeError ("Attempt
+    to decode JSON with unexpected mimetype") before anyone read the status."""
+    client = SoundcloudClient(Config.defaults())
+    resp = MagicMock(status=401)
+    resp.json = AsyncMock(
+        side_effect=aiohttp.ContentTypeError(
+            MagicMock(), (), message="Attempt to decode JSON with unexpected mimetype"
+        )
+    )
+
+    async def get_with_retries(url, read, params, headers):
+        return await read(resp)
+
+    client._get_with_retries = get_with_retries
+
+    assert await client._request("https://api-v2.soundcloud.com/tracks/1/download") == (
+        {},
+        401,
+    )
