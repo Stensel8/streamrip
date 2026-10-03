@@ -155,6 +155,10 @@ Every command has a `--help`.
 
 ![streamrip interactive search](https://github.com/Stensel8/streamrip/blob/dev/demo/playlist_search.png?raw=true)
 
+Search shows each result's cover next to its details. Terminals with SIXEL or
+Kitty graphics support (Konsole, foot and Windows Terminal, for example) show it
+as an image; the others fall back to colored blocks, which are less sharp.
+
 ## Contributing
 
 Report problems in the [issue tracker](https://github.com/Stensel8/streamrip/issues),

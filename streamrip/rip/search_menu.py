@@ -1,89 +1,80 @@
-"""The interactive search menu's preview: a result's details, beside its cover."""
+"""Interactive search: results above a cover and its metadata, on every OS."""
 
-import io
-import re
-import shutil
+import asyncio
 import textwrap
-from concurrent.futures import ThreadPoolExecutor
+from collections import OrderedDict
+from typing import ClassVar
 
-import requests
-from PIL import Image
-from rich.color import Color
-from rich.console import Console
-from rich.style import Style
+import aiohttp
 from rich.text import Text
+from textual import on
+from textual.app import App, ComposeResult
+from textual.binding import Binding
+from textual.containers import Horizontal, VerticalScroll
+from textual.widgets import Input, OptionList, Static
+from textual.widgets.option_list import Option
 
-from ..console import console
+from ..client import new_session
 from ..metadata import SearchResults, Summary
+from .cover_preview import CoverPane, decode_cover, image_widget
 
-# Share of the terminal's height the menu gives the preview.
 PREVIEW_SIZE = 0.5
-# Columns the details get beside the cover, at least.
 DETAILS_WIDTH = 60
-
-
-def _fetch(url: str) -> bytes:
-    """Download a cover; raises if it can't be had."""
-    resp = requests.get(url, timeout=5)
-    resp.raise_for_status()
-    return resp.content
+MAX_COVER_BYTES = 5 * 1024 * 1024
 
 
 def cover_size(columns: int, lines: int) -> int:
-    """How many rows of the preview the cover gets: all of them (less the
-    border), as long as that leaves the details enough columns. A cover is
-    twice as many columns wide as it is rows tall.
-    """
+    """Rows for a square cover, leaving room for the border and metadata."""
     return max(
-        0, min(int(lines * PREVIEW_SIZE) - 2, (columns - DETAILS_WIDTH) // 2, 30)
+        0, min(int(lines * PREVIEW_SIZE) - 2, (columns - 4 - DETAILS_WIDTH) // 2, 30)
     )
 
 
-# Quadrant blocks by which quarters of the cell they fill: top left 1, top
-# right 2, bottom left 4, bottom right 8.
-QUADRANTS = " ▘▝▀▖▌▞▛▗▚▐▜▄▙▟█"
-CORNERS = ((0, 0), (1, 0), (0, 1), (1, 1))
+class CoverCache:
+    """Fetch on demand so the active result never queues behind other covers.
 
-
-def _mean(pixels: list) -> tuple[int, int, int]:
-    """The average color of some (r, g, b) pixels."""
-    return tuple(sum(p[i] for p in pixels) // len(pixels) for i in range(3))
-
-
-def _cell(pixels: list) -> tuple[str, tuple, tuple]:
-    """The quadrant block, and its two colors, closest to a cell's 2x2 pixels."""
-    best = None
-    for mask in range(1, 8):  # the other 8 are these with the colors swapped
-        on = [p for i, p in enumerate(pixels) if mask >> i & 1]
-        off = [p for i, p in enumerate(pixels) if not mask >> i & 1]
-        fg, bg = _mean(on), _mean(off)
-        error = sum(
-            sum((a - b) ** 2 for a, b in zip(p, fg if mask >> i & 1 else bg))
-            for i, p in enumerate(pixels)
-        )
-        if best is None or error < best[0]:
-            best = (error, QUADRANTS[mask], fg, bg)
-    return best[1:]
-
-
-def cover_rows(data: bytes, rows: int) -> list[Text]:
-    """An image as rows of quadrant blocks, two colors per character: twice
-    as sharp across as half blocks, which show only a top and bottom pixel.
+    Completed images (including failures) are cached by URL for this session.
+    A cancelled request is not cached, allowing a later selection to retry it.
     """
-    columns = rows * 2  # a character is about twice as tall as it is wide
-    image = Image.open(io.BytesIO(data)).convert("RGB")
-    image = image.resize((columns * 2, rows * 2), Image.Resampling.LANCZOS)
-    lines = []
-    for y in range(rows):
-        line = Text()
-        for x in range(columns):
-            pixels = [image.getpixel((2 * x + dx, 2 * y + dy)) for dx, dy in CORNERS]
-            char, fg, bg = _cell(pixels)
-            line.append(
-                char, Style(color=Color.from_rgb(*fg), bgcolor=Color.from_rgb(*bg))
+
+    def __init__(self, verify_ssl: bool = True):
+        self.verify_ssl = verify_ssl
+        self.session = None
+        self.images = OrderedDict()
+
+    async def _fetch(self, url: str) -> bytes:
+        if self.session is None:
+            self.session = new_session(
+                self.verify_ssl, timeout=aiohttp.ClientTimeout(total=5)
             )
-        lines.append(line)
-    return lines
+        async with self.session.get(url) as response:
+            response.raise_for_status()
+            data = bytearray()
+            async for chunk in response.content.iter_chunked(65536):
+                data.extend(chunk)
+                if len(data) > MAX_COVER_BYTES:
+                    raise ValueError("Cover too large for a preview")
+            return bytes(data)
+
+    async def get(self, urls: tuple[str, ...]):
+        for url in urls:
+            if url not in self.images:
+                try:
+                    data = await self._fetch(url)
+                    self.images[url] = await asyncio.to_thread(decode_cover, data)
+                except Exception:
+                    self.images[url] = None
+                if len(self.images) > 32:
+                    self.images.popitem(last=False)
+            self.images.move_to_end(url)
+            if self.images[url] is not None:
+                return self.images[url]
+        return None
+
+    async def close(self):
+        if self.session is not None:
+            await self.session.close()
+        self.images.clear()
 
 
 def detail_rows(summary: Summary, width: int) -> list[Text]:
@@ -105,61 +96,235 @@ def detail_rows(summary: Summary, width: int) -> list[Text]:
     return rows
 
 
-class Previews:
-    """The menu's preview command.
+class SearchMenu(App[tuple[int, ...] | None]):
+    """Selection indices have the same meaning as SearchResults.get_choices."""
 
-    Covers are fetched in the background from the moment the menu opens: a
-    preview that waited for its cover would hold up every cursor move.
+    CSS = """
+    Screen { background: ansi_default; color: ansi_default; }
+    #heading { height: auto; padding: 0 1; }
+    #help { height: 1; padding: 0 1; color: ansi_bright_black; }
+    #filter { display: none; height: 3; }
+    #results { height: 1fr; min-height: 3; border: none; padding: 0 1;
+               background: ansi_default; }
+    #preview { height: 50%; min-height: 3; border: round ansi_cyan; padding: 0 1; }
+    #cover { margin-right: 2; }
+    #details-scroll { width: 1fr; height: 1fr; }
+    #details { width: 1fr; height: auto; }
+    OptionList > .option-list--option-highlighted { background: ansi_blue; color: ansi_white; }
     """
+    BINDINGS: ClassVar = [
+        Binding("space", "toggle", "Select", priority=True),
+        Binding("enter", "accept", "Download", priority=True),
+        Binding("escape", "cancel", "Exit", priority=True),
+        Binding("ctrl+c", "quit_search", "Exit", priority=True),
+        Binding("slash", "filter", "Search"),
+    ]
 
-    def __init__(self, results: SearchResults):
-        """Start downloading every result's cover in the background."""
+    def __init__(
+        self,
+        results: SearchResults,
+        source: str,
+        media_type: str,
+        query: str,
+        *,
+        pixel_widget=None,
+        verify_ssl: bool = True,
+    ):
+        super().__init__()
         self.results = results.results
-        # In the menu's order: the first preview is drawn as the menu opens.
-        urls = dict.fromkeys(r.image_url for r in self.results if r.image_url)
-        self._pool = ThreadPoolExecutor(max_workers=8)
-        self._covers = {url: self._pool.submit(_fetch, url) for url in urls}
-        # Renders with whatever colors this terminal supports.
-        self._ansi = Console(
-            file=io.StringIO(),
-            force_terminal=True,
-            color_system=console.color_system or "standard",
-            width=1000,
+        self.heading = f"Results for {media_type} '{query}' from {source.capitalize()}"
+        self.preview_title = f"{source.capitalize()} {media_type}"
+        self.pixel_widget = pixel_widget
+        self.covers = CoverCache(verify_ssl)
+        self.selected: set[int] = set()
+        self.visible_indices = list(range(len(self.results)))
+        self.current: int | None = None
+        self._cover_urls: tuple[str, ...] = ()
+        self._cover_worker = None
+        self._preview_resize_timer = None
+        self._resizing_preview = False
+
+    def _option(self, index: int) -> Option:
+        mark = "[x]" if index in self.selected else "[ ]"
+        return Option(
+            Text(
+                f"{mark} {index + 1}. {self.results[index].summarize()}",
+                no_wrap=True,
+                overflow="ellipsis",
+            ),
+            id=str(index),
         )
 
-    def close(self):
-        """Stop downloading covers."""
-        self._pool.shutdown(wait=False, cancel_futures=True)
+    def compose(self) -> ComposeResult:
+        yield Static(Text(self.heading), id="heading")
+        yield Static(
+            "SPACE - select, ENTER - download, / - search, ESC - exit", id="help"
+        )
+        yield Input(placeholder="Search results…", id="filter")
+        yield OptionList(*(self._option(i) for i in self.visible_indices), id="results")
+        with Horizontal(id="preview"):
+            yield CoverPane(self.pixel_widget)
+            with VerticalScroll(id="details-scroll"):
+                yield Static(id="details", markup=False)
 
-    def __call__(self, entry: str) -> str:
-        """The preview of one menu entry: its cover beside its details."""
-        match = re.match(r"\d+", entry)
-        assert match is not None
-        summary = self.results[int(match.group()) - 1]
-        columns, lines = shutil.get_terminal_size()
+    def on_mount(self):
+        self.query_one("#preview").border_title = self.preview_title
+        self.query_one(OptionList).focus()
+        self.call_after_refresh(self._resize_preview)
 
-        cover = self._cover(summary.image_url, cover_size(columns, lines))
-        indent = len(cover[0]) + 2 if cover else 0
-        # The preview's border takes four columns.
-        details = detail_rows(summary, columns - 4 - indent)
-        out = [
-            Text.assemble(
-                cover[i] if i < len(cover) else " " * (indent - 2),
-                "  " if cover else "",
-                details[i] if i < len(details) else "",
+    def on_resize(self):
+        # SIXEL drawn with the previous geometry can scroll the whole terminal
+        # while it is shrinking. Hide it until Textual has laid out the new size.
+        if not self.is_mounted:
+            return
+        self._resizing_preview = True
+        self.query_one(CoverPane).display = False
+        if self._preview_resize_timer is not None:
+            self._preview_resize_timer.stop()
+        self._preview_resize_timer = self.set_timer(0.1, self._finish_resize)
+
+    def _finish_resize(self):
+        self._resizing_preview = False
+        self._resize_preview()
+        self.refresh(layout=True)
+
+    def _resize_preview(self):
+        pane = self.query_one(CoverPane)
+        rows = cover_size(self.size.width, self.size.height)
+        pane.display = (
+            not self._resizing_preview and rows >= 4 and bool(self._cover_urls)
+        )
+        pane.styles.width = rows * 2
+        pane.styles.height = rows
+        self._show_details()
+
+    def _show_details(self):
+        details = self.query_one("#details", Static)
+        if self.current is None:
+            details.update("No matching results")
+        else:
+            width = self.query_one("#details-scroll").size.width
+            details.update(
+                Text("\n").join(detail_rows(self.results[self.current], max(width, 20)))
             )
-            for i in range(max(len(cover), len(details)))
+
+    @on(OptionList.OptionHighlighted)
+    async def highlight(self, event: OptionList.OptionHighlighted):
+        # Option ids remain stable while a filter changes the visible indices.
+        index = int(event.option.id)
+        if index not in self.visible_indices:
+            return
+        self.current = index
+        self.query_one("#details-scroll").scroll_home(animate=False)
+        self._show_details()
+        summary = self.results[index]
+        urls = summary.image_urls
+        if urls != self._cover_urls:
+            self._cover_urls = urls
+            if self._cover_worker is not None:
+                self._cover_worker.cancel()
+            await self.query_one(CoverPane).show_image(None)
+            if urls:
+                self._cover_worker = self.run_worker(
+                    self._load_cover(urls), group="cover", exclusive=True
+                )
+        self._resize_preview()
+
+    async def _load_cover(self, urls: tuple[str, ...]):
+        # Avoid fetching every intermediate result when holding an arrow key.
+        await asyncio.sleep(0.08)
+        image = await self.covers.get(urls)
+        if urls == self._cover_urls:
+            await self.query_one(CoverPane).show_image(image)
+
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        if action == "toggle" and self.query_one(Input).has_focus:
+            return False  # A space belongs to the search query.
+        return True
+
+    def action_toggle(self):
+        if self.current is None:
+            return
+        index = self.current
+        if index in self.selected:
+            self.selected.remove(index)
+        else:
+            self.selected.add(index)
+        self.query_one(OptionList).replace_option_prompt(
+            str(index), self._option(index).prompt
+        )
+
+    def action_accept(self):
+        # The previous Linux menu also selected the highlighted result on
+        # Enter, even when other results had already been marked with Space.
+        choices = set(self.selected)
+        if self.current is not None:
+            choices.add(self.current)
+        choices = tuple(sorted(choices))
+        if choices:
+            self.exit(choices)
+
+    def action_filter(self):
+        field = self.query_one(Input)
+        field.display = True
+        field.focus()
+
+    @on(Input.Changed)
+    async def filter_results(self, event: Input.Changed):
+        query = event.value.casefold()
+        previous = self.current
+        self.visible_indices = [
+            i for i, r in enumerate(self.results) if query in r.summarize().casefold()
         ]
+        options = self.query_one(OptionList)
+        options.clear_options()
+        options.add_options(self._option(i) for i in self.visible_indices)
+        if self.visible_indices:
+            options.highlighted = (
+                self.visible_indices.index(previous)
+                if previous in self.visible_indices
+                else 0
+            )
+        else:
+            self.current = None
+            self._cover_urls = ()
+            if self._cover_worker is not None:
+                self._cover_worker.cancel()
+            await self.query_one(CoverPane).show_image(None)
+            self._resize_preview()
 
-        with self._ansi.capture() as capture:
-            for line in out:
-                self._ansi.print(line, no_wrap=True, crop=False, soft_wrap=True)
-        return capture.get().rstrip("\n")
+    def action_cancel(self):
+        field = self.query_one(Input)
+        if field.display:
+            field.value = ""
+            field.display = False
+            self.query_one(OptionList).focus()
+        else:
+            self.exit(None)
 
-    def _cover(self, url: str | None, rows: int) -> list[Text]:
-        """The cover's rows, or none if it isn't there (yet)."""
-        future = self._covers.get(url) if url and rows >= 4 else None
-        try:
-            return cover_rows(future.result(timeout=1), rows) if future else []
-        except Exception:
-            return []
+    def action_quit_search(self):
+        self.exit(None)
+
+
+async def choose_results(
+    results: SearchResults,
+    source: str,
+    media_type: str,
+    query: str,
+    *,
+    verify_ssl: bool,
+):
+    """Detect graphics before the UI starts and close network resources on exit."""
+    pixel_widget = image_widget()
+    app = SearchMenu(
+        results,
+        source,
+        media_type,
+        query,
+        pixel_widget=pixel_widget,
+        verify_ssl=verify_ssl,
+    )
+    try:
+        return await app.run_async()
+    finally:
+        await app.covers.close()
