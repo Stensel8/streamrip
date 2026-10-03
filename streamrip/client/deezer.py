@@ -350,6 +350,7 @@ class DeezerClient(Client):
                         "downloads. FLAC (quality 2) needs Deezer HiFi/Premium, "
                         "MP3 320 (quality 1) needs a paid plan.",
                     )
+                continue
             except deezer.WrongGeolocation:
                 if not is_retry and fallback_id:
                     return await self.get_downloadable(
