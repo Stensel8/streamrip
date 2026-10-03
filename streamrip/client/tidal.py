@@ -284,7 +284,14 @@ class TidalClient(Client):
             track.get("audioQuality"),
             key=lambda quality: TIDAL_QUALITY_IDS.get(quality, 0),
         )
-        return album | {"audioQuality": best} if best else album
+        album = album | {"audioQuality": best} if best else album
+        if TIDAL_QUALITY_IDS.get(best, 0) < HIRES_TIER:
+            # The cached album carries the format of whichever of its tracks
+            # was asked for (see _add_hires_format): not this one's.
+            album = {
+                key: value for key, value in album.items() if key != "streamQuality"
+            }
+        return album
 
     async def _get_tracks(self, url: str) -> list[dict]:
         """The tracks of an album or playlist, fetched 100 at a time.

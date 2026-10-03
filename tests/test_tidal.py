@@ -806,3 +806,28 @@ async def test_a_hires_single_keeps_its_own_quality_in_its_label():
     # The cached album stays as Tidal reported it: another track is 16-bit.
     resp = await c.get_metadata("9", "track")
     assert AlbumMetadata.from_track_resp(resp, "tidal").info.bit_depth == 16
+
+
+@pytest.mark.asyncio
+async def test_a_lossless_track_of_a_hires_album_is_not_labelled_hires():
+    c = _client()
+    # The album was downloaded as a hi-res album earlier in the run: its cached
+    # copy carries the format of the track that was asked about.
+    c._albums["2"] = MEGAN_ACT_II | {
+        "streamQuality": {"bitDepth": 24, "sampleRate": 96000}
+    }
+    reply, _ = _track_replies()
+
+    async def tracks(path, params=None, base=None):
+        resp = await reply(path, params, base)
+        if path == "tracks/9":
+            resp["audioQuality"] = "HI_RES_LOSSLESS"
+        return resp
+
+    c._api_request = AsyncMock(side_effect=tracks)
+
+    plain = AlbumMetadata.from_track_resp(await c.get_metadata("8", "track"), "tidal")
+    hires = AlbumMetadata.from_track_resp(await c.get_metadata("9", "track"), "tidal")
+
+    assert (plain.info.bit_depth, plain.info.sampling_rate) == (16, 44.1)
+    assert (hires.info.bit_depth, hires.info.sampling_rate) == (24, 96)
