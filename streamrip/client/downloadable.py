@@ -24,6 +24,7 @@ from Cryptodome.Util import Counter
 from .. import converter
 from ..exceptions import (
     FFmpegNotFoundError,
+    IncompleteDownloadError,
     NonStreamableError,
     restriction_message,
 )
@@ -53,6 +54,19 @@ def _plain_headers(headers) -> dict[str, str]:
     return {str(k): str(v) for k, v in dict(headers or {}).items()}
 
 
+def _content_range(value: str | None) -> tuple[int | None, int | None]:
+    """Parse ``bytes <start>-<end>/<total>`` into (start, total).
+
+    Either is None when the header is missing or malformed, and the total is
+    None when the server sends ``*`` (size unknown).
+    """
+    m = re.fullmatch(r"bytes (\d+)-\d+/(\d+|\*)", (value or "").strip())
+    if m is None:
+        return None, None
+    total = None if m.group(2) == "*" else int(m.group(2))
+    return int(m.group(1)), total
+
+
 def _blocking_download(path, url, headers, report, stop: threading.Event, resume: bool):
     """Stream ``url`` into ``path`` with requests.
 
@@ -78,7 +92,20 @@ def _blocking_download(path, url, headers, report, stop: threading.Event, resume
         resp.raise_for_status()
         # Only append if the server honoured the Range request (206). A 200
         # means it is sending the whole file again, so start over.
+        expected_total = None
         if resume_pos > 0 and resp.status_code == 206:
+            # urllib3 checks the 206 body against its own Content-Length, which
+            # only covers the remainder. Nothing else checks that the remainder
+            # starts where the partial file ends, or that the two add up to the
+            # file: a mismatch would be appended into a corrupt track of
+            # plausible size. Start over instead.
+            start, expected_total = _content_range(resp.headers.get("Content-Range"))
+            if start != resume_pos:
+                os.remove(path)
+                raise IncompleteDownloadError(
+                    f"asked to resume at byte {resume_pos}, the server answered "
+                    f"with Content-Range {resp.headers.get('Content-Range')!r}"
+                )
             mode = "ab"
             report(resume_pos)
         else:
@@ -89,6 +116,12 @@ def _blocking_download(path, url, headers, report, stop: threading.Event, resume
                     raise asyncio.CancelledError
                 file.write(chunk)
                 report(len(chunk))
+    if expected_total is not None and os.path.getsize(path) != expected_total:
+        size = os.path.getsize(path)
+        os.remove(path)
+        raise IncompleteDownloadError(
+            f"resumed file is {size} bytes, the server announced {expected_total}"
+        )
 
 
 async def fast_async_download(path, url, headers, callback, resume: bool = False):

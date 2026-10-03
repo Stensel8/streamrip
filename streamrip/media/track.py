@@ -11,17 +11,12 @@ from .. import converter
 from ..client import Client, Downloadable
 from ..config import Config
 from ..db import Database
-from ..exceptions import (
-    FFmpegNotFoundError,
-    IncompleteDownloadError,
-    TrackDownloadFailedError,
-)
+from ..exceptions import FFmpegNotFoundError, TrackDownloadFailedError
 from ..filepath_utils import clean_filename, clean_filepath, fit_filename
 from ..metadata import AlbumMetadata, TrackMetadata, tag_file
 from ..metadata.tagger import TAGGABLE_EXTENSIONS
 from ..metadata.util import format_quality
 from ..progress import add_title, get_progress_callback, remove_title
-from ..utils.integrity import check_integrity
 from .artwork import download_artwork
 from .media import Media, Pending
 from .semaphore import global_download_semaphore
@@ -136,15 +131,7 @@ class Track(Media):
                         label,
                     ) as callback:
                         await self.downloadable.download(self.download_path, callback)
-                    problem = await asyncio.to_thread(
-                        check_integrity, self.download_path
-                    )
-                    if problem is None:
-                        return
-                    # Start the retry from scratch: resuming would append to
-                    # a file whose missing bytes may not be at the end.
-                    os.remove(self.download_path)
-                    raise IncompleteDownloadError(problem)
+                    return
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:

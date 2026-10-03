@@ -61,7 +61,7 @@ class APIError(Exception):
 
 
 class IncompleteDownloadError(Exception):
-    """A download finished without error but the file is truncated."""
+    """A resumed download does not line up with the file the server announced."""
 
 
 class TrackDownloadFailedError(Exception):
