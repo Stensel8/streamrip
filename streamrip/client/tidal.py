@@ -118,8 +118,10 @@ class TidalClient(Client):
             )
             # Tracks Tidal says have no hi-res master; see _note_hires_tags.
             self._no_hires: set[str] = set()
-            # Albums by id, for the tracks of them; see _album_of.
+            # Albums by id, for the tracks of them, and the requests for them
+            # (answered or still out); see _album_of.
             self._albums: dict[str, dict] = {}
+            self._album_requests: dict[str, asyncio.Future] = {}
         # HTTP Basic auth for the token endpoint. Built by hand because
         # aiohttp.BasicAuth is deprecated as of aiohttp 3.14.
         credentials = f"{self.client_id}:{self.client_secret}".encode()
@@ -256,14 +258,20 @@ class TidalClient(Client):
         A track response only names its album (id, title, cover); its
         artists, track and disc count and release date are the album's own,
         so a single or a playlist track would otherwise be tagged with the
-        track's artists as album artists. One request per album, and none
-        if fetching it fails: then the track's own album stub is used.
+        track's artists as album artists. One request per album, shared by
+        the tracks that resolve together, and none again if it failed: then
+        the track's own album stub is used.
         """
         stub = track.get("album") or {}
         album_id = str(stub.get("id") or "")
         if album_id and album_id not in self._albums:
+            request = self._album_requests.get(album_id)
+            if request is None:
+                request = asyncio.ensure_future(self._api_request(f"albums/{album_id}"))
+                self._album_requests[album_id] = request
             try:
-                self._albums[album_id] = await self._api_request(f"albums/{album_id}")
+                # Shielded: one track giving up must not cancel it for the rest.
+                self._albums[album_id] = await asyncio.shield(request)
             except Exception as e:
                 logger.debug(f"Could not fetch album {album_id}: {e}")
         return self._albums.get(album_id, stub)

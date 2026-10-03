@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import logging
 from unittest.mock import AsyncMock, MagicMock
@@ -745,3 +746,40 @@ async def test_tracks_of_a_downloaded_album_need_no_album_request():
     assert asked == []
     assert resp["album"]["id"] == 1
     assert "tracks" not in resp["album"]
+
+
+def _slow(reply):
+    """A reply that takes a moment, as a request does: tracks resolving
+    together all reach the album check before the first answer is back."""
+
+    async def slow(path, params=None, base=None):
+        await asyncio.sleep(0)
+        return await reply(path, params, base)
+
+    return slow
+
+
+@pytest.mark.asyncio
+async def test_tracks_resolving_together_ask_for_their_album_once():
+    c = _client()
+    reply, asked = _track_replies()
+    c._api_request = AsyncMock(side_effect=_slow(reply))
+
+    await asyncio.gather(*(c.get_metadata(str(i), "track") for i in range(8, 28)))
+
+    assert asked == ["albums/2"]
+
+
+@pytest.mark.asyncio
+async def test_a_failed_album_request_is_not_repeated_by_every_track():
+    c = _client()
+    reply, asked = _track_replies(album_error=ItemNotFoundError("gone"))
+    c._api_request = AsyncMock(side_effect=_slow(reply))
+
+    resps = await asyncio.gather(
+        *(c.get_metadata(str(i), "track") for i in range(8, 18))
+    )
+
+    assert asked == ["albums/2"]
+    # Each track still downloads, from its own album stub.
+    assert all("numberOfTracks" not in r["album"] for r in resps)
