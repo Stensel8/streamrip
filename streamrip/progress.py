@@ -158,8 +158,14 @@ _p = ProgressManager()
 
 
 def get_progress_callback(enabled: bool, total: int, desc: str) -> Handle:
-    """Return a download progress Handle, or a no-op one if disabled."""
-    return _p._add_task(_p.progress, desc, total=total) if enabled else NO_PROGRESS
+    """Return a download progress Handle, or a no-op one if disabled.
+
+    A total of 0 means the size is unknown. Rich takes total=0 for a finished
+    task (a full bar, no spinner), so it becomes None, a pulsing bar.
+    """
+    if not enabled:
+        return NO_PROGRESS
+    return _p._add_task(_p.progress, desc, total=total or None)
 
 
 def get_source_callback(enabled: bool, total: int, desc: str) -> Handle:
