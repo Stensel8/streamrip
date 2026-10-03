@@ -274,7 +274,17 @@ class TidalClient(Client):
                 self._albums[album_id] = await asyncio.shield(request)
             except Exception as e:
                 logger.debug(f"Could not fetch album {album_id}: {e}")
-        return self._albums.get(album_id, stub)
+        album = self._albums.get(album_id)
+        if album is None:
+            return stub
+        # An album only reports LOSSLESS, hi-res or not (see _add_hires_format);
+        # the track knows better, so its label doesn't drop to 16-bit.
+        best = max(
+            album.get("audioQuality"),
+            track.get("audioQuality"),
+            key=lambda quality: TIDAL_QUALITY_IDS.get(quality, 0),
+        )
+        return album | {"audioQuality": best} if best else album
 
     async def _get_tracks(self, url: str) -> list[dict]:
         """The tracks of an album or playlist, fetched 100 at a time.

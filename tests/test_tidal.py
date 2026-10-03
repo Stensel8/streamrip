@@ -783,3 +783,26 @@ async def test_a_failed_album_request_is_not_repeated_by_every_track():
     assert asked == ["albums/2"]
     # Each track still downloads, from its own album stub.
     assert all("numberOfTracks" not in r["album"] for r in resps)
+
+
+@pytest.mark.asyncio
+async def test_a_hires_single_keeps_its_own_quality_in_its_label():
+    # The album only ever reports LOSSLESS, even when the track is hi-res.
+    c = _client()
+    reply, _ = _track_replies()
+
+    async def hires(path, params=None, base=None):
+        resp = await reply(path, params, base)
+        if path == "tracks/8":
+            resp["audioQuality"] = "HI_RES_LOSSLESS"
+        return resp
+
+    c._api_request = AsyncMock(side_effect=hires)
+
+    resp = await c.get_metadata("8", "track")
+    album = AlbumMetadata.from_track_resp(resp, "tidal")
+    assert (album.info.container, album.info.bit_depth) == ("FLAC", 24)
+
+    # The cached album stays as Tidal reported it: another track is 16-bit.
+    resp = await c.get_metadata("9", "track")
+    assert AlbumMetadata.from_track_resp(resp, "tidal").info.bit_depth == 16
