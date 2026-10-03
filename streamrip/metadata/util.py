@@ -21,6 +21,10 @@ def deezer_artists(resp: dict) -> list[str]:
     return names or [safe_get(resp, "artist", "name", default="Unknown Artist")]
 
 
+# A comma-separated word that is part of a name, not a credit role.
+_NAME_SUFFIXES = frozenset({"jr", "sr", "ii", "iii", "iv"})
+
+
 def qobuz_artists(resp: dict) -> list[str]:
     """The credited artists of a Qobuz track response, one name each: the
     main artists, then the featured ones (the order Tidal lists them in).
@@ -34,9 +38,13 @@ def qobuz_artists(resp: dict) -> list[str]:
     for credit in (resp.get("performers") or "").split(" - "):
         parts = [part.strip() for part in credit.split(",")]
         # Roles are single CamelCase words after the name, which may itself
-        # contain commas ("Tyler, The Creator").
+        # contain commas ("Tyler, The Creator", "Smith, Jr").
         roles: set[str] = set()
-        while len(parts) > 1 and re.fullmatch(r"[A-Za-z]+", parts[-1]):
+        while (
+            len(parts) > 1
+            and re.fullmatch(r"[A-Za-z]+", parts[-1])
+            and parts[-1].lower() not in _NAME_SUFFIXES
+        ):
             roles.add(parts.pop().lower())
         name = ", ".join(parts)
         if name and "mainartist" in roles:

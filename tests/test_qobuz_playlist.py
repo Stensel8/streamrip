@@ -75,3 +75,10 @@ async def test_no_pagination_when_track_ids_present():
     resp = {"tracks": {"items": [{"id": 1}], "total": 900}, "track_ids": [1, 2]}
     await c._fetch_remaining_playlist_tracks("playlist/get", {"limit": 500}, resp)
     c._request_ok.assert_not_called()
+
+
+def test_a_playlist_item_that_is_not_a_track_is_skipped():
+    """Anything in the list that isn't a track dict is passed over, not fatal."""
+    resp = {"name": "Odd", "tracks": {"items": [None, "x", TRACK]}}
+    meta = PlaylistMetadata.from_resp(resp, "qobuz")
+    assert meta.ids == [str(TRACK["id"])]

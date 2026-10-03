@@ -275,6 +275,14 @@ def test_qobuz_artists_split_from_performers():
     assert qobuz_artists({}) == []
 
 
+def test_qobuz_artists_keep_a_name_suffix_with_the_name():
+    """A comma and a suffix, as in "Smith, Jr", belong to the name, not to a role."""
+    from streamrip.metadata.util import qobuz_artists
+
+    resp = {"performers": "Smith, Jr, MainArtist - Jones, III, FeaturedArtist, Vocals"}
+    assert qobuz_artists(resp) == ["Smith, Jr", "Jones, III"]
+
+
 def test_qobuz_artists_put_the_main_artist_first():
     """Main artists come first, then featured ones.
 

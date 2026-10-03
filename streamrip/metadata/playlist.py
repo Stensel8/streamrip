@@ -31,7 +31,11 @@ class PlaylistMetadata:
             # lists every track.
             return cls(name, track_ids)
 
-        ids = [str(track["id"]) for track in items if track.get("streamable")]
+        ids = [
+            str(track["id"])
+            for track in items
+            if isinstance(track, dict) and track.get("streamable")
+        ]
         if len(ids) < len(items):
             logger.error(
                 f"{len(items) - len(ids)} track(s) in playlist {name} not "
