@@ -401,7 +401,8 @@ async def test_cache_http_download_failure_and_close():
     await runner.setup()
     site = web.TCPSite(runner, "127.0.0.1", 0)
     await site.start()
-    url = f"http://127.0.0.1:{site.port}"
+    host, port = runner.addresses[0]
+    url = f"http://{host}:{port}"
     cache = CoverCache()
     try:
         assert await cache.get((url + "/missing", url + "/cover")) is not None
