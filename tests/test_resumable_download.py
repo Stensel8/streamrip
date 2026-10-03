@@ -13,7 +13,8 @@ import threading
 
 import pytest
 
-from streamrip.client.downloadable import fast_async_download
+from streamrip.client.downloadable import _content_range, fast_async_download
+from streamrip.exceptions import IncompleteDownloadError
 
 
 def _payload(n: int) -> bytes:
@@ -185,3 +186,102 @@ async def test_multidict_headers_are_accepted(tmp_path):
     )
     srv.shutdown()
     assert seen["ua"] == "streamrip-test"
+
+
+def _interrupting_handler(payload, on_range):
+    """Drop the first response halfway; answer Range requests with on_range."""
+    total = len(payload)
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_GET(self):
+            rng = self.headers.get("Range")
+            if rng is None:
+                self.send_response(200)
+                self.send_header("Content-Length", str(total))
+                self.end_headers()
+                self.wfile.write(payload[: total // 2])
+                self.wfile.flush()
+                self.close_connection = True
+                self.connection.close()
+            else:
+                start = int(rng.replace("bytes=", "").split("-")[0])
+                on_range(self, start)
+
+    return Handler
+
+
+@pytest.mark.asyncio
+async def test_resume_at_the_wrong_offset_starts_over(tmp_path):
+    """A 206 that does not start where the partial file ends is not appended.
+
+    Appending it would leave a corrupt file of plausible size; it used to go
+    through, since urllib3 only checks the 206 body against its own length.
+    """
+    total = 1_000_000
+    payload = _payload(total)
+
+    def wrong_offset(handler, start):
+        off = start - 1000  # the server answers from the wrong byte
+        handler.send_response(206)
+        handler.send_header("Content-Range", f"bytes {off}-{total - 1}/{total}")
+        handler.send_header("Content-Length", str(total - off))
+        handler.end_headers()
+        handler.wfile.write(payload[off:])
+
+    srv, port = _start_server(_interrupting_handler(payload, wrong_offset))
+    url = f"http://127.0.0.1:{port}/track.flac"
+    path = str(tmp_path / "track.flac")
+
+    with pytest.raises(Exception):  # the dropped first response
+        await fast_async_download(path, url, {}, lambda n: None)
+    assert os.path.exists(path)
+    with pytest.raises(IncompleteDownloadError, match="resume at byte"):
+        await fast_async_download(path, url, {}, lambda n: None, resume=True)
+    srv.shutdown()
+
+    # Removed, so the next attempt starts from scratch instead of resuming
+    # onto the same mismatch.
+    assert not os.path.exists(path)
+
+
+@pytest.mark.asyncio
+async def test_resume_that_does_not_add_up_to_the_total_starts_over(tmp_path):
+    total = 1_000_000
+    payload = _payload(total)
+
+    def wrong_total(handler, start):
+        handler.send_response(206)
+        # Right offset, but the announced total disagrees with what is sent.
+        handler.send_header("Content-Range", f"bytes {start}-{total - 1}/{total + 5}")
+        handler.send_header("Content-Length", str(total - start))
+        handler.end_headers()
+        handler.wfile.write(payload[start:])
+
+    srv, port = _start_server(_interrupting_handler(payload, wrong_total))
+    url = f"http://127.0.0.1:{port}/track.flac"
+    path = str(tmp_path / "track.flac")
+
+    with pytest.raises(Exception):
+        await fast_async_download(path, url, {}, lambda n: None)
+    with pytest.raises(IncompleteDownloadError, match="announced"):
+        await fast_async_download(path, url, {}, lambda n: None, resume=True)
+    srv.shutdown()
+
+    assert not os.path.exists(path)
+
+
+@pytest.mark.parametrize(
+    ("value", "parsed"),
+    [
+        ("bytes 500-999/1000", (500, 1000)),
+        ("bytes 0-0/*", (0, None)),
+        ("bytes */1000", (None, None)),
+        (None, (None, None)),
+        ("garbage", (None, None)),
+    ],
+)
+def test_content_range_parsing(value, parsed):
+    assert _content_range(value) == parsed
