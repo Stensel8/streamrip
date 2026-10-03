@@ -54,17 +54,26 @@ def _plain_headers(headers) -> dict[str, str]:
     return {str(k): str(v) for k, v in dict(headers or {}).items()}
 
 
-def _content_range(value: str | None) -> tuple[int | None, int | None]:
-    """Parse ``bytes <start>-<end>/<total>`` into (start, total).
+def _content_range(
+    value: str | None,
+) -> tuple[int | None, int | None, int | None]:
+    """Parse a Content-Range header into (start, end, total).
 
-    Either is None when the header is missing or malformed, and the total is
-    None when the server sends ``*`` (size unknown).
+    ``bytes <start>-<end>/<total>`` is the form of a 206; ``bytes */<total>``
+    the form of a 416, which only states the complete length. The unit is
+    matched case-insensitively (RFC 9110). Any part that is absent, unknown
+    (``*``) or malformed is None.
     """
-    m = re.fullmatch(r"bytes (\d+)-\d+/(\d+|\*)", (value or "").strip())
+    m = re.fullmatch(
+        r"bytes\s+(?:(\d+)-(\d+)|\*)/(\d+|\*)", (value or "").strip(), re.IGNORECASE
+    )
     if m is None:
-        return None, None
-    total = None if m.group(2) == "*" else int(m.group(2))
-    return int(m.group(1)), total
+        return None, None, None
+
+    def num(group: str | None) -> int | None:
+        return None if group in (None, "*") else int(group)
+
+    return num(m.group(1)), num(m.group(2)), num(m.group(3))
 
 
 def _blocking_download(path, url, headers, report, stop: threading.Event, resume: bool):
@@ -86,21 +95,38 @@ def _blocking_download(path, url, headers, report, stop: threading.Event, resume
         url, headers=req_headers, allow_redirects=True, stream=True, timeout=60
     ) as resp:
         if resume_pos > 0 and resp.status_code == 416:
-            # Range Not Satisfiable: the file is already complete.
-            report(resume_pos)
-            return
+            # Range Not Satisfiable: nothing left past resume_pos -- but that
+            # only means "complete" if the partial file has the full length,
+            # which the 416 states as "bytes */<total>". A larger or smaller
+            # file is not the server's; start over.
+            _, _, total = _content_range(resp.headers.get("Content-Range"))
+            if total == resume_pos:
+                report(resume_pos)
+                return
+            os.remove(path)
+            raise IncompleteDownloadError(
+                f"416 for a {resume_pos}-byte partial file, the server announced "
+                f"Content-Range {resp.headers.get('Content-Range')!r}"
+            )
         resp.raise_for_status()
         # Only append if the server honoured the Range request (206). A 200
         # means it is sending the whole file again, so start over.
-        expected_total = None
+        expected_size = None
         if resume_pos > 0 and resp.status_code == 206:
             # urllib3 checks the 206 body against its own Content-Length, which
             # only covers the remainder. Nothing else checks that the remainder
             # starts where the partial file ends, or that the two add up to the
             # file: a mismatch would be appended into a corrupt track of
             # plausible size. Start over instead.
-            start, expected_total = _content_range(resp.headers.get("Content-Range"))
-            if start != resume_pos:
+            start, last, total = _content_range(resp.headers.get("Content-Range"))
+            # The file must end up `total` bytes long, or `last + 1` when the
+            # total is unknown ("*"): a close-delimited 206 without
+            # Content-Length that stops early is not caught by urllib3.
+            if total is not None:
+                expected_size = total
+            elif last is not None:
+                expected_size = last + 1
+            if start != resume_pos or expected_size is None:
                 os.remove(path)
                 raise IncompleteDownloadError(
                     f"asked to resume at byte {resume_pos}, the server answered "
@@ -116,11 +142,11 @@ def _blocking_download(path, url, headers, report, stop: threading.Event, resume
                     raise asyncio.CancelledError
                 file.write(chunk)
                 report(len(chunk))
-    if expected_total is not None and os.path.getsize(path) != expected_total:
+    if expected_size is not None and os.path.getsize(path) != expected_size:
         size = os.path.getsize(path)
         os.remove(path)
         raise IncompleteDownloadError(
-            f"resumed file is {size} bytes, the server announced {expected_total}"
+            f"resumed file is {size} bytes, the server announced {expected_size}"
         )
 
 

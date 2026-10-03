@@ -276,12 +276,87 @@ async def test_resume_that_does_not_add_up_to_the_total_starts_over(tmp_path):
 @pytest.mark.parametrize(
     ("value", "parsed"),
     [
-        ("bytes 500-999/1000", (500, 1000)),
-        ("bytes 0-0/*", (0, None)),
-        ("bytes */1000", (None, None)),
-        (None, (None, None)),
-        ("garbage", (None, None)),
+        ("bytes 500-999/1000", (500, 999, 1000)),
+        ("Bytes 500-999/1000", (500, 999, 1000)),  # units are case-insensitive
+        ("bytes 0-0/*", (0, 0, None)),
+        ("bytes */1000", (None, None, 1000)),  # the 416 form
+        (None, (None, None, None)),
+        ("garbage", (None, None, None)),
     ],
 )
 def test_content_range_parsing(value, parsed):
     assert _content_range(value) == parsed
+
+
+@pytest.mark.asyncio
+async def test_resume_with_unknown_total_that_stops_early_starts_over(tmp_path):
+    """`bytes <start>-<end>/*` leaves the total unknown, and a 206 without
+    Content-Length is delimited by the connection closing, so urllib3 cannot
+    tell it ended early. The range end must still be reached."""
+    total = 1_000_000
+    payload = _payload(total)
+
+    def unknown_total_cut_short(handler, start):
+        handler.send_response(206)
+        handler.send_header("Content-Range", f"bytes {start}-{total - 1}/*")
+        handler.end_headers()  # no Content-Length: close-delimited
+        handler.wfile.write(payload[start : start + 1000])
+        handler.wfile.flush()
+        handler.close_connection = True
+
+    srv, port = _start_server(_interrupting_handler(payload, unknown_total_cut_short))
+    url = f"http://127.0.0.1:{port}/track.flac"
+    path = str(tmp_path / "track.flac")
+
+    with pytest.raises(Exception):
+        await fast_async_download(path, url, {}, lambda n: None)
+    with pytest.raises(IncompleteDownloadError, match="announced"):
+        await fast_async_download(path, url, {}, lambda n: None, resume=True)
+    srv.shutdown()
+
+    assert not os.path.exists(path)
+
+
+def _answer_416(total):
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_GET(self):
+            self.send_response(416)
+            self.send_header("Content-Range", f"bytes */{total}")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+    return Handler
+
+
+@pytest.mark.asyncio
+async def test_416_accepts_a_partial_file_of_the_announced_length(tmp_path):
+    srv, port = _start_server(_answer_416(1000))
+    path = tmp_path / "track.flac"
+    path.write_bytes(b"x" * 1000)
+
+    await fast_async_download(
+        str(path), f"http://127.0.0.1:{port}/t", {}, lambda n: None, resume=True
+    )
+    srv.shutdown()
+
+    assert path.read_bytes() == b"x" * 1000
+
+
+@pytest.mark.asyncio
+async def test_416_for_a_partial_file_of_another_length_starts_over(tmp_path):
+    """A 416 used to mean "complete" whatever the local size; a 1,200-byte file
+    against "bytes */1000" was kept although it is not the server's file."""
+    srv, port = _start_server(_answer_416(1000))
+    path = tmp_path / "track.flac"
+    path.write_bytes(b"x" * 1200)
+
+    with pytest.raises(IncompleteDownloadError, match="416"):
+        await fast_async_download(
+            str(path), f"http://127.0.0.1:{port}/t", {}, lambda n: None, resume=True
+        )
+    srv.shutdown()
+
+    assert not path.exists()
