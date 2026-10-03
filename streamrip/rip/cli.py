@@ -223,12 +223,11 @@ def rip(
         handlers=[RichHandler(console=console)],
     )
     if verbose:
-        install(
-            console=console,
-            suppress=[click],
-            show_locals=True,
-            locals_hide_sunder=False,
-        )
+        # No show_locals: a traceback is what people paste into bug reports,
+        # and the locals of a failing frame routinely hold credentials -- the
+        # Deezer ARL in the login frames, and every Config repr, which includes
+        # all of them. Masking by variable name could not catch the reprs.
+        install(console=console, suppress=[click])
         logger.setLevel(logging.DEBUG)
         logger.debug("Showing all debug logs")
     else:
