@@ -177,6 +177,9 @@ class Container(Enum):
             cover.mime = "image/jpeg"
             async with aiofiles.open(cover_path, "rb") as img:
                 cover.data = await img.read()
+            # add_picture appends, unlike ID3 and MP4 which replace: without
+            # this, re-tagging a converted FLAC embedded a second cover.
+            audio.clear_pictures()
             audio.add_picture(cover)
         elif self in (Container.MP3, Container.AIFF):
             cover = APIC()
