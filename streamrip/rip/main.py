@@ -1,7 +1,6 @@
 import asyncio
 import json
 import logging
-import platform
 import sys
 
 import aiofiles
@@ -250,54 +249,24 @@ class Main:
         if search_results is None:
             return
 
-        if platform.system() == "Windows":  # simple term menu not supported for windows
-            from pick import pick
+        from .search_menu import choose_results
 
-            choices = pick(
-                search_results.results,
-                title=(
-                    f"{source.capitalize()} {media_type} search.\n"
-                    "Press SPACE to select, RETURN to download, CTRL-C to exit."
-                ),
-                multiselect=True,
-                min_selection_count=1,
-            )
-            assert isinstance(choices, list)
-
-            await self.add_all_by_id(
-                [(source, media_type, item.id) for item, _ in choices],
-            )
-
-        else:
-            from simple_term_menu import TerminalMenu
-
-            from .search_menu import PREVIEW_SIZE, Previews
-
-            previews = Previews(search_results)
-            menu = TerminalMenu(
-                search_results.summaries(),
-                preview_command=previews,
-                preview_size=PREVIEW_SIZE,
-                preview_title=f"{source.capitalize()} {media_type}",
-                title=(
-                    f"Results for {media_type} '{query}' from {source.capitalize()}\n"
-                    "SPACE - select, ENTER - download, ESC - exit"
-                ),
-                cycle_cursor=True,
-                clear_screen=True,
-                multi_select=True,
-            )
-            try:
-                chosen_ind = menu.show()
-            finally:
-                previews.close()
-            if chosen_ind is None:
-                console.print("[yellow]No items chosen. Exiting.")
-            else:
-                choices = search_results.get_choices(chosen_ind)
-                await self.add_all_by_id(
-                    [(source, item.media_type, item.id) for item in choices],
-                )
+        chosen = await choose_results(
+            search_results,
+            source,
+            media_type,
+            query,
+            verify_ssl=self.config.session.downloads.verify_ssl,
+        )
+        if chosen is None:
+            console.print("[yellow]No items chosen. Exiting.")
+            return
+        await self.add_all_by_id(
+            [
+                (source, item.media_type, item.id)
+                for item in search_results.get_choices(chosen)
+            ]
+        )
 
     async def search_take_first(self, source: str, media_type: str, query: str):
         """Search and queue only the first result, with no user interaction."""

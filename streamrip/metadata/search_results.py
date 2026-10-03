@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 
 from .util import qobuz_artists
 
-TIDAL_IMAGE = "https://resources.tidal.com/images/{uuid}/320x320.jpg"
+TIDAL_IMAGE = "https://resources.tidal.com/images/{uuid}/{size}x{size}.jpg"
 RELEASE_TYPES = {
     "ALBUM": "Album",
     "EP": "EP",
@@ -31,6 +31,16 @@ class Summary:
     details: list[tuple[str, str]] = field(default_factory=list)
     description: str | None = None
     image_url: str | None = None
+    image_fallback_urls: tuple[str, ...] = ()
+
+    @property
+    def image_urls(self) -> tuple[str, ...]:
+        """Preferred preview URL followed by smaller alternatives."""
+        return tuple(
+            dict.fromkeys(
+                url for url in (self.image_url, *self.image_fallback_urls) if url
+            )
+        )
 
     def summarize(self) -> str:
         """The result's line in the menu."""
@@ -162,28 +172,60 @@ def _explicit(item: dict) -> bool:
     )
 
 
-def _image(item: dict) -> str | None:
-    """A cover (or picture) of the result, a few hundred pixels across."""
+def _image_urls(item: dict) -> tuple[str, ...]:
+    """Preview-sized covers, best first, with the source's smaller fallbacks."""
     album = _album(item)
     qobuz = item.get("image") if isinstance(item.get("image"), dict) else None
     qobuz = qobuz or album.get("image")
     if isinstance(qobuz, dict):
-        return qobuz.get("medium") or qobuz.get("small") or qobuz.get("thumbnail")
-    if images := item.get("images300") or item.get("images150") or item.get("images"):
-        return images[0]  # Qobuz playlist
-    for key in ("cover_medium", "picture_medium", "cover_small", "picture_small"):
-        if url := item.get(key) or album.get(key):  # Deezer
-            return url
-    uuid = (  # Tidal
+        return tuple(
+            dict.fromkeys(
+                qobuz[k]
+                for k in ("large", "medium", "small", "thumbnail")
+                if qobuz.get(k)
+            )
+        )
+    playlist = [
+        item[k][0]
+        for k in ("images600", "images300", "images150", "images")
+        if item.get(k)
+    ]
+    if playlist:
+        return tuple(dict.fromkeys(playlist))
+    deezer = [
+        item.get(key) or album.get(key)
+        for key in (
+            "cover_big",
+            "picture_big",
+            "cover_medium",
+            "picture_medium",
+            "cover_small",
+            "picture_small",
+        )
+    ]
+    if any(deezer):
+        return tuple(dict.fromkeys(url for url in deezer if url))
+    uuid = (
         item.get("cover")
         or item.get("squareImage")
         or item.get("picture")
         or album.get("cover")
     )
     if isinstance(uuid, str) and "-" in uuid and "/" not in uuid:
-        return TIDAL_IMAGE.format(uuid=uuid.replace("-", "/"))
+        return tuple(
+            TIDAL_IMAGE.format(uuid=uuid.replace("-", "/"), size=size)
+            for size in (640, 320, 160)
+        )
     url = item.get("artwork_url") or (item.get("user") or {}).get("avatar_url")
-    return url and url.replace("-large.", "-t300x300.")  # SoundCloud
+    if url:
+        return tuple(dict.fromkeys((url.replace("-large.", "-t500x500."), url)))
+    return ()
+
+
+def _image(item: dict) -> str | None:
+    """The preferred cover URL; retained for callers inspecting summaries."""
+    urls = _image_urls(item)
+    return urls[0] if urls else None
 
 
 def album_summary(item: dict) -> Summary:
@@ -221,6 +263,7 @@ def album_summary(item: dict) -> Summary:
         ),
         description=_plain(item.get("description")),
         image_url=_image(item),
+        image_fallback_urls=_image_urls(item)[1:],
     )
 
 
@@ -258,6 +301,7 @@ def track_summary(item: dict) -> Summary:
         ),
         description=_plain(item.get("description")),
         image_url=_image(item),
+        image_fallback_urls=_image_urls(item)[1:],
     )
 
 
@@ -276,6 +320,7 @@ def artist_summary(item: dict) -> Summary:
             ("Popularity", popularity and f"{popularity}/100"),
         ),
         image_url=_image(item),
+        image_fallback_urls=_image_urls(item)[1:],
     )
 
 
@@ -317,6 +362,7 @@ def playlist_summary(item: dict) -> Summary:
         ),
         description=_plain(item.get("description")),
         image_url=_image(item),
+        image_fallback_urls=_image_urls(item)[1:],
     )
 
 
