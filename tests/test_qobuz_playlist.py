@@ -8,8 +8,6 @@ ids comes back in the ``track_ids`` extra instead.
 import json
 from unittest.mock import AsyncMock
 
-import pytest
-
 from streamrip.client.qobuz import QobuzClient
 from streamrip.metadata import PlaylistMetadata
 
@@ -48,7 +46,6 @@ def test_malformed_track_does_not_sink_playlist():
     assert meta.ids == [str(TRACK["id"])]
 
 
-@pytest.mark.asyncio
 async def test_long_playlist_without_track_ids_is_paginated():
     c = QobuzClient.__new__(QobuzClient)
     c._request_ok = AsyncMock(
@@ -68,7 +65,6 @@ async def test_long_playlist_without_track_ids_is_paginated():
     assert offsets == [500, 1000]
 
 
-@pytest.mark.asyncio
 async def test_no_pagination_when_track_ids_present():
     c = QobuzClient.__new__(QobuzClient)
     c._request_ok = AsyncMock()

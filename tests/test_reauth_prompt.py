@@ -41,7 +41,6 @@ def _patches(prompter, *, isatty: bool, confirm: bool):
     return stack
 
 
-@pytest.mark.asyncio
 async def test_prompts_and_recovers_when_user_agrees():
     main, client, prompter = _main_with_expired_token()
     with _patches(prompter, isatty=True, confirm=True):
@@ -51,7 +50,6 @@ async def test_prompts_and_recovers_when_user_agrees():
     assert result is client
 
 
-@pytest.mark.asyncio
 async def test_propagates_when_user_declines():
     main, _, prompter = _main_with_expired_token()
     with _patches(prompter, isatty=True, confirm=False):
@@ -60,7 +58,6 @@ async def test_propagates_when_user_declines():
     prompter.prompt_and_login.assert_not_awaited()
 
 
-@pytest.mark.asyncio
 async def test_never_prompts_without_a_terminal():
     """streamrip runs from cron and from scripts, where a hidden y/n hangs forever."""
     main, _, prompter = _main_with_expired_token()

@@ -28,7 +28,6 @@ def _client(lower_quality=True, **account) -> DeezerClient:
     return client
 
 
-@pytest.mark.asyncio
 async def test_free_account_is_clamped_to_mp3_128():
     """Upstream #1015: quality 1 on a free account used to claim HiFi was needed."""
     client = _client(can_stream_hq=False, can_stream_lossless=False)
@@ -37,21 +36,18 @@ async def test_free_account_is_clamped_to_mp3_128():
     client.client.get_track_url.assert_called_once_with("token", "MP3_128")
 
 
-@pytest.mark.asyncio
 async def test_premium_account_is_clamped_to_mp3_320():
     client = _client(can_stream_hq=True, can_stream_lossless=False)
     dl = await client.get_downloadable("1", quality=2)
     assert dl.quality == 1 and dl.extension == "mp3"
 
 
-@pytest.mark.asyncio
 async def test_clamp_can_be_disabled():
     client = _client(lower_quality=False, can_stream_hq=False)
     with pytest.raises(NonStreamableError, match="subscription"):
         await client.get_downloadable("1", quality=1)
 
 
-@pytest.mark.asyncio
 async def test_out_of_range_quality_does_not_crash():
     """`streamrip --quality 4` used to raise IndexError for Deezer."""
     client = _client(can_stream_hq=True, can_stream_lossless=True)
@@ -59,7 +55,6 @@ async def test_out_of_range_quality_does_not_crash():
     assert dl.quality == 2 and dl.extension == "flac"
 
 
-@pytest.mark.asyncio
 async def test_playlist_falls_back_to_gw_api():
     client = _client()
     client.client.api.get_playlist.side_effect = Exception("PermissionException")
@@ -73,7 +68,6 @@ async def test_playlist_falls_back_to_gw_api():
     assert [t["id"] for t in resp["tracks"]] == ["11", "12"]
 
 
-@pytest.mark.asyncio
 async def test_redirected_album_id_is_followed():
     """Upstream #893: /album/<old id>/tracks has no data, the new id does."""
     client = _client()

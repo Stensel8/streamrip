@@ -1802,5 +1802,5 @@ ssl = ["certifi"]
 
 [metadata]
 lock-version = "2.1"
-python-versions = ">=3.14,<4.0"
-content-hash = "afd0d9a855202ac2c992365648c42063e50996c8514f516a292f4dfaabc0734a"
+python-versions = ">=3.14,<3.16"
+content-hash = "a5ff08f344cc544448548c81ffbfc6666abdcce69eb59f81c5f2c05e6788db30"

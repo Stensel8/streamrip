@@ -90,7 +90,6 @@ def test_explicit_client_override_wins():
     assert TidalClient(cfg).client_id == "abc"
 
 
-@pytest.mark.asyncio
 async def test_token_from_other_client_requires_new_login(monkeypatch):
     c = _client()
     c.config.access_token = "token"
@@ -100,7 +99,6 @@ async def test_token_from_other_client_requires_new_login(monkeypatch):
         await c.login()
 
 
-@pytest.mark.asyncio
 async def test_dash_manifest_becomes_segmented_downloadable():
     c = _client()
     c.session = MagicMock()
@@ -117,7 +115,6 @@ async def test_dash_manifest_becomes_segmented_downloadable():
     assert dl.segment_urls == [f"https://sp.example/{n}.mp4" for n in range(1, 5)]
 
 
-@pytest.mark.asyncio
 async def test_dash_remux_strips_container_metadata(monkeypatch, tmp_path):
     """ffmpeg must not carry the source MP4's own tags into the output FLAC.
 
@@ -175,7 +172,6 @@ async def test_dash_remux_strips_container_metadata(monkeypatch, tmp_path):
     assert args[args.index("-fflags") + 1] == "+bitexact"
 
 
-@pytest.mark.asyncio
 async def test_json_manifest_still_supported():
     c = _client()
     c.session = MagicMock()
@@ -193,7 +189,6 @@ async def test_json_manifest_still_supported():
     assert dl.extension == "flac"
 
 
-@pytest.mark.asyncio
 async def test_missing_manifest_is_non_streamable():
     c = _client()
     c._api_request = AsyncMock(return_value={"userMessage": "Asset is not ready"})
@@ -201,7 +196,6 @@ async def test_missing_manifest_is_non_streamable():
         await c.get_downloadable("1", 2)
 
 
-@pytest.mark.asyncio
 async def test_warns_when_lossless_is_requested_but_lossy_is_served(caplog):
     c = _client()
     c.session = MagicMock()
@@ -219,7 +213,6 @@ async def test_warns_when_lossless_is_requested_but_lossy_is_served(caplog):
     assert "requested LOSSLESS but Tidal only has HIGH" in caplog.text
 
 
-@pytest.mark.asyncio
 async def test_hires_request_served_lossless_is_not_a_warning(caplog):
     """Quality 3 is "best available", so most tracks legitimately get LOSSLESS."""
     c = _client()
@@ -240,7 +233,6 @@ async def test_hires_request_served_lossless_is_not_a_warning(caplog):
     assert "no hi-res master" in caplog.text
 
 
-@pytest.mark.asyncio
 async def test_no_warning_when_served_quality_matches_or_exceeds_request(caplog):
     c = _client()
     c.session = MagicMock()
@@ -282,7 +274,6 @@ def _two_lanes(hires_reply, lossless_reply) -> TidalClient:
     return c
 
 
-@pytest.mark.asyncio
 async def test_hires_is_taken_when_tidal_has_it():
     hires = {
         "audioQuality": "HI_RES_LOSSLESS",
@@ -293,7 +284,6 @@ async def test_hires_is_taken_when_tidal_has_it():
     assert isinstance(await c.get_downloadable("1", 3), TidalDASHDownloadable)
 
 
-@pytest.mark.asyncio
 async def test_no_hires_master_steps_down_to_the_lossless_client():
     # The hi-res client is only ever served AAC for such a track.
     c = _two_lanes(_bts("HIGH", "mp4a.40.2"), _bts("LOSSLESS"))
@@ -304,7 +294,6 @@ async def test_no_hires_master_steps_down_to_the_lossless_client():
     c._api_request.assert_awaited_once()
 
 
-@pytest.mark.asyncio
 async def test_failed_hires_request_falls_back_and_says_so(caplog):
     c = _two_lanes(RuntimeError("boom"), _bts("LOSSLESS"))
     dl = await c.get_downloadable("1", 3)
@@ -312,14 +301,12 @@ async def test_failed_hires_request_falls_back_and_says_so(caplog):
     assert "hi-res request failed (boom); using lossless" in caplog.text
 
 
-@pytest.mark.asyncio
 async def test_hires_client_is_not_asked_below_quality_3():
     c = _two_lanes(AssertionError("not for CD quality"), _bts("LOSSLESS"))
     assert (await c.get_downloadable("1", 2)).extension == "flac"
     c.hires_lane._api_request.assert_not_awaited()
 
 
-@pytest.mark.asyncio
 async def test_track_without_the_hires_tag_never_asks_the_hires_client():
     c = _two_lanes(AssertionError("no hi-res master, so not asked"), _bts("LOSSLESS"))
     c._note_hires_tags([{"id": 1, "mediaMetadata": {"tags": ["LOSSLESS"]}}])
@@ -327,7 +314,6 @@ async def test_track_without_the_hires_tag_never_asks_the_hires_client():
     c.hires_lane._api_request.assert_not_awaited()
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "track",
     [
@@ -342,7 +328,6 @@ async def test_hires_tagged_or_untagged_tracks_are_asked(track):
     c.hires_lane._api_request.assert_awaited_once()
 
 
-@pytest.mark.asyncio
 async def test_album_items_teach_which_tracks_have_no_hires_master():
     c = _client(hires=True)
     tagged = {"id": 7, "mediaMetadata": {"tags": ["LOSSLESS"]}}
@@ -383,7 +368,6 @@ def _hires_stream(rate: int) -> dict:
     }
 
 
-@pytest.mark.asyncio
 async def test_hires_album_reports_its_real_format_for_the_folder_name():
     c = _client(hires=True)
     c._api_request = _album_replies(["LOSSLESS", "HIRES_LOSSLESS"])
@@ -393,7 +377,6 @@ async def test_hires_album_reports_its_real_format_for_the_folder_name():
     c.hires_lane._api_request.assert_awaited_once()  # one request for the album
 
 
-@pytest.mark.asyncio
 async def test_ordinary_album_costs_no_extra_request_and_keeps_its_label():
     c = _client(hires=True)
     c._api_request = _album_replies(["LOSSLESS"])
@@ -401,7 +384,6 @@ async def test_ordinary_album_costs_no_extra_request_and_keeps_its_label():
     assert "streamQuality" not in await c.get_metadata("1", "album")
 
 
-@pytest.mark.asyncio
 async def test_album_format_lookup_failure_only_leaves_the_default_label():
     c = _client(hires=True)
     c._api_request = _album_replies(["LOSSLESS", "HIRES_LOSSLESS"])
@@ -409,21 +391,18 @@ async def test_album_format_lookup_failure_only_leaves_the_default_label():
     assert "streamQuality" not in await c.get_metadata("1", "album")
 
 
-@pytest.mark.asyncio
 async def test_no_format_lookup_without_the_hires_client():
     c = _client()
     c._api_request = _album_replies(["LOSSLESS", "HIRES_LOSSLESS"])
     assert "streamQuality" not in await c.get_metadata("1", "album")
 
 
-@pytest.mark.asyncio
 async def test_nothing_streamable_anywhere_still_raises():
     c = _two_lanes({"userMessage": "Asset is not ready"}, {"userMessage": "nope"})
     with pytest.raises(NonStreamableError, match="nope"):
         await c.get_downloadable("1", 3)
 
 
-@pytest.mark.asyncio
 async def test_single_search_hit_is_returned():
     c = _client()
     c._api_request = AsyncMock(return_value={"items": [{"id": 1}]})
@@ -452,7 +431,6 @@ async def _artist(albums, prefer_explicit=True):
     return {"albums": [a for a in resp["albums"] if a["id"] in kept]}
 
 
-@pytest.mark.asyncio
 async def test_artist_albums_drop_the_clean_copy_of_an_explicit_duplicate():
     """Tidal sometimes lists one album twice: once clean, once explicit."""
     albums = [
@@ -463,7 +441,6 @@ async def test_artist_albums_drop_the_clean_copy_of_an_explicit_duplicate():
     assert [a["id"] for a in artist["albums"]] == ["2"]
 
 
-@pytest.mark.asyncio
 async def test_artist_albums_keep_the_higher_quality_copy_when_both_explicit():
     """Tidal also lists the same explicit master at two quality tiers."""
     albums = [
@@ -486,7 +463,6 @@ async def test_artist_albums_keep_the_higher_quality_copy_when_both_explicit():
     assert [a["id"] for a in artist["albums"]] == ["2"]
 
 
-@pytest.mark.asyncio
 async def test_artist_albums_ignore_bracket_style_when_matching_titles():
     """Tidal tags the same edition "(Deluxe Edition)" on one release and
     "[Deluxe Edition]" on another -- still the same album.
@@ -509,7 +485,6 @@ async def test_artist_albums_ignore_bracket_style_when_matching_titles():
     assert [a["id"] for a in artist["albums"]] == ["2"]
 
 
-@pytest.mark.asyncio
 async def test_artist_albums_with_different_track_counts_are_not_merged():
     """A single sharing a title with an album isn't the same release."""
     albums = [
@@ -520,7 +495,6 @@ async def test_artist_albums_with_different_track_counts_are_not_merged():
     assert {a["id"] for a in artist["albums"]} == {"1", "2"}
 
 
-@pytest.mark.asyncio
 async def test_artist_album_duplicates_kept_when_prefer_explicit_is_off():
     albums = [
         {"id": "1", "title": "STANS", "numberOfTracks": 12, "explicit": False},
@@ -536,7 +510,6 @@ def test_unknown_tidal_quality_does_not_crash():
     assert tidal_quality_id(None) == 0
 
 
-@pytest.mark.asyncio
 async def test_album_items_are_paged_and_videos_left_out():
     total = 250
 
@@ -580,7 +553,6 @@ def _mock_login(lane: TidalClient) -> None:
     )
 
 
-@pytest.mark.asyncio
 async def test_prompter_logs_both_lanes_in_and_saves_them(monkeypatch):
     monkeypatch.setattr("streamrip.rip.prompter.launch", lambda *_: None)
     monkeypatch.setattr("streamrip.rip.prompter.console", MagicMock())
@@ -609,7 +581,6 @@ async def test_prompter_logs_both_lanes_in_and_saves_them(monkeypatch):
     assert saved.user_id == 1
 
 
-@pytest.mark.asyncio
 async def test_prompter_leaves_a_working_login_alone(monkeypatch):
     """A lane whose saved login still works isn't asked to log in again."""
     monkeypatch.setattr("streamrip.rip.prompter.launch", lambda *_: None)
@@ -628,7 +599,6 @@ async def test_prompter_leaves_a_working_login_alone(monkeypatch):
     assert cfg.session.tidal.access_token == f"at-{DEFAULT_CLIENT_ID}"
 
 
-@pytest.mark.asyncio
 async def test_device_login_stops_when_tidal_lets_the_link_expire(monkeypatch):
     """The device login stops when the link expires.
 
@@ -647,7 +617,6 @@ async def test_device_login_stops_when_tidal_lets_the_link_expire(monkeypatch):
     client._get_auth_status.assert_not_called()
 
 
-@pytest.mark.asyncio
 async def test_device_login_rejection_says_why(monkeypatch):
     """A rejected device login says why."""
     monkeypatch.setattr("streamrip.rip.prompter.launch", lambda *_: None)
@@ -705,7 +674,6 @@ def _track_replies(album_error: Exception | None = None, album_id: int = 2):
     return reply, asked
 
 
-@pytest.mark.asyncio
 async def test_a_single_is_tagged_with_its_albums_own_artists():
     """A single is tagged with its album's own artists.
 
@@ -730,7 +698,6 @@ async def test_a_single_is_tagged_with_its_albums_own_artists():
     assert asked == ["albums/2"]
 
 
-@pytest.mark.asyncio
 async def test_a_single_whose_album_cannot_be_fetched_still_downloads():
     """A single whose album can't be fetched is still tagged, from its album stub."""
     c = _client()
@@ -744,7 +711,6 @@ async def test_a_single_whose_album_cannot_be_fetched_still_downloads():
     assert album.albumartist == "Megan Thee Stallion, Spiritbox"
 
 
-@pytest.mark.asyncio
 async def test_tracks_of_a_downloaded_album_need_no_album_request():
     """Tracks of an album downloaded as a whole need no album request of their own."""
     c = _client()
@@ -772,7 +738,6 @@ def _slow(reply):
     return slow
 
 
-@pytest.mark.asyncio
 async def test_tracks_resolving_together_ask_for_their_album_once():
     """Tracks that resolve together share one request for their album."""
     c = _client()
@@ -784,7 +749,6 @@ async def test_tracks_resolving_together_ask_for_their_album_once():
     assert asked == ["albums/2"]
 
 
-@pytest.mark.asyncio
 async def test_a_failed_album_request_is_not_repeated_by_every_track():
     """A failed album request isn't repeated by each track."""
     c = _client()
@@ -800,7 +764,6 @@ async def test_a_failed_album_request_is_not_repeated_by_every_track():
     assert all("numberOfTracks" not in r["album"] for r in resps)
 
 
-@pytest.mark.asyncio
 async def test_only_a_hires_track_keeps_the_cached_hires_format():
     """Only a hi-res track keeps the hi-res format cached with its album."""
     c = _client()

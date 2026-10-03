@@ -9,7 +9,6 @@ from streamrip.media import artwork
 from streamrip.metadata import Covers
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize("for_playlist", [False, True])
 @pytest.mark.parametrize("download_fails", [False, True])
 async def test_artwork_cleanup_preserves_existing_files(
@@ -88,7 +87,6 @@ def _saved_cover_only():
     return covers, config
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "error", [requests.ConnectionError, requests.exceptions.ContentDecodingError]
 )
@@ -105,7 +103,6 @@ async def test_a_network_hiccup_does_not_cost_the_album_its_cover(
     assert len(calls) == 2
 
 
-@pytest.mark.asyncio
 async def test_a_missing_cover_is_not_retried(tmp_path, monkeypatch):
     not_found = requests.HTTPError(response=MagicMock(status_code=404))
     calls = _flaky_download(monkeypatch, [not_found])
@@ -117,7 +114,6 @@ async def test_a_missing_cover_is_not_retried(tmp_path, monkeypatch):
     assert len(calls) == 1
 
 
-@pytest.mark.asyncio
 async def test_a_cover_that_keeps_failing_gives_up(tmp_path, monkeypatch):
     calls = _flaky_download(
         monkeypatch,

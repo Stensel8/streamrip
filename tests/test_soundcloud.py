@@ -71,7 +71,6 @@ def _mp3(n):
     return _track(_tc("progressive", "audio/mpeg", f"https://x/{n}"), id=n)
 
 
-@pytest.mark.asyncio
 async def test_playlist_that_comes_complete_still_gets_custom_ids():
     """A playlist that comes complete still gets custom ids.
 
@@ -85,7 +84,6 @@ async def test_playlist_that_comes_complete_still_gets_custom_ids():
     assert [t["id"] for t in resp["tracks"]] == ["1|https://x/1", "2|https://x/2"]
 
 
-@pytest.mark.asyncio
 async def test_playlist_fetches_the_tracks_that_came_without_metadata():
     """Tracks that came without metadata are fetched, once each."""
     playlist = {"tracks": [_mp3(1), {"id": 2}, {"id": 3}, {"id": 2}]}
@@ -101,7 +99,6 @@ async def test_playlist_fetches_the_tracks_that_came_without_metadata():
     ]
 
 
-@pytest.mark.asyncio
 async def test_refresh_tokens_scans_scripts_from_the_end():
     client = SoundcloudClient(Config.defaults())
     pages = {
@@ -192,7 +189,6 @@ def hls(tmp_path, monkeypatch):
     return make, temp, tmp_path / "out.mp3"
 
 
-@pytest.mark.asyncio
 async def test_hls_segments_are_joined_in_order_and_cleaned_up(hls):
     make, temp, out = hls
 
@@ -202,7 +198,6 @@ async def test_hls_segments_are_joined_in_order_and_cleaned_up(hls):
     assert list(temp.iterdir()) == []
 
 
-@pytest.mark.asyncio
 async def test_hls_segments_are_cleaned_up_when_one_fails(hls):
     make, temp, out = hls
 

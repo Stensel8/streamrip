@@ -30,7 +30,6 @@ def test_verification_without_certifi_uses_system_certificates(monkeypatch):
     assert get_aiohttp_connector_kwargs() == {"ssl": True}
 
 
-@pytest.mark.asyncio
 async def test_new_session_follows_verify_ssl():
     with patch(
         "streamrip.client.client.get_aiohttp_connector_kwargs",
@@ -41,7 +40,6 @@ async def test_new_session_follows_verify_ssl():
     kwargs.assert_called_once_with(verify_ssl=False)
 
 
-@pytest.mark.asyncio
 async def test_qobuz_spoofer_follows_verify_ssl():
     # It took verify_ssl and then verified anyway.
     with patch("streamrip.client.qobuz.new_session", return_value=AsyncMock()) as make:
@@ -50,7 +48,6 @@ async def test_qobuz_spoofer_follows_verify_ssl():
     make.assert_called_once_with(verify_ssl=False)
 
 
-@pytest.mark.asyncio
 async def test_lastfm_session_follows_verify_ssl():
     config = MagicMock()
     config.session.downloads.verify_ssl = False
@@ -63,7 +60,6 @@ async def test_lastfm_session_follows_verify_ssl():
     make.assert_called_once_with(verify_ssl=False)
 
 
-@pytest.mark.asyncio
 async def test_update_check_follows_verify_ssl_and_is_never_fatal():
     with patch(
         "streamrip.rip.cli.new_session", side_effect=RuntimeError("offline")
