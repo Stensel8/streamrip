@@ -4,6 +4,8 @@ import logging
 import random
 import re
 
+import aiohttp
+
 from ..config import Config
 from ..exceptions import NonStreamableError
 from .client import Client, new_session
@@ -118,11 +120,28 @@ class SoundcloudClient(Client):
 
         if download_info == self.ORIGINAL_DOWNLOAD:
             resp_json, status = await self._api_request(f"tracks/{item_id}/download")
-            assert status == 200
-            return SoundcloudDownloadable(
-                self.session,
-                {"url": resp_json["redirectUri"], "type": "original"},
+            if status == 200:
+                return SoundcloudDownloadable(
+                    self.session,
+                    {"url": resp_json["redirectUri"], "type": "original"},
+                )
+            # Anonymously, this endpoint now answers 401 even for tracks marked
+            # downloadable, which made them fail outright. Fall back to the MP3
+            # stream they also have.
+            track, track_status = await self._api_request(f"tracks/{item_id}")
+            stream = self._mp3_transcoding(track) if track_status == 200 else None
+            if stream is None:
+                raise NonStreamableError(
+                    f"SoundCloud original download unavailable for track {item_id} "
+                    f"(HTTP {status}), and no MP3 stream to fall back to"
+                )
+            logger.info(
+                "SoundCloud original of track %s unavailable (HTTP %s); "
+                "downloading the MP3 stream instead",
+                item_id,
+                status,
             )
+            download_info = stream
 
         if download_info == self.NOT_RESOLVED:
             raise NotImplementedError(item_info)
@@ -205,20 +224,26 @@ class SoundcloudClient(Client):
         if resp["downloadable"] and resp["has_downloads_left"]:
             return f"{item_id}|{cls.ORIGINAL_DOWNLOAD}"
 
+        url = cls._mp3_transcoding(resp)
+        return f"{item_id}|{url or cls.NON_STREAMABLE}"
+
+    @staticmethod
+    def _mp3_transcoding(resp: dict) -> str | None:
+        """The url of a track's full MP3 stream: progressive, else HLS."""
         # Prefer the plain progressive MP3 (one file), then HLS MP3 segments.
         # SoundCloud is phasing out MP3 HLS for many tracks, which used to trip
         # an assertion here.
         mp3 = [
             tc
-            for tc in resp["media"].get("transcodings") or []
+            for tc in (resp.get("media") or {}).get("transcodings") or []
             if (tc.get("format") or {}).get("mime_type") == "audio/mpeg"
             and not tc.get("snipped")
         ]
         for protocol in ("progressive", "hls"):
             for tc in mp3:
                 if tc["format"].get("protocol") == protocol:
-                    return f"{item_id}|{tc['url']}"
-        return f"{item_id}|{cls.NON_STREAMABLE}"
+                    return tc["url"]
+        return None
 
     def _auth_params(self) -> dict:
         c = self.config
@@ -240,7 +265,13 @@ class SoundcloudClient(Client):
         logger.debug(f"Requesting {url} with {_params=}, {headers=}")
 
         async def read(resp):
-            return await resp.json(), resp.status
+            # An error answer can have an empty or HTML body (the 401 of
+            # tracks/<id>/download): report its status rather than crash on
+            # "Attempt to decode JSON with unexpected mimetype".
+            try:
+                return await resp.json(), resp.status
+            except aiohttp.ContentTypeError, ValueError:
+                return {}, resp.status
 
         return await self._get_with_retries(url, read, _params, headers)
 
