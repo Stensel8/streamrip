@@ -114,9 +114,16 @@ in the config. A login that stops working is asked for again.
   through two separate logins. Each track is asked for in hi-res first and falls
   back to 16-bit FLAC when Tidal has no hi-res master. `hires_client = false` in
   `[tidal]` skips the hi-res login and gets 16-bit FLAC only.
-- **Deezer** needs the `arl` cookie of a logged-in session
-  ([how to find it](https://github.com/nathom/streamrip/wiki/Finding-Your-Deezer-ARL-Cookie));
-  the quality follows your subscription.
+- **Deezer** has no sign-in for outside apps, and its email and password login
+  is behind a captcha. What streamrip logs in with is the `arl` cookie of a
+  logged-in web session, so it offers a choice of how to get it:
+  1. **An isolated browser window**, the same one Qobuz uses (see above). You
+     log in there yourself; streamrip only reads the `arl` cookie once you're
+     in, and never sees your password.
+  2. **By hand**: copy the `arl` cookie from your browser's DevTools
+     ([how to find it](https://github.com/nathom/streamrip/wiki/Finding-Your-Deezer-ARL-Cookie)).
+
+  The quality follows your subscription.
 - **SoundCloud** needs nothing.
 
 ## Usage

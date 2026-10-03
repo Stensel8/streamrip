@@ -77,9 +77,9 @@ hires_token_client_id = ""
 quality = 2
 # If the target quality is not available, fallback to best quality available
 lower_quality_if_not_available = true
-# An authentication cookie that allows streamrip to use your Deezer account
-# See https://github.com/nathom/streamrip/wiki/Finding-Your-Deezer-ARL-Cookie
-# for instructions on how to find this
+# The authentication cookie of a logged-in Deezer session. Left empty,
+# streamrip offers to log in through a browser window the first time. To find
+# it by hand, see https://github.com/nathom/streamrip/wiki/Finding-Your-Deezer-ARL-Cookie
 arl = ""
 
 [soundcloud]

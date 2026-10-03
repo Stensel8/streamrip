@@ -23,35 +23,16 @@ import asyncio
 import json
 import logging
 import secrets
-import shutil
-import sys
 
 from aiohttp import web
 
 from ..console import console
+from .browser_login import BrowserLoginError
+from .browser_login import download_playwright_chromium as _download_playwright_chromium
+from .browser_login import launch_installed_chromium as _launch_installed_chromium
 from .interactive import Confirm
 
 logger = logging.getLogger("streamrip")
-
-# Playwright's own channel names for already-installed browsers, tried
-# first; then common binary names on PATH for browsers Playwright doesn't
-# recognize as a channel (Brave, Vivaldi, plain Chromium builds, ...).
-# Either way nothing is ever downloaded -- if none of these are found, the
-# caller should fall back to the console-snippet or manual capture instead.
-_CHROME_CHANNELS = ("chrome", "msedge")
-_CHROME_BINARY_NAMES = (
-    "google-chrome",
-    "google-chrome-stable",
-    "chromium",
-    "chromium-browser",
-    "brave-browser",
-    "brave",
-    "brave-origin",
-    "microsoft-edge",
-    "microsoft-edge-stable",
-    "vivaldi",
-    "vivaldi-stable",
-)
 
 # Qobuz's login page sets no restrictive Content-Security-Policy (checked
 # 2026-09-30: `default-src * 'unsafe-inline' 'unsafe-eval' data: blob:`), so
@@ -85,7 +66,7 @@ _SNIPPET_TEMPLATE = """\
 """
 
 
-class QobuzTokenCaptureError(Exception):
+class QobuzTokenCaptureError(BrowserLoginError):
     """Raised when automatic Qobuz token capture fails or times out."""
 
 
@@ -164,51 +145,6 @@ async def capture_qobuz_auth_token(timeout_s: int = 300) -> tuple[str, str]:
         await runner.cleanup()
 
 
-async def _launch_installed_chromium(pw, headless: bool):
-    """Try to drive a browser already on this machine. Never downloads.
-
-    Returns (browser, name) or (None, None) if nothing usable was found.
-    """
-    for channel in _CHROME_CHANNELS:
-        try:
-            browser = await pw.chromium.launch(channel=channel, headless=headless)
-            return browser, channel
-        except Exception:
-            continue
-    for name in _CHROME_BINARY_NAMES:
-        path = shutil.which(name)
-        if not path:
-            continue
-        try:
-            browser = await pw.chromium.launch(executable_path=path, headless=headless)
-            return browser, name
-        except Exception:
-            continue
-    return None, None
-
-
-async def _download_playwright_chromium() -> None:
-    """Run `playwright install chromium`. Only called after the user agrees."""
-    console.print(
-        "[cyan]Downloading a browser for Qobuz auto-login (one-time, ~150 MB)...[/cyan]"
-    )
-    proc = await asyncio.create_subprocess_exec(
-        sys.executable,
-        "-m",
-        "playwright",
-        "install",
-        "chromium",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT,
-    )
-    out, _ = await proc.communicate()
-    if proc.returncode != 0:
-        raise QobuzTokenCaptureError(
-            "Could not download a browser automatically "
-            f"(exit {proc.returncode}): {out.decode(errors='replace')[-500:]}"
-        )
-
-
 async def capture_qobuz_auth_token_via_browser(
     timeout_s: int = 120,
     login_url: str = "https://play.qobuz.com/login",
@@ -260,7 +196,7 @@ async def capture_qobuz_auth_token_via_browser(
                     raise QobuzTokenCaptureError(
                         "Skipped downloading a browser; use another login method."
                     )
-                await _download_playwright_chromium()
+                await _download_playwright_chromium("Qobuz")
                 browser = await pw.chromium.launch(headless=headless)
                 console.print("[cyan]Using the downloaded browser…[/cyan]")
 

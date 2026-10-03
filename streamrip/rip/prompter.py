@@ -9,6 +9,7 @@ from ..client import Client, DeezerClient, QobuzClient, SoundcloudClient, TidalC
 from ..config import Config
 from ..console import console
 from ..exceptions import AuthenticationError, MissingCredentialsError
+from .deezer_arl_capture import DeezerArlCaptureError, capture_deezer_arl_via_browser
 from .interactive import Prompt
 from .qobuz_token_capture import (
     QobuzTokenCaptureError,
@@ -227,23 +228,52 @@ class DeezerPrompter(CredentialPrompter):
 
     async def prompt_and_login(self):
         if not self.has_creds():
-            self._prompt_creds_and_set_session_config()
+            await self._prompt_creds_and_set_session_config()
         while True:
             try:
                 await self.client.login()
                 break
             except AuthenticationError:
                 console.print("[yellow]Invalid arl, try again.")
-                self._prompt_creds_and_set_session_config()
-        self.save()
+                await self._prompt_creds_and_set_session_config()
 
-    def _prompt_creds_and_set_session_config(self):
+    async def _prompt_creds_and_set_session_config(self):
+        """Ask for an ARL cookie.
+
+        Deezer has no sign-in for outside apps, so the ARL of a logged-in web
+        session is the only login there is; offer to capture it from an
+        isolated browser window (see deezer_arl_capture) before asking for it
+        outright.
+        """
         console.print(
-            "If you're not sure how to find the ARL cookie, see the instructions at ",
-            "[blue underline]https://github.com/nathom/streamrip/wiki/Finding-your-Deezer-ARL-Cookie",
+            "\nHow do you want to log in to Deezer?\n"
+            "  1. Open an isolated browser window that logs in and captures\n"
+            "     the ARL cookie automatically\n"
+            "  2. Copy the ARL cookie from your browser by hand\n"
         )
-        c = self.config.session.deezer
-        c.arl = Prompt.ask("Enter your [bold]ARL")
+        choice = Prompt.ask("Choose", choices=["1", "2"], default="1")
+
+        if choice == "1":
+            try:
+                arl = await capture_deezer_arl_via_browser()
+            except DeezerArlCaptureError as e:
+                console.print(f"[yellow]{e}")
+            else:
+                self.config.session.deezer.arl = arl
+                return
+
+        _open_login_link("https://www.deezer.com/login")
+        console.print(
+            "\nEnter it manually instead:\n"
+            "  1. In the browser tab that just opened, log in to Deezer\n"
+            "  2. Open DevTools (F12) -> Application (Chrome, Edge, Brave) or\n"
+            "     Storage (Firefox) -> Cookies -> https://www.deezer.com\n"
+            "  3. Copy the [bold]Value[/bold] of the [bold]arl[/bold] cookie\n"
+        )
+        arl = ""
+        while not arl:
+            arl = Prompt.ask("Enter your Deezer ARL (invisible)", password=True).strip()
+        self.config.session.deezer.arl = arl
 
     def save(self):
         c = self.config.session.deezer
