@@ -83,9 +83,12 @@ class QobuzSpoofer(RequestClient):
         secrets = OrderedDict(
             (m.group("timezone"), [m.group("seed")]) for m in SEED_RE.finditer(bundle)
         )
+        if not secrets:
+            raise Exception("Could not find app secrets.")
         # The bundle picks between the first two seeds with ternaries that are
         # always false, so the second one is the one in use: try it first.
-        secrets.move_to_end(list(secrets)[1], last=False)
+        if len(secrets) > 1:
+            secrets.move_to_end(list(secrets)[1], last=False)
 
         timezones = "|".join(timezone.capitalize() for timezone in secrets)
         info_extras = re.compile(
