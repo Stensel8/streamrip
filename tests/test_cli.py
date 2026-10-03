@@ -232,14 +232,21 @@ def _run_url_with_a_newer_version_available(tmp_path, monkeypatch, raise_during_
     )
 
 
+def _printed(result, capsys) -> str:
+    """Everything the run printed, with Rich's line wrapping and spacing undone.
+
+    Depending on how the tests are run, Rich's output lands in Click's capture or in
+    pytest's, and a long path (a deep venv) wraps over lines.
+    """
+    return "".join((result.output + capsys.readouterr().out).split())
+
+
 def test_update_notice_prints_after_a_clean_download(tmp_path, monkeypatch, capsys):
     result = _run_url_with_a_newer_version_available(tmp_path, monkeypatch, None)
     assert result.exit_code == 0, result.output
-    # Rich's console writes straight to the real stdout, not Click's
-    # result.output capture -- pytest's own capsys catches that instead.
-    out = capsys.readouterr().out
+    out = _printed(result, capsys)
     assert "v99.0.0" in out
-    assert sys.prefix in out
+    assert "".join(sys.prefix.split()) in out
 
 
 def test_update_notice_still_prints_when_the_download_is_cancelled(
@@ -257,10 +264,10 @@ def test_update_notice_still_prints_when_the_download_is_cancelled(
         tmp_path, monkeypatch, asyncio.CancelledError()
     )
     assert result.exit_code == 0, result.output
-    out = capsys.readouterr().out
+    out = _printed(result, capsys)
     assert "v99.0.0" in out
     assert "Stopped" in out
-    assert sys.prefix in out
+    assert "".join(sys.prefix.split()) in out
 
 
 def test_upgrade_command_preserves_release_or_branch_origin():
