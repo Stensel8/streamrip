@@ -290,10 +290,9 @@ class DeezerClient(Client):
 
         fallback_id = track_info.get("FALLBACK", {}).get("SNG_ID")
 
-        # Preserved across the FILESIZE-based downgrade below. A fallback track
-        # is a different release with its own metadata, so it should be asked
-        # for at the quality the caller wanted -- not at one lowered by the
-        # zeroed FILESIZEs of the track being replaced.
+        # Preserved across the downgrade below. A fallback track is a different
+        # release with its own metadata, so it should be asked for at the
+        # quality the caller wanted -- not at one the replaced track fell to.
         requested_quality = quality
 
         quality_map = [
@@ -301,6 +300,9 @@ class DeezerClient(Client):
             (3, "MP3_320"),  # quality 1
             (1, "FLAC"),  # quality 2
         ]
+        # FILESIZE_* only sizes the progress bar. It says nothing reliable about
+        # what Deezer will serve: it is often 0 for a format that is available,
+        # so it must not pick the quality -- only get_track_url can.
         size_map = [
             int(track_info.get(f"FILESIZE_{format}", 0)) for _, format in quality_map
         ]
@@ -328,47 +330,53 @@ class DeezerClient(Client):
                 self._quality_warned = True
             quality = account_max
 
-        # Check if requested quality is available for this track
-        if size_map[quality] == 0:
-            if self.config.lower_quality_if_not_available:
-                wanted = quality
-                while size_map[quality] == 0 and quality > 0:
-                    quality -= 1
-                if quality != wanted:
+        # Ask Deezer for each tier from the wanted one down: a None URL means
+        # this track is not served in that format.
+        token = track_info["TRACK_TOKEN"]
+        url = None
+        for tier in range(quality, -1, -1):
+            _, format_str = quality_map[tier]
+            try:
+                logger.debug(
+                    "Fetching deezer url (%s) with token %s", format_str, token
+                )
+                url = await asyncio.to_thread(
+                    self.client.get_track_url, token, format_str
+                )
+            except deezer.WrongLicense:
+                if not self.config.lower_quality_if_not_available:
+                    raise NonStreamableError(
+                        f"Your Deezer subscription does not allow {format_str} "
+                        "downloads. FLAC (quality 2) needs Deezer HiFi/Premium, "
+                        "MP3 320 (quality 1) needs a paid plan.",
+                    )
+                continue
+            except deezer.WrongGeolocation:
+                if not is_retry and fallback_id:
+                    return await self.get_downloadable(
+                        fallback_id, quality, is_retry=True
+                    )
+                raise NonStreamableError(
+                    "The requested track is not available. This may be due to your country/location.",
+                )
+            if url:
+                if tier != quality:
                     logger.info(
                         "Quality %s is not available for track %s, using %s",
-                        wanted,
-                        item_id,
                         quality,
+                        item_id,
+                        tier,
                     )
-            else:
-                raise NonStreamableError(
-                    f"The requested quality {quality} is not available and fallback is disabled."
-                )
+                # The quality actually served, which fixes the file extension.
+                dl_info["quality"] = tier
+                break
+            # A size listed but no URL is a failed request (deezer-py maps a 429
+            # to None), not a format Deezer doesn't serve: stepping down would
+            # silently swap in a lower one.
+            if size_map[tier] > 0 or not self.config.lower_quality_if_not_available:
+                break
 
-        # Update the quality in dl_info to reflect the final quality used
-        dl_info["quality"] = quality
-
-        _, format_str = quality_map[quality]
-
-        token = track_info["TRACK_TOKEN"]
-        try:
-            logger.debug("Fetching deezer url with token %s", token)
-            url = await asyncio.to_thread(self.client.get_track_url, token, format_str)
-        except deezer.WrongLicense:
-            raise NonStreamableError(
-                f"Your Deezer subscription does not allow {format_str} downloads. "
-                "FLAC (quality 2) needs Deezer HiFi/Premium, MP3 320 (quality 1) "
-                "needs a paid plan.",
-            )
-        except deezer.WrongGeolocation:
-            if not is_retry and fallback_id:
-                return await self.get_downloadable(fallback_id, quality, is_retry=True)
-            raise NonStreamableError(
-                "The requested track is not available. This may be due to your country/location.",
-            )
-
-        if url is None:
+        if not url:
             # No URL at any quality is the signature of a delisted old-catalog
             # track: it has been superseded by another release, and Deezer
             # names that release in FALLBACK.SNG_ID. Follow it, exactly as the
@@ -383,6 +391,11 @@ class DeezerClient(Client):
                 )
                 return await self.get_downloadable(
                     fallback_id, requested_quality, is_retry=True
+                )
+
+            if not self.config.lower_quality_if_not_available:
+                raise NonStreamableError(
+                    f"The requested quality {quality} is not available and fallback is disabled."
                 )
 
             # This used to fall back to the legacy AES-ECB CDN at
