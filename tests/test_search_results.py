@@ -4,6 +4,7 @@ The items below are trimmed from real Qobuz, Tidal and Deezer responses.
 """
 
 import io
+import unicodedata
 
 from PIL import Image
 
@@ -212,3 +213,18 @@ def test_cover_draws_an_edge_inside_a_character():
 
     assert row.plain == "▌▌"
     assert {span.style.color.triplet for span in row.spans} == {(0, 0, 0)}
+
+
+def test_every_sextant_pattern_gets_the_character_that_fills_it():
+    """The character for a pattern of sub-pixels is the one Unicode names after them.
+
+    Cells are numbered 1 to 6 from the top left, row by row; "BLOCK SEXTANT-135" fills
+    the first, third and fifth.
+    """
+    for mask in range(1, 63):
+        cells = "".join(str(i + 1) for i in range(6) if mask >> i & 1)
+        char = cover_preview._sextant(mask)
+        if mask in (21, 42):  # the halves are older characters
+            assert unicodedata.name(char) in ("LEFT HALF BLOCK", "RIGHT HALF BLOCK")
+        else:
+            assert unicodedata.name(char) == f"BLOCK SEXTANT-{cells}"

@@ -1,6 +1,7 @@
 """Terminal image support, isolated from the search menu and provider clients."""
 
 import io
+import logging
 import sys
 
 from PIL import Image, ImageOps
@@ -10,6 +11,8 @@ from rich.style import Style
 from rich.text import Text
 from textual.containers import Container
 from textual.widgets import Static
+
+logger = logging.getLogger("streamrip")
 
 
 def decode_cover(data: bytes) -> Image.Image:
@@ -23,7 +26,7 @@ def decode_cover(data: bytes) -> Image.Image:
 
 
 def image_widget():
-    """Probe once, before Textual owns input; None means quadrant blocks.
+    """Probe once, before Textual owns input; None means colored blocks.
 
     Keep these imports lazy: commands such as --help, JSON search and downloads
     must not query the terminal.
@@ -34,11 +37,15 @@ def image_widget():
         from textual_image import renderable, widget
 
         if renderable.Image is renderable.SixelImage:
+            logger.debug("Cover previews: SIXEL images")
             return _sixel_widget()
         if renderable.Image is renderable.TGPImage:
+            logger.debug("Cover previews: Kitty graphics images")
             return widget.Image
     except Exception:
-        pass  # An unsupported terminal must still have a usable search menu.
+        # An unsupported terminal must still have a usable search menu.
+        logger.debug("Cover previews: terminal probe failed", exc_info=True)
+    logger.debug("Cover previews: colored blocks, no SIXEL or Kitty graphics")
     return None
 
 
@@ -77,10 +84,20 @@ def _sixel_widget():
     return CoverSixelImage
 
 
-# Quadrant blocks by which quarters of the cell they fill: top left 1, top
-# right 2, bottom left 4, bottom right 8.
-QUADRANTS = " ▘▝▀▖▌▞▛▗▚▐▜▄▙▟█"
-CORNERS = ((0, 0), (1, 0), (0, 1), (1, 1))
+# A sextant cuts a character into 2 columns and 3 rows of sub-pixels, each
+# either of its two colors. Bit 0 is the top left sub-pixel, then row by row.
+# Unicode has a character for every pattern but the two halves, which are
+# older characters.
+LEFT_HALF, RIGHT_HALF = 21, 42
+
+
+def _sextant(mask: int) -> str:
+    """The character that fills the sub-pixels in `mask`."""
+    if mask == LEFT_HALF:
+        return "▌"
+    if mask == RIGHT_HALF:
+        return "▐"
+    return chr(0x1FB00 + mask - 1 - (mask > LEFT_HALF) - (mask > RIGHT_HALF))
 
 
 def _mean(pixels: list) -> tuple[int, int, int]:
@@ -88,25 +105,33 @@ def _mean(pixels: list) -> tuple[int, int, int]:
     return tuple(sum(p[i] for p in pixels) // len(pixels) for i in range(3))
 
 
+def _brightness(pixel: tuple) -> int:
+    """How light an (r, g, b) pixel looks, to compare, not to display."""
+    return 299 * pixel[0] + 587 * pixel[1] + 114 * pixel[2]
+
+
 def _cell(pixels: list) -> tuple[str, tuple, tuple]:
-    """The quadrant block, and its two colors, closest to a cell's 2x2 pixels."""
+    """The sextant, and its two colors, closest to a cell's 2x3 pixels.
+
+    The two colors split the pixels by brightness, which finds the best split of
+    the pixels of a picture without trying all 31.
+    """
+    order = sorted(range(len(pixels)), key=lambda i: _brightness(pixels[i]))
     best = None
-    for mask in range(1, 8):  # the other 8 are these with the colors swapped
-        on = [p for i, p in enumerate(pixels) if mask >> i & 1]
-        off = [p for i, p in enumerate(pixels) if not mask >> i & 1]
-        fg, bg = _mean(on), _mean(off)
+    for split in range(1, len(pixels)):
+        dark, light = order[:split], order[split:]
+        fg, bg = _mean([pixels[i] for i in dark]), _mean([pixels[i] for i in light])
         error = sum(
-            sum((a - b) ** 2 for a, b in zip(p, fg if mask >> i & 1 else bg))
-            for i, p in enumerate(pixels)
-        )
+            sum((a - b) ** 2 for a, b in zip(pixels[i], fg)) for i in dark
+        ) + sum(sum((a - b) ** 2 for a, b in zip(pixels[i], bg)) for i in light)
         if best is None or error < best[0]:
-            best = (error, QUADRANTS[mask], fg, bg)
-    return best[1:]
+            best = (error, sum(1 << i for i in dark), fg, bg)
+    return _sextant(best[1]), best[2], best[3]
 
 
 def cover_rows(data: bytes | Image.Image, rows: int) -> list[Text]:
-    """An image as rows of quadrant blocks, two colors per character: twice
-    as sharp across as half blocks, which show only a top and bottom pixel.
+    """An image as rows of sextants, two colors per character: 2x3 sub-pixels
+    each, so a character can hold an edge both across and from top to bottom.
     """
     columns = rows * 2  # a character is about twice as tall as it is wide
     image = decode_cover(data) if isinstance(data, bytes) else data
@@ -116,12 +141,16 @@ def cover_rows(data: bytes | Image.Image, rows: int) -> list[Text]:
         method=Image.Resampling.LANCZOS,
         color="black",
     )
-    image = image.resize((columns * 2, rows * 2), Image.Resampling.LANCZOS)
+    image = image.resize((columns * 2, rows * 3), Image.Resampling.LANCZOS)
     lines = []
     for y in range(rows):
         line = Text()
         for x in range(columns):
-            pixels = [image.getpixel((2 * x + dx, 2 * y + dy)) for dx, dy in CORNERS]
+            pixels = [
+                image.getpixel((2 * x + dx, 3 * y + dy))
+                for dy in range(3)
+                for dx in range(2)
+            ]
             char, fg, bg = _cell(pixels)
             line.append(
                 char, Style(color=Color.from_rgb(*fg), bgcolor=Color.from_rgb(*bg))
@@ -131,7 +160,7 @@ def cover_rows(data: bytes | Image.Image, rows: int) -> list[Text]:
 
 
 class BlockCover(Static):
-    """The existing two-color quadrant renderer, sized by its parent."""
+    """Colored sextant characters, sized by its parent."""
 
     DEFAULT_CSS = "BlockCover { width: 100%; height: 100%; }"
 
