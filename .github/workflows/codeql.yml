@@ -1,0 +1,63 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+    branches: [dev, main]
+  schedule:
+    # Weekly, so new queries also run on code nobody touched.
+    - cron: "33 20 * * 2"
+  workflow_dispatch:
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions: {}
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    # A pull request from a fork gets a read-only token, which can't upload results.
+    # What it merges is scanned on the push to dev.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      security-events: write # upload the results
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        # Python is the program; actions covers the workflows in .github/workflows.
+        # CodeQL has no queries for the shell and PowerShell installers.
+        language: [python, actions]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # CodeQL no longer installs Python dependencies. With the project's own Python
+      # and its dependencies in place, calls into aiohttp, requests and the rest
+      # resolve, which the data-flow queries need to follow input through them.
+      - name: Set up Python
+        if: matrix.language == 'python'
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+      - name: Install dependencies
+        if: matrix.language == 'python'
+        run: python -m pip install ".[ssl,ffmpeg]"
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+          config-file: ./.github/codeql/codeql-config.yml
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          category: /language:${{ matrix.language }}
