@@ -177,14 +177,38 @@ class DeezerDownloadable(Downloadable):
         self.session = session
         self.url = info["url"]
         self.source = "deezer"
-        sizes = info["quality_to_size"]
-        available = [i for i, size in enumerate(sizes) if size > 0]
-        if not available:
-            raise NonStreamableError("Missing download info. Skipping.")
-        self.quality = min(info["quality"], max(available))
-        self._size = sizes[self.quality]
-        self.extension = "mp3" if self.quality <= 1 else "flac"
+
+        # The quality DeezerClient got a URL for is what the URL serves.
+        # FILESIZE_* must not override it: those values are often 0 for a
+        # format that is available, and clipping on them would label a FLAC
+        # stream as .mp3 -- an unplayable file once tagged as ID3.
+        self.quality = info["quality"]
+
+        # The CDN URL carries the container (.../<md5>.flac?hdnea=...); the
+        # quality only decides for a URL that doesn't.
+        url_name = self.url.split("?", 1)[0].rsplit("/", 1)[-1]
+        url_ext = url_name.rsplit(".", 1)[-1].lower() if "." in url_name else ""
+        if url_ext in ("flac", "mp3"):
+            self.extension = url_ext
+        else:
+            self.extension = "flac" if self.quality >= 2 else "mp3"
+
+        # Only sizes the progress bar until _download reads Content-Length.
+        sizes = info.get("quality_to_size") or []
+        self._size = (
+            sizes[self.quality]
+            if 0 <= self.quality < len(sizes) and sizes[self.quality] > 0
+            else None
+        )
         self.id = str(info["id"])
+
+    async def size(self) -> int:
+        """The FILESIZE_* of the served quality, or 0 when Deezer gave none.
+
+        Never a HEAD request: the CDN URL carries an hdnea token, HEAD on it is
+        not reliably supported, and _download reads Content-Length anyway.
+        """
+        return self._size or 0
 
     async def _download(self, path: str, callback):
         """Download the file, decrypting it on the fly if it's encrypted."""
