@@ -16,7 +16,7 @@ from ..console import console
 from ..db import Database
 from ..exceptions import NonStreamableError
 from ..filepath_utils import clean_filename
-from ..metadata import PlaylistMetadata, SearchResults
+from ..metadata import AlbumMetadata, PlaylistMetadata, SearchResults, TrackMetadata
 from .artwork import download_artwork
 from .media import Media, Pending, rip_tracks
 from .track import Track, fetch_downloadable, fetch_track_meta
@@ -66,6 +66,23 @@ class PendingPlaylistTrack(Pending):
         meta = await fetch_track_meta(self.client, self.db, self.id)
         if meta is None:
             return None
+        downloadable = await fetch_downloadable(
+            self.client, self.config, self.db, self.id
+        )
+        if downloadable is None:
+            return None
+
+        # Deezer serves a geoblocked or delisted track from another release,
+        # the one FALLBACK.SNG_ID names; the downloadable's id is then that
+        # track's. The requested track's metadata no longer describes the
+        # bytes -- its album, and its cover: for such releases Deezer only has
+        # a grey "no cover" placeholder (an unknown picture hash redirects to
+        # d41d8cd98f00b204e9800998ecf8427e). Use the served track's metadata.
+        # The cover is fetched only now, once it is known which track's it is.
+        served = getattr(downloadable, "id", None)
+        if served is not None and str(served) != str(self.id):
+            meta = await self._served_track_meta(str(served)) or meta
+
         album, c = meta.album, self.config.session
         if c.metadata.renumber_playlist_tracks:
             # Disc and total come from the track's own album; left alone, a
@@ -80,19 +97,43 @@ class PendingPlaylistTrack(Pending):
             album.albumartist, album.albumartists = "Various Artists", None
             album.compilation = "1"
 
-        (cover_path, _), downloadable = await asyncio.gather(
-            download_artwork(
-                self.client.session,
-                self.folder,
-                album.covers,
-                c.artwork,
-                for_playlist=True,
-            ),
-            fetch_downloadable(self.client, self.config, self.db, self.id),
+        cover_path, _ = await download_artwork(
+            self.client.session,
+            self.folder,
+            album.covers,
+            c.artwork,
+            for_playlist=True,
         )
-        if downloadable is None:
-            return None
         return Track(meta, downloadable, self.config, self.folder, cover_path, self.db)
+
+    async def _served_track_meta(self, served_id: str) -> TrackMetadata | None:
+        """The metadata of the track actually served, or None to keep the original.
+
+        Not fetch_track_meta: the served id must not be checked against or
+        recorded in the database, which only knows the requested one.
+        """
+        source = self.client.source
+        try:
+            resp = await self.client.get_metadata(served_id, "track")
+            album = AlbumMetadata.from_track_resp(resp, source)
+            meta = album and TrackMetadata.from_resp(album, source, resp)
+        except Exception as e:
+            logger.warning(
+                "Track %s is served from %s, whose metadata could not be read "
+                "(%s: %s); keeping the requested track's",
+                self.id,
+                served_id,
+                type(e).__name__,
+                e,
+            )
+            return None
+        if meta is not None:
+            logger.debug(
+                "Track %s served from fallback %s; using its metadata and cover",
+                self.id,
+                served_id,
+            )
+        return meta
 
 
 @dataclass(slots=True)
