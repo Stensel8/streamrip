@@ -135,3 +135,30 @@ async def test_menu_offers_no_password_login(monkeypatch, prompter, launch):
 
     shown = " ".join(str(c.args[0]) for c in output.call_args_list if c.args).lower()
     assert "email" not in shown and "password" not in shown
+
+
+async def test_manual_entry_is_the_default_choice(monkeypatch, prompter, launch):
+    # The browser option may have to download a browser first (about 150 MB):
+    # it's offered, but never the answer a bare Enter gives.
+    prompt = _ask(monkeypatch, "2", "typed-arl")
+
+    await prompter.prompt_and_login()
+
+    assert prompt.call_args_list[0].kwargs["default"] == "2"
+
+
+def test_deezer_and_qobuz_announce_a_save_the_same_way(monkeypatch, prompter):
+    from streamrip.client.qobuz import QobuzClient
+    from streamrip.rip.prompter import QobuzPrompter
+
+    qobuz = QobuzPrompter(prompter.config, QobuzClient(prompter.config))
+    output = MagicMock()
+    monkeypatch.setattr("streamrip.rip.prompter.console.print", output)
+
+    prompter.save()
+    deezer_says = output.call_args.args[0]
+    qobuz.save()
+    qobuz_says = output.call_args.args[0]
+
+    assert deezer_says == qobuz_says
+    assert "saved to config file at" in deezer_says

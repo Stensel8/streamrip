@@ -40,6 +40,10 @@ _CHROME_BINARY_NAMES = (
 )
 
 
+# A login can include a captcha or a second factor, so be generous.
+LOGIN_TIMEOUT_S = 300
+
+
 class BrowserLoginError(Exception):
     """Raised when logging in through a browser window fails or times out."""
 
@@ -137,3 +141,51 @@ async def open_login_browser(service: str, headless: bool = False):
             yield browser
         finally:
             await browser.close()
+
+
+@asynccontextmanager
+async def login_page(
+    service: str,
+    login_url: str,
+    error: type[BrowserLoginError],
+    reads: str,
+    headless: bool = False,
+):
+    """Yield a page on `login_url`, in a throwaway browser, to log in on.
+
+    Whatever goes wrong comes out as `error`, the caller's own
+    BrowserLoginError, so the caller can fall back to another way of logging
+    in. `reads` names what the caller will read from the logged-in session.
+    """
+    try:
+        async with open_login_browser(service, headless) as browser:
+            context = await browser.new_context()
+            page = await context.new_page()
+            await page.goto(login_url)
+            console.print(
+                f"\n[cyan]Log in to {service} in the browser window that just "
+                f"opened.[/cyan]\nstreamrip never sees your password: it only "
+                f"reads {reads} once you're logged in.\n"
+            )
+            yield page
+    except error:
+        raise
+    except BrowserLoginError as exc:
+        raise error(str(exc)) from exc
+    except Exception as exc:
+        raise error(f"Browser login failed: {exc}") from exc
+
+
+async def wait_for_login(probe, timeout_s: int, error: type[BrowserLoginError]):
+    """Call `probe` every second until it returns something, and return that.
+
+    Raises `error` if nothing turns up within `timeout_s` seconds.
+    """
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout_s
+    while loop.time() < deadline:
+        found = await probe()
+        if found:
+            return found
+        await asyncio.sleep(1)
+    raise error(f"No login detected within {timeout_s}s.")

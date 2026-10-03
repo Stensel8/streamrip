@@ -1,9 +1,10 @@
 from contextlib import asynccontextmanager
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from aiohttp import web
 
-from streamrip.rip import deezer_arl_capture as capture
+from streamrip.rip import browser_login
 from streamrip.rip.browser_login import BrowserLoginError
 from streamrip.rip.deezer_arl_capture import (
     DeezerArlCaptureError,
@@ -98,19 +99,33 @@ def _failing_browser(error: Exception):
     return open_login_browser
 
 
-async def test_a_missing_browser_allows_the_manual_fallback(monkeypatch):
+async def test_a_generic_browser_error_comes_out_as_its_own_for_the_fallback(
+    monkeypatch,
+):
+    # The prompter falls back to manual entry on DeezerArlCaptureError only.
     error = BrowserLoginError("Skipped downloading a browser")
-    monkeypatch.setattr(capture, "open_login_browser", _failing_browser(error))
+    monkeypatch.setattr(browser_login, "open_login_browser", _failing_browser(error))
 
-    with pytest.raises(BrowserLoginError) as raised:
+    with pytest.raises(DeezerArlCaptureError, match="Skipped downloading") as raised:
         await capture_deezer_arl_via_browser()
 
-    assert raised.value is error
+    assert raised.value.__cause__ is error
+
+
+async def test_declining_the_browser_download_allows_the_manual_fallback(monkeypatch):
+    # No installed browser, and the answer to the 150 MB download is no.
+    monkeypatch.setattr(
+        browser_login, "launch_installed_chromium", AsyncMock(return_value=(None, None))
+    )
+    monkeypatch.setattr(browser_login.Confirm, "ask", MagicMock(return_value=False))
+
+    with pytest.raises(DeezerArlCaptureError, match="Skipped downloading"):
+        await capture_deezer_arl_via_browser()
 
 
 async def test_any_other_failure_is_wrapped_for_the_fallback(monkeypatch):
     error = RuntimeError("the window was closed")
-    monkeypatch.setattr(capture, "open_login_browser", _failing_browser(error))
+    monkeypatch.setattr(browser_login, "open_login_browser", _failing_browser(error))
 
     with pytest.raises(DeezerArlCaptureError, match="window was closed") as raised:
         await capture_deezer_arl_via_browser()

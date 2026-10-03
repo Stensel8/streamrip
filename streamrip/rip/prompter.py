@@ -52,6 +52,12 @@ class CredentialPrompter(ABC):
         """Save current config to file"""
         raise NotImplementedError
 
+    def _announce_saved(self):
+        """Say where the credentials just went."""
+        console.print(
+            f"[green]Credentials saved to config file at [bold cyan]{self.config.path}",
+        )
+
 
 class QobuzPrompter(CredentialPrompter):
     client: QobuzClient
@@ -131,9 +137,6 @@ class QobuzPrompter(CredentialPrompter):
         c = self.config.session.qobuz
         c.user_id = user_id
         c.auth_token = token
-        console.print(
-            f"[green]Credentials will be saved to [bold cyan]{self.config.path}",
-        )
 
     def save(self):
         c = self.config.session.qobuz
@@ -141,6 +144,7 @@ class QobuzPrompter(CredentialPrompter):
         cf.user_id = c.user_id
         cf.auth_token = c.auth_token
         self.config.file.set_modified()
+        self._announce_saved()
 
 
 class TidalPrompter(CredentialPrompter):
@@ -251,7 +255,7 @@ class DeezerPrompter(CredentialPrompter):
             "     the ARL cookie automatically\n"
             "  2. Copy the ARL cookie from your browser by hand\n"
         )
-        choice = Prompt.ask("Choose", choices=["1", "2"], default="1")
+        choice = Prompt.ask("Choose", choices=["1", "2"], default="2")
 
         if choice == "1":
             try:
@@ -280,9 +284,7 @@ class DeezerPrompter(CredentialPrompter):
         cf = self.config.file.deezer
         cf.arl = c.arl
         self.config.file.set_modified()
-        console.print(
-            f"[green]Credentials saved to config file at [bold cyan]{self.config.path}",
-        )
+        self._announce_saved()
 
 
 class SoundcloudPrompter(CredentialPrompter):
