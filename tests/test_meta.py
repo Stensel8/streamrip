@@ -197,6 +197,37 @@ def test_deezer_track_metadata():
     assert TrackMetadata.from_deezer(album, resp).artists == ["A"]
 
 
+def test_deezer_album_labels_follow_the_stream_quality():
+    resp = {
+        "id": 5,
+        "title": "Album",
+        "release_date": "2020-01-01",
+        "artist": {"name": "A"},
+        "tracks": [],
+        **{f"cover_{s}": "u" for s in ("xl", "big", "medium", "small")},
+    }
+    fmt = "{albumartist} - {title} ({year}) [{container}] [{bit_depth}B-{sampling_rate}kHz]"
+
+    # Without word from the client, Deezer's lossless tier.
+    flac = AlbumMetadata.from_deezer(resp)
+    assert (flac.info.container, flac.info.bit_depth, flac.info.sampling_rate) == (
+        "FLAC",
+        16,
+        44.1,
+    )
+    assert flac.format_folder_path(fmt) == "A - Album (2020) [FLAC] [16B-44.1kHz]"
+
+    # An MP3 tier has no bit depth: its folder name drops that bracket instead
+    # of saying "[UnknownB-UnknownkHz]".
+    mp3 = AlbumMetadata.from_deezer(resp | {"stream_quality": 1})
+    assert (mp3.info.container, mp3.info.bit_depth, mp3.info.sampling_rate) == (
+        "MP3",
+        None,
+        None,
+    )
+    assert mp3.format_folder_path(fmt) == "A - Album (2020) [MP3]"
+
+
 def test_soundcloud_track_metadata():
     resp = {
         "id": "123|_original_download",

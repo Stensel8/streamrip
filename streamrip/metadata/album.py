@@ -23,6 +23,18 @@ def _year(date: str | None) -> str:
     return date[:4] if date else "Unknown"
 
 
+def _deezer_quality(tier: int) -> dict:
+    """The quality fields of a Deezer AlbumInfo: tiers 0 and 1 are MP3, 2 is FLAC."""
+    if tier >= 2:
+        return {
+            "quality": 2,
+            "container": "FLAC",
+            "sampling_rate": 44.1,
+            "bit_depth": 16,
+        }
+    return {"quality": tier, "container": "MP3"}
+
+
 @dataclass(slots=True)
 class AlbumInfo:
     id: str
@@ -75,6 +87,13 @@ class AlbumMetadata:
         # Two different editions of the same album can otherwise render to the
         # same folder and get merged together -- "tracktotal" and "version"
         # give a readable way to tell them apart without resorting to "id".
+
+        # A lossy album has no bit depth or sampling rate to put in a folder
+        # name: drop the bracket that asks for them, not "[UnknownB-UnknownkHz]".
+        if not (self.info.bit_depth and self.info.sampling_rate):
+            formatter = re.sub(
+                r"\s*\[[^\]]*\{(?:bit_depth|sampling_rate)\}[^\]]*\]", "", formatter
+            )
 
         none_str = "Unknown"
         info: dict[str, str | int | float] = {
@@ -160,12 +179,9 @@ class AlbumMetadata:
         date = resp.get("release_date")
         info = AlbumInfo(
             id=str(resp["id"]),
-            quality=2,
-            container="FLAC",
             label=resp.get("label"),
             explicit=bool(resp.get("parental_warning") or resp.get("explicit_lyrics")),
-            sampling_rate=44.1,
-            bit_depth=16,
+            **_deezer_quality(resp.get("stream_quality", 2)),
         )
         artists = deezer_artists(resp)
         return cls(
@@ -190,11 +206,8 @@ class AlbumMetadata:
         date = album.get("release_date")
         info = AlbumInfo(
             id=str(album["id"]),
-            quality=2,
-            container="FLAC",
             explicit=bool(resp.get("explicit_lyrics")),
-            sampling_rate=44.1,
-            bit_depth=16,
+            **_deezer_quality(album.get("stream_quality", 2)),
         )
         artists = deezer_artists(resp)
         return cls(

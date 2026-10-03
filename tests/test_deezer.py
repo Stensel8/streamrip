@@ -257,6 +257,77 @@ def test_deezer_album_cache(mock_deezer_client):
     assert mock_deezer_client.client.api.get_album_tracks.call_count == 1
 
 
+def _album_rows(*sizes):
+    """GW album-track rows with the given (MP3_128, MP3_320, FLAC) sizes."""
+    return [
+        {"FILESIZE_MP3_128": a, "FILESIZE_MP3_320": b, "FILESIZE_FLAC": c}
+        for a, b, c in sizes
+    ]
+
+
+@pytest.mark.parametrize(
+    ("rows", "tier"),
+    [
+        ([(1, 1, 1), (1, 1, 1)], 2),  # every track has FLAC
+        ([(1, 1, 1), (1, 1, 0)], 1),  # one without FLAC: an MP3 320 album
+        ([(1, 1, 1), (1, 0, 0)], 0),  # one with only 128
+        ([(1, 1, 1), (0, 0, 0)], 2),  # a delisted track is left to its fallback
+        ([], 2),  # nothing known: the target
+    ],
+)
+def test_deezer_album_quality_is_its_weakest_track(mock_deezer_client, rows, tier):
+    """Unit test: the folder name follows the best tier every track has."""
+    mock_deezer_client.client.gw.get_album_tracks.return_value = _album_rows(*rows)
+
+    assert arun(mock_deezer_client._album_quality("1")) == tier
+
+
+def test_deezer_album_quality_is_capped_by_config_and_account(mock_deezer_client):
+    """Unit test: a FLAC folder name for MP3 downloads is the bug this prevents."""
+    mock_deezer_client.client.gw.get_album_tracks.return_value = _album_rows((1, 1, 1))
+
+    mock_deezer_client.config.quality = 1
+    assert arun(mock_deezer_client._album_quality("1")) == 1
+
+    mock_deezer_client.config.quality = 2
+    mock_deezer_client.client.current_user = {
+        "license_token": "t",
+        "can_stream_hq": True,
+    }
+    assert arun(mock_deezer_client._album_quality("1")) == 1
+
+    mock_deezer_client.client.current_user = {"license_token": "t"}
+    assert arun(mock_deezer_client._album_quality("1")) == 0
+
+
+def test_deezer_album_quality_without_lowering_or_sizes_is_the_target(
+    mock_deezer_client,
+):
+    """Unit test: with nothing to compare against, the target tier it is"""
+    mock_deezer_client.config.lower_quality_if_not_available = False
+    assert arun(mock_deezer_client._album_quality("1")) == 2
+    mock_deezer_client.client.gw.get_album_tracks.assert_not_called()
+
+    mock_deezer_client.config.lower_quality_if_not_available = True
+    mock_deezer_client.client.gw.get_album_tracks.side_effect = Exception("boom")
+    assert arun(mock_deezer_client._album_quality("1")) == 2
+
+
+def test_deezer_get_album_carries_its_stream_quality(mock_deezer_client):
+    """Unit test: the album response tells the metadata which tier to label"""
+    mock_deezer_client.client.api.get_album.return_value = {
+        "id": "9",
+        "title": "T",
+        "genres": {"data": []},
+    }
+    mock_deezer_client.client.api.get_album_tracks.return_value = {"data": []}
+    mock_deezer_client.client.gw.get_album_tracks.return_value = _album_rows(
+        (1, 1, 1), (1, 1, 0)
+    )
+
+    assert arun(mock_deezer_client.get_album("9"))["stream_quality"] == 1
+
+
 # ===== INTEGRATION TEST =====
 
 
