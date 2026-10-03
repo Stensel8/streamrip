@@ -380,3 +380,25 @@ async def test_partial_file_cleanup_failure_is_counted_once(tmp_path, monkeypatc
 
     assert track.db.failed_now == 1
     assert track.db.failed.all() == [("test", "track", "123")]
+
+
+@pytest.mark.asyncio
+async def test_complete_highly_compressible_audio_is_kept(tmp_path, monkeypatch):
+    """A complete FLAC of digital silence is a valid download.
+
+    10 s of silence is under 10 KB (~8 kbps). An earlier version of this check
+    judged files by bitrate and would have deleted it, retried it and recorded
+    it as failed.
+    """
+    track = _make_track(str(tmp_path), "flac")
+    monkeypatch.setitem(FIXTURES, "flac", "tests/silence_10s.flac")
+    track.db = db.Database(db.Dummy(), db.Failed(str(tmp_path / "failed.db")))
+    monkeypatch.setattr("streamrip.media.track.asyncio.sleep", AsyncMock())
+
+    await track.preprocess()
+    await track.download()
+
+    assert os.path.getsize(track.download_path) == os.path.getsize(
+        "tests/silence_10s.flac"
+    )
+    assert track.db.failed.all() == []

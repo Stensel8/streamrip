@@ -60,6 +60,10 @@ class APIError(Exception):
     """
 
 
+class IncompleteDownloadError(Exception):
+    """A resumed download does not line up with the file the server announced."""
+
+
 class TrackDownloadFailedError(Exception):
     """Raised when a track fails to download after retrying.
 
