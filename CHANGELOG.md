@@ -88,11 +88,11 @@ Thanks to [@berettavexee](https://github.com/berettavexee) for the Deezer qualit
 
 ### Internals
 
-- Less code, same behaviour: `Downloadable` is a plain base class, the media
-  types are one table, the redundant album semaphore is gone, playlists hold
-  track ids instead of full metadata, and the progress bars, Tidal client and
-  SoundCloud helpers share their code. The live Qobuz tests run again (set
-  `QOBUZ_USER_ID` and `QOBUZ_AUTH_TOKEN`).
+- Cleanups: `Downloadable` is a plain base class, the media types are one
+  table, the redundant album semaphore is gone, playlists hold track ids instead
+  of full metadata, and the progress bars, Tidal client and SoundCloud helpers
+  share their code. The live Qobuz tests run again (set `QOBUZ_USER_ID` and
+  `QOBUZ_AUTH_TOKEN`).
 
 ## 2.4.7
 
