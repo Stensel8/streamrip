@@ -93,6 +93,9 @@ Thanks to [@berettavexee](https://github.com/berettavexee) for the Deezer qualit
   of full metadata, and the progress bars, Tidal client and SoundCloud helpers
   share their code. The live Qobuz tests run again (set `QOBUZ_USER_ID` and
   `QOBUZ_AUTH_TOKEN`).
+- `streamrip.metadata` no longer exports `AlbumSummary`, `ArtistSummary`,
+  `TrackSummary`, `PlaylistSummary` and `LabelSummary`; one `Summary` replaces
+  them.
 
 ## 2.4.7
 
