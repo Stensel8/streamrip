@@ -23,6 +23,7 @@ DETAILS_WIDTH = 60
 
 
 def _fetch(url: str) -> bytes:
+    """Download a cover; raises if it can't be had."""
     resp = requests.get(url, timeout=5)
     resp.raise_for_status()
     return resp.content
@@ -45,6 +46,7 @@ CORNERS = ((0, 0), (1, 0), (0, 1), (1, 1))
 
 
 def _mean(pixels: list) -> tuple[int, int, int]:
+    """The average color of some (r, g, b) pixels."""
     return tuple(sum(p[i] for p in pixels) // len(pixels) for i in range(3))
 
 
@@ -111,6 +113,7 @@ class Previews:
     """
 
     def __init__(self, results: SearchResults):
+        """Start downloading every result's cover in the background."""
         self.results = results.results
         # In the menu's order: the first preview is drawn as the menu opens.
         urls = dict.fromkeys(r.image_url for r in self.results if r.image_url)
@@ -125,9 +128,11 @@ class Previews:
         )
 
     def close(self):
+        """Stop downloading covers."""
         self._pool.shutdown(wait=False, cancel_futures=True)
 
     def __call__(self, entry: str) -> str:
+        """The preview of one menu entry: its cover beside its details."""
         match = re.match(r"\d+", entry)
         assert match is not None
         summary = self.results[int(match.group()) - 1]

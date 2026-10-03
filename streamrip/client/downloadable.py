@@ -137,6 +137,7 @@ class Downloadable(ABC):
         await self._download(path, callback)
 
     async def size(self) -> int:
+        """The file's size in bytes: known already, or from a HEAD request."""
         if self._size is None:
             async with self.session.head(self.url) as response:
                 response.raise_for_status()
@@ -158,6 +159,7 @@ class BasicDownloadable(Downloadable):
         extension: str,
         source: str | None = None,
     ):
+        """Download `url` as it is, saved with `extension`."""
         self.session = session
         self.url = url
         self.extension = extension
@@ -173,6 +175,7 @@ class DeezerDownloadable(Downloadable):
     is_encrypted = re.compile("/m(?:obile|edia)/")
 
     def __init__(self, session: aiohttp.ClientSession, info: dict):
+        """Take the quality, URL and size (if listed) from DeezerClient's info."""
         logger.debug("Deezer info for downloadable: %s", info)
         self.session = session
         self.url = info["url"]
@@ -292,6 +295,7 @@ class TidalDownloadable(Downloadable):
         encryption_key: str | None,
         restrictions,
     ):
+        """A single-file Tidal download; no URL means NonStreamableError."""
         self.session = session
         self.source = "tidal"
         self.extension = "flac" if codec.lower() in ("flac", "mqa") else "m4a"
@@ -305,6 +309,7 @@ class TidalDownloadable(Downloadable):
         self.enc_key = encryption_key
 
     async def _download(self, path: str, callback):
+        """Download the file, and decrypt it if Tidal encrypted it (MQA)."""
         await fast_async_download(
             path, self.url, self.session.headers, callback, resume=self.resume
         )
@@ -345,6 +350,7 @@ class TidalDASHDownloadable(Downloadable):
         segment_urls: list[str],
         codec: str,
     ):
+        """A hi-res DASH download: the init segment and the media segments."""
         self.session = session
         self.source = "tidal"
         self.url = init_url
@@ -442,6 +448,7 @@ class TidalDASHDownloadable(Downloadable):
 
 class SoundcloudDownloadable(Downloadable):
     def __init__(self, session, info: dict):
+        """A SoundCloud file: an MP3, a progressive download or an original upload."""
         self.session = session
         self.file_type = info["type"]
         self.source = "soundcloud"
@@ -454,6 +461,11 @@ class SoundcloudDownloadable(Downloadable):
         self.url = info["url"]
 
     async def _download(self, path, callback):
+        """Download by file type.
+
+        An MP3 comes as HLS segments, anything else in one piece; an original upload is
+        then converted to FLAC.
+        """
         if self.file_type == "mp3":
             await self._download_mp3(path, callback)
             return
@@ -500,6 +512,10 @@ class SoundcloudDownloadable(Downloadable):
         callback(1)
 
     async def size(self) -> int:
+        """The size, or the segment count for an MP3.
+
+        Progress counts HLS segments for an MP3, so that is its size.
+        """
         if self.file_type == "mp3":
             self._size = len(await self._segments())
         return await super().size()

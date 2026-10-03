@@ -53,6 +53,7 @@ class Main:
     """
 
     def __init__(self, config: Config):
+        """Set up the clients, the databases and an empty pipeline for one run."""
         # Data pipeline:
         # input URL -> (URL) -> (Pending) -> (Media) -> (Downloadable) -> audio file
         self.pending: list[Pending] = []
@@ -88,9 +89,14 @@ class Main:
         logger.debug("Added url=%s", url)
 
     async def add_by_id(self, source: str, media_type: str, id: str):
+        """Queue one item by its id."""
         await self.add_all_by_id([(source, media_type, id)])
 
     async def add_all_by_id(self, info: list[tuple[str, str, str]]):
+        """Queue items given as (source, media type, id).
+
+        Each source is logged in to once.
+        """
         sources = set(s for s, _, _ in info)
         clients = {s: await self.get_logged_in_client(s) for s in sources}
         for source, media_type, id in info:

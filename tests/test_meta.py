@@ -85,6 +85,9 @@ def test_tidal_album_with_null_copyright_and_no_date():
 
 
 def test_tidal_album_folder_details_match_other_sources():
+    """A Tidal album gets a container, bit depth and rate like other sources, and its
+    artists one by one.
+    """
     m = AlbumMetadata.from_tidal(_tidal_album())
     assert (m.info.container, m.info.bit_depth, m.info.sampling_rate) == (
         "FLAC",
@@ -168,6 +171,7 @@ def test_tidal_track_metadata():
 
 
 def test_deezer_track_metadata():
+    """A Deezer track's id, explicit flag and artists come from its response."""
     resp = {
         "id": 8,
         "title": "Song",
@@ -200,6 +204,9 @@ def test_deezer_track_metadata():
 
 
 def test_deezer_album_labels_follow_the_stream_quality():
+    """A Deezer album's labels follow the quality it is streamed in: FLAC, or MP3
+    without a bit depth.
+    """
     resp = {
         "id": 5,
         "title": "Album",
@@ -231,6 +238,9 @@ def test_deezer_album_labels_follow_the_stream_quality():
 
 
 def test_soundcloud_track_metadata():
+    """A SoundCloud track's id, explicit flag, title, artist and ISRC come from its
+    response.
+    """
     resp = {
         "id": "123|_original_download",
         "title": " Song",
@@ -250,6 +260,7 @@ def test_soundcloud_track_metadata():
 
 
 def test_qobuz_artists_split_from_performers():
+    """Qobuz track artists are split out of its performers credits."""
     from streamrip.metadata.util import qobuz_artists
 
     resp = {
@@ -265,8 +276,11 @@ def test_qobuz_artists_split_from_performers():
 
 
 def test_qobuz_artists_put_the_main_artist_first():
-    # The clean edition of this track lists its feature first; the explicit
-    # one lists it last. Both should tag the same artists in the same order.
+    """Main artists come first, then featured ones.
+
+    The clean edition of this track lists its feature first and the explicit one last.
+    Both should tag the same artists in the same order.
+    """
     from streamrip.metadata.util import qobuz_artists
 
     clean = {
@@ -298,6 +312,7 @@ def test_qobuz_artists_put_the_main_artist_first():
     ],
 )
 def test_lossy_folder_names_drop_only_brackets_that_are_all_quality(fmt, folder):
+    """A lossy album's folder name loses only the brackets that are all about quality."""
     resp = {
         "id": 5,
         "title": "Album",

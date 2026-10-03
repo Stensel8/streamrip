@@ -24,6 +24,7 @@ def _album(id, title, artists=(ME,), n=12, version=None, explicit=False, bits=16
 
 
 def _ids(resp, source="qobuz", prefer_explicit=True):
+    """The album ids of an artist response."""
     return ArtistMetadata.from_resp(resp, source, prefer_explicit).ids
 
 

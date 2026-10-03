@@ -14,6 +14,7 @@ class LabelMetadata:
 
     @classmethod
     def from_resp(cls, resp: dict, source: str) -> LabelMetadata:
+        """A label's name and album ids from a response of `source`."""
         logger.debug(resp)
         if source == "qobuz":
             return cls(resp["name"], [a["id"] for a in resp["albums"]["items"]])

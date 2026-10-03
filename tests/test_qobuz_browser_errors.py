@@ -9,6 +9,7 @@ from streamrip.rip import qobuz_token_capture as capture
 
 @pytest.fixture
 def browser_flow(monkeypatch):
+    """A fake browser, context and page that log in at once."""
     browser = AsyncMock()
     context = browser.new_context.return_value
     page = context.new_page.return_value
@@ -45,6 +46,9 @@ async def test_browser_setup_errors_allow_manual_fallback(browser_flow, stage):
 async def test_downloaded_browser_launch_error_allows_manual_fallback(
     monkeypatch, browser_flow
 ):
+    """If the downloaded browser can't be launched either, the capture fails in a way
+    the prompter can fall back from.
+    """
     manager, launch, _, _ = browser_flow
     launch.return_value = (None, None)
     monkeypatch.setattr(browser_login.Confirm, "ask", MagicMock(return_value=True))

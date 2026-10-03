@@ -88,6 +88,7 @@ class AlbumMetadata:
         return _copyright
 
     def format_folder_path(self, formatter: str) -> str:
+        """Render `formatter` into this album's folder name."""
         # Available keys: "albumartist", "title", "year", "bit_depth", "sampling_rate",
         # "id", "albumcomposer", "container", "tracktotal", and "version".
         #
@@ -321,6 +322,7 @@ class AlbumMetadata:
 
     @classmethod
     def from_track_resp(cls, resp: dict, source: str) -> AlbumMetadata | None:
+        """The album metadata inside a track response, as `source` gives it."""
         if source == "qobuz":
             return cls.from_qobuz(resp["album"])
         if source == "tidal":

@@ -37,6 +37,7 @@ class PendingLabel(Pending):
     db: Database
 
     async def resolve(self) -> Label | None:
+        """Fetch the label and all its albums; None if that fails."""
         try:
             resp = await self.client.get_metadata(self.id, "label")
         except NonStreamableError as e:

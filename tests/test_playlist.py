@@ -216,6 +216,9 @@ async def test_playlist_track_is_tagged_as_part_of_one_album(monkeypatch):
 
 
 def test_tracks_uploaded_to_deezer_are_left_out_of_a_playlist():
+    """Tracks a user uploaded to Deezer have negative ids and are left out of a
+    playlist.
+    """
     from streamrip.metadata import PlaylistMetadata
 
     resp = {"title": "Mix", "tracks": [{"id": 1}, {"id": -5}, {"id": "2"}]}

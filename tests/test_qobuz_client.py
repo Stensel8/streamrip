@@ -24,6 +24,7 @@ def test_client_raises_missing_credentials():
     reason="Qobuz user ID and auth token are required.",
 )
 def test_client_get_metadata(qobuz_client):
+    """A real Qobuz album's title and version come back (needs a Qobuz account)."""
     meta = arun(qobuz_client.get_metadata("0603497941032", "album"))
     assert (meta["title"], meta["version"]) == ("Rumours", "2001 Remaster")
     # album/get lists the track ids, not the tracks (July 2026).

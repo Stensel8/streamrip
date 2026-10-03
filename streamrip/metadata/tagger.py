@@ -125,6 +125,10 @@ class Container(Enum):
     AIFF = 4
 
     def get_mutagen_class(self, path: str):
+        """Open the file with this container's mutagen class.
+
+        A file with no tags yet gets empty ones.
+        """
         if self == Container.FLAC:
             return FLAC(path)
         elif self == Container.AAC:
@@ -165,6 +169,7 @@ class Container(Enum):
         return []
 
     def tag_audio(self, audio, tags: list[tuple]):
+        """Set each (key, value) tag on the mutagen object."""
         for k, v in tags:
             audio[k] = v
 

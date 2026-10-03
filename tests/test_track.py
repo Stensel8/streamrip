@@ -28,6 +28,9 @@ from streamrip.metadata import (
     reason="Qobuz user ID and auth token are required.",
 )
 def test_pending_resolve(qobuz_client: QobuzClient, tmp_path):
+    """A single resolves into a Track in its album folder, with the cover next to it
+    (needs a Qobuz account).
+    """
     session = qobuz_client.config.session
     session.downloads.folder = str(tmp_path)
     session.filepaths.add_singles_to_folder = True

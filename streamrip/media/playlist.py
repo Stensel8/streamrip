@@ -297,6 +297,7 @@ class PendingLastfmPlaylist(Pending):
         )
 
         def find_title_artist_pairs(page_text) -> list[tuple[str, str]]:
+            """The (title, artist) pairs of a last.fm playlist page."""
             # Each track is a link with its title, then one with its artist.
             titles = [html.unescape(t) for t in title_tags.findall(page_text)]
             return list(zip(titles[::2], titles[1::2]))

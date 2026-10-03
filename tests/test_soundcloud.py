@@ -52,7 +52,10 @@ def test_no_mp3_transcoding_is_non_streamable_instead_of_assertion():
 
 
 def _playlist_client(playlist: dict, fetched: list[dict]):
+    """A client that answers playlist requests from `playlist` and `fetched`."""
+
     async def request(path, params=None):
+        """Answer a request for tracks by id."""
         if path == "tracks":
             ids = params["ids"].split(",")
             return [t for t in fetched if str(t["id"]) in ids], 200
@@ -64,13 +67,17 @@ def _playlist_client(playlist: dict, fetched: list[dict]):
 
 
 def _mp3(n):
+    """A track with one progressive MP3 transcoding."""
     return _track(_tc("progressive", "audio/mpeg", f"https://x/{n}"), id=n)
 
 
 @pytest.mark.asyncio
 async def test_playlist_that_comes_complete_still_gets_custom_ids():
-    # Small playlists come with every track's metadata, so there is nothing
-    # to fetch -- this used to skip the ids too, and every track then failed.
+    """A playlist that comes complete still gets custom ids.
+
+    Small playlists come with every track's metadata, so there is nothing to fetch.
+    Skipping the ids too used to make every track fail.
+    """
     client = _playlist_client({"tracks": [_mp3(1), _mp3(2)]}, [])
 
     resp = await client._get_playlist("p")
@@ -80,6 +87,7 @@ async def test_playlist_that_comes_complete_still_gets_custom_ids():
 
 @pytest.mark.asyncio
 async def test_playlist_fetches_the_tracks_that_came_without_metadata():
+    """Tracks that came without metadata are fetched, once each."""
     playlist = {"tracks": [_mp3(1), {"id": 2}, {"id": 3}, {"id": 2}]}
     client = _playlist_client(playlist, [_mp3(2), _mp3(3)])
 

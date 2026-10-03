@@ -33,6 +33,7 @@ class CredentialPrompter(ABC):
     client: Client
 
     def __init__(self, config: Config, client: Client):
+        """Prompt for `client`'s source and save into `config`."""
         self.config = config
         self.client = client
 
@@ -134,11 +135,13 @@ class QobuzPrompter(CredentialPrompter):
         self._set_session_creds(user_id, token)
 
     def _set_session_creds(self, user_id: str, token: str):
+        """Keep the user id and token in the session's config."""
         c = self.config.session.qobuz
         c.user_id = user_id
         c.auth_token = token
 
     def save(self):
+        """Write the session's Qobuz credentials to the config file."""
         c = self.config.session.qobuz
         cf = self.config.file.qobuz
         cf.user_id = c.user_id
@@ -231,6 +234,7 @@ class DeezerPrompter(CredentialPrompter):
         return c.arl != ""
 
     async def prompt_and_login(self):
+        """Ask for an ARL unless one is saved, and again until Deezer accepts it."""
         if not self.has_creds():
             await self._prompt_creds_and_set_session_config()
         while True:
@@ -280,6 +284,7 @@ class DeezerPrompter(CredentialPrompter):
         self.config.session.deezer.arl = arl
 
     def save(self):
+        """Write the session's ARL to the config file."""
         c = self.config.session.deezer
         cf = self.config.file.deezer
         cf.arl = c.arl
@@ -296,6 +301,7 @@ class SoundcloudPrompter(CredentialPrompter):
         return True
 
     async def prompt_and_login(self):
+        """Nothing to ask for: SoundCloud needs no login."""
         pass
 
     def save(self):

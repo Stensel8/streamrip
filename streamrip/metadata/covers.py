@@ -8,26 +8,33 @@ class Covers:
     CoverEntry = tuple[str, str | None, str | None]
 
     def __init__(self):
+        """Start with one empty entry per size."""
         self._covers: list[Covers.CoverEntry] = [(s, None, None) for s in self.SIZES]
 
     def set_cover(self, size: str, url: str | None, path: str | None):
+        """Set the URL and local path of one size."""
         self._covers[self.SIZES.index(size)] = (size, url, path)
 
     def set_cover_url(self, size: str, url: str):
+        """Set the URL of one size, with no local path yet."""
         self.set_cover(size, url, None)
 
     def set_path(self, size: str, path: str):
+        """Set the local path of one size, keeping its URL."""
         _, url, _ = self._covers[self.SIZES.index(size)]
         self.set_cover(size, url, path)
 
     def set_largest_path(self, path: str):
+        """Set the local path of the largest cover that has a URL."""
         size, url, _ = self.largest()
         self.set_cover(size, url, path)
 
     def empty(self) -> bool:
+        """Whether no size has a URL."""
         return all(url is None for _, url, _ in self._covers)
 
     def largest(self) -> CoverEntry:
+        """The largest cover that has a URL."""
         return self._first_from(0)
 
     def get_size(self, size: str) -> CoverEntry:
@@ -35,6 +42,7 @@ class Covers:
         return self._first_from(self.SIZES.index(size))
 
     def _first_from(self, i: int) -> CoverEntry:
+        """The first entry with a URL from size index `i` down; raises if there is none."""
         for entry in self._covers[i:]:
             if entry[1] is not None:
                 return entry
@@ -72,6 +80,7 @@ class Covers:
 
     @classmethod
     def from_tidal(cls, resp):
+        """The covers a Tidal response's `cover` id gives, or None without one."""
         uuid = resp["cover"]
         if not uuid:
             return None

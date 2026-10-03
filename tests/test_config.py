@@ -56,6 +56,7 @@ def test_sample_config_data_modification(sample_config_data):
 
 
 def test_sample_config_data_fields(sample_config_data):
+    """A ConfigData written out by hand has the sections of the sample config."""
     test_config = ConfigData(
         toml=None,  # type: ignore
         downloads=DownloadsConfig(
@@ -206,8 +207,11 @@ def test_default_quality_is_the_highest_of_every_source():
 
 
 def test_old_misc_section_still_loads():
-    # Older releases wrote a [misc] section (a schema version, and a
-    # check_for_updates switch the update check never read).
+    """A config with an old [misc] section still loads.
+
+    Older releases wrote it: a schema version, and a check_for_updates switch the update
+    check never read.
+    """
     with open(SAMPLE_CONFIG) as f:
         doc = tomlkit.parse(f.read())
     doc["misc"]["version"] = "2.3.3"

@@ -68,6 +68,10 @@ class GenericURL(URL):
         config: Config,
         db: Database,
     ) -> Pending:
+        """Make the pending item this URL names.
+
+        Its source, media type and id come from the match.
+        """
         source, media_type, item_id = self.match.groups()
         assert client.source == source
         return pending_item(media_type, item_id, client, config, db)
@@ -155,6 +159,7 @@ class DeezerDynamicURL(URL):
         config: Config,
         db: Database,
     ) -> Pending:
+        """Follow the dynamic link to the item it points at and make that pending."""
         url = self.match.group(0)  # entire dynamic link
         media_type, item_id = await self._extract_info_from_dynamic_link(url, client)
         return pending_item(media_type, item_id, client, config, db)
@@ -217,6 +222,7 @@ class SoundcloudURL(URL):
         config: Config,
         db: Database,
     ) -> Pending:
+        """Resolve the URL on SoundCloud: a track or a playlist, nothing else."""
         resolved = await client.resolve_url(self.url)
         if resolved["kind"] not in ("track", "playlist"):
             raise NotImplementedError(resolved["kind"])
@@ -224,6 +230,7 @@ class SoundcloudURL(URL):
 
     @classmethod
     def from_str(cls, url: str):
+        """The SoundCloud URL in `url`, or None if it isn't one."""
         soundcloud_url = SOUNDCLOUD_URL_REGEX.match(url)
         if soundcloud_url is None:
             return None

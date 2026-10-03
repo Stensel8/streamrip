@@ -36,6 +36,7 @@ class SoundcloudClient(Client):
         )
 
     async def login(self):
+        """Use the saved client id if it still works, else scrape a new one."""
         self.session = new_session(
             verify_ssl=self.global_config.session.downloads.verify_ssl
         )
@@ -158,6 +159,7 @@ class SoundcloudClient(Client):
         return resp
 
     async def _get_track(self, item_id: str):
+        """A track's metadata from SoundCloud's API."""
         resp, status = await self._api_request(f"tracks/{item_id}")
         assert status == 200
         return resp
@@ -230,6 +232,7 @@ class SoundcloudClient(Client):
         return await self._request(url, params=params, headers=headers)
 
     async def _request(self, url, params=None, headers=None) -> tuple[dict, int]:
+        """An authenticated API request: (JSON, status), retried on failure."""
         _params = self._auth_params()
         if params is not None:
             _params.update(params)
@@ -245,6 +248,7 @@ class SoundcloudClient(Client):
         """Whether SoundCloud accepts the saved client id."""
 
         async def read(resp):
+            """The response's HTTP status."""
             return resp.status
 
         url = f"{BASE}/announcements"
@@ -294,6 +298,7 @@ CLIENT_ID_REGEXES = (
 
 
 def _find_client_id(script: str) -> str | None:
+    """The client id in a SoundCloud script, or None."""
     for regex in CLIENT_ID_REGEXES:
         match = regex.search(script)
         if match is not None:

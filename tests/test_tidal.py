@@ -563,6 +563,7 @@ async def test_album_items_are_paged_and_videos_left_out():
 
 
 def _mock_login(lane: TidalClient) -> None:
+    """Make a lane log in without a network."""
     lane.session = MagicMock()
     lane._get_device_code = AsyncMock(return_value=("code", "link.tidal.com/X", 300))
     lane._get_auth_status = AsyncMock(
@@ -610,6 +611,7 @@ async def test_prompter_logs_both_lanes_in_and_saves_them(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_prompter_leaves_a_working_login_alone(monkeypatch):
+    """A lane whose saved login still works isn't asked to log in again."""
     monkeypatch.setattr("streamrip.rip.prompter.launch", lambda *_: None)
     monkeypatch.setattr("streamrip.rip.prompter.console", MagicMock())
     cfg = Config.defaults()
@@ -628,8 +630,11 @@ async def test_prompter_leaves_a_working_login_alone(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_device_login_stops_when_tidal_lets_the_link_expire(monkeypatch):
-    # Tidal keeps a device code valid for expiresIn seconds (300). Waiting
-    # longer only ever got its error back, reported as a rejected login.
+    """The device login stops when the link expires.
+
+    Tidal keeps a device code valid for expiresIn seconds (300). Waiting longer only
+    ever got its error back, reported as a rejected login.
+    """
     monkeypatch.setattr("streamrip.rip.prompter.launch", lambda *_: None)
     monkeypatch.setattr("streamrip.rip.prompter.console", MagicMock())
     cfg = Config.defaults()
@@ -644,6 +649,7 @@ async def test_device_login_stops_when_tidal_lets_the_link_expire(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_device_login_rejection_says_why(monkeypatch):
+    """A rejected device login says why."""
     monkeypatch.setattr("streamrip.rip.prompter.launch", lambda *_: None)
     monkeypatch.setattr("streamrip.rip.prompter.console", MagicMock())
     cfg = Config.defaults()
@@ -673,6 +679,7 @@ def _track_replies(album_error: Exception | None = None, album_id: int = 2):
     asked = []
 
     async def reply(path, params=None, base=None):
+        """Answer album, lyrics and track requests."""
         if path.startswith("albums/"):
             asked.append(path)
             if album_error:
@@ -700,8 +707,11 @@ def _track_replies(album_error: Exception | None = None, album_id: int = 2):
 
 @pytest.mark.asyncio
 async def test_a_single_is_tagged_with_its_albums_own_artists():
-    # The track's own artists used to stand in for the album's, so a
-    # feature filed the whole album under "Megan Thee Stallion, Spiritbox".
+    """A single is tagged with its album's own artists.
+
+    The track's artists used to stand in for the album's, so a feature filed the whole
+    album under "Megan Thee Stallion, Spiritbox".
+    """
     c = _client()
     reply, asked = _track_replies()
     c._api_request = AsyncMock(side_effect=reply)
@@ -722,6 +732,7 @@ async def test_a_single_is_tagged_with_its_albums_own_artists():
 
 @pytest.mark.asyncio
 async def test_a_single_whose_album_cannot_be_fetched_still_downloads():
+    """A single whose album can't be fetched is still tagged, from its album stub."""
     c = _client()
     reply, _ = _track_replies(album_error=ItemNotFoundError("gone"))
     c._api_request = AsyncMock(side_effect=reply)
@@ -735,6 +746,7 @@ async def test_a_single_whose_album_cannot_be_fetched_still_downloads():
 
 @pytest.mark.asyncio
 async def test_tracks_of_a_downloaded_album_need_no_album_request():
+    """Tracks of an album downloaded as a whole need no album request of their own."""
     c = _client()
     c._api_request = _album_replies(["LOSSLESS"])
     await c.get_metadata("1", "album")
@@ -753,6 +765,7 @@ def _slow(reply):
     together all reach the album check before the first answer is back."""
 
     async def slow(path, params=None, base=None):
+        """Answer after yielding once, as a real request would."""
         await asyncio.sleep(0)
         return await reply(path, params, base)
 
@@ -761,6 +774,7 @@ def _slow(reply):
 
 @pytest.mark.asyncio
 async def test_tracks_resolving_together_ask_for_their_album_once():
+    """Tracks that resolve together share one request for their album."""
     c = _client()
     reply, asked = _track_replies()
     c._api_request = AsyncMock(side_effect=_slow(reply))
@@ -772,6 +786,7 @@ async def test_tracks_resolving_together_ask_for_their_album_once():
 
 @pytest.mark.asyncio
 async def test_a_failed_album_request_is_not_repeated_by_every_track():
+    """A failed album request isn't repeated by each track."""
     c = _client()
     reply, asked = _track_replies(album_error=ItemNotFoundError("gone"))
     c._api_request = AsyncMock(side_effect=_slow(reply))
@@ -787,6 +802,7 @@ async def test_a_failed_album_request_is_not_repeated_by_every_track():
 
 @pytest.mark.asyncio
 async def test_only_a_hires_track_keeps_the_cached_hires_format():
+    """Only a hi-res track keeps the hi-res format cached with its album."""
     c = _client()
     # The album was downloaded as a hi-res album earlier in the run: its cached
     # copy carries the format of the track that was asked about.
@@ -796,6 +812,7 @@ async def test_only_a_hires_track_keeps_the_cached_hires_format():
     reply, _ = _track_replies()
 
     async def tracks(path, params=None, base=None):
+        """Answer as Tidal does: LOSSLESS for every track, hi-res only in the tags."""
         resp = await reply(path, params, base)
         # As Tidal answers: LOSSLESS for every track, hi-res only in the tags.
         tags = {
@@ -811,6 +828,7 @@ async def test_only_a_hires_track_keeps_the_cached_hires_format():
     c._api_request = AsyncMock(side_effect=tracks)
 
     async def label(track_id):
+        """The bit depth and sampling rate a track's album is labelled with."""
         resp = await c.get_metadata(track_id, "track")
         info = AlbumMetadata.from_track_resp(resp, "tidal").info
         return info.bit_depth, info.sampling_rate

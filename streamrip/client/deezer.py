@@ -87,6 +87,7 @@ class DeezerClient(Client):
             raise Exception(f"Media type {media_type} not available on deezer")
 
     async def get_track(self, item_id: str) -> dict:
+        """A track's metadata, with its album and, when wanted, its lyrics."""
         try:
             item = await asyncio.to_thread(self.client.api.get_track, item_id)
         except Exception as e:
@@ -133,6 +134,7 @@ class DeezerClient(Client):
         return "\n".join(lines)
 
     async def get_album(self, item_id: str) -> dict:
+        """An album's metadata, tracks and quality, cached per run."""
         item_id = str(item_id)
         if item_id in self._album_cache:
             logger.debug("Deezer album cache hit for album ID %s", item_id)

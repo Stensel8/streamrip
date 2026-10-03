@@ -332,6 +332,7 @@ class QobuzClient(Client):
         return await self._paginate(epoint, params, limit=limit)
 
     async def get_downloadable(self, item: str, quality: int) -> Downloadable:
+        """Ask Qobuz for a track's file URL at `quality` (1 to 4)."""
         assert self.secret is not None and self.logged_in
         # Qobuz has no quality 0 (128 kbps); clamp instead of asserting so
         # `streamrip --quality 0` still works for mixed-source downloads.

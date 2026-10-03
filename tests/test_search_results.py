@@ -48,14 +48,17 @@ TIDAL_TRACK = {
 
 
 def _has_cover(text: str) -> bool:
+    """Whether the rendered text contains cover blocks."""
     return any(block in text for block in search_menu.QUADRANTS[1:])
 
 
 def _one(source, media_type, page):
+    """The first result of one page of search results."""
     return SearchResults.from_pages(source, media_type, [page]).results[0]
 
 
 def test_the_same_track_reads_the_same_on_qobuz_and_tidal():
+    """The same track reads alike whichever source it comes from."""
     qobuz = _one("qobuz", "track", {"tracks": {"items": [QOBUZ_TRACK]}})
     tidal = _one("tidal", "track", {"items": [TIDAL_TRACK]})
 
@@ -80,8 +83,11 @@ def test_the_same_track_reads_the_same_on_qobuz_and_tidal():
 
 
 def test_tidal_says_hires_without_a_sample_rate():
-    # The sample rate is only in a track's stream info: Tidal's hi-res tops
-    # out at 24-bit / 192 kHz, and that much is shown without a request.
+    """Tidal's hi-res quality is shown without a sample rate.
+
+    The rate is only in a track's stream info. Tidal's hi-res tops out at 24-bit / 192
+    kHz, and that much is shown without a request.
+    """
     tidal = _one("tidal", "track", {"items": [TIDAL_TRACK]})
     hires = {**TIDAL_TRACK, "mediaMetadata": {"tags": ["LOSSLESS", "HIRES_LOSSLESS"]}}
     hires = _one("tidal", "track", {"items": [hires]})
@@ -90,6 +96,7 @@ def test_tidal_says_hires_without_a_sample_rate():
 
 
 def test_tidal_album_shows_its_type_and_hires_format():
+    """A Tidal album's preview shows its type and its hi-res format."""
     album = _one(
         "tidal",
         "album",
@@ -124,7 +131,10 @@ def test_tidal_album_shows_its_type_and_hires_format():
 
 
 def test_artist_previews_are_never_empty():
-    # Tidal's artist search has no album count; it used to preview as an id.
+    """Artist previews are never empty.
+
+    Tidal's artist search has no album count; it used to preview as an id.
+    """
     tidal = _one(
         "tidal",
         "artist",
@@ -162,6 +172,7 @@ def test_artist_previews_are_never_empty():
 
 
 def test_playlists_name_who_made_them():
+    """A playlist's preview names its creator."""
     tidal = _one(
         "tidal",
         "playlist",
@@ -188,6 +199,7 @@ def test_playlists_name_who_made_them():
 
 
 def test_preview_puts_the_cover_beside_the_details(monkeypatch):
+    """The preview draws the cover beside the details."""
     with open("tests/1x1_pixel.jpg", "rb") as f:
         pixel = f.read()
     monkeypatch.setattr(search_menu, "_fetch", lambda _url: pixel)
@@ -214,13 +226,17 @@ def test_preview_puts_the_cover_beside_the_details(monkeypatch):
 
 
 def test_cover_fills_the_preview_height_of_a_big_terminal():
+    """On a big terminal the cover fills the height of the preview."""
     assert search_menu.cover_size(200, 60) == 28  # 60 * 0.5, less the border
     assert search_menu.cover_size(60, 60) == 0  # no room beside the details
 
 
 @pytest.mark.parametrize("error", [OSError("offline"), ValueError("not an image")])
 def test_preview_without_a_cover_still_shows_the_details(monkeypatch, error):
+    """A cover that can't be fetched still leaves the details."""
+
     def fail(_url):
+        """Raise `error`, as a failing cover download does."""
         raise error
 
     monkeypatch.setattr(search_menu, "_fetch", fail)
@@ -238,8 +254,11 @@ def test_preview_without_a_cover_still_shows_the_details(monkeypatch, error):
 
 
 def test_cover_draws_an_edge_inside_a_character():
-    # Half blocks could only split a character top from bottom; a vertical
-    # edge through the middle of one blurred into an average of both sides.
+    """A vertical edge through the middle of a character stays an edge.
+
+    Half blocks could only split a character top from bottom, and blurred it into an
+    average of both sides.
+    """
     image = Image.new("RGB", (4, 2), "white")
     for x in (0, 2):  # each character's left half black
         image.paste((0, 0, 0), (x, 0, x + 1, 2))

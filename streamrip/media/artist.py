@@ -179,6 +179,7 @@ class PendingArtist(Pending):
     db: Database
 
     async def resolve(self) -> Artist | None:
+        """Fetch the artist and its filtered releases; None if that fails."""
         try:
             resp = await self.client.get_metadata(self.id, "artist")
         except NonStreamableError as e:

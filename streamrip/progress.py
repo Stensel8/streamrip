@@ -27,9 +27,11 @@ class Handle:
     done: Callable[[], None]
 
     def __enter__(self):
+        """Start the block: hand out the function that advances the task."""
         return self.update
 
     def __exit__(self, *_):
+        """End the block: hide the task."""
         self.done()
 
 
@@ -135,6 +137,7 @@ class ProgressManager:
         self._update_title()
 
     def _update_title(self):
+        """Redraw the title rule, if the display is running."""
         self._title = self._title_rule()
         if self.started:
             self.live.update(self._group())

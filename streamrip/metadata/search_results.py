@@ -41,6 +41,7 @@ class Summary:
         return f"{line} ({', '.join(notes)})" if notes else line
 
     def __str__(self):
+        """The summary as the search menu lists it."""
         return self.summarize()
 
 
@@ -69,6 +70,7 @@ def _track_artists(item: dict) -> str:
 
 
 def _album(item: dict) -> dict:
+    """The item's album if it is a dict, else an empty one."""
     album = item.get("album")
     return album if isinstance(album, dict) else {}
 
@@ -81,11 +83,13 @@ def _day(value) -> str | None:
 
 
 def _year(date) -> str | None:
+    """The year of a date, or None."""
     day = _day(date)
     return day[:4] if day else None
 
 
 def _duration(item: dict) -> str | None:
+    """A length as m:ss or h:mm:ss, or None if there is none."""
     seconds = item.get("duration") or 0
     if item.get("kind") in ("track", "playlist"):  # SoundCloud counts in ms
         seconds //= 1000
@@ -97,6 +101,7 @@ def _duration(item: dict) -> str | None:
 
 
 def _genre(item: dict) -> str | None:
+    """The genre of an item or of its album, whichever form the source uses."""
     genre = item.get("genre") or _album(item).get("genre")
     if isinstance(genre, dict):  # Qobuz
         return genre.get("name")
@@ -148,6 +153,7 @@ def _quality(item: dict) -> str | None:
 
 
 def _explicit(item: dict) -> bool:
+    """Whether any of the sources' explicit flags is set."""
     return bool(
         item.get("parental_warning")
         or item.get("explicit")
@@ -181,6 +187,7 @@ def _image(item: dict) -> str | None:
 
 
 def album_summary(item: dict) -> Summary:
+    """Summarize an album from any source's search response."""
     title = (item.get("title") or "").strip()
     version = (item.get("version") or "").strip()
     date = (
@@ -218,6 +225,7 @@ def album_summary(item: dict) -> Summary:
 
 
 def track_summary(item: dict) -> Summary:
+    """Summarize a track from any source's search response."""
     name = (item.get("title") or item.get("name") or "Unknown").strip()
     if (version := item.get("version")) and version not in name:
         name = f"{name} ({version})"
@@ -254,6 +262,7 @@ def track_summary(item: dict) -> Summary:
 
 
 def artist_summary(item: dict) -> Summary:
+    """Summarize an artist from any source's search response."""
     roles = [r.get("category") for r in item.get("artistRoles") or []]  # Tidal
     popularity = item.get("popularity")  # Tidal, 0-100
     return Summary(
@@ -271,6 +280,7 @@ def artist_summary(item: dict) -> Summary:
 
 
 def playlist_summary(item: dict) -> Summary:
+    """Summarize a playlist from any source's search response."""
     user = item.get("user") or {}
     creator = (
         (item.get("owner") or {}).get("name")  # Qobuz
@@ -337,6 +347,7 @@ class SearchResults:
 
     @classmethod
     def from_pages(cls, source: str, media_type: str, pages: list[dict]):
+        """A summary of every item on a source's search pages, for `media_type`."""
         summarize = SUMMARIES.get(media_type)
         if summarize is None:
             raise Exception(f"invalid media type {media_type}")
@@ -349,6 +360,7 @@ class SearchResults:
         )
 
     def summaries(self) -> list[str]:
+        """The numbered one-line summaries the search menu shows."""
         return [f"{i + 1}. {r.summarize()}" for i, r in enumerate(self.results)]
 
     def get_choices(self, inds: tuple[int, ...] | int):
@@ -357,6 +369,7 @@ class SearchResults:
         return [self.results[i] for i in inds]
 
     def as_list(self, source: str) -> list[dict[str, str]]:
+        """The results as dicts: source, media type, id and description."""
         return [
             {
                 "source": source,
