@@ -28,7 +28,6 @@ def _album(tracks):
     )
 
 
-@pytest.mark.asyncio
 async def test_resolves_only_a_few_tracks_at_once():
     concurrent = peak = 0
 
@@ -47,7 +46,6 @@ async def test_resolves_only_a_few_tracks_at_once():
     assert 1 < peak <= RESOLVE_CONCURRENCY
 
 
-@pytest.mark.asyncio
 async def test_a_downloading_track_does_not_hold_a_resolve_slot():
     n = RESOLVE_CONCURRENCY * 3
     resolved = 0
@@ -96,7 +94,6 @@ def _pending_album(monkeypatch, tmp_path, tracklist, downloaded):
     return PendingAlbum("1", client, config, db), artwork
 
 
-@pytest.mark.asyncio
 async def test_finished_album_is_skipped_without_cover_or_folder(
     monkeypatch, tmp_path, caplog
 ):
@@ -116,7 +113,6 @@ async def test_finished_album_is_skipped_without_cover_or_folder(
     assert "Encore: all 3 tracks already downloaded" in caplog.text
 
 
-@pytest.mark.asyncio
 async def test_partly_downloaded_album_reports_once_and_keeps_the_rest(
     monkeypatch, tmp_path, caplog
 ):
@@ -137,7 +133,6 @@ async def test_partly_downloaded_album_reports_once_and_keeps_the_rest(
     assert "Skipping track" not in caplog.text
 
 
-@pytest.mark.asyncio
 async def test_new_album_logs_nothing_about_skipping(monkeypatch, tmp_path, caplog):
     pending, _ = _pending_album(monkeypatch, tmp_path, ["1", "2"], downloaded=set())
     with caplog.at_level(logging.INFO, logger="streamrip"):
@@ -160,7 +155,6 @@ class _FakeDownloadable:
             f.write(b"%PDF")
 
 
-@pytest.mark.asyncio
 async def test_booklets_are_saved_as_pdfs(monkeypatch, tmp_path, caplog):
     monkeypatch.setattr(album_module, "BasicDownloadable", _FakeDownloadable)
     _FakeDownloadable.downloaded = []
@@ -185,7 +179,6 @@ async def test_booklets_are_saved_as_pdfs(monkeypatch, tmp_path, caplog):
     assert "Could not download booklet https://q/broken.pdf" in caplog.text
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize("enabled", [True, False])
 async def test_booklets_follow_the_config(monkeypatch, tmp_path, enabled):
     pending, _ = _pending_album(monkeypatch, tmp_path, ["1"], downloaded=set())
@@ -205,7 +198,6 @@ async def test_booklets_follow_the_config(monkeypatch, tmp_path, enabled):
     assert download.await_count == (1 if enabled else 0)
 
 
-@pytest.mark.asyncio
 async def test_finished_album_gets_no_booklets(monkeypatch, tmp_path):
     pending, _ = _pending_album(monkeypatch, tmp_path, ["1"], downloaded={"1"})
     album_module.AlbumMetadata.from_album_resp(None, None).info.booklets = [
@@ -221,7 +213,6 @@ async def test_finished_album_gets_no_booklets(monkeypatch, tmp_path):
     download.assert_not_awaited()
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize("resolve_first", [False, True])
 @pytest.mark.parametrize("selected", [False, True])
 async def test_artist_counts_skips_only_for_selected_albums(

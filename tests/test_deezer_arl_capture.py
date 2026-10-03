@@ -11,8 +11,6 @@ from streamrip.rip.deezer_arl_capture import (
     capture_deezer_arl_via_browser,
 )
 
-pytestmark = pytest.mark.asyncio
-
 
 def _page(html="<p>login</p>", cookies=None):
     """A handler that serves html and sets the given HttpOnly cookies."""

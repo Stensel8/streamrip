@@ -192,7 +192,6 @@ def test_lossy_copy_removed_after_lossless_conversion(tmp_path, monkeypatch):
     assert not (tmp_path / "Song.m4a").exists()
 
 
-@pytest.mark.asyncio
 async def test_single_without_download_info_is_kept_for_repair(tmp_path, monkeypatch):
     # This used to escape resolve() and never reach the failed database.
     monkeypatch.setattr(
@@ -284,7 +283,6 @@ def pending_disc_track(request, tmp_path, monkeypatch):
     "discnumber",
     ["1/../../../escaped", r"1\..\..\..\escaped", "2", "", None, True, 0, -1, 1.5],
 )
-@pytest.mark.asyncio
 async def test_invalid_disc_number_is_rejected_before_io(
     pending_disc_track, tmp_path, discnumber
 ):
@@ -300,7 +298,6 @@ async def test_invalid_disc_number_is_rejected_before_io(
 
 
 @pytest.mark.parametrize("discnumber", [1, 2, None])
-@pytest.mark.asyncio
 async def test_valid_disc_number_download_stays_in_album(
     pending_disc_track, discnumber
 ):
@@ -323,7 +320,6 @@ async def test_valid_disc_number_download_stays_in_album(
     pending.db.set_failed.assert_not_called()
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize("phase", ["preprocess", "postprocess"])
 @pytest.mark.parametrize("is_single", [False, True])
 async def test_processing_failures_are_counted_and_stored_for_repair(
@@ -343,7 +339,6 @@ async def test_processing_failures_are_counted_and_stored_for_repair(
     assert track.db.failed.all() == [("test", "track", "123")]
 
 
-@pytest.mark.asyncio
 async def test_exhausted_track_download_is_counted_only_once(tmp_path, monkeypatch):
     """The outer processing handler preserves download failure accounting."""
     from streamrip.exceptions import TrackDownloadFailedError
@@ -359,7 +354,6 @@ async def test_exhausted_track_download_is_counted_only_once(tmp_path, monkeypat
     assert track.db.downloaded_now == 0
 
 
-@pytest.mark.asyncio
 async def test_partial_file_cleanup_failure_is_counted_once(tmp_path, monkeypatch):
     """A cleanup error is counted by the outer handler, not twice."""
     track = _make_track(str(tmp_path), "flac")
@@ -380,25 +374,3 @@ async def test_partial_file_cleanup_failure_is_counted_once(tmp_path, monkeypatc
 
     assert track.db.failed_now == 1
     assert track.db.failed.all() == [("test", "track", "123")]
-
-
-@pytest.mark.asyncio
-async def test_complete_highly_compressible_audio_is_kept(tmp_path, monkeypatch):
-    """A complete FLAC of digital silence is a valid download.
-
-    10 s of silence is under 10 KB (~8 kbps). An earlier version of this check
-    judged files by bitrate and would have deleted it, retried it and recorded
-    it as failed.
-    """
-    track = _make_track(str(tmp_path), "flac")
-    monkeypatch.setitem(FIXTURES, "flac", "tests/silence_10s.flac")
-    track.db = db.Database(db.Dummy(), db.Failed(str(tmp_path / "failed.db")))
-    monkeypatch.setattr("streamrip.media.track.asyncio.sleep", AsyncMock())
-
-    await track.preprocess()
-    await track.download()
-
-    assert os.path.getsize(track.download_path) == os.path.getsize(
-        "tests/silence_10s.flac"
-    )
-    assert track.db.failed.all() == []

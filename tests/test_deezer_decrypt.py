@@ -54,7 +54,6 @@ class _Session:
         return _Resp(self.body)
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize("length", [5 * DEEZER_STRIPE + 3000, 5 * DEEZER_STRIPE + 100])
 async def test_encrypted_stream_decrypts_to_the_original(tmp_path, length):
     plain = os.urandom(length)
@@ -93,7 +92,6 @@ class _SmallSession:
         return _SmallResp(self.body)
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "body, message",
     [

@@ -5,8 +5,6 @@ import pytest
 
 from streamrip.rip.interactive import Confirm, Prompt, _native_sigint
 
-pytestmark = pytest.mark.asyncio
-
 
 async def test_native_sigint_restores_asyncios_handler_afterward():
     """While blocked on input(), Ctrl-C must raise KeyboardInterrupt, the way

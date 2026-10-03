@@ -53,21 +53,18 @@ def png(color="red", size=(32, 32)):
     return buf.getvalue()
 
 
-@pytest.mark.asyncio
 async def test_selection_survives_filter_and_returns_original_indices():
     async with menu() as (app, pilot):
         await pilot.press("space", "slash", "s", "e", "c", "o", "n", "d", "enter")
     assert app.return_value == (0, 1)
 
 
-@pytest.mark.asyncio
 async def test_enter_without_marks_chooses_highlighted_result():
     async with menu() as (app, pilot):
         await pilot.press("down", "enter")
     assert app.return_value == (1,)
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize("key", ["escape", "ctrl+c"])
 async def test_cancel_never_returns_selected_downloads(key):
     async with menu() as (app, pilot):
@@ -75,7 +72,6 @@ async def test_cancel_never_returns_selected_downloads(key):
     assert app.return_value is None
 
 
-@pytest.mark.asyncio
 async def test_filter_accepts_spaces_and_escape_restores_results():
     async with menu() as (app, pilot):
         await pilot.press("slash")
@@ -92,7 +88,6 @@ async def test_filter_accepts_spaces_and_escape_restores_results():
     assert app.return_value is None
 
 
-@pytest.mark.asyncio
 async def test_no_matching_results_clears_preview_and_cannot_accept():
     async with menu() as (app, pilot):
         await pilot.press("slash")
@@ -105,7 +100,6 @@ async def test_no_matching_results_clears_preview_and_cannot_accept():
         assert app.is_running
 
 
-@pytest.mark.asyncio
 async def test_cover_arrival_refreshes_without_a_keypress(monkeypatch):
     ready = asyncio.Event()
 
@@ -126,7 +120,6 @@ async def test_cover_arrival_refreshes_without_a_keypress(monkeypatch):
         assert app.query_one("#preview").region.y > app.query_one(OptionList).region.y
 
 
-@pytest.mark.asyncio
 async def test_new_selection_cancels_old_cover_and_wins(monkeypatch):
     started = asyncio.Event()
     cancelled = asyncio.Event()
@@ -152,7 +145,6 @@ async def test_new_selection_cancels_old_cover_and_wins(monkeypatch):
         assert "slow" not in app.covers.images
 
 
-@pytest.mark.asyncio
 async def test_same_cover_is_not_replaced_when_marking_or_changing_track(monkeypatch):
     fetch = AsyncMock(return_value=png())
     monkeypatch.setattr(CoverCache, "_fetch", fetch)
@@ -166,7 +158,6 @@ async def test_same_cover_is_not_replaced_when_marking_or_changing_track(monkeyp
         assert fetch.await_count == 1
 
 
-@pytest.mark.asyncio
 async def test_small_and_resized_layout_never_overlaps_metadata(monkeypatch):
     monkeypatch.setattr(CoverCache, "_fetch", AsyncMock(return_value=png()))
     async with menu(summaries("cover"), size=(60, 24)) as (app, pilot):
@@ -184,7 +175,6 @@ async def test_small_and_resized_layout_never_overlaps_metadata(monkeypatch):
         assert app.query_one("#details").size.width > 0
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize("failure", [OSError("offline"), b"not an image"])
 async def test_bad_cover_leaves_details_and_selection_usable(monkeypatch, failure):
     fetch = (
@@ -201,7 +191,6 @@ async def test_bad_cover_leaves_details_and_selection_usable(monkeypatch, failur
     assert app.return_value == (0,)
 
 
-@pytest.mark.asyncio
 async def test_missing_artwork_does_not_download_and_keeps_metadata(monkeypatch):
     fetch = AsyncMock()
     monkeypatch.setattr(CoverCache, "_fetch", fetch)
@@ -214,7 +203,6 @@ async def test_missing_artwork_does_not_download_and_keeps_metadata(monkeypatch)
     fetch.assert_not_awaited()
 
 
-@pytest.mark.asyncio
 async def test_cache_tries_smaller_variant_and_caches_errors_and_success(monkeypatch):
     fetch = AsyncMock(side_effect=[OSError("missing"), png()])
     cache = CoverCache()
@@ -257,7 +245,6 @@ def test_failed_terminal_probe_automatically_uses_blocks(monkeypatch):
     assert cover_preview.image_widget() is None
 
 
-@pytest.mark.asyncio
 async def test_choose_results_detects_before_starting_menu_and_closes_cache(
     monkeypatch,
 ):
@@ -283,7 +270,6 @@ async def test_choose_results_detects_before_starting_menu_and_closes_cache(
     app.covers.close.assert_awaited_once()
 
 
-@pytest.mark.asyncio
 async def test_pixel_renderer_failure_uses_blocks(monkeypatch):
     monkeypatch.setattr(CoverCache, "_fetch", AsyncMock(return_value=png()))
     broken_widget = Mock(side_effect=RuntimeError("encoder failed"))
@@ -319,7 +305,6 @@ def test_provider_covers_prefer_larger_variant_and_keep_fallbacks(
         assert track_summary({"id": 1, "album": image_fields}).image_urls == expected
 
 
-@pytest.mark.asyncio
 async def test_main_queues_original_choices_only(monkeypatch):
     from streamrip.rip.main import Main
 
@@ -368,7 +353,6 @@ def test_auto_selects_only_a_supported_pixel_renderer(monkeypatch, protocol):
     )
 
 
-@pytest.mark.asyncio
 async def test_delayed_encoder_failure_falls_back_for_later_covers(monkeypatch):
     class FailingImage(Static):
         def __init__(self, image, on_error):
@@ -389,7 +373,6 @@ async def test_delayed_encoder_failure_falls_back_for_later_covers(monkeypatch):
         assert isinstance(pane.children[0], BlockCover)
 
 
-@pytest.mark.asyncio
 async def test_cache_http_download_failure_and_close(serve):
     async def cover(request):
         return web.Response(body=png(), content_type="image/png")
@@ -405,7 +388,6 @@ async def test_cache_http_download_failure_and_close(serve):
     assert session.closed
 
 
-@pytest.mark.asyncio
 async def test_background_work_is_cancelled_on_exit(monkeypatch):
     started, cancelled = asyncio.Event(), asyncio.Event()
 
@@ -423,14 +405,12 @@ async def test_background_work_is_cancelled_on_exit(monkeypatch):
     assert cancelled.is_set()
 
 
-@pytest.mark.asyncio
 async def test_enter_includes_current_result_like_previous_linux_menu():
     async with menu() as (app, pilot):
         await pilot.press("space", "down", "enter")
     assert app.return_value == (0, 1)
 
 
-@pytest.mark.asyncio
 async def test_real_sixel_adapter_restores_last_row_and_handles_encoder_errors(
     monkeypatch,
 ):
