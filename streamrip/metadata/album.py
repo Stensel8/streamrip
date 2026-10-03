@@ -17,6 +17,13 @@ logger = logging.getLogger("streamrip")
 
 genre_clean = re.compile(r"([^\u2192\/]+)")
 
+# A bracket of a folder format that is only about bit depth and sampling rate:
+# their placeholders, units and separators, and nothing else.
+_QUALITY_BRACKET = re.compile(
+    r"\s*\[(?=[^\]]*\{(?:bit_depth|sampling_rate)\})"
+    r"(?:\{(?:bit_depth|sampling_rate)\}|bits?|kHz|Hz|B|[\s/_.,@x-])*\]"
+)
+
 
 def _year(date: str | None) -> str:
     """Return the 4-digit year prefix of an ISO date, or "Unknown"."""
@@ -90,12 +97,10 @@ class AlbumMetadata:
 
         # A lossy album has no bit depth or sampling rate to put in a folder
         # name: drop a bracket that is only about them, not "[UnknownB-UnknownkHz]".
-        # One that holds anything else too ("[{container} {bit_depth}B]") stays.
+        # One that says anything else too ("[{container} {bit_depth}B]",
+        # "[Deluxe {bit_depth}B]") stays.
         if not (self.info.bit_depth and self.info.sampling_rate):
-            quality = r"\{(?:bit_depth|sampling_rate)\}"
-            formatter = re.sub(
-                rf"\s*\[(?=[^\]]*{quality})(?:[^\]{{}}]|{quality})*\]", "", formatter
-            )
+            formatter = _QUALITY_BRACKET.sub("", formatter)
 
         none_str = "Unknown"
         info: dict[str, str | int | float] = {

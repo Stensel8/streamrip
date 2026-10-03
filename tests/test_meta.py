@@ -290,6 +290,11 @@ def test_qobuz_artists_put_the_main_artist_first():
             "{albumartist} - {title} [{container} {bit_depth}B-{sampling_rate}kHz]",
             "A - Album [MP3 UnknownB-UnknownkHz]",
         ),
+        # So does one that says anything else, like an edition.
+        (
+            "{albumartist} - {title} [Deluxe {bit_depth}B]",
+            "A - Album [Deluxe UnknownB]",
+        ),
     ],
 )
 def test_lossy_folder_names_drop_only_brackets_that_are_all_quality(fmt, folder):
