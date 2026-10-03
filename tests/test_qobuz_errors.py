@@ -33,7 +33,6 @@ def _client(*responses):
     return c
 
 
-@pytest.mark.asyncio
 async def test_transient_failure_is_retried_once():
     ok = {"artists": {"items": [], "total": 0}}
     c = _client((400, ALGOLIA), (200, ok))
@@ -41,7 +40,6 @@ async def test_transient_failure_is_retried_once():
     assert c._api_request.await_count == 2
 
 
-@pytest.mark.asyncio
 async def test_persistent_failure_raises_with_qobuz_message():
     c = _client((400, ALGOLIA), (400, ALGOLIA))
     with pytest.raises(APIError, match="Algolia"):
@@ -49,7 +47,6 @@ async def test_persistent_failure_raises_with_qobuz_message():
     assert c._api_request.await_count == 2
 
 
-@pytest.mark.asyncio
 async def test_other_errors_are_not_retried():
     c = _client((400, {"message": "Invalid parameter"}))
     with pytest.raises(APIError, match="Invalid parameter"):
@@ -71,7 +68,6 @@ class _HtmlErrorPage:
         raise AssertionError("must not parse an HTML page as JSON")
 
 
-@pytest.mark.asyncio
 async def test_html_error_page_is_reported_by_status_without_the_url():
     c = QobuzClient.__new__(QobuzClient)
     c.rate_limiter = contextlib.nullcontext()
@@ -85,7 +81,6 @@ async def test_html_error_page_is_reported_by_status_without_the_url():
     assert TOKEN not in str(page)
 
 
-@pytest.mark.asyncio
 async def test_failed_login_does_not_quote_the_token():
     c = QobuzClient.__new__(QobuzClient)
     c.logged_in = False
@@ -107,7 +102,6 @@ async def test_failed_login_does_not_quote_the_token():
     session.close.assert_awaited_once()
 
 
-@pytest.mark.asyncio
 async def test_search_command_reports_failure_instead_of_crashing():
     from streamrip.rip.main import Main
 
@@ -123,7 +117,6 @@ async def test_search_command_reports_failure_instead_of_crashing():
     assert "Search failed" in printed and "Algolia" in printed
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize("status", [501, 505])
 async def test_uncommon_server_errors_keep_the_fallback_retry(status):
     """5xx errors outside the shared set retain Qobuz's one extra attempt."""
@@ -132,7 +125,6 @@ async def test_uncommon_server_errors_keep_the_fallback_retry(status):
     assert c._api_request.await_count == 2
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize("status", [500, 502, 503, 504])
 async def test_exhausted_shared_server_retries_are_not_repeated(status):
     """The fallback must not multiply the shared retry budget."""

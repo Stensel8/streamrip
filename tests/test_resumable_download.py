@@ -28,7 +28,6 @@ def _start_server(handler_cls):
     return srv, port
 
 
-@pytest.mark.asyncio
 async def test_resume_with_range_support(tmp_path):
     """Server drops the connection mid-stream, then honors Range with 206."""
     total = 1_000_000
@@ -82,7 +81,6 @@ async def test_resume_with_range_support(tmp_path):
     assert any(r and r.startswith("bytes=") for r in request_ranges)
 
 
-@pytest.mark.asyncio
 async def test_resume_falls_back_when_range_ignored(tmp_path):
     """If the server ignores Range and replies 200 with the full body,
     the partial file must be overwritten, not appended to."""
@@ -131,7 +129,6 @@ async def test_resume_falls_back_when_range_ignored(tmp_path):
         assert hashlib.sha256(f.read()).hexdigest() == full_sha
 
 
-@pytest.mark.asyncio
 async def test_existing_file_is_overwritten_without_resume(tmp_path):
     """A first attempt must never append to an unrelated existing file.
 
@@ -161,7 +158,6 @@ async def test_existing_file_is_overwritten_without_resume(tmp_path):
     assert path.read_bytes() == payload
 
 
-@pytest.mark.asyncio
 async def test_multidict_headers_are_accepted(tmp_path):
     """aiohttp's istr header keys used to make requests refuse the call (#941)."""
     from multidict import CIMultiDict
@@ -213,7 +209,6 @@ def _interrupting_handler(payload, on_range):
     return Handler
 
 
-@pytest.mark.asyncio
 async def test_resume_at_the_wrong_offset_starts_over(tmp_path):
     """A 206 that does not start where the partial file ends is not appended.
 
@@ -247,7 +242,6 @@ async def test_resume_at_the_wrong_offset_starts_over(tmp_path):
     assert not os.path.exists(path)
 
 
-@pytest.mark.asyncio
 async def test_resume_that_does_not_add_up_to_the_total_starts_over(tmp_path):
     total = 1_000_000
     payload = _payload(total)
@@ -288,7 +282,6 @@ def test_content_range_parsing(value, parsed):
     assert _content_range(value) == parsed
 
 
-@pytest.mark.asyncio
 async def test_resume_with_unknown_total_that_stops_early_starts_over(tmp_path):
     """`bytes <start>-<end>/*` leaves the total unknown, and a 206 without
     Content-Length is delimited by the connection closing, so urllib3 cannot
@@ -331,7 +324,6 @@ def _answer_416(total):
     return Handler
 
 
-@pytest.mark.asyncio
 async def test_416_accepts_a_partial_file_of_the_announced_length(tmp_path):
     srv, port = _start_server(_answer_416(1000))
     path = tmp_path / "track.flac"
@@ -345,7 +337,6 @@ async def test_416_accepts_a_partial_file_of_the_announced_length(tmp_path):
     assert path.read_bytes() == b"x" * 1000
 
 
-@pytest.mark.asyncio
 async def test_416_for_a_partial_file_of_another_length_starts_over(tmp_path):
     """A 416 used to mean "complete" whatever the local size; a 1,200-byte file
     against "bytes */1000" was kept although it is not the server's file."""

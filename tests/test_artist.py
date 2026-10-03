@@ -1,7 +1,5 @@
 import asyncio
 
-import pytest
-
 from streamrip.config import ArtistFilterConfig
 from streamrip.media.artist import Artist
 from streamrip.media.label import Label
@@ -42,7 +40,6 @@ NO_FILTERS = ArtistFilterConfig(
 )
 
 
-@pytest.mark.asyncio
 async def test_albums_rip_strictly_one_at_a_time():
     """No album's tracks start until the last album's are done downloading,
     so the progress display never shows two albums' tracks at once.
@@ -70,7 +67,6 @@ async def test_albums_rip_strictly_one_at_a_time():
     assert max_concurrent == 1
 
 
-@pytest.mark.asyncio
 async def test_a_failing_album_does_not_stop_the_others(caplog):
     ripped = []
 
@@ -99,7 +95,6 @@ async def test_a_failing_album_does_not_stop_the_others(caplog):
     assert "Error downloading album: ConnectionError: boom" in caplog.text
 
 
-@pytest.mark.asyncio
 async def test_resolve_then_download_chunks_the_resolve_phase():
     """Used when artist_filters.repeats is on: resolving every album's title
     upfront is required, but that shouldn't mean firing them all at once.
@@ -114,7 +109,6 @@ async def test_resolve_then_download_chunks_the_resolve_phase():
     assert _FakePendingAlbum._max_concurrent == 1
 
 
-@pytest.mark.asyncio
 async def test_resolve_then_download_survives_a_failing_resolve(caplog):
     ripped = []
 
@@ -143,7 +137,6 @@ async def test_resolve_then_download_survives_a_failing_resolve(caplog):
     assert "Error resolving album: ConnectionError: boom" in caplog.text
 
 
-@pytest.mark.asyncio
 async def test_a_failing_label_album_does_not_stop_the_others():
     ripped = []
 

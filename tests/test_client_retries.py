@@ -87,28 +87,24 @@ def _qobuz(*outcomes):
     return c
 
 
-@pytest.mark.asyncio
 async def test_qobuz_dropped_connection_is_retried():
     c = _qobuz(aiohttp.ServerDisconnectedError(), _Response(body={"id": 1}))
     assert await c._api_request("track/get", {}) == (200, {"id": 1})
     assert c.session.calls == 2
 
 
-@pytest.mark.asyncio
 async def test_qobuz_edge_502_page_is_retried():
     c = _qobuz(_Response(502, content_type="text/html"), _Response(body={"id": 1}))
     assert await c._api_request("album/get", {}) == (200, {"id": 1})
     assert c.session.calls == 2
 
 
-@pytest.mark.asyncio
 async def test_qobuz_client_errors_are_returned_not_retried():
     c = _qobuz(_Response(401, body={"message": "bad token"}))
     assert await c._api_request("user/login", {}) == (401, {"message": "bad token"})
     assert c.session.calls == 1
 
 
-@pytest.mark.asyncio
 async def test_qobuz_retry_warning_does_not_quote_the_token(caplog):
     c = _qobuz(aiohttp.ServerDisconnectedError(), _Response())
     await c._api_request("user/login", {"user_id": "1", "user_auth_token": TOKEN})
@@ -116,7 +112,6 @@ async def test_qobuz_retry_warning_does_not_quote_the_token(caplog):
     assert TOKEN not in caplog.text
 
 
-@pytest.mark.asyncio
 async def test_soundcloud_requests_go_through_its_rate_limiter_and_retry():
     c = SoundcloudClient(Config.defaults())
     c.rate_limiter = _CountingLimiter()
@@ -128,7 +123,6 @@ async def test_soundcloud_requests_go_through_its_rate_limiter_and_retry():
     assert c.rate_limiter.entered == 2
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize("pause_during", ["sleep", "admission"])
 async def test_pause_extensions_require_fresh_admission(monkeypatch, pause_during):
     c = _qobuz(_Response(503), _Response(503), _Response(503), _Response())
@@ -189,7 +183,6 @@ async def test_pause_extensions_require_fresh_admission(monkeypatch, pause_durin
         assert events[:13] == ["sleep", "admit", "exit"] * 4 + ["sleep"]
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize("provider", ["qobuz", "soundcloud"])
 @pytest.mark.parametrize("failure_at", ["page", "bundle"])
 @pytest.mark.parametrize("failure", [TimeoutError(), _Response(503)])
@@ -229,7 +222,6 @@ async def test_bootstrap_requests_retry_and_use_the_account_limiter(
         assert session.closed
 
 
-@pytest.mark.asyncio
 async def test_bootstrap_does_not_parse_a_persistent_http_error():
     """Exhausted text fetches raise the HTTP error instead of parsing its body."""
     c = _qobuz(*[_Response(503) for _ in range(client_module.MAX_API_ATTEMPTS)])
@@ -239,7 +231,6 @@ async def test_bootstrap_does_not_parse_a_persistent_http_error():
     assert c.session.calls == client_module.MAX_API_ATTEMPTS
 
 
-@pytest.mark.asyncio
 async def test_a_bundle_without_seeds_fails_with_a_clear_error(monkeypatch):
     """A changed bundle used to end in an opaque IndexError."""
     client = _qobuz()

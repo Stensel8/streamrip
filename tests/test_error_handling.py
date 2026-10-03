@@ -10,7 +10,6 @@ from streamrip.media.playlist import Playlist
 class TestErrorHandling:
     """Test error handling in playlist and album downloads."""
 
-    @pytest.mark.asyncio
     @pytest.mark.parametrize("prefer_explicit", [False, True])
     async def test_playlist_handles_failed_track(self, prefer_explicit):
         """Test that a playlist download continues even if one track fails."""
@@ -40,7 +39,6 @@ class TestErrorHandling:
         mock_track_success.resolve.return_value.rip.assert_called_once()
         mock_track_failure.resolve.assert_called_once()
 
-    @pytest.mark.asyncio
     @pytest.mark.parametrize("prefer_explicit", [False, True])
     async def test_album_handles_failed_track(self, prefer_explicit):
         """Test that an album download continues even if one track fails."""
@@ -77,7 +75,6 @@ class TestErrorHandling:
         mock_track_success.resolve.return_value.rip.assert_called_once()
         mock_track_failure.resolve.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_main_rip_handles_failed_media(self):
         """Test that the Main.rip method handles failed media items."""
         from streamrip.rip.main import Main
@@ -111,7 +108,6 @@ class TestErrorHandling:
             mock_media_success.rip.assert_called_once()
             mock_media_failure.rip.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_main_rip_summary_counts_tracks_not_items(self, caplog):
         """One artist is one item, but hundreds of tracks: say the latter."""
         from streamrip.rip.main import Main
@@ -147,7 +143,6 @@ class TestErrorHandling:
             )
             assert "item(s) downloaded" not in caplog.text
 
-    @pytest.mark.asyncio
     async def test_main_resolve_handles_a_failing_item(self, caplog):
         """One URL that fails to resolve must not stop the others."""
         from streamrip.rip.main import Main
@@ -176,7 +171,6 @@ class TestErrorHandling:
             assert main.media == ["album"]
             assert "Error resolving 123: KeyError" in caplog.text
 
-    @pytest.mark.asyncio
     async def test_search_page_without_results_is_not_a_crash(self):
         """A search can return a page with nothing in it; that's no results."""
         from streamrip.rip.main import Main

@@ -6,40 +6,31 @@ from streamrip.rip.qobuz_token_capture import (
     capture_qobuz_auth_token_via_browser,
 )
 
-pytestmark = pytest.mark.asyncio
 
+def _page(html: str):
+    """A handler that answers with `html`."""
 
-async def _serve_page(html: str) -> tuple[web.AppRunner, str]:
     async def handler(request: web.Request) -> web.Response:
         return web.Response(text=html, content_type="text/html")
 
-    app = web.Application()
-    app.router.add_get("/", handler)
-    runner = web.AppRunner(app, access_log=None)
-    await runner.setup()
-    site = web.TCPSite(runner, "127.0.0.1", 0)
-    await site.start()
-    return runner, f"http://127.0.0.1:{site.port}/"
+    return handler
 
 
-async def test_reads_token_already_in_local_storage():
+async def test_reads_token_already_in_local_storage(serve):
     html = """
     <script>
       localStorage.setItem("localuser", JSON.stringify({id: 123, token: "abc-token"}));
     </script>
     """
-    runner, url = await _serve_page(html)
-    try:
-        result = await capture_qobuz_auth_token_via_browser(
-            timeout_s=15, login_url=url, headless=True
-        )
-    finally:
-        await runner.cleanup()
+    url = await serve({"/": _page(html)})
+    result = await capture_qobuz_auth_token_via_browser(
+        timeout_s=15, login_url=url, headless=True
+    )
 
     assert result == ("123", "abc-token")
 
 
-async def test_catches_token_that_appears_after_a_delay():
+async def test_catches_token_that_appears_after_a_delay(serve):
     html = """
     <script>
       setTimeout(() => {
@@ -47,48 +38,23 @@ async def test_catches_token_that_appears_after_a_delay():
       }, 1500);
     </script>
     """
-    runner, url = await _serve_page(html)
-    try:
-        result = await capture_qobuz_auth_token_via_browser(
-            timeout_s=15, login_url=url, headless=True
-        )
-    finally:
-        await runner.cleanup()
+    url = await serve({"/": _page(html)})
+    result = await capture_qobuz_auth_token_via_browser(
+        timeout_s=15, login_url=url, headless=True
+    )
 
     assert result == ("456", "delayed-token")
 
 
-async def test_times_out_when_never_logged_in():
-    runner, url = await _serve_page("<p>never logs in</p>")
-    try:
-        with pytest.raises(QobuzTokenCaptureError):
-            await capture_qobuz_auth_token_via_browser(
-                timeout_s=2, login_url=url, headless=True
-            )
-    finally:
-        await runner.cleanup()
+async def test_times_out_when_never_logged_in(serve):
+    url = await serve({"/": _page("<p>never logs in</p>")})
+    with pytest.raises(QobuzTokenCaptureError):
+        await capture_qobuz_auth_token_via_browser(
+            timeout_s=2, login_url=url, headless=True
+        )
 
 
-async def _serve_two_pages(
-    first_html: str, second_html: str
-) -> tuple[web.AppRunner, str]:
-    async def first(request: web.Request) -> web.Response:
-        return web.Response(text=first_html, content_type="text/html")
-
-    async def second(request: web.Request) -> web.Response:
-        return web.Response(text=second_html, content_type="text/html")
-
-    app = web.Application()
-    app.router.add_get("/", first)
-    app.router.add_get("/after", second)
-    runner = web.AppRunner(app, access_log=None)
-    await runner.setup()
-    site = web.TCPSite(runner, "127.0.0.1", 0)
-    await site.start()
-    return runner, f"http://127.0.0.1:{site.port}/"
-
-
-async def test_survives_a_page_navigation_during_login():
+async def test_survives_a_page_navigation_during_login(serve):
     """Qobuz reloads the page on login, which destroys the JS execution
     context mid-poll (observed live 2026-09-30: an uncaught Playwright
     "Execution context was destroyed" error used to crash the whole
@@ -103,28 +69,22 @@ async def test_survives_a_page_navigation_during_login():
       }, 200);
     </script>
     """
-    runner, url = await _serve_two_pages(first_html, second_html)
-    try:
-        result = await capture_qobuz_auth_token_via_browser(
-            timeout_s=15, login_url=url, headless=True
-        )
-    finally:
-        await runner.cleanup()
+    url = await serve({"/": _page(first_html), "/after": _page(second_html)})
+    result = await capture_qobuz_auth_token_via_browser(
+        timeout_s=15, login_url=url, headless=True
+    )
 
     assert result == ("999", "post-nav-token")
 
 
-async def test_ignores_incomplete_local_storage_entry():
+async def test_ignores_incomplete_local_storage_entry(serve):
     html = """
     <script>
       localStorage.setItem("localuser", JSON.stringify({id: 789}));
     </script>
     """
-    runner, url = await _serve_page(html)
-    try:
-        with pytest.raises(QobuzTokenCaptureError):
-            await capture_qobuz_auth_token_via_browser(
-                timeout_s=2, login_url=url, headless=True
-            )
-    finally:
-        await runner.cleanup()
+    url = await serve({"/": _page(html)})
+    with pytest.raises(QobuzTokenCaptureError):
+        await capture_qobuz_auth_token_via_browser(
+            timeout_s=2, login_url=url, headless=True
+        )

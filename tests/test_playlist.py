@@ -58,7 +58,6 @@ def _lastfm_playlist(monkeypatch, total_tracks, fail_page=None):
     return playlist, session
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize("count", [LASTFM_MAX_TRACKS + 1, 1_000_000_000])
 async def test_lastfm_rejects_excessive_counts_before_pagination(monkeypatch, count):
     playlist, session = _lastfm_playlist(monkeypatch, count)
@@ -70,7 +69,6 @@ async def test_lastfm_rejects_excessive_counts_before_pagination(monkeypatch, co
     session.__aexit__.assert_awaited_once()
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize("count", [0, 1, 50, 51, 100, 101, LASTFM_MAX_TRACKS])
 async def test_lastfm_pagination_is_bounded_and_ordered(monkeypatch, count):
     playlist, session = _lastfm_playlist(monkeypatch, count)
@@ -88,7 +86,6 @@ async def test_lastfm_pagination_is_bounded_and_ordered(monkeypatch, count):
     session.__aexit__.assert_awaited_once()
 
 
-@pytest.mark.asyncio
 async def test_lastfm_excessive_count_stops_resolution(monkeypatch, caplog):
     playlist, session = _lastfm_playlist(monkeypatch, LASTFM_MAX_TRACKS + 1)
 
@@ -99,7 +96,6 @@ async def test_lastfm_excessive_count_stops_resolution(monkeypatch, caplog):
     assert "supported limit" in caplog.text
 
 
-@pytest.mark.asyncio
 async def test_lastfm_page_failure_stops_pagination_and_closes_session(monkeypatch):
     playlist, session = _lastfm_playlist(monkeypatch, 151, fail_page=2)
 
@@ -117,7 +113,6 @@ def _search_client(source, search):
     return client
 
 
-@pytest.mark.asyncio
 async def test_lastfm_search_error_falls_back_instead_of_failing():
     main = _search_client("tidal", ConnectionError("boom"))
     fallback = _search_client("deezer", [[{"data": [{"id": 7, "title": "Song"}]}]])
@@ -130,7 +125,6 @@ async def test_lastfm_search_error_falls_back_instead_of_failing():
     callback.assert_called_once()
 
 
-@pytest.mark.asyncio
 async def test_lastfm_query_with_an_empty_page_counts_as_not_found():
     main = _search_client("deezer", [[{"data": []}]])
     playlist = PendingLastfmPlaylist("url", main, None, MagicMock(), MagicMock())
@@ -150,7 +144,6 @@ def _playlist_track(get_metadata):
     return track, db
 
 
-@pytest.mark.asyncio
 async def test_playlist_track_that_cannot_be_fetched_is_kept_for_repair():
     track, db = _playlist_track(AsyncMock(side_effect=NonStreamableError("gone")))
 
@@ -158,7 +151,6 @@ async def test_playlist_track_that_cannot_be_fetched_is_kept_for_repair():
     db.set_failed.assert_called_once_with("tidal", "track", "42")
 
 
-@pytest.mark.asyncio
 async def test_playlist_track_with_unreadable_metadata_is_kept_for_repair():
     track, db = _playlist_track(AsyncMock(return_value={"unexpected": "shape"}))
 
@@ -186,7 +178,6 @@ def _deezer_track(position, disc):
     }
 
 
-@pytest.mark.asyncio
 async def test_playlist_track_is_tagged_as_part_of_one_album(monkeypatch):
     monkeypatch.setattr(
         "streamrip.media.playlist.download_artwork",
@@ -255,7 +246,6 @@ def test_playlist_folder_rejects_symlinks_outside_or_to_root(tmp_path, destinati
         _playlist_folder(config, "Mix")
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize("name", ["..", "Mix"])
 async def test_remote_playlist_title_is_checked_before_tracks_are_created(
     tmp_path, monkeypatch, name

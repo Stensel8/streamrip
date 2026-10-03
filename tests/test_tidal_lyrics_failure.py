@@ -48,27 +48,23 @@ def _http_error(status):
     )
 
 
-@pytest.mark.asyncio
 async def test_lyrics_401_does_not_abort_track(caplog):
     item = await _client(lyrics_error=_http_error(401)).get_metadata("1", "track")
     assert item["title"] == "t"
     assert "Failed to get lyrics" in caplog.text
 
 
-@pytest.mark.asyncio
 async def test_lyrics_timeout_does_not_abort_track():
     item = await _client(lyrics_error=asyncio.TimeoutError()).get_metadata("1", "track")
     assert item["title"] == "t"
 
 
-@pytest.mark.asyncio
 async def test_no_lyrics_is_still_quiet(caplog):
     item = await _client(lyrics_error=ItemNotFoundError("x")).get_metadata("1", "track")
     assert item["title"] == "t"
     assert "Failed to get lyrics" not in caplog.text
 
 
-@pytest.mark.asyncio
 async def test_track_request_failure_still_raises():
     """Only the optional lyrics call is contained -- real failures still surface."""
     with pytest.raises(aiohttp.ClientResponseError):

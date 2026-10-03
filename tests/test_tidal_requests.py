@@ -80,7 +80,6 @@ def _client(*outcomes):
     return c
 
 
-@pytest.mark.asyncio
 async def test_connection_error_is_retried(sleeps):
     c = _client(aiohttp.ServerDisconnectedError(), _Response(body={"id": 1}))
     assert await c._api_request("tracks/1") == {"id": 1}
@@ -88,21 +87,18 @@ async def test_connection_error_is_retried(sleeps):
     assert len(sleeps) == 1
 
 
-@pytest.mark.asyncio
 async def test_timeout_is_retried(sleeps):
     c = _client(TimeoutError(), _Response())
     assert await c._api_request("tracks/1") == {"ok": True}
     assert c.session.calls == 2
 
 
-@pytest.mark.asyncio
 async def test_server_error_is_retried(sleeps):
     c = _client(_Response(503), _Response(502), _Response(body={"id": 2}))
     assert await c._api_request("tracks/1") == {"id": 2}
     assert c.session.calls == 3
 
 
-@pytest.mark.asyncio
 async def test_gives_up_after_the_last_attempt_and_raises(sleeps):
     c = _client(*[aiohttp.ServerDisconnectedError() for _ in range(MAX_API_ATTEMPTS)])
     with pytest.raises(aiohttp.ServerDisconnectedError):
@@ -111,7 +107,6 @@ async def test_gives_up_after_the_last_attempt_and_raises(sleeps):
     assert len(sleeps) == MAX_API_ATTEMPTS - 1
 
 
-@pytest.mark.asyncio
 async def test_persistent_server_error_raises_the_http_error(sleeps):
     c = _client(*[_Response(503) for _ in range(MAX_API_ATTEMPTS)])
     with pytest.raises(aiohttp.ClientResponseError) as e:
@@ -119,7 +114,6 @@ async def test_persistent_server_error_raises_the_http_error(sleeps):
     assert e.value.status == 503
 
 
-@pytest.mark.asyncio
 async def test_rate_limit_waits_for_retry_after_and_pauses_later_requests(sleeps):
     c = _client(_Response(429, headers={"Retry-After": "7"}), _Response(), _Response())
     await c._api_request("tracks/1")
@@ -130,7 +124,6 @@ async def test_rate_limit_waits_for_retry_after_and_pauses_later_requests(sleeps
     assert all(7 <= s < 9 for s in sleeps)
 
 
-@pytest.mark.asyncio
 async def test_rate_limit_without_retry_after_uses_a_default_pause(sleeps):
     c = _client(_Response(429), _Response())
     await c._api_request("tracks/1")
@@ -138,7 +131,6 @@ async def test_rate_limit_without_retry_after_uses_a_default_pause(sleeps):
     assert RATE_LIMIT_PAUSE <= sleeps[0] < RATE_LIMIT_PAUSE + 2
 
 
-@pytest.mark.asyncio
 async def test_absurd_retry_after_is_capped(sleeps):
     c = _client(_Response(429, headers={"Retry-After": "3600"}), _Response())
     await c._api_request("tracks/1")
@@ -146,7 +138,6 @@ async def test_absurd_retry_after_is_capped(sleeps):
     assert MAX_RETRY_DELAY <= sleeps[0] < MAX_RETRY_DELAY + 2
 
 
-@pytest.mark.asyncio
 async def test_not_found_is_not_retried(sleeps):
     c = _client(_Response(404))
     with pytest.raises(ItemNotFoundError):
@@ -155,7 +146,6 @@ async def test_not_found_is_not_retried(sleeps):
     assert sleeps == []
 
 
-@pytest.mark.asyncio
 async def test_other_client_errors_are_not_retried(sleeps):
     c = _client(_Response(401))
     with pytest.raises(aiohttp.ClientResponseError):
@@ -164,7 +154,6 @@ async def test_other_client_errors_are_not_retried(sleeps):
     assert sleeps == []
 
 
-@pytest.mark.asyncio
 async def test_ssl_errors_are_not_retried(sleeps):
     c = _client(aiohttp.ClientSSLError(MagicMock(), OSError("bad certificate")))
     with pytest.raises(aiohttp.ClientSSLError):
@@ -173,7 +162,6 @@ async def test_ssl_errors_are_not_retried(sleeps):
     assert sleeps == []
 
 
-@pytest.mark.asyncio
 async def test_sessions_do_not_wait_five_minutes_on_a_stalled_connection():
     session = new_session()
     try:
