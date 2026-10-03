@@ -177,6 +177,9 @@ class Container(Enum):
         if self == Container.FLAC:
             cover = Picture()
             cover.type, cover.mime, cover.data = 3, "image/jpeg", data
+            # add_picture appends, unlike ID3 and MP4 which replace: without
+            # this, re-tagging a converted FLAC embedded a second cover.
+            audio.clear_pictures()
             audio.add_picture(cover)
         elif self in (Container.MP3, Container.AIFF):
             audio.add(APIC(type=3, mime="image/jpeg", data=data))

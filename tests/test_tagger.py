@@ -171,3 +171,26 @@ def test_exclude_only_drops_the_named_tag(sample_metadata, tmp_path):
     assert "\xa9wrt" not in tags
     assert "covr" not in tags
     assert tags["\xa9day"] == ["1999"]
+
+
+@pytest.mark.parametrize("ext", ["flac", "m4a", "mp3"])
+def test_retagging_keeps_a_single_cover(sample_metadata, tmp_path, ext):
+    # A converted file is tagged a second time, and ffmpeg may already have
+    # copied the cover into it. FLAC's add_picture appends where ID3 and MP4
+    # replace, so a re-tagged FLAC used to carry the cover twice.
+    path = str(tmp_path / f"track.{ext}")
+    if ext == "flac":
+        shutil.copy(TEST_FLAC_ORIGINAL, path)
+    elif ext == "m4a":
+        shutil.copy(TEST_M4A, path)
+    else:
+        open(path, "wb").close()
+    arun(tag_file(path, sample_metadata, test_cover))
+    arun(tag_file(path, sample_metadata, test_cover))
+    if ext == "flac":
+        covers = FLAC(path).pictures
+    elif ext == "m4a":
+        covers = MP4(path).tags["covr"]
+    else:
+        covers = ID3(path).getall("APIC")
+    assert len(covers) == 1
