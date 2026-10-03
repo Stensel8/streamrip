@@ -9,6 +9,7 @@ from ..client import Client, DeezerClient, QobuzClient, SoundcloudClient, TidalC
 from ..config import Config
 from ..console import console
 from ..exceptions import AuthenticationError, MissingCredentialsError
+from .deezer_arl_capture import DeezerArlCaptureError, capture_deezer_arl_via_browser
 from .interactive import Prompt
 from .qobuz_token_capture import (
     QobuzTokenCaptureError,
@@ -32,8 +33,9 @@ class CredentialPrompter(ABC):
     client: Client
 
     def __init__(self, config: Config, client: Client):
+        """Prompt for `client`'s source and save into `config`."""
         self.config = config
-        self.client = self.type_check_client(client)
+        self.client = client
 
     @abstractmethod
     def has_creds(self) -> bool:
@@ -51,9 +53,11 @@ class CredentialPrompter(ABC):
         """Save current config to file"""
         raise NotImplementedError
 
-    @abstractmethod
-    def type_check_client(self, client: Client):
-        raise NotImplementedError
+    def _announce_saved(self):
+        """Say where the credentials just went."""
+        console.print(
+            f"[green]Credentials saved to config file at [bold cyan]{self.config.path}",
+        )
 
 
 class QobuzPrompter(CredentialPrompter):
@@ -131,27 +135,22 @@ class QobuzPrompter(CredentialPrompter):
         self._set_session_creds(user_id, token)
 
     def _set_session_creds(self, user_id: str, token: str):
+        """Keep the user id and token in the session's config."""
         c = self.config.session.qobuz
         c.user_id = user_id
         c.auth_token = token
-        console.print(
-            f"[green]Credentials will be saved to [bold cyan]{self.config.path}",
-        )
 
     def save(self):
+        """Write the session's Qobuz credentials to the config file."""
         c = self.config.session.qobuz
         cf = self.config.file.qobuz
         cf.user_id = c.user_id
         cf.auth_token = c.auth_token
         self.config.file.set_modified()
-
-    def type_check_client(self, client) -> QobuzClient:
-        assert isinstance(client, QobuzClient)
-        return client
+        self._announce_saved()
 
 
 class TidalPrompter(CredentialPrompter):
-    timeout_s: int = 600  # 5 mins to login
     client: TidalClient
 
     def has_creds(self) -> bool:
@@ -177,32 +176,33 @@ class TidalPrompter(CredentialPrompter):
                 "Tidal serves hi-res and CD quality through two separate logins. "
                 f"This one is for {'CD quality' if lane is self.client else 'hi-res'}."
             )
-        device_code, uri = await lane._get_device_code()
+        device_code, uri, expires_in = await lane._get_device_code()
         login_link = uri if uri.startswith("http") else f"https://{uri}"
 
+        # Tidal says how long the link stays valid (5 minutes, lately).
         console.print(
             f"Go to [blue underline]{login_link}[/blue underline] to log into Tidal "
-            f"within {self.timeout_s // 60} minutes.",
+            f"within {expires_in // 60} minutes.",
         )
         _open_login_link(login_link)
 
-        start = time.time()
-        info: dict = {}
+        # A few seconds early: Tidal's clock started before its answer arrived.
+        deadline = time.time() + expires_in - 5
         while True:
-            if time.time() - start > self.timeout_s:
-                raise AuthenticationError("Timed out waiting for the Tidal login.")
+            if time.time() > deadline:
+                raise AuthenticationError(
+                    "The Tidal login link expired before it was used. Run "
+                    "streamrip again for a new one."
+                )
             status, info = await lane._get_auth_status(device_code)
-            if status == 2:
-                # pending
-                await asyncio.sleep(4)
-                continue
             if status == 0:
-                # successful
                 break
-            raise AuthenticationError(
-                "Tidal rejected the device login. Try again, or check the "
-                "[tidal] client settings in the config."
-            )
+            if status == 1:
+                raise AuthenticationError(
+                    f"Tidal rejected the device login ({info['error']}). Try "
+                    "again, or check the [tidal] client settings in the config."
+                )
+            await asyncio.sleep(4)  # still waiting for the login
 
         c = self.config.session.tidal
         c.user_id = info["user_id"]  # type: ignore
@@ -215,10 +215,6 @@ class TidalPrompter(CredentialPrompter):
 
         lane._update_authorization_from_config()
         lane.logged_in = True
-
-    def type_check_client(self, client) -> TidalClient:
-        assert isinstance(client, TidalClient)
-        return client
 
     def save(self):
         c = self.config.session.tidal
@@ -238,52 +234,78 @@ class DeezerPrompter(CredentialPrompter):
         return c.arl != ""
 
     async def prompt_and_login(self):
+        """Ask for an ARL unless one is saved, and again until Deezer accepts it."""
         if not self.has_creds():
-            self._prompt_creds_and_set_session_config()
+            await self._prompt_creds_and_set_session_config()
         while True:
             try:
                 await self.client.login()
                 break
             except AuthenticationError:
                 console.print("[yellow]Invalid arl, try again.")
-                self._prompt_creds_and_set_session_config()
-        self.save()
+                await self._prompt_creds_and_set_session_config()
 
-    def _prompt_creds_and_set_session_config(self):
+    async def _prompt_creds_and_set_session_config(self):
+        """Ask for an ARL cookie.
+
+        Deezer has no sign-in for outside apps, so the ARL of a logged-in web
+        session is the only login there is; offer to capture it from an
+        isolated browser window (see deezer_arl_capture) before asking for it
+        outright.
+        """
         console.print(
-            "If you're not sure how to find the ARL cookie, see the instructions at ",
-            "[blue underline]https://github.com/nathom/streamrip/wiki/Finding-your-Deezer-ARL-Cookie",
+            "\nHow do you want to log in to Deezer?\n"
+            "  1. Open an isolated browser window that logs in and captures\n"
+            "     the ARL cookie automatically\n"
+            "  2. Copy the ARL cookie from your browser by hand\n"
         )
-        c = self.config.session.deezer
-        c.arl = Prompt.ask("Enter your [bold]ARL")
+        choice = Prompt.ask("Choose", choices=["1", "2"], default="2")
+
+        if choice == "1":
+            try:
+                arl = await capture_deezer_arl_via_browser()
+            except DeezerArlCaptureError as e:
+                console.print(f"[yellow]{e}")
+            else:
+                self.config.session.deezer.arl = arl
+                return
+
+        _open_login_link("https://www.deezer.com/login")
+        console.print(
+            "\nEnter it manually instead:\n"
+            "  1. In the browser tab that just opened, log in to Deezer\n"
+            "  2. Open DevTools (F12) -> Application (Chrome, Edge, Brave) or\n"
+            "     Storage (Firefox) -> Cookies -> https://www.deezer.com\n"
+            "  3. Copy the [bold]Value[/bold] of the [bold]arl[/bold] cookie\n"
+        )
+        arl = ""
+        while not arl:
+            arl = Prompt.ask("Enter your Deezer ARL (invisible)", password=True).strip()
+        self.config.session.deezer.arl = arl
 
     def save(self):
+        """Write the session's ARL to the config file."""
         c = self.config.session.deezer
         cf = self.config.file.deezer
         cf.arl = c.arl
         self.config.file.set_modified()
-        console.print(
-            f"[green]Credentials saved to config file at [bold cyan]{self.config.path}",
-        )
-
-    def type_check_client(self, client) -> DeezerClient:
-        assert isinstance(client, DeezerClient)
-        return client
+        self._announce_saved()
 
 
 class SoundcloudPrompter(CredentialPrompter):
+    """SoundCloud needs no login: its client id is scraped on its own."""
+
+    client: SoundcloudClient
+
     def has_creds(self) -> bool:
         return True
 
     async def prompt_and_login(self):
+        """Nothing to ask for: SoundCloud needs no login."""
         pass
 
     def save(self):
         pass
-
-    def type_check_client(self, client) -> SoundcloudClient:
-        assert isinstance(client, SoundcloudClient)
-        return client
 
 
 PROMPTERS = {

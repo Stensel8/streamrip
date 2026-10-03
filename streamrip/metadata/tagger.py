@@ -55,18 +55,21 @@ MP4_KEY = {
 }
 
 
+def _names(names: list[str] | None, joined: str):
+    """Several artists as a real multi-valued tag, not one "A, B" string that
+    players would have to split up again (and mostly don't).
+    """
+    return names if names and len(names) > 1 else joined
+
+
 def _tag_values(meta: TrackMetadata) -> dict:
     """A track's tags by streamrip's own names, leaving out empty ones."""
     album = meta.album
     values = {
         "title": meta.title,
-        # Several artists are written as a real multi-valued tag, not one
-        # "A, B" string that players would have to split up again.
-        "artist": meta.artists
-        if meta.artists and len(meta.artists) > 1
-        else meta.artist,
+        "artist": _names(meta.artists, meta.artist),
         "album": album.album,
-        "albumartist": album.albumartist,
+        "albumartist": _names(album.albumartists, album.albumartist),
         "composer": meta.composer,
         "year": album.year,
         "description": album.description,
@@ -122,6 +125,10 @@ class Container(Enum):
     AIFF = 4
 
     def get_mutagen_class(self, path: str):
+        """Open the file with this container's mutagen class.
+
+        A file with no tags yet gets empty ones.
+        """
         if self == Container.FLAC:
             return FLAC(path)
         elif self == Container.AAC:
@@ -136,8 +143,6 @@ class Container(Enum):
             if audio.tags is None:
                 audio.add_tags()
             return audio.tags
-        # unreachable
-        return {}
 
     def get_tag_pairs(self, meta, exclude=()) -> list[tuple]:
         """Return this container's (key, value) tag pairs for meta."""
@@ -164,34 +169,27 @@ class Container(Enum):
         return []
 
     def tag_audio(self, audio, tags: list[tuple]):
+        """Set each (key, value) tag on the mutagen object."""
         for k, v in tags:
             audio[k] = v
 
     async def embed_cover(self, audio, cover_path):
+        """Embed the JPEG at cover_path as the front cover (picture type 3)."""
+        if self == Container.FLAC and os.path.getsize(cover_path) > FLAC_MAX_BLOCKSIZE:
+            raise Exception("Cover art too big for FLAC")
+        async with aiofiles.open(cover_path, "rb") as img:
+            data = await img.read()
         if self == Container.FLAC:
-            size = os.path.getsize(cover_path)
-            if size > FLAC_MAX_BLOCKSIZE:
-                raise Exception("Cover art too big for FLAC")
             cover = Picture()
-            cover.type = 3
-            cover.mime = "image/jpeg"
-            async with aiofiles.open(cover_path, "rb") as img:
-                cover.data = await img.read()
+            cover.type, cover.mime, cover.data = 3, "image/jpeg", data
             # add_picture appends, unlike ID3 and MP4 which replace: without
             # this, re-tagging a converted FLAC embedded a second cover.
             audio.clear_pictures()
             audio.add_picture(cover)
         elif self in (Container.MP3, Container.AIFF):
-            cover = APIC()
-            cover.type = 3
-            cover.mime = "image/jpeg"
-            async with aiofiles.open(cover_path, "rb") as img:
-                cover.data = await img.read()
-            audio.add(cover)
+            audio.add(APIC(type=3, mime="image/jpeg", data=data))
         elif self == Container.AAC:
-            async with aiofiles.open(cover_path, "rb") as img:
-                cover = MP4Cover(await img.read(), imageformat=MP4Cover.FORMAT_JPEG)
-            audio["covr"] = [cover]
+            audio["covr"] = [MP4Cover(data, imageformat=MP4Cover.FORMAT_JPEG)]
 
     def save_audio(self, audio, path):
         """Write the tagged audio object back to path."""

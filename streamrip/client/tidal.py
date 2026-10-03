@@ -3,6 +3,7 @@ import base64
 import json
 import logging
 import time
+import xml.etree.ElementTree as ET
 from json import JSONDecodeError
 
 import aiohttp
@@ -14,6 +15,7 @@ from ..exceptions import (
     MissingCredentialsError,
     NonStreamableError,
 )
+from ..metadata.util import TIDAL_QUALITY_IDS
 from .client import Client, new_session
 from .downloadable import TidalDASHDownloadable, TidalDownloadable
 
@@ -52,21 +54,11 @@ QUALITY_MAP = {
     2: "LOSSLESS",  # CD Quality
     3: "HI_RES",  # Best available: 24-bit FLAC (DASH) where the client may
 }
-
-# Tidal decides what it actually serves per track/client, independent of what
-# was requested (e.g. no lossless master for that particular track), and
-# says so in the response's own "audioQuality" -- not always the same string
-# as what was requested (HI_RES_LOSSLESS in the response vs. HI_RES in the
-# request).
-_AUDIO_QUALITY_TIER = {
-    "LOW": 0,
-    "HIGH": 1,
-    "LOSSLESS": 2,
-    "HI_RES": 3,
-    "HI_RES_LOSSLESS": 3,
-}
-LOSSLESS_TIER = _AUDIO_QUALITY_TIER["LOSSLESS"]
-HIRES_TIER = _AUDIO_QUALITY_TIER["HI_RES"]
+# Tidal decides what it actually serves per track/client, whatever was
+# requested, and says so in the response's "audioQuality" (HI_RES_LOSSLESS
+# for a HI_RES request): TIDAL_QUALITY_IDS turns that back into a tier.
+LOSSLESS_TIER = TIDAL_QUALITY_IDS["LOSSLESS"]
+HIRES_TIER = TIDAL_QUALITY_IDS["HI_RES"]
 DASH_MIME = "application/dash+xml"
 
 
@@ -126,6 +118,10 @@ class TidalClient(Client):
             )
             # Tracks Tidal says have no hi-res master; see _note_hires_tags.
             self._no_hires: set[str] = set()
+            # Albums by id, for the tracks of them, and the requests for them
+            # (answered or still out); see _album_of.
+            self._albums: dict[str, dict] = {}
+            self._album_requests: dict[str, asyncio.Future] = {}
         # HTTP Basic auth for the token endpoint. Built by hand because
         # aiohttp.BasicAuth is deprecated as of aiohttp 3.14.
         credentials = f"{self.client_id}:{self.client_secret}".encode()
@@ -157,12 +153,16 @@ class TidalClient(Client):
             await lane._login_lane()
         self.logged_in = True
 
-    async def _login_lane(self):
-        """Log this single lane in, refreshing its access token if it's stale."""
+    def _ensure_session(self):
+        """Open this lane's HTTP session, unless it has an open one."""
         if getattr(self, "session", None) is None or self.session.closed:
             self.session = new_session(
                 verify_ssl=self.global_config.session.downloads.verify_ssl
             )
+
+    async def _login_lane(self):
+        """Log this single lane in, refreshing its access token if it's stale."""
+        self._ensure_session()
         c, t = self.config, self.tokens
         if not t.access_token:
             raise MissingCredentialsError(
@@ -193,30 +193,23 @@ class TidalClient(Client):
         self.logged_in = True
 
     async def get_metadata(self, item_id: str, media_type: str) -> dict:
-        """Send a request to the api for information.
-
-        :param item_id:
-        :type item_id: str
-        :param media_type: track, album, playlist, or video.
-        :type media_type: str
-        :rtype: dict
+        """An item's metadata, with an album's or playlist's tracks and an
+        artist's albums (EPs and singles included).
         """
-        assert media_type in (
-            "track",
-            "album",
-            "playlist",
-            "video",
-            "artist",
-        ), media_type
+        assert media_type in ("track", "album", "playlist", "video", "artist")
 
         url = f"{media_type}s/{item_id}"
         item = await self._api_request(url)
         if media_type == "track":
             self._note_hires_tags([item])
+            item["album"] = await self._album_of(item)
         if media_type in ("playlist", "album"):
             item["tracks"] = await self._get_tracks(url)
             if media_type == "album":
                 await self._add_hires_format(item)
+                # Its tracks' requests then need no album request of their own.
+                album = {k: v for k, v in item.items() if k != "tracks"}
+                self._albums[str(item["id"])] = album
         elif media_type == "artist":
             logger.debug("filtering eps")
             album_resp, ep_resp = await asyncio.gather(
@@ -259,6 +252,42 @@ class TidalClient(Client):
         logger.debug(item)
         return item
 
+    async def _album_of(self, track: dict) -> dict:
+        """The track's album with its own metadata.
+
+        A track response only names its album (id, title, cover); its
+        artists, track and disc count and release date are the album's own,
+        so a single or a playlist track would otherwise be tagged with the
+        track's artists as album artists. One request per album, shared by
+        the tracks that resolve together, and none again if it failed: then
+        the track's own album stub is used.
+        """
+        stub = track.get("album") or {}
+        album_id = str(stub.get("id") or "")
+        if album_id and album_id not in self._albums:
+            request = self._album_requests.get(album_id)
+            if request is None:
+                request = asyncio.ensure_future(self._api_request(f"albums/{album_id}"))
+                self._album_requests[album_id] = request
+            try:
+                # Shielded: one track giving up must not cancel it for the rest.
+                self._albums[album_id] = await asyncio.shield(request)
+            except Exception as e:
+                logger.debug(f"Could not fetch album {album_id}: {e}")
+        album = self._albums.get(album_id)
+        if album is None:
+            return stub
+        # The cached album carries the format of whichever of its tracks was
+        # asked for (see _add_hires_format); only a hi-res track keeps it. Tidal
+        # says so in the tags -- a track's audioQuality is LOSSLESS either way --
+        # and a track without tag data is still taken as possibly hi-res.
+        tags = (track.get("mediaMetadata") or {}).get("tags")
+        if tags is not None and "HIRES_LOSSLESS" not in tags:
+            album = {
+                key: value for key, value in album.items() if key != "streamQuality"
+            }
+        return album
+
     async def _get_tracks(self, url: str) -> list[dict]:
         """The tracks of an album or playlist, fetched 100 at a time.
 
@@ -298,7 +327,7 @@ class TidalClient(Client):
         except Exception as e:
             logger.debug(f"Could not read the hi-res format of {album['id']}: {e}")
             return
-        if _AUDIO_QUALITY_TIER.get(resp.get("audioQuality"), 0) >= HIRES_TIER:
+        if TIDAL_QUALITY_IDS.get(resp.get("audioQuality"), 0) >= HIRES_TIER:
             album["streamQuality"] = {
                 "bitDepth": resp.get("bitDepth"),
                 "sampleRate": resp.get("sampleRate"),
@@ -315,21 +344,9 @@ class TidalClient(Client):
                 self._no_hires.add(str(track["id"]))
 
     async def search(self, media_type: str, query: str, limit: int = 100) -> list[dict]:
-        """Search for a query.
-
-        :param query:
-        :type query: str
-        :param media_type: track, album, playlist, or video.
-        :type media_type: str
-        :param limit: max is 100
-        :type limit: int
-        :rtype: dict
-        """
-        params = {
-            "query": query,
-            "limit": limit,
-        }
+        """One page of search results (Tidal returns at most 100)."""
         assert media_type in ("album", "track", "playlist", "video", "artist")
+        params = {"query": query, "limit": limit}
         resp = await self._api_request(f"search/{media_type}s", params=params)
         # A single hit is still a result: last.fm playlists search with limit=1.
         if len(resp.get("items") or []) > 0:
@@ -362,14 +379,14 @@ class TidalClient(Client):
         """
         try:
             resp = await self._playback_info(track_id, HIRES_TIER)
-            tier = _AUDIO_QUALITY_TIER.get(resp.get("audioQuality"), 0)
+            tier = TIDAL_QUALITY_IDS.get(resp.get("audioQuality"), 0)
             if tier >= HIRES_TIER and resp.get("manifestMimeType") == DASH_MIME:
                 return self._get_downloadable_from_dash(track_id, resp)
             logger.debug(f"Track {track_id}: no hi-res master, using lossless")
         except NonStreamableError as e:
             logger.debug(f"Track {track_id}: no hi-res stream ({e}), using lossless")
-        except aiohttp.ClientResponseError as e:
-            if e.status == 429:
+        except Exception as e:
+            if isinstance(e, aiohttp.ClientResponseError) and e.status == 429:
                 # _api_request already logged and paused for this; not a
                 # separate problem worth a second, scarier-looking warning.
                 logger.debug(f"Track {track_id}: still rate limited, using lossless")
@@ -377,10 +394,6 @@ class TidalClient(Client):
                 logger.warning(
                     f"Track {track_id}: hi-res request failed ({e}); using lossless"
                 )
-        except Exception as e:
-            logger.warning(
-                f"Track {track_id}: hi-res request failed ({e}); using lossless"
-            )
         return None
 
     async def get_downloadable(self, track_id: str, quality: int):
@@ -399,7 +412,7 @@ class TidalClient(Client):
         resp = await self._playback_info(track_id, quality)
 
         actual_quality = resp.get("audioQuality")
-        actual_tier = _AUDIO_QUALITY_TIER.get(actual_quality)
+        actual_tier = TIDAL_QUALITY_IDS.get(actual_quality)
         if actual_tier is not None and actual_tier < min(quality, LOSSLESS_TIER):
             logger.warning(
                 f"Track {track_id}: requested {QUALITY_MAP[quality]} but Tidal "
@@ -444,8 +457,6 @@ class TidalClient(Client):
         From upstream PR #998. The manifest lists an init segment and a
         SegmentTimeline; every media segment URL is derived from the template.
         """
-        import xml.etree.ElementTree as ET
-
         dash_xml = base64.b64decode(resp["manifest"]).decode("utf-8")
         ns = {"mpd": "urn:mpeg:dash:schema:mpd:2011"}
         root = ET.fromstring(dash_xml)
@@ -493,13 +504,7 @@ class TidalClient(Client):
     # ---------- Login Utilities ---------------
 
     async def _login_by_access_token(self, token: str, user_id: str):
-        """Login using the access token.
-
-        Used after the initial authorization.
-
-        :param token: access token
-        :param user_id: To verify that the user is correct
-        """
+        """Check that the access token is a live session of user_id, then use it."""
         headers = {"authorization": f"Bearer {token}"}
         async with self.session.get(
             "https://api.tidal.com/v1/sessions",
@@ -526,9 +531,8 @@ class TidalClient(Client):
         )
 
     async def _get_auth_status(self, device_code) -> tuple[int, dict[str, int | str]]:
-        """Check if the user has logged in inside the browser.
-
-        returns (status, authentication info)
+        """Whether the device login is done: (0, its tokens), (2, {}) while it
+        is still pending, or (1, {"error": why}) if Tidal refused it.
         """
         data = {
             "client_id": self.client_id,
@@ -540,18 +544,18 @@ class TidalClient(Client):
         resp = await self._api_post(f"{AUTH_URL}/token", data, auth=True)
 
         if "status" in resp and resp["status"] != 200:
-            if resp["status"] == 400 and resp["sub_status"] == 1002:
+            if resp["status"] == 400 and resp.get("sub_status") == 1002:
                 return 2, {}
-            else:
-                return 1, {}
+            error = resp.get("error_description") or resp.get("error")
+            return 1, {"error": error or f"HTTP {resp['status']}"}
 
-        ret = {}
-        ret["user_id"] = resp["user"]["userId"]
-        ret["country_code"] = resp["user"]["countryCode"]
-        ret["access_token"] = resp["access_token"]
-        ret["refresh_token"] = resp["refresh_token"]
-        ret["token_expiry"] = resp["expires_in"] + time.time()
-        return 0, ret
+        return 0, {
+            "user_id": resp["user"]["userId"],
+            "country_code": resp["user"]["countryCode"],
+            "access_token": resp["access_token"],
+            "refresh_token": resp["refresh_token"],
+            "token_expiry": resp["expires_in"] + time.time(),
+        }
 
     async def _refresh_access_token(self):
         """Refresh the access token given a refresh token.
@@ -585,13 +589,11 @@ class TidalClient(Client):
         self.save_login()
         self._update_authorization_from_config()
 
-    async def _get_device_code(self) -> tuple[str, str]:
-        """Get the device code that will be used to log in on the browser."""
-        if getattr(self, "session", None) is None or self.session.closed:
-            self.session = new_session(
-                verify_ssl=self.global_config.session.downloads.verify_ssl
-            )
-
+    async def _get_device_code(self) -> tuple[str, str, int]:
+        """A device login: its code, the link to log in at, and how many
+        seconds Tidal keeps it valid.
+        """
+        self._ensure_session()
         data = {
             "client_id": self.client_id,
             "scope": "r_usr+w_usr+w_sub",
@@ -601,16 +603,17 @@ class TidalClient(Client):
         if resp.get("status", 200) != 200:
             raise Exception(f"Device authorization failed {resp}")
 
-        return resp["deviceCode"], resp["verificationUriComplete"]
+        return (
+            resp["deviceCode"],
+            resp["verificationUriComplete"],
+            int(resp.get("expiresIn", 300)),
+        )
 
     # ---------- API Request Utilities ---------------
 
     async def _api_post(self, url, data, auth: bool = False) -> dict:
-        """Post to the Tidal API. Status not checked!
-
-        :param url:
-        :param data:
-        :param auth: send the client credentials (token endpoint)
+        """POST to the Tidal API, with the client credentials if auth (the
+        token endpoint). The status is not checked.
         """
         headers = self.auth_headers if auth else None
         async with self.rate_limiter:

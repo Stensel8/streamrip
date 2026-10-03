@@ -4,7 +4,7 @@ import logging
 from dataclasses import dataclass
 
 from .album import AlbumMetadata
-from .util import deezer_artists, safe_get
+from .util import deezer_artists, qobuz_artists, safe_get
 
 logger = logging.getLogger("streamrip")
 
@@ -31,11 +31,11 @@ class TrackMetadata:
     composer: str | None
     isrc: str | None = None
     lyrics: str | None = ""
-    # Individual artist names, when the source distinguishes them (Tidal,
-    # Deezer). `artist` above stays a single display string (joined with
-    # ", ") for filenames and templates; the tagger writes this list as a
-    # real multi-valued ARTIST tag instead of baking the join into one
-    # string, which is what let players mis-split "A, B" back apart.
+    # Individual artist names, where the source lists them. `artist` above
+    # stays a single display string (joined with ", ") for filenames and
+    # templates; the tagger writes this list as a real multi-valued ARTIST
+    # tag instead of baking the join into one string, which players then
+    # show as one artist named "A, B".
     artists: list[str] | None = None
 
     @classmethod
@@ -49,19 +49,22 @@ class TrackMetadata:
             title = f"{title} ({version})"
         if work and work not in title:
             title = f"{work}: {title}"
+        artists = qobuz_artists(resp)
         return cls(
             TrackInfo(str(resp["id"]), bool(resp.get("parental_warning"))),
             title,
             album,
             # "performer" is missing on some tracks (upstream #668); fall back
             # to the album artist rather than failing the whole track.
-            safe_get(resp, "performer", "name")
+            ", ".join(artists)
+            or safe_get(resp, "performer", "name")
             or safe_get(resp, "album", "artist", "name")
             or album.albumartist,
             resp.get("track_number", 1),
             resp.get("media_number", 1),
             safe_get(resp, "composer", "name"),
             isrc=resp.get("isrc"),
+            artists=artists or None,
         )
 
     @classmethod

@@ -216,20 +216,16 @@ def rip(
     ctx, config_path, folder, no_db, quality, codec, no_progress, no_ssl_verify, verbose
 ):
     """A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, and SoundCloud."""
-    global logger
     logging.basicConfig(
         level="INFO",
         format="%(message)s",
         datefmt="[%X]",
         handlers=[RichHandler(console=console)],
     )
-    logger = logging.getLogger("streamrip")
     if verbose:
         install(
             console=console,
-            suppress=[
-                click,
-            ],
+            suppress=[click],
             show_locals=True,
             locals_hide_sunder=False,
         )

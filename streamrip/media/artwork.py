@@ -72,28 +72,12 @@ async def download_artwork(
 ) -> tuple[str | None, str | None]:
     """Download artwork and update passed Covers object with filepaths.
 
-    If paths for the selected sizes already exist in `covers`, nothing will
-    be downloaded.
-
-    If `for_playlist` is set, it will not download hires cover art regardless
-    of the config setting.
+    Returns (path to embedded artwork, path to hires artwork). Sizes whose
+    path `covers` already has are not downloaded again.
 
     Embedded artworks are put in unique temporary directories under `folder`
-    that can be deleted once the download session is done.
-
-    Hi-res (saved) artworks are kept in `folder` as "cover.jpg".
-
-    Args:
-    ----
-        session (aiohttp.ClientSession):
-        folder (str):
-        covers (Covers):
-        config (ArtworkConfig):
-        for_playlist (bool): Set to disable saved hires covers.
-
-    Returns:
-    -------
-        (path to embedded artwork, path to hires artwork)
+    that can be deleted once the download session is done. Hi-res (saved)
+    artworks are kept in `folder` as "cover.jpg", except `for_playlist`.
     """
     save_artwork, embed = config.save_artwork, config.embed
     if for_playlist:
@@ -146,37 +130,15 @@ async def download_artwork(
 
 
 def downscale_image(input_image_path: str, max_dimension: int):
-    """Downscale an image in place given a maximum allowed dimension.
-
-    Args:
-    ----
-        input_image_path (str): Path to image
-        max_dimension (int): Maximum dimension allowed
-
-    Returns:
-    -------
-
-
+    """Shrink an image in place, keeping its aspect ratio, so that neither
+    side is longer than max_dimension.
     """
-    # Open the image
     image = Image.open(input_image_path)
-
-    # Get the original width and height
     width, height = image.size
-
     if max_dimension >= max(width, height):
         return
-
-    # Calculate the new dimensions while maintaining the aspect ratio
     if width > height:
-        new_width = max_dimension
-        new_height = int(height * (max_dimension / width))
+        size = (max_dimension, int(height * (max_dimension / width)))
     else:
-        new_height = max_dimension
-        new_width = int(width * (max_dimension / height))
-
-    # Resize the image with the new dimensions
-    resized_image = image.resize((new_width, new_height))
-
-    # Save the resized image
-    resized_image.save(input_image_path)
+        size = (int(width * (max_dimension / height)), max_dimension)
+    image.resize(size).save(input_image_path)

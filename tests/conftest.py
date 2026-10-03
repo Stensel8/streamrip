@@ -1,12 +1,36 @@
+import os
 from contextlib import nullcontext
 from unittest.mock import AsyncMock
 
 import pytest
+from util import arun
 
-import streamrip.media.artist as artist_module
 import streamrip.media.semaphore as semaphore_module
 from streamrip import __version__
+from streamrip.client.qobuz import QobuzClient
+from streamrip.config import Config
 from streamrip.console import console
+
+
+@pytest.fixture(scope="session")
+def qobuz_client():
+    """A logged-in Qobuz client, for the tests that need a real account
+    (QOBUZ_USER_ID and QOBUZ_AUTH_TOKEN; they're skipped without them).
+    """
+    if "QOBUZ_USER_ID" not in os.environ or "QOBUZ_AUTH_TOKEN" not in os.environ:
+        pytest.skip("Qobuz user ID and auth token are required.")
+    config = Config.defaults()
+    config.session.qobuz.user_id = os.environ["QOBUZ_USER_ID"]
+    config.session.qobuz.auth_token = os.environ["QOBUZ_AUTH_TOKEN"]
+    if "QOBUZ_APP_ID" in os.environ and "QOBUZ_SECRETS" in os.environ:
+        config.session.qobuz.app_id = os.environ["QOBUZ_APP_ID"]
+        config.session.qobuz.secrets = os.environ["QOBUZ_SECRETS"].split(",")
+    client = QobuzClient(config)
+    arun(client.login())
+
+    yield client
+
+    arun(client.session.close())
 
 
 @pytest.fixture(autouse=True)
@@ -20,20 +44,6 @@ def _reset_global_download_semaphore():
     semaphore_module._global_semaphore = None
     yield
     semaphore_module._global_semaphore = None
-
-
-@pytest.fixture(autouse=True)
-def _reset_album_window():
-    """The shared album window (media/artist.py) is built lazily against
-    whatever event loop is running on first use, and each test function
-    gets its own fresh loop (asyncio_default_fixture_loop_scope = "function"
-    in pyproject.toml) -- without a reset, the first test to touch it binds
-    the semaphore to its loop, and every later test's acquire() raises
-    "bound to a different event loop".
-    """
-    artist_module._album_window = None
-    yield
-    artist_module._album_window = None
 
 
 @pytest.fixture(autouse=True)

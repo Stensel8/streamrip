@@ -1,4 +1,5 @@
 import functools
+import re
 from typing import Optional, Type, TypeVar
 
 
@@ -18,6 +19,39 @@ def deezer_artists(resp: dict) -> list[str]:
     contributors = resp.get("contributors") or []
     names = [c["name"] for c in contributors if c.get("type") == "artist"]
     return names or [safe_get(resp, "artist", "name", default="Unknown Artist")]
+
+
+# A comma-separated word that is part of a name, not a credit role.
+_NAME_SUFFIXES = frozenset({"jr", "sr", "ii", "iii", "iv"})
+
+
+def qobuz_artists(resp: dict) -> list[str]:
+    """The credited artists of a Qobuz track response, one name each: the
+    main artists, then the featured ones (the order Tidal lists them in).
+
+    Qobuz's "performer" is a single display string ("A, B"), but "performers"
+    lists every credit as "Name, Role[, Role] - Name, Role ...", in no fixed
+    order: a clean and an explicit edition can list a feature first or last.
+    """
+    main: list[str] = []
+    featured: list[str] = []
+    for credit in (resp.get("performers") or "").split(" - "):
+        parts = [part.strip() for part in credit.split(",")]
+        # Roles are single CamelCase words after the name, which may itself
+        # contain commas ("Tyler, The Creator", "Smith, Jr").
+        roles: set[str] = set()
+        while (
+            len(parts) > 1
+            and re.fullmatch(r"[A-Za-z]+", parts[-1])
+            and parts[-1].lower() not in _NAME_SUFFIXES
+        ):
+            roles.add(parts.pop().lower())
+        name = ", ".join(parts)
+        if name and "mainartist" in roles:
+            main.append(name)
+        elif name and "featuredartist" in roles:
+            featured.append(name)
+    return list(dict.fromkeys(main + featured))
 
 
 def safe_get(dictionary, *keys, default=None):

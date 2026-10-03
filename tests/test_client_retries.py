@@ -237,3 +237,17 @@ async def test_bootstrap_does_not_parse_a_persistent_http_error():
         await c._get_text_with_retries("https://example.test/bundle.js")
     assert error.value.status == 503
     assert c.session.calls == client_module.MAX_API_ATTEMPTS
+
+
+@pytest.mark.asyncio
+async def test_a_bundle_without_seeds_fails_with_a_clear_error(monkeypatch):
+    """A changed bundle used to end in an opaque IndexError."""
+    client = _qobuz()
+    page = '<script src="/resources/1.2.3-a123/bundle.js"></script>'
+    bundle = 'production:{api:{appId:"123456789",appSecret:"' + "x" * 32 + '"'
+    session = _Session(_Response(body=page), _Response(body=bundle))
+    client.rate_limiter = _CountingLimiter()
+    monkeypatch.setattr("streamrip.client.qobuz.new_session", lambda **_: session)
+
+    with pytest.raises(Exception, match="app secrets"):
+        await client._get_app_id_and_secrets()

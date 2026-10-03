@@ -2,59 +2,51 @@ TIDAL_COVER_URL = "https://resources.tidal.com/images/{uuid}/{width}x{height}.jp
 
 
 class Covers:
-    COVER_SIZES = ("thumbnail", "small", "large", "original")
+    """An album's cover art: per size, a url and (once downloaded) a path."""
+
+    SIZES = ("original", "large", "small", "thumbnail")  # largest first
     CoverEntry = tuple[str, str | None, str | None]
-    _covers: list[CoverEntry]
 
     def __init__(self):
-        # ordered from largest to smallest
-        self._covers = [
-            ("original", None, None),
-            ("large", None, None),
-            ("small", None, None),
-            ("thumbnail", None, None),
-        ]
+        """Start with one empty entry per size."""
+        self._covers: list[Covers.CoverEntry] = [(s, None, None) for s in self.SIZES]
 
     def set_cover(self, size: str, url: str | None, path: str | None):
-        i = self._indexof(size)
-        self._covers[i] = (size, url, path)
+        """Set the URL and local path of one size."""
+        self._covers[self.SIZES.index(size)] = (size, url, path)
 
     def set_cover_url(self, size: str, url: str):
+        """Set the URL of one size, with no local path yet."""
         self.set_cover(size, url, None)
 
-    @staticmethod
-    def _indexof(size: str) -> int:
-        if size == "original":
-            return 0
-        if size == "large":
-            return 1
-        if size == "small":
-            return 2
-        if size == "thumbnail":
-            return 3
-        raise Exception(f"Invalid {size = }")
-
-    def empty(self) -> bool:
-        return all(url is None for _, url, _ in self._covers)
+    def set_path(self, size: str, path: str):
+        """Set the local path of one size, keeping its URL."""
+        _, url, _ = self._covers[self.SIZES.index(size)]
+        self.set_cover(size, url, path)
 
     def set_largest_path(self, path: str):
-        for size, url, _ in self._covers:
-            if url is not None:
-                self.set_cover(size, url, path)
-                return
-        raise Exception(f"No covers found in {self}")
+        """Set the local path of the largest cover that has a URL."""
+        size, url, _ = self.largest()
+        self.set_cover(size, url, path)
 
-    def set_path(self, size: str, path: str):
-        i = self._indexof(size)
-        size, url, _ = self._covers[i]
-        self._covers[i] = (size, url, path)
+    def empty(self) -> bool:
+        """Whether no size has a URL."""
+        return all(url is None for _, url, _ in self._covers)
 
     def largest(self) -> CoverEntry:
-        for s, u, p in self._covers:
-            if u is not None:
-                return (s, u, p)
+        """The largest cover that has a URL."""
+        return self._first_from(0)
 
-        raise Exception(f"No covers found in {self}")
+    def get_size(self, size: str) -> CoverEntry:
+        """The cover of this size, or else the next smaller one there is."""
+        return self._first_from(self.SIZES.index(size))
+
+    def _first_from(self, i: int) -> CoverEntry:
+        """The first entry with a URL from size index `i` down; raises if there is none."""
+        for entry in self._covers[i:]:
+            if entry[1] is not None:
+                return entry
+        raise Exception(f"No cover of size {self.SIZES[i]} or smaller in {self}")
 
     @classmethod
     def from_qobuz(cls, resp):
@@ -88,40 +80,18 @@ class Covers:
 
     @classmethod
     def from_tidal(cls, resp):
+        """The covers a Tidal response's `cover` id gives, or None without one."""
         uuid = resp["cover"]
         if not uuid:
             return None
 
         c = cls()
-        for size_name, dimension in zip(cls.COVER_SIZES, (160, 320, 640, 1280)):
-            c.set_cover_url(size_name, cls._get_tidal_cover_url(uuid, dimension))
+        for size, px in zip(cls.SIZES, (1280, 640, 320, 160)):
+            url = TIDAL_COVER_URL.format(
+                uuid=uuid.replace("-", "/"), width=px, height=px
+            )
+            c.set_cover_url(size, url)
         return c
-
-    def get_size(self, size: str) -> CoverEntry:
-        i = self._indexof(size)
-        size, url, path = self._covers[i]
-        if url is not None:
-            return (size, url, path)
-        if i + 1 < len(self._covers):
-            for s, u, p in self._covers[i + 1 :]:
-                if u is not None:
-                    return (s, u, p)
-        raise Exception(f"Cover not found for {size = }. Available: {self}")
-
-    @staticmethod
-    def _get_tidal_cover_url(uuid, size):
-        """Generate a tidal cover url.
-
-        :param uuid: VALID uuid string
-        :param size:
-        """
-        possibles = (80, 160, 320, 640, 1280)
-        assert size in possibles, f"size must be in {possibles}"
-        return TIDAL_COVER_URL.format(
-            uuid=uuid.replace("-", "/"),
-            height=size,
-            width=size,
-        )
 
     def __repr__(self):
         covers = "\n".join(map(repr, self._covers))

@@ -3,11 +3,13 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from playwright.async_api import Error as PlaywrightError
 
+from streamrip.rip import browser_login
 from streamrip.rip import qobuz_token_capture as capture
 
 
 @pytest.fixture
 def browser_flow(monkeypatch):
+    """A fake browser, context and page that log in at once."""
     browser = AsyncMock()
     context = browser.new_context.return_value
     page = context.new_page.return_value
@@ -16,7 +18,7 @@ def browser_flow(monkeypatch):
     manager.__aenter__.return_value.chromium.launch.return_value = browser
     monkeypatch.setattr("playwright.async_api.async_playwright", lambda: manager)
     launch = AsyncMock(return_value=(browser, "test-browser"))
-    monkeypatch.setattr(capture, "_launch_installed_chromium", launch)
+    monkeypatch.setattr(browser_login, "launch_installed_chromium", launch)
     return manager, launch, browser, page
 
 
@@ -44,10 +46,13 @@ async def test_browser_setup_errors_allow_manual_fallback(browser_flow, stage):
 async def test_downloaded_browser_launch_error_allows_manual_fallback(
     monkeypatch, browser_flow
 ):
+    """If the downloaded browser can't be launched either, the capture fails in a way
+    the prompter can fall back from.
+    """
     manager, launch, _, _ = browser_flow
     launch.return_value = (None, None)
-    monkeypatch.setattr(capture.Confirm, "ask", MagicMock(return_value=True))
-    monkeypatch.setattr(capture, "_download_playwright_chromium", AsyncMock())
+    monkeypatch.setattr(browser_login.Confirm, "ask", MagicMock(return_value=True))
+    monkeypatch.setattr(browser_login, "download_playwright_chromium", AsyncMock())
     manager.__aenter__.return_value.chromium.launch.side_effect = PlaywrightError(
         "Browser launch failed"
     )
