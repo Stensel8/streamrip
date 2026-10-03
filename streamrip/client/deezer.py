@@ -370,7 +370,10 @@ class DeezerClient(Client):
                 # The quality actually served, which fixes the file extension.
                 dl_info["quality"] = tier
                 break
-            if not self.config.lower_quality_if_not_available:
+            # A size listed but no URL is a failed request (deezer-py maps a 429
+            # to None), not a format Deezer doesn't serve: stepping down would
+            # silently swap in a lower one.
+            if size_map[tier] > 0 or not self.config.lower_quality_if_not_available:
                 break
 
         if not url:
