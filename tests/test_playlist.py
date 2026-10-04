@@ -284,3 +284,108 @@ async def test_remote_playlist_title_is_checked_before_tracks_are_created(
     if name == "..":
         query.assert_not_awaited()
     assert not (tmp_path / "music").exists()
+
+
+def _served_from(requested, served):
+    """A Deezer client serving `requested` through the track `served`."""
+
+    def track(id, title, cover):
+        resp = _deezer_track(position=1, disc=1)
+        resp.update(id=int(id), title=title)
+        resp["album"] = {
+            **resp["album"],
+            "title": f"{title} album",
+            **{f"cover_{s}": cover for s in ("xl", "big", "medium", "small")},
+        }
+        return resp
+
+    responses = {
+        served: track(served, "Served", "https://c/real-cover.jpg"),
+        # Last, so it wins when the track is served as requested.
+        requested: track(requested, "Requested", "https://c/placeholder.jpg"),
+    }
+    client = MagicMock()
+    client.source = "deezer"
+    client.get_metadata = AsyncMock(side_effect=lambda id, _type: responses[id])
+    client.get_downloadable = AsyncMock(return_value=MagicMock(id=served))
+    db = MagicMock()
+    db.downloaded.return_value = False
+    config = Config.defaults()
+    config.session.metadata.set_playlist_to_album = False
+    return PendingPlaylistTrack(requested, client, config, "/x", "Mix", 1, db)
+
+
+def _covers_downloaded(artwork):
+    return [c.args[2].get_size("large")[1] for c in artwork.await_args_list]
+
+
+@pytest.mark.asyncio
+async def test_fallback_served_track_takes_the_served_tracks_metadata(monkeypatch):
+    """A geoblocked or delisted track is served from FALLBACK.SNG_ID's release.
+
+    Its own metadata no longer describes the file, and its cover is Deezer's
+    grey placeholder. Seen on a real 60-track playlist: 9 tracks served from a
+    fallback, 3 of them pointing at the placeholder.
+    """
+    artwork = AsyncMock(return_value=(None, None))
+    monkeypatch.setattr("streamrip.media.playlist.download_artwork", artwork)
+    pending = _served_from("7", "99")
+
+    track = await pending.resolve()
+
+    assert track.meta.title == "Served"
+    assert track.meta.album.album == "Served album"
+    # One cover, the served release's: the placeholder is not even fetched.
+    assert _covers_downloaded(artwork) == ["https://c/real-cover.jpg"]
+    pending.db.set_failed.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_track_served_as_requested_keeps_its_metadata(monkeypatch):
+    artwork = AsyncMock(return_value=(None, None))
+    monkeypatch.setattr("streamrip.media.playlist.download_artwork", artwork)
+    pending = _served_from("7", "7")
+
+    track = await pending.resolve()
+
+    assert track.meta.title == "Requested"
+    assert _covers_downloaded(artwork) == ["https://c/placeholder.jpg"]
+    assert pending.client.get_metadata.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_unreadable_served_track_keeps_the_requested_metadata(monkeypatch):
+    artwork = AsyncMock(return_value=(None, None))
+    monkeypatch.setattr("streamrip.media.playlist.download_artwork", artwork)
+    pending = _served_from("7", "99")
+    first = pending.client.get_metadata.side_effect
+
+    async def failing_for_served(id, _type):
+        if id == "99":
+            raise NonStreamableError("gone")
+        return first(id, _type)
+
+    pending.client.get_metadata = AsyncMock(side_effect=failing_for_served)
+
+    track = await pending.resolve()
+
+    assert track.meta.title == "Requested"
+    # The served id is not the database's business: nothing recorded for it.
+    pending.db.set_failed.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_fallback_served_track_is_recorded_under_the_requested_id(monkeypatch):
+    """Re-running the playlist must skip it, as it did before the served metadata."""
+    monkeypatch.setattr(
+        "streamrip.media.playlist.download_artwork",
+        AsyncMock(return_value=(None, None)),
+    )
+    monkeypatch.setattr("streamrip.media.track.tag_file", AsyncMock())
+    pending = _served_from("7", "99")
+
+    track = await pending.resolve()
+    await track.postprocess()
+
+    assert track.meta.title == "Served"  # tags still come from the served track
+    pending.db.set_downloaded.assert_called_once_with("7")
