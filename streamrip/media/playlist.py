@@ -82,6 +82,9 @@ class PendingPlaylistTrack(Pending):
         served = getattr(downloadable, "id", None)
         if served is not None and str(served) != str(self.id):
             meta = await self._served_track_meta(str(served)) or meta
+            # Tags and cover come from the served track; the database, `repair`
+            # and the summary know the playlist's entry, so they keep its id.
+            meta.info.id = self.id
 
         album, c = meta.album, self.config.session
         if c.metadata.renumber_playlist_tracks:
@@ -120,7 +123,7 @@ class PendingPlaylistTrack(Pending):
         except Exception as e:
             logger.warning(
                 "Track %s is served from %s, whose metadata could not be read "
-                "(%s: %s); keeping the requested track's",
+                "(%s: %s); keeping the requested track's metadata",
                 self.id,
                 served_id,
                 type(e).__name__,

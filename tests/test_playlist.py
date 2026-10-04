@@ -382,3 +382,20 @@ async def test_unreadable_served_track_keeps_the_requested_metadata(monkeypatch)
     assert track.meta.title == "Requested"
     # The served id is not the database's business: nothing recorded for it.
     pending.db.set_failed.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_fallback_served_track_is_recorded_under_the_requested_id(monkeypatch):
+    """Re-running the playlist must skip it, as it did before the served metadata."""
+    monkeypatch.setattr(
+        "streamrip.media.playlist.download_artwork",
+        AsyncMock(return_value=(None, None)),
+    )
+    monkeypatch.setattr("streamrip.media.track.tag_file", AsyncMock())
+    pending = _served_from("7", "99")
+
+    track = await pending.resolve()
+    await track.postprocess()
+
+    assert track.meta.title == "Served"  # tags still come from the served track
+    pending.db.set_downloaded.assert_called_once_with("7")
