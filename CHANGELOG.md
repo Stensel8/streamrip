@@ -3,6 +3,71 @@
 All notable changes in this fork of [nathom/streamrip](https://github.com/nathom/streamrip). Numbers can refer to
 upstream issues and pull requests.
 
+## 2.4.9
+
+Thanks to [@berettavexee](https://github.com/berettavexee) for the resume check,
+the SoundCloud fallback, the Deezer playlist fix and the traceback fix below.
+
+### Search
+
+- One menu for every OS. The separate Linux/macOS and Windows menus
+  (`simple-term-menu`, `pick`, `windows-curses`) are replaced by a single
+  [Textual](https://textual.textualize.io) menu that works the same everywhere.
+  Filter the results with `/`, mark several with `SPACE`; `ENTER` downloads the
+  marked results and the highlighted one. The mouse works too.
+- The selected result's cover shows beside its details. Terminals with SIXEL or
+  Kitty graphics support (Konsole, foot and Windows Terminal, for example) get
+  the image, the others colored sextant blocks, which are less sharp. Detection
+  is automatic, and the choice is logged with `-v`. Covers are fetched on demand
+  with a small cache, and moving on cancels the pending request. A source's
+  larger artwork is tried first, its smaller sizes are the fallbacks.
+
+### Downloading
+
+- A resumed download is checked against the server's `Content-Range`. A server
+  answering from another offset, a remainder that does not add up to the
+  announced total, a close-delimited answer cut short, or a 416 taken as
+  "already complete" whatever the partial file's size, used to end as a corrupt
+  file. Now the partial file is removed and the track fails with
+  `IncompleteDownloadError`, so the next attempt starts from scratch instead of
+  resuming onto the same mismatch
+  ([PR #28](https://github.com/Stensel8/streamrip/pull/28), by
+  [@berettavexee](https://github.com/berettavexee)).
+
+### Deezer
+
+- A geoblocked or delisted playlist track, which Deezer serves from another
+  release, is tagged from the track that is served. It kept the requested
+  track's metadata before, so the file got the album, title and cover of a
+  release it does not come from. For such releases Deezer has no cover, only a
+  grey placeholder, and that is what ended up embedded. The cover is fetched
+  after the track is resolved, so only the right one is downloaded
+  ([PR #36](https://github.com/Stensel8/streamrip/pull/36), by
+  [@berettavexee](https://github.com/berettavexee)).
+
+### SoundCloud
+
+- A track marked downloadable no longer fails outright. Its original now comes
+  back as a 401 with an empty body when asked anonymously, which crashed with a
+  `ContentTypeError`. The track's MP3 stream is used instead, and a track
+  without one is reported as not streamable instead of failing an assertion
+  ([PR #34](https://github.com/Stensel8/streamrip/pull/34), by
+  [@berettavexee](https://github.com/berettavexee)).
+
+### Command line
+
+- `-v` tracebacks no longer print local variables. They included the Deezer
+  `arl` after a failed login and every config, credentials and all, and a
+  traceback is exactly what people paste into an issue. The stack itself is
+  unchanged
+  ([PR #35](https://github.com/Stensel8/streamrip/pull/35), by
+  [@berettavexee](https://github.com/berettavexee)).
+
+### Python
+
+- streamrip supports Python 3.14 and 3.15, not newer: `requires-python` is now
+  `>=3.14,<3.16`. CI runs the tests and the install check on both.
+
 ## 2.4.8
 
 Thanks to [@berettavexee](https://github.com/berettavexee) for the Deezer quality fix and the FLAC cover fix below.
