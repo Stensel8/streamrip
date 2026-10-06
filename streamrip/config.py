@@ -5,7 +5,7 @@ import copy
 import logging
 import os
 import tempfile
-from dataclasses import dataclass, fields, is_dataclass
+from dataclasses import MISSING, dataclass, fields, is_dataclass
 from pathlib import Path
 from typing import ClassVar
 
@@ -163,6 +163,8 @@ class CliConfig:
 
     progress_bars: bool
     max_search_results: int
+    # Not in the config unless the user adds it: see the template.
+    no_update_check: bool = False
 
 
 HOME = Path.home()
@@ -239,7 +241,17 @@ def _section_fields():
 
 def update_toml_section_from_config(toml_section, config):
     for field in fields(config):
-        toml_section[field.name] = getattr(config, field.name)
+        value = getattr(config, field.name)
+        # An option the file leaves out (commented out in the template) stays
+        # out while it has its default. Written back, it would sit beside the
+        # commented line, and uncommenting that is a duplicate key.
+        if (
+            field.name not in toml_section
+            and field.default is not MISSING
+            and value == field.default
+        ):
+            continue
+        toml_section[field.name] = value
 
 
 class Config:

@@ -45,7 +45,7 @@ def test_help_lists_commands(tmp_path, capsys):
         rip, ["--config-path", str(tmp_path / "config.toml"), "--help"]
     )
     assert result.exit_code == 0
-    output = capsys.readouterr().out
+    output = _output(result, capsys)
     assert (
         "A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, and SoundCloud."
         in " ".join(output.split())
@@ -98,7 +98,7 @@ def test_database_clear_downloads_leaves_failed_alone(tmp_path, capsys):
     assert result.exit_code == 0, result.output
     assert downloads.all() == []
     assert len(failed.all()) == 1
-    assert "Cleared 2 downloaded track(s)" in capsys.readouterr().out
+    assert "Cleared 2 downloaded track(s)" in _output(result, capsys)
 
 
 def test_database_clear_all(tmp_path):
@@ -120,7 +120,7 @@ def test_database_clear_asks_first_and_can_be_declined(tmp_path, capsys):
     result = _clear(cfg, "downloads", input="n\n")
     assert result.exit_code == 0, result.output
     assert len(downloads.all()) == 2
-    assert "Clear aborted" in capsys.readouterr().out
+    assert "Clear aborted" in _output(result, capsys)
 
 
 def test_database_clear_when_confirmed(tmp_path):
@@ -135,7 +135,7 @@ def test_database_clear_with_nothing_to_clear(tmp_path, capsys):
     downloads.clear()
     result = _clear(cfg, "downloads")
     assert result.exit_code == 0, result.output
-    assert "Nothing to clear" in capsys.readouterr().out
+    assert "Nothing to clear" in _output(result, capsys)
 
 
 def test_database_clear_rejects_an_unknown_table(tmp_path):
@@ -150,7 +150,7 @@ def test_database_browse_failed_lines_up_with_its_headers(tmp_path, capsys):
         rip, ["--config-path", cfg, "database", "browse", "failed"]
     )
     assert result.exit_code == 0, result.output
-    lines = capsys.readouterr().out.splitlines()
+    lines = _output(result, capsys).splitlines()
     header = next(line for line in lines if "Source" in line)
     row = next(line for line in lines if "tidal" in line)
     cells = dict(
@@ -232,13 +232,22 @@ def _run_url_with_a_newer_version_available(tmp_path, monkeypatch, raise_during_
     )
 
 
-def _printed(result, capsys) -> str:
-    """Everything the run printed, with Rich's line wrapping and spacing undone.
+def _output(result, capsys) -> str:
+    """Everything the run printed, whichever capture it landed in.
 
-    Depending on how the tests are run, Rich's output lands in Click's capture or in
-    pytest's, and a long path (a deep venv) wraps over lines.
+    Rich's output goes to Click's capture or to pytest's, depending on how the
+    tests are run (`log_cli` in pyproject.toml, or a Rich spinner earlier in
+    the run, change which), so tests must not assume one.
     """
-    return "".join((result.output + capsys.readouterr().out).split())
+    return result.output + capsys.readouterr().out
+
+
+def _printed(result, capsys) -> str:
+    """The output, with Rich's line wrapping and spacing undone.
+
+    A long path (a deep venv) wraps over lines.
+    """
+    return "".join(_output(result, capsys).split())
 
 
 def test_update_notice_prints_after_a_clean_download(tmp_path, monkeypatch, capsys):
@@ -321,15 +330,6 @@ def _broken_config(tmp_path) -> str:
     return str(path)
 
 
-@pytest.fixture
-def no_update_check(monkeypatch):
-    monkeypatch.setattr(
-        "streamrip.rip.cli.latest_streamrip_version",
-        AsyncMock(side_effect=RuntimeError("offline")),
-    )
-
-
-@pytest.mark.usefixtures("no_update_check")
 @pytest.mark.parametrize(
     "command",
     [
@@ -363,7 +363,6 @@ def test_a_config_that_does_not_load_fails_the_command(tmp_path, capsys, command
     assert "Errorloadingconfig" in _printed(result, capsys)
 
 
-@pytest.mark.usefixtures("no_update_check")
 def test_a_config_that_does_not_load_can_still_be_reset(tmp_path):
     # The commands that fix the config must keep working without one.
     cfg = _broken_config(tmp_path)
@@ -410,7 +409,6 @@ class _RepairMain:
             self.database.set_downloaded(source, item_id)
 
 
-@pytest.mark.usefixtures("no_update_check")
 def test_repair_matches_failures_by_source_and_id(tmp_path, monkeypatch, capsys):
     cfg, downloads, failed = _seeded_databases(tmp_path)
     failed.add(("qobuz", "track", "3"))  # the same id as the Tidal failure
@@ -428,7 +426,6 @@ def test_repair_matches_failures_by_source_and_id(tmp_path, monkeypatch, capsys)
     assert "Repaired1/2item(s)" in _printed(result, capsys)
 
 
-@pytest.mark.usefixtures("no_update_check")
 def test_repair_with_nothing_downloaded_keeps_every_failure(tmp_path, monkeypatch):
     cfg, _downloads, failed = _seeded_databases(tmp_path)
     _RepairMain.downloaded = []
@@ -440,7 +437,6 @@ def test_repair_with_nothing_downloaded_keeps_every_failure(tmp_path, monkeypatc
     assert failed.all() == [("tidal", "track", "3")]
 
 
-@pytest.mark.usefixtures("no_update_check")
 def test_database_browse_downloads_shows_each_rows_source(tmp_path, capsys):
     cfg, downloads, _failed = _seeded_databases(tmp_path)  # holds bare "1" and "2"
     downloads.add(("tidal_9",))
@@ -454,3 +450,107 @@ def test_database_browse_downloads_shows_each_rows_source(tmp_path, capsys):
     assert "Source" in out
     assert out.count("unknown") == 2  # the two rows from before sources
     assert "tidal" in out
+
+
+def _config_with_no_update_check(tmp_path, value="true") -> str:
+    path = tmp_path / "config.toml"
+    set_user_defaults(str(path))
+    path.write_text(
+        path.read_text().replace(
+            "# no_update_check = true", f"no_update_check = {value}"
+        )
+    )
+    return str(path)
+
+
+def _update_check(monkeypatch) -> AsyncMock:
+    check = AsyncMock(return_value=("99.0.0", None, True))
+    monkeypatch.setattr("streamrip.rip.cli.latest_streamrip_version", check)
+    return check
+
+
+def test_the_update_check_runs_unless_the_config_turns_it_off(tmp_path, monkeypatch):
+    check = _update_check(monkeypatch)
+    cfg = str(tmp_path / "config.toml")
+    set_user_defaults(cfg)
+
+    result = CliRunner().invoke(rip, ["--config-path", cfg, "config", "path"])
+
+    assert result.exit_code == 0, result.output
+    check.assert_awaited_once()
+
+
+@pytest.mark.parametrize("path_option", ["separate", "equals"])
+@pytest.mark.parametrize("command", [["config", "path"], ["--help"], ["--version"]])
+def test_no_update_check_in_the_config_skips_the_check(
+    tmp_path, monkeypatch, command, path_option
+):
+    # --help and --version never reach the group's callback, where the config
+    # is loaded, but they are checked too and so are skipped too.
+    check = _update_check(monkeypatch)
+    cfg = _config_with_no_update_check(tmp_path)
+    option = (
+        ["--config-path", cfg]
+        if path_option == "separate"
+        else [f"--config-path={cfg}"]
+    )
+
+    result = CliRunner().invoke(rip, [*option, *command])
+
+    assert result.exit_code == 0, result.output
+    check.assert_not_awaited()
+
+
+@pytest.mark.parametrize("value", ["false", '"true"', "1"])
+def test_only_a_real_true_turns_the_check_off(tmp_path, monkeypatch, value):
+    check = _update_check(monkeypatch)
+    cfg = _config_with_no_update_check(tmp_path, value)
+
+    CliRunner().invoke(rip, ["--config-path", cfg, "config", "path"])
+
+    check.assert_awaited_once()
+
+
+def test_a_config_that_cannot_be_read_does_not_turn_the_check_off(
+    tmp_path, monkeypatch
+):
+    check = _update_check(monkeypatch)
+    cfg = tmp_path / "config.toml"
+    cfg.write_text("this is [not toml")
+
+    CliRunner().invoke(rip, ["--config-path", str(cfg), "config", "path"])
+
+    check.assert_awaited_once()
+
+
+def test_an_update_notice_does_not_come_when_the_check_is_off(
+    tmp_path, monkeypatch, capsys
+):
+    _update_check(monkeypatch)
+    _FakeMain.to_raise = None
+    monkeypatch.setattr("streamrip.rip.cli.Main", _FakeMain)
+    cfg = _config_with_no_update_check(tmp_path)
+
+    result = CliRunner().invoke(rip, ["--config-path", cfg, "url", "https://example"])
+
+    assert result.exit_code == 0, result.output
+    assert "v99.0.0" not in _printed(result, capsys)
+
+
+@pytest.mark.parametrize("git_installed", [True, False])
+def test_the_update_notice_says_it_needs_git(
+    tmp_path, monkeypatch, capsys, git_installed
+):
+    # `pip install git+https://...` fails without it ("Cannot find command 'git'").
+    monkeypatch.setattr(
+        "streamrip.rip.cli.shutil.which",
+        lambda name: "/usr/bin/git" if name == "git" and git_installed else None,
+    )
+
+    result = _run_url_with_a_newer_version_available(tmp_path, monkeypatch, None)
+
+    assert result.exit_code == 0, result.output
+    out = _printed(result, capsys)
+    assert "Thisneedsgit" in out
+    assert ("notfound" in out) is not git_installed
+    assert ("git-scm.com/downloads" in out) is not git_installed
