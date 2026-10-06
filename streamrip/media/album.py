@@ -148,7 +148,8 @@ class PendingAlbum(Pending):
         # Tracks already in the database would each be skipped, and logged, one
         # by one. Say so once for the album instead, and don't fetch a cover or
         # make a folder for an album with nothing left to download.
-        todo = [track_id for track_id in tracklist if not self.db.downloaded(track_id)]
+        source = self.client.source
+        todo = [t for t in tracklist if not self.db.downloaded(source, t)]
         done = len(tracklist) - len(todo)
         folder = album_folder(self.config, self.client.source, meta)
         if tracklist and not todo:

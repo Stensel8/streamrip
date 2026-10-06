@@ -25,6 +25,7 @@ def _page(html="<p>login</p>", cookies=None):
     return handler
 
 
+@pytest.mark.real_browser
 async def test_reads_the_httponly_arl_cookie(serve):
     """The arl is read although it is HttpOnly."""
     url = await serve({"/": _page(cookies={"arl": "the-arl"})})
@@ -35,6 +36,7 @@ async def test_reads_the_httponly_arl_cookie(serve):
     assert arl == "the-arl"
 
 
+@pytest.mark.real_browser
 async def test_catches_an_arl_that_appears_after_a_delay(serve):
     """An arl set a moment after the page loads is still caught."""
     html = "<script>setTimeout(() => fetch('/logged-in'), 1500)</script>"
@@ -48,6 +50,7 @@ async def test_catches_an_arl_that_appears_after_a_delay(serve):
     assert arl == "delayed-arl"
 
 
+@pytest.mark.real_browser
 async def test_other_cookies_of_the_session_are_not_enough(serve):
     """Only the arl counts as a login.
 
@@ -61,6 +64,7 @@ async def test_other_cookies_of_the_session_are_not_enough(serve):
         await capture_deezer_arl_via_browser(timeout_s=2, login_url=url, headless=True)
 
 
+@pytest.mark.real_browser
 async def test_times_out_when_never_logged_in(serve):
     """Without a login the capture gives up with its own error."""
     url = await serve({"/": _page()})

@@ -193,3 +193,6 @@ fallback_source = ""
 progress_bars = true
 # The maximum number of search results to show in the interactive menu
 max_search_results = 100
+# streamrip asks GitHub for a newer release before every command. Uncomment this
+# to stop that, for a machine without internet access or a script that runs often.
+# no_update_check = true
