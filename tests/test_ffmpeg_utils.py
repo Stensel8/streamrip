@@ -2,10 +2,22 @@ import sys
 import types
 from unittest.mock import patch
 
+import pytest
+
 from streamrip.utils.ffmpeg_utils import find_ffmpeg
 
 
 def _clear_cache():
+    find_ffmpeg.cache_clear()
+
+
+@pytest.fixture(autouse=True)
+def _forget_what_the_tests_made_it_find():
+    """find_ffmpeg caches: a fake path (or None) must not outlive its test.
+
+    Left in the cache, it made every later test that really needs ffmpeg fail.
+    """
+    yield
     find_ffmpeg.cache_clear()
 
 
