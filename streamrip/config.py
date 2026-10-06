@@ -1,8 +1,10 @@
 """Classes and functions that manage config state."""
 
+import contextlib
 import copy
 import logging
 import os
+import tempfile
 from dataclasses import dataclass, fields, is_dataclass
 from pathlib import Path
 from typing import ClassVar
@@ -275,16 +277,33 @@ class Config:
 
 
 def _write_config(path: str, toml: TOMLDocument):
-    """Write toml to path, securing its permissions before any contents."""
+    """Write toml to path in one step, private from its first byte.
+
+    The contents go to a temporary file next to it, which replaces the config
+    only once it is complete. A crash, a Ctrl-C or a full disk part way
+    through leaves the old config, tokens and all, instead of a truncated one.
+    """
     contents = dumps(toml)
-    # Set the creation mode atomically, even with a permissive umask. Do not
-    # truncate an existing file until its permissions have been secured.
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT, 0o600)
-    with os.fdopen(fd, "w") as f:
-        if os.name == "posix":
-            os.fchmod(f.fileno(), 0o600)
-        f.truncate(0)
-        f.write(contents)
+    # A symlinked config (kept in a dotfiles repo, say) is written through, not
+    # replaced by a regular file.
+    target = os.path.realpath(path)
+    # mkstemp creates the file 0600 whatever the umask, so there is no moment
+    # at which the new tokens are readable by others.
+    fd, tmp_path = tempfile.mkstemp(
+        dir=os.path.dirname(target), prefix=".config-", suffix=".tmp"
+    )
+    try:
+        with os.fdopen(fd, "w") as f:
+            if os.name == "posix":
+                os.fchmod(f.fileno(), 0o600)
+            f.write(contents)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, target)
+    except BaseException:
+        with contextlib.suppress(FileNotFoundError):
+            os.remove(tmp_path)
+        raise
 
 
 def set_user_defaults(path: str, /):

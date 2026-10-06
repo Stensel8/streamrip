@@ -7,7 +7,7 @@ import tomlkit
 from click.testing import CliRunner
 
 from streamrip import db
-from streamrip.config import set_user_defaults
+from streamrip.config import Config, set_user_defaults
 from streamrip.rip.cli import _upgrade_command, is_newer_version, rip
 
 
@@ -311,3 +311,65 @@ async def test_update_check_inside_event_loop_does_not_block_click(
     assert getcoroutinestate(coroutine) == CORO_CLOSED
     check.assert_not_awaited()
     notice.assert_not_called()
+
+
+def _broken_config(tmp_path) -> str:
+    """A config this version cannot load: an option it has no field for."""
+    path = tmp_path / "config.toml"
+    set_user_defaults(str(path))
+    path.write_text(path.read_text().replace("[cli]", "[cli]\nbogus = 1", 1))
+    return str(path)
+
+
+@pytest.fixture
+def no_update_check(monkeypatch):
+    monkeypatch.setattr(
+        "streamrip.rip.cli.latest_streamrip_version",
+        AsyncMock(side_effect=RuntimeError("offline")),
+    )
+
+
+@pytest.mark.usefixtures("no_update_check")
+@pytest.mark.parametrize(
+    "command",
+    [
+        ["url", "https://example"],
+        ["file", "{urls}"],
+        ["id", "qobuz", "track", "1"],
+        ["search", "qobuz", "album", "rumours"],
+        ["lastfm", "https://www.last.fm/user/x/playlists/1"],
+        ["repair"],
+        ["database", "browse", "downloads"],
+        ["database", "clear", "downloads", "-y"],
+    ],
+    ids=lambda command: " ".join(command[:2]),
+)
+def test_a_config_that_does_not_load_fails_the_command(tmp_path, capsys, command):
+    # Exit 0 told scripts and cron that a run which did nothing had worked.
+    urls = tmp_path / "urls.txt"
+    urls.write_text("https://example\n")
+    cfg = _broken_config(tmp_path)
+
+    result = CliRunner().invoke(
+        rip,
+        [
+            "--config-path",
+            cfg,
+            *(arg.replace("{urls}", str(urls)) for arg in command),
+        ],
+    )
+
+    assert result.exit_code == 1, result.output
+    assert "Errorloadingconfig" in _printed(result, capsys)
+
+
+@pytest.mark.usefixtures("no_update_check")
+def test_a_config_that_does_not_load_can_still_be_reset(tmp_path):
+    # The commands that fix the config must keep working without one.
+    cfg = _broken_config(tmp_path)
+
+    for command in (["config", "path"], ["config", "reset", "-y"]):
+        result = CliRunner().invoke(rip, ["--config-path", cfg, *command])
+        assert result.exit_code == 0, result.output
+
+    Config(cfg)  # loads now

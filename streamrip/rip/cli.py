@@ -104,6 +104,20 @@ async def main_session(ctx):
             yield main
 
 
+def _require_config(ctx) -> Config:
+    """The config of a command that cannot run without one.
+
+    `rip()` leaves it None when the file does not load, so that `config reset`
+    and `config path` still work to fix it, and has already said why. Every
+    other command ends here with exit code 1, so a script or cron job sees
+    the failure instead of a run that quietly did nothing.
+    """
+    cfg: Config | None = ctx.obj["config"]
+    if cfg is None:
+        ctx.exit(1)
+    return cfg
+
+
 def _print_update_notice(
     latest_version: str, notes: str | None, is_release: bool
 ) -> None:
@@ -284,8 +298,7 @@ def rip(
 @coro
 async def url(ctx, urls):
     """Download content from URLs."""
-    if ctx.obj["config"] is None:
-        return
+    _require_config(ctx)
 
     async with main_session(ctx) as main:
         await main.add_all(urls)
@@ -308,8 +321,7 @@ async def file(ctx, path):
 
         streamrip file urls.txt
     """
-    if ctx.obj["config"] is None:
-        return
+    _require_config(ctx)
     async with main_session(ctx) as main:
         async with aiofiles.open(path, "r") as f:
             content = await f.read()
@@ -414,9 +426,7 @@ def database_browse(ctx, table):
     """
     from rich.table import Table
 
-    cfg: Config | None = ctx.obj["config"]
-    if cfg is None:
-        return
+    cfg = _require_config(ctx)
 
     if table.lower() == "downloads":
         t = Table("Row", "ID", title="Downloads database")
@@ -452,9 +462,7 @@ def database_clear(ctx, table, yes):
 
         * all: both
     """
-    cfg: Config | None = ctx.obj["config"]
-    if cfg is None:
-        return
+    cfg = _require_config(ctx)
 
     tables = []
     if table in ("downloads", "all"):
@@ -539,10 +547,7 @@ async def repair(ctx, yes, flat):
     folder so they rejoin the album they were originally missing from. Pass
     --flat to put them in the download folder instead.
     """
-    if ctx.obj["config"] is None:
-        return
-
-    with ctx.obj["config"] as cfg:
+    with _require_config(ctx) as cfg:
         cfg: Config
         # A repaired track is nearly always a track missing from an album that
         # was otherwise downloaded, so it needs to land in that album's folder
@@ -646,12 +651,11 @@ async def search(ctx, first, output_file, num_results, source, media_type, query
 
         streamrip search qobuz album 'rumours'
     """
-    if ctx.obj["config"] is None:
-        return
+    cfg = _require_config(ctx)
     if first and output_file:
         console.print("Cannot choose --first and --output-file!")
         return
-    limit = num_results or ctx.obj["config"].session.cli.max_search_results
+    limit = num_results or cfg.session.cli.max_search_results
     async with main_session(ctx) as main:
         if first:
             await main.search_take_first(source, media_type, query)
@@ -675,9 +679,7 @@ async def search(ctx, first, output_file, num_results, source, media_type, query
 @coro
 async def lastfm(ctx, source, fallback_source, url):
     """Download tracks from a last.fm playlist."""
-    if ctx.obj["config"] is None:
-        return
-    config = ctx.obj["config"]
+    config = _require_config(ctx)
     if source is not None:
         config.session.lastfm.source = source
     if fallback_source is not None:
@@ -695,8 +697,7 @@ async def lastfm(ctx, source, fallback_source, url):
 @coro
 async def id(ctx, source, media_type, id):
     """Download an item by ID."""
-    if ctx.obj["config"] is None:
-        return
+    _require_config(ctx)
     async with main_session(ctx) as main:
         await main.add_by_id(source, media_type, id)
         await main.resolve()
