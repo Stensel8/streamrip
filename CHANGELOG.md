@@ -3,6 +3,50 @@
 All notable changes in this fork of [nathom/streamrip](https://github.com/nathom/streamrip). Numbers can refer to
 upstream issues and pull requests.
 
+## 2.4.11 (unreleased)
+
+### Spotify
+
+- **Spotify links can be downloaded**: tracks, albums, artists and playlists, as
+  `open.spotify.com` links or `spotify:` URIs, and `streamrip search spotify
+  track|album|artist|playlist ...`. Spotify encrypts its own audio, so streamrip
+  does what [spotDL](https://github.com/spotDL/spotify-downloader) does: Spotify
+  supplies the track list, tags (title, artists, album, track and disc numbers,
+  date, copyright, ISRC) and cover, and the audio is the same recording on
+  YouTube Music, found by ISRC and then by artist, title and length, and
+  downloaded with yt-dlp. It is AAC (kept as it is) or MP3, never lossless, and a
+  track YouTube Music only has as another version (live, remix, ...) is reported
+  as not found. See the new Spotify section of the README, which also lists what
+  Spotify allows an app.
+- **You make a Spotify app of your own, and log in once.** Since February 2026
+  Spotify's API is only open to apps whose owner has Premium, with a client id
+  and no secret: streamrip asks for the Client ID the first time, explains where
+  to make the app (the redirect URI, ticking Web API), opens your browser to log
+  in (OAuth with PKCE) and catches the answer on `127.0.0.1:9900`, or lets you
+  paste the address where the browser ends up, on a server without a browser. The
+  login renews itself and is saved in the new `[spotify]` section.
+- Playlists are limited by Spotify to the ones you own or collaborate on. Other
+  playlists, and podcasts and local files, are skipped, with a message that says
+  why. Searching is capped at 50 results (Spotify gives ten per request).
+- The new `[spotify]` options: `audio_format` (`m4a` or `mp3`), `audio_bitrate`
+  (for audio that has to be re-encoded), `match_videos` (accept an official music
+  video when YouTube Music has no matching song) and `redirect_uri`.
+- A config from before this release has no `[spotify]` section: it is added from
+  the template, and written the next time the config is saved. No `config reset`.
+- New dependencies: `ytmusicapi` and `yt-dlp[default]`. yt-dlp wants a
+  JavaScript runtime (Deno or Node.js) for YouTube; a download that fails saying
+  so is explained as such.
+- Credits are at the bottom of the README: the login and API handling and the
+  matching are those of [Music-Sync](https://github.com/Stensel8/Music-Sync), the
+  idea of metadata from Spotify and audio from YouTube Music is spotDL's, and
+  [MediaHarbor](https://github.com/MediaHarbor/mediaharbor) was read as a
+  reference. Its decryption of Spotify's Widevine-protected audio is not used.
+
+### Tests
+
+- `find_ffmpeg` is cached, and `test_ffmpeg_utils` left a fake path, or none, in
+  the cache for the tests after it. They are forgotten after each test now.
+
 ## 2.4.10
 
 ### Security
