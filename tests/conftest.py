@@ -11,6 +11,7 @@ from streamrip import __version__
 from streamrip.client.qobuz import QobuzClient
 from streamrip.config import Config
 from streamrip.console import console
+from streamrip.rip.interactive import Confirm
 
 
 @pytest.fixture(scope="session")
@@ -100,3 +101,47 @@ async def serve():
     yield start
     for runner in runners:
         await runner.cleanup()
+
+
+@pytest.fixture(scope="session")
+def _installed_browser() -> str | None:
+    """The Chrome-family browser the real-browser tests drive, if there is one."""
+    from playwright.async_api import async_playwright
+
+    from streamrip.rip.browser_login import launch_installed_chromium
+
+    async def probe():
+        async with async_playwright() as pw:
+            browser, name = await launch_installed_chromium(pw, headless=True)
+            if browser is not None:
+                await browser.close()
+            return name
+
+    return arun(probe())
+
+
+def _no_prompt(*_args, **_kwargs):
+    pytest.fail("A test must never wait for an answer on stdin", pytrace=False)
+
+
+@pytest.fixture(autouse=True)
+def _real_browser(request, monkeypatch):
+    """Run a `real_browser` test only where a browser is installed.
+
+    Without one, the code under test stops to ask on stdin whether to download
+    Playwright's own, which no test can answer. Such a test is skipped, and
+    fails on CI (GitHub's runners have Chrome): there, a skip would quietly
+    turn the coverage off if the runner image ever lost it.
+    """
+    if request.node.get_closest_marker("real_browser") is None:
+        return
+    if request.getfixturevalue("_installed_browser") is None:
+        message = (
+            "needs a Chrome-family browser (Chrome, Edge, Chromium, Brave...) "
+            "installed; deselect these tests with -m 'not real_browser'"
+        )
+        if os.environ.get("CI"):
+            pytest.fail(message, pytrace=False)
+        pytest.skip(message)
+    # With a browser found, a prompt means something is wrong: fail, don't hang.
+    monkeypatch.setattr(Confirm, "ask", staticmethod(_no_prompt))

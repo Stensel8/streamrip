@@ -77,7 +77,9 @@ def _pending_album(monkeypatch, tmp_path, tracklist, downloaded):
     client.get_metadata = AsyncMock(return_value={})
     db = MagicMock()
     db.skipped_now = 0
-    db.downloaded.side_effect = lambda track_id: track_id in downloaded
+    db.downloaded.side_effect = lambda source, track_id: (
+        source == "tidal" and track_id in downloaded
+    )
     config = MagicMock()
     config.session.downloads.folder = str(tmp_path)
     artwork = AsyncMock(return_value=("cover.jpg", None))

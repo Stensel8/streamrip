@@ -20,6 +20,7 @@ from streamrip.config import (
     QobuzConfig,
     SoundcloudConfig,
     TidalConfig,
+    set_user_defaults,
 )
 
 SAMPLE_CONFIG = "tests/test_config.toml"
@@ -218,3 +219,55 @@ def test_old_misc_section_still_loads():
     data = ConfigData.from_toml(tomlkit.dumps(doc))
     data.update_toml()
     assert data.toml["misc"]["version"] == "2.3.3"
+
+
+def test_no_update_check_is_commented_out_in_the_template():
+    # Off by default, and visible: a user finds the option by reading the file.
+    text = open("streamrip/config.toml").read()
+
+    assert "\n# no_update_check = true\n" in text
+    assert "no_update_check" not in tomlkit.parse(text)["cli"]
+    assert Config.defaults().session.cli.no_update_check is False
+
+
+def test_no_update_check_can_be_turned_on_in_the_config(tmp_path):
+    path = tmp_path / "config.toml"
+    set_user_defaults(str(path))
+    path.write_text(
+        path.read_text().replace("# no_update_check = true", "no_update_check = true")
+    )
+
+    assert Config(str(path)).session.cli.no_update_check is True
+
+
+def test_saving_does_not_write_out_an_option_the_file_leaves_out(tmp_path):
+    # Written beside the commented line, it would make uncommenting that a
+    # duplicate key, and the config would not load.
+    path = tmp_path / "config.toml"
+    set_user_defaults(str(path))
+    config = Config(str(path))
+    config.file.deezer.arl = "synthetic-cookie"
+    config.file.set_modified()
+
+    config.save_file()
+
+    saved = path.read_text()
+    assert "\n# no_update_check = true\n" in saved
+    assert "\nno_update_check" not in saved
+    path.write_text(saved.replace("# no_update_check = true", "no_update_check = true"))
+    assert Config(str(path)).session.cli.no_update_check is True
+
+
+def test_saving_keeps_an_option_the_user_set(tmp_path):
+    path = tmp_path / "config.toml"
+    set_user_defaults(str(path))
+    path.write_text(
+        path.read_text().replace("# no_update_check = true", "no_update_check = true")
+    )
+    config = Config(str(path))
+    config.file.deezer.arl = "synthetic-cookie"
+    config.file.set_modified()
+
+    config.save_file()
+
+    assert Config(str(path)).session.cli.no_update_check is True

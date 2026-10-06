@@ -307,7 +307,9 @@ def _served_from(requested, served):
     client = MagicMock()
     client.source = "deezer"
     client.get_metadata = AsyncMock(side_effect=lambda id, _type: responses[id])
-    client.get_downloadable = AsyncMock(return_value=MagicMock(id=served))
+    client.get_downloadable = AsyncMock(
+        return_value=MagicMock(id=served, source="deezer")
+    )
     db = MagicMock()
     db.downloaded.return_value = False
     config = Config.defaults()
@@ -388,4 +390,4 @@ async def test_fallback_served_track_is_recorded_under_the_requested_id(monkeypa
     await track.postprocess()
 
     assert track.meta.title == "Served"  # tags still come from the served track
-    pending.db.set_downloaded.assert_called_once_with("7")
+    pending.db.set_downloaded.assert_called_once_with("deezer", "7")

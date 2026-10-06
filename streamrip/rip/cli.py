@@ -7,6 +7,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import tomllib
 from contextlib import asynccontextmanager, closing
 from functools import wraps
 from typing import Any
@@ -34,10 +35,15 @@ logger = logging.getLogger("streamrip")
 
 # Where this build of streamrip comes from, for update checks and advice.
 REPOSITORY = "Stensel8/streamrip"
+GIT_DOWNLOADS = "https://git-scm.com/downloads"
 
 
 def _upgrade_command(version: str, *, is_release: bool = True) -> str:
-    """Install the detected release tag or the default branch used as fallback."""
+    """Install the detected release tag or the default branch used as fallback.
+
+    The command installs from a git URL, so it needs git (pip cannot do
+    without it; uv sometimes can).
+    """
     ref = f"v{version}" if is_release else "HEAD"
     target = f"git+https://github.com/{REPOSITORY}.git@{ref}"
     uv = shutil.which("uv")
@@ -104,6 +110,30 @@ async def main_session(ctx):
             yield main
 
 
+def _require_config(ctx) -> Config:
+    """The config of a command that cannot run without one.
+
+    `rip()` leaves it None when the file does not load, so that `config reset`
+    and `config path` still work to fix it, and has already said why. Every
+    other command ends here with exit code 1, so a script or cron job sees
+    the failure instead of a run that quietly did nothing.
+    """
+    cfg: Config | None = ctx.obj["config"]
+    if cfg is None:
+        ctx.exit(1)
+    return cfg
+
+
+def _git_note() -> str:
+    """Tell the user the update command needs git, and warn if it is not there."""
+    if shutil.which("git"):
+        return "[dim]This needs git.[/dim]"
+    return (
+        "[yellow]This needs git, which was not found on your PATH. "
+        f"Install it first: {GIT_DOWNLOADS}[/yellow]"
+    )
+
+
 def _print_update_notice(
     latest_version: str, notes: str | None, is_release: bool
 ) -> None:
@@ -115,9 +145,38 @@ def _print_update_notice(
         f"[white][bold]"
         f"{_upgrade_command(latest_version, is_release=is_release)}"
         "[/bold][/white]\n"
+        f"{_git_note()}\n"
     )
     if notes:
         console.print(Markdown(notes))
+
+
+def _config_path_from(command_line: list[str] | None) -> str:
+    """The --config-path of a command line, or the default.
+
+    The update check runs before Click has parsed anything, so the config it
+    reads has to be found here.
+    """
+    args = sys.argv[1:] if command_line is None else list(command_line)
+    for i, arg in enumerate(args):
+        if arg == "--config-path" and i + 1 < len(args):
+            return args[i + 1]
+        if arg.startswith("--config-path="):
+            return arg.partition("=")[2]
+    return DEFAULT_CONFIG_PATH
+
+
+def _update_check_disabled(config_path: str) -> bool:
+    """Whether the config at config_path has `no_update_check = true` in [cli].
+
+    It reads that one key and nothing else. A config that cannot be read
+    leaves the check on: `rip()` is what reports a broken config.
+    """
+    try:
+        with open(config_path, "rb") as f:
+            return tomllib.load(f).get("cli", {}).get("no_update_check") is True
+    except OSError, tomllib.TOMLDecodeError:
+        return False
 
 
 class _StreamripGroup(HelpColorsGroup):
@@ -127,22 +186,27 @@ class _StreamripGroup(HelpColorsGroup):
     subcommand before the group's own callback (`rip()` below) ever runs --
     so a check placed there misses all three. `main()` is Click's actual
     entry point, called before any of that, for every invocation alike:
-    one check, called unconditionally, covers all of them (asked for
-    explicitly, 2026-09-30).
+    one check covers all of them (asked for explicitly, 2026-09-30). Only
+    `no_update_check = true` in the config turns it off, which is why `main()`
+    reads that key itself.
     """
 
     def main(self, *args, **kwargs):
         """Check for updates, run the command, then print a notice if newer."""
         notice = None
-        try:
-            with console.status("streamrip: Checking for updates...", spinner="dots"):
-                # Close the coroutine even if run() rejects an active event loop.
-                with closing(latest_streamrip_version()) as check:
-                    latest_version, notes, is_release = asyncio.run(check)
-            if is_newer_version(latest_version):
-                notice = (latest_version, notes, is_release)
-        except Exception as exc:
-            logger.debug("Could not check for updates: %s", exc)
+        command_line = args[0] if args else kwargs.get("args")
+        if not _update_check_disabled(_config_path_from(command_line)):
+            try:
+                with console.status(
+                    "streamrip: Checking for updates...", spinner="dots"
+                ):
+                    # Close the coroutine even if run() rejects an active event loop.
+                    with closing(latest_streamrip_version()) as check:
+                        latest_version, notes, is_release = asyncio.run(check)
+                if is_newer_version(latest_version):
+                    notice = (latest_version, notes, is_release)
+            except Exception as exc:
+                logger.debug("Could not check for updates: %s", exc)
         try:
             return super().main(*args, **kwargs)
         finally:
@@ -284,8 +348,7 @@ def rip(
 @coro
 async def url(ctx, urls):
     """Download content from URLs."""
-    if ctx.obj["config"] is None:
-        return
+    _require_config(ctx)
 
     async with main_session(ctx) as main:
         await main.add_all(urls)
@@ -308,8 +371,7 @@ async def file(ctx, path):
 
         streamrip file urls.txt
     """
-    if ctx.obj["config"] is None:
-        return
+    _require_config(ctx)
     async with main_session(ctx) as main:
         async with aiofiles.open(path, "r") as f:
             content = await f.read()
@@ -414,13 +476,18 @@ def database_browse(ctx, table):
     """
     from rich.table import Table
 
-    cfg: Config | None = ctx.obj["config"]
-    if cfg is None:
-        return
+    cfg = _require_config(ctx)
 
     if table.lower() == "downloads":
-        t = Table("Row", "ID", title="Downloads database")
-        rows = db.Downloads(cfg.session.database.downloads_path).all()
+        t = Table("Row", "Source", "ID", title="Downloads database")
+        # A row from before ids carried their source has none to show.
+        rows = [
+            (source or "unknown", item_id)
+            for source, item_id in (
+                db.split_download_key(key)
+                for (key,) in db.Downloads(cfg.session.database.downloads_path).all()
+            )
+        ]
     else:
         t = Table(
             "Row", "Source", "Media Type", "ID", title="Failed downloads database"
@@ -452,9 +519,7 @@ def database_clear(ctx, table, yes):
 
         * all: both
     """
-    cfg: Config | None = ctx.obj["config"]
-    if cfg is None:
-        return
+    cfg = _require_config(ctx)
 
     tables = []
     if table in ("downloads", "all"):
@@ -539,10 +604,7 @@ async def repair(ctx, yes, flat):
     folder so they rejoin the album they were originally missing from. Pass
     --flat to put them in the download folder instead.
     """
-    if ctx.obj["config"] is None:
-        return
-
-    with ctx.obj["config"] as cfg:
+    with _require_config(ctx) as cfg:
         cfg: Config
         # A repaired track is nearly always a track missing from an album that
         # was otherwise downloaded, so it needs to land in that album's folder
@@ -550,9 +612,11 @@ async def repair(ctx, yes, flat):
         # in-memory session copy, so config.toml is left alone.
         if not flat:
             cfg.session.filepaths.add_singles_to_folder = True
-        failed_db = db.Failed(cfg.session.database.failed_downloads_path)
-        downloads_db = db.Downloads(cfg.session.database.downloads_path)
-        failed_items = failed_db.all()
+        database = db.Database(
+            db.Downloads(cfg.session.database.downloads_path),
+            db.Failed(cfg.session.database.failed_downloads_path),
+        )
+        failed_items = database.failed.all()
 
         if not failed_items:
             console.print("[green]No failed downloads to repair!")
@@ -566,8 +630,8 @@ async def repair(ctx, yes, flat):
         # A failed item should never also be logged as downloaded, but older
         # versions of streamrip could mark one downloaded even after it
         # failed. Clear that stale state so the retry below isn't skipped.
-        for _source, _media_type, item_id in failed_items:
-            downloads_db.remove(id=item_id)
+        for source, _media_type, item_id in failed_items:
+            database.forget_downloaded(source, item_id)
 
         async with Main(cfg) as main:
             # Retry through the album rather than track by track. Resolving a
@@ -597,12 +661,12 @@ async def repair(ctx, yes, flat):
         # only reached via postprocess(), which a failed download never gets
         # to, so an item in the downloads db now is one that just succeeded.
         repaired = [
-            item_id
-            for _, _, item_id in failed_items
-            if downloads_db.contains(id=item_id)
+            (source, media_type, item_id)
+            for source, media_type, item_id in failed_items
+            if database.downloaded(source, item_id)
         ]
-        for item_id in repaired:
-            failed_db.remove(id=item_id)
+        for source, media_type, item_id in repaired:
+            database.forget_failed(source, media_type, item_id)
 
         console.print(
             f"[green]Repaired {len(repaired)}/{len(failed_items)} item(s).[/green]"
@@ -646,12 +710,11 @@ async def search(ctx, first, output_file, num_results, source, media_type, query
 
         streamrip search qobuz album 'rumours'
     """
-    if ctx.obj["config"] is None:
-        return
+    cfg = _require_config(ctx)
     if first and output_file:
         console.print("Cannot choose --first and --output-file!")
         return
-    limit = num_results or ctx.obj["config"].session.cli.max_search_results
+    limit = num_results or cfg.session.cli.max_search_results
     async with main_session(ctx) as main:
         if first:
             await main.search_take_first(source, media_type, query)
@@ -675,9 +738,7 @@ async def search(ctx, first, output_file, num_results, source, media_type, query
 @coro
 async def lastfm(ctx, source, fallback_source, url):
     """Download tracks from a last.fm playlist."""
-    if ctx.obj["config"] is None:
-        return
-    config = ctx.obj["config"]
+    config = _require_config(ctx)
     if source is not None:
         config.session.lastfm.source = source
     if fallback_source is not None:
@@ -695,8 +756,7 @@ async def lastfm(ctx, source, fallback_source, url):
 @coro
 async def id(ctx, source, media_type, id):
     """Download an item by ID."""
-    if ctx.obj["config"] is None:
-        return
+    _require_config(ctx)
     async with main_session(ctx) as main:
         await main.add_by_id(source, media_type, id)
         await main.resolve()

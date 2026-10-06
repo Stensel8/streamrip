@@ -6,6 +6,8 @@ from streamrip.rip.qobuz_token_capture import (
     capture_qobuz_auth_token_via_browser,
 )
 
+pytestmark = pytest.mark.real_browser
+
 
 def _page(html: str):
     """A handler that answers with `html`."""

@@ -3,6 +3,51 @@
 All notable changes in this fork of [nathom/streamrip](https://github.com/nathom/streamrip). Numbers can refer to
 upstream issues and pull requests.
 
+## 2.4.10
+
+### Security
+
+- An album folder can no longer end up outside the downloads folder. Names from
+  a streaming service decided where it went: a field that came out empty in a
+  folder format like `{albumartist}/{title}` gave `/Title`, a folder in the root
+  of the filesystem, and an artist or uploader called `..` (SoundCloud names are
+  free text) gave `../Title`. Empty parts of a folder path are dropped now,
+  `.` and `..` become underscores, both kinds of slash separate folders, and a
+  folder that is not below the downloads folder is refused.
+
+### Downloading
+
+- SoundCloud tracks are skipped when already downloaded. They were downloaded
+  again on every run.
+- The downloads database keeps ids per source (`tidal_2430924980`, not
+  `2430924980`). A track was skipped as downloaded as soon as one of another
+  source with the same id had been, which gets likelier the more you download.
+  Entries from before hold the bare id, cannot be told apart and still count for
+  every source, so nothing is downloaded again after updating;
+  `streamrip database clear downloads` forgets them.
+  `streamrip database browse downloads` shows the source.
+- The failed downloads database is unique per source too. A failure of one
+  source kept another's with the same id out of it, and `streamrip repair`
+  removed both. An existing database is converted on first use.
+
+### Configuration
+
+- Saving the config is atomic. A crash, Ctrl-C or full disk could leave an empty
+  file with your logins gone. A symlinked config stays a symlink.
+- `no_update_check = true` under `[cli]` turns the update check off. It is
+  commented out in the config by default.
+
+### Command line
+
+- A config that does not load ends the command with exit code 1, not 0.
+- The update notice says its command needs git.
+
+### Tests
+
+- The browser login tests are skipped without a Chrome-family browser, and
+  fail on CI, instead of waiting for an answer on stdin.
+  `pytest -m "not real_browser"` leaves them out.
+
 ## 2.4.9
 
 Thanks to [@berettavexee](https://github.com/berettavexee) for the resume check,

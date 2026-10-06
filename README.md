@@ -164,7 +164,10 @@ as an image; the others fall back to colored blocks, which are less sharp.
 Report problems in the [issue tracker](https://github.com/Stensel8/streamrip/issues),
 with the Bug Report or Feature Request template. For code, `poetry install --all-extras`
 sets things up; `poetry run pytest` and `poetry run ruff check . && poetry run ruff format .`
-should pass before you open a pull request to `dev`.
+should pass before you open a pull request to `dev`. A few tests drive a real
+Chrome-family browser (Chrome, Edge, Chromium, Brave...); they are skipped when
+there is none, and CI fails if its runner has none. `pytest -m "not real_browser"`
+leaves them out.
 
 ## Acknowledgements
 
