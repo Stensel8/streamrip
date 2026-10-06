@@ -373,3 +373,84 @@ def test_a_config_that_does_not_load_can_still_be_reset(tmp_path):
         assert result.exit_code == 0, result.output
 
     Config(cfg)  # loads now
+
+
+class _RepairMain:
+    """A Main whose retry downloads `downloaded`, marking them as the real one does."""
+
+    downloaded: list[tuple[str, str]] = []
+    downloads_at_rip: list = []
+
+    def __init__(self, config):
+        c = config.session.database
+        self.database = db.Database(
+            db.Downloads(c.downloads_path), db.Failed(c.failed_downloads_path)
+        )
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_):
+        pass
+
+    async def get_logged_in_client(self, _source):
+        client = MagicMock()
+        client.get_metadata = AsyncMock(side_effect=Exception("no album"))
+        return client
+
+    async def add_all_by_id(self, _items):
+        pass
+
+    async def resolve(self):
+        pass
+
+    async def rip(self):
+        type(self).downloads_at_rip = self.database.downloads.all()
+        for source, item_id in type(self).downloaded:
+            self.database.set_downloaded(source, item_id)
+
+
+@pytest.mark.usefixtures("no_update_check")
+def test_repair_matches_failures_by_source_and_id(tmp_path, monkeypatch, capsys):
+    cfg, downloads, failed = _seeded_databases(tmp_path)
+    failed.add(("qobuz", "track", "3"))  # the same id as the Tidal failure
+    downloads.add(("3",))  # marked downloaded by a version that did that
+    _RepairMain.downloaded = [("tidal", "3")]
+    monkeypatch.setattr("streamrip.rip.cli.Main", _RepairMain)
+
+    result = CliRunner().invoke(rip, ["--config-path", cfg, "repair", "-y"])
+
+    assert result.exit_code == 0, result.output
+    # The stale row went before the retry, or the retry would be skipped.
+    assert ("3",) not in _RepairMain.downloads_at_rip
+    # Tidal 3 was repaired and Qobuz 3 was not: it stays for the next run.
+    assert failed.all() == [("qobuz", "track", "3")]
+    assert "Repaired1/2item(s)" in _printed(result, capsys)
+
+
+@pytest.mark.usefixtures("no_update_check")
+def test_repair_with_nothing_downloaded_keeps_every_failure(tmp_path, monkeypatch):
+    cfg, _downloads, failed = _seeded_databases(tmp_path)
+    _RepairMain.downloaded = []
+    monkeypatch.setattr("streamrip.rip.cli.Main", _RepairMain)
+
+    result = CliRunner().invoke(rip, ["--config-path", cfg, "repair", "-y"])
+
+    assert result.exit_code == 0, result.output
+    assert failed.all() == [("tidal", "track", "3")]
+
+
+@pytest.mark.usefixtures("no_update_check")
+def test_database_browse_downloads_shows_each_rows_source(tmp_path, capsys):
+    cfg, downloads, _failed = _seeded_databases(tmp_path)  # holds bare "1" and "2"
+    downloads.add(("tidal_9",))
+
+    result = CliRunner().invoke(
+        rip, ["--config-path", cfg, "database", "browse", "downloads"]
+    )
+
+    assert result.exit_code == 0, result.output
+    out = _printed(result, capsys)
+    assert "Source" in out
+    assert out.count("unknown") == 2  # the two rows from before sources
+    assert "tidal" in out

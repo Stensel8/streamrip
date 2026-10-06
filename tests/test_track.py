@@ -13,7 +13,13 @@ from streamrip.client.downloadable import Downloadable
 from streamrip.client.qobuz import QobuzClient
 from streamrip.config import Config
 from streamrip.exceptions import NonStreamableError
-from streamrip.media.track import PendingSingle, PendingTrack, Track, album_folder
+from streamrip.media.track import (
+    PendingSingle,
+    PendingTrack,
+    Track,
+    album_folder,
+    fetch_track_meta,
+)
 from streamrip.metadata import (
     AlbumInfo,
     AlbumMetadata,
@@ -374,3 +380,21 @@ async def test_partial_file_cleanup_failure_is_counted_once(tmp_path, monkeypatc
 
     assert track.db.failed_now == 1
     assert track.db.failed.all() == [("test", "track", "123")]
+
+
+async def test_a_downloaded_soundcloud_track_is_skipped_whatever_id_it_is_asked_for_by(
+    tmp_path,
+):
+    # SoundCloud ids carry the stream to fetch ("123|https://..."); the track
+    # is recorded under the number. A live run downloaded it again every time.
+    database = db.Database(db.Downloads(str(tmp_path / "downloads.db")), db.Dummy())
+    database.set_downloaded("soundcloud", "671678984")
+    client = MagicMock()
+    client.source = "soundcloud"
+    client.get_metadata = AsyncMock()
+
+    meta = await fetch_track_meta(client, database, "671678984|https://x/stream")
+
+    assert meta is None
+    assert database.skipped_now == 1
+    client.get_metadata.assert_not_called()

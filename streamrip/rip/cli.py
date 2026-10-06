@@ -429,8 +429,15 @@ def database_browse(ctx, table):
     cfg = _require_config(ctx)
 
     if table.lower() == "downloads":
-        t = Table("Row", "ID", title="Downloads database")
-        rows = db.Downloads(cfg.session.database.downloads_path).all()
+        t = Table("Row", "Source", "ID", title="Downloads database")
+        # A row from before ids carried their source has none to show.
+        rows = [
+            (source or "unknown", item_id)
+            for source, item_id in (
+                db.split_download_key(key)
+                for (key,) in db.Downloads(cfg.session.database.downloads_path).all()
+            )
+        ]
     else:
         t = Table(
             "Row", "Source", "Media Type", "ID", title="Failed downloads database"
@@ -555,9 +562,11 @@ async def repair(ctx, yes, flat):
         # in-memory session copy, so config.toml is left alone.
         if not flat:
             cfg.session.filepaths.add_singles_to_folder = True
-        failed_db = db.Failed(cfg.session.database.failed_downloads_path)
-        downloads_db = db.Downloads(cfg.session.database.downloads_path)
-        failed_items = failed_db.all()
+        database = db.Database(
+            db.Downloads(cfg.session.database.downloads_path),
+            db.Failed(cfg.session.database.failed_downloads_path),
+        )
+        failed_items = database.failed.all()
 
         if not failed_items:
             console.print("[green]No failed downloads to repair!")
@@ -571,8 +580,8 @@ async def repair(ctx, yes, flat):
         # A failed item should never also be logged as downloaded, but older
         # versions of streamrip could mark one downloaded even after it
         # failed. Clear that stale state so the retry below isn't skipped.
-        for _source, _media_type, item_id in failed_items:
-            downloads_db.remove(id=item_id)
+        for source, _media_type, item_id in failed_items:
+            database.forget_downloaded(source, item_id)
 
         async with Main(cfg) as main:
             # Retry through the album rather than track by track. Resolving a
@@ -602,12 +611,12 @@ async def repair(ctx, yes, flat):
         # only reached via postprocess(), which a failed download never gets
         # to, so an item in the downloads db now is one that just succeeded.
         repaired = [
-            item_id
-            for _, _, item_id in failed_items
-            if downloads_db.contains(id=item_id)
+            (source, media_type, item_id)
+            for source, media_type, item_id in failed_items
+            if database.downloaded(source, item_id)
         ]
-        for item_id in repaired:
-            failed_db.remove(id=item_id)
+        for source, media_type, item_id in repaired:
+            database.forget_failed(source, media_type, item_id)
 
         console.print(
             f"[green]Repaired {len(repaired)}/{len(failed_items)} item(s).[/green]"

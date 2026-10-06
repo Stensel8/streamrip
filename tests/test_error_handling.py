@@ -127,7 +127,7 @@ class TestErrorHandling:
 
             async def rip_discography():
                 for n in range(40):
-                    main.database.set_downloaded(str(n))
+                    main.database.set_downloaded("qobuz", str(n))
                 main.database.set_failed("qobuz", "track", "rider")
                 main.database.skipped_now += 3
 

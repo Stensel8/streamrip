@@ -1,9 +1,14 @@
+import os
 import re
 from string import printable
 
-from pathvalidate import sanitize_filename, sanitize_filepath  # type: ignore
+from pathvalidate import sanitize_filename  # type: ignore
 
 ALLOWED_CHARS = set(printable)
+
+# What separates the folders of a path template: both kinds of slash on every
+# system, since a template written on Windows has to work elsewhere too.
+_SEPARATORS = re.compile(r"[\\/]")
 
 # Most filesystems (ext4, APFS, NTFS) cap a single file or folder name at 255
 # bytes. Stay a little below it so suffixes streamrip adds while working
@@ -26,14 +31,45 @@ def clean_filename(fn: str, restrict: bool = False) -> str:
 
 
 def clean_filepath(fn: str, restrict: bool = False) -> str:
-    path = str(sanitize_filepath(fn))
-    if restrict:
-        path = "".join(c for c in path if c in ALLOWED_CHARS)
+    """Clean a relative folder path made from a template and metadata.
 
-    # A formatted folder name can exceed the per-name limit even when every
-    # field in it was truncated ("File name too long", upstream #856, #859).
-    parts = re.split(r"([\\/])", path)
-    return "".join(p if p in ("/", "\\") else truncate_str(p) for p in parts)
+    Every component is cleaned like a file name, which also keeps it within
+    the per-name limit ("File name too long", upstream #856, #859). None can
+    lead out of the folder the path is joined to: empty components (a leading
+    or doubled separator, or a field with nothing in it) are dropped and "."
+    and ".." become underscores. An artist called ".." is all it takes to turn
+    "{albumartist}/{title}" into "../Title".
+    """
+    parts = []
+    for part in _SEPARATORS.split(fn):
+        part = clean_filename(part, restrict)
+        if not part:
+            continue
+        if part in (".", ".."):
+            part = part.replace(".", "_")
+        parts.append(part)
+    return os.sep.join(parts) or "Unknown"
+
+
+def ensure_inside(root: str, path: str) -> str:
+    """Return path, or raise ValueError unless it is somewhere below root.
+
+    The paths are compared as written, `..` resolved but symlinks not
+    followed: a link the user made in the download folder, to an artist folder
+    on a NAS say, is theirs to make. Whatever streaming services send as
+    metadata cannot make one.
+    """
+    root_abs, path_abs = os.path.abspath(root), os.path.abspath(path)
+    try:
+        inside = (
+            path_abs != root_abs
+            and os.path.commonpath((root_abs, path_abs)) == root_abs
+        )
+    except ValueError:  # another drive, on Windows
+        inside = False
+    if not inside:
+        raise ValueError(f"{path!r} is not inside the download folder {root!r}")
+    return path
 
 
 def fit_filename(stem: str, extension: str) -> str:

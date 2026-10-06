@@ -12,7 +12,12 @@ from ..client import Client, Downloadable
 from ..config import Config
 from ..db import Database
 from ..exceptions import FFmpegNotFoundError, TrackDownloadFailedError
-from ..filepath_utils import clean_filename, clean_filepath, fit_filename
+from ..filepath_utils import (
+    clean_filename,
+    clean_filepath,
+    ensure_inside,
+    fit_filename,
+)
 from ..metadata import AlbumMetadata, TrackMetadata, tag_file
 from ..metadata.tagger import TAGGABLE_EXTENSIONS
 from ..metadata.util import format_quality
@@ -169,7 +174,9 @@ class Track(Media):
     async def postprocess(self):
         """Tag, convert, and dedup the downloaded file, then mark it downloaded."""
         if self._skip_lossy_duplicate:
-            self.db.set_downloaded(self.meta.info.id, new=False)
+            self.db.set_downloaded(
+                self.downloadable.source, self.meta.info.id, new=False
+            )
             self.db.skipped_now += 1
             return
 
@@ -191,7 +198,7 @@ class Track(Media):
                 )
 
         self._remove_lossy_copies()
-        self.db.set_downloaded(self.meta.info.id)
+        self.db.set_downloaded(self.downloadable.source, self.meta.info.id)
 
     async def _convert(self):
         c = self.config.session.conversion
@@ -280,13 +287,20 @@ class Track(Media):
 
 
 def album_folder(config: Config, source: str, album: AlbumMetadata) -> str:
-    """The folder an album's tracks go in."""
+    """The folder an album's tracks go in, inside the downloads folder.
+
+    Raises ValueError if it would be anywhere else: the names in it come from
+    a streaming service.
+    """
     c = config.session
     parent = c.downloads.folder
     if c.downloads.source_subdirectories:
         parent = os.path.join(parent, source.capitalize())
     folder = album.format_folder_path(c.filepaths.folder_format)
-    return os.path.join(parent, clean_filepath(folder, c.filepaths.restrict_characters))
+    return ensure_inside(
+        c.downloads.folder,
+        os.path.join(parent, clean_filepath(folder, c.filepaths.restrict_characters)),
+    )
 
 
 def _record_failure(db: Database, source: str, track_id: str, message: str):
@@ -304,11 +318,11 @@ async def fetch_track_meta(
 
     Without `album`, the album's metadata is read from the track's.
     """
-    if db.downloaded(track_id):
+    source = client.source
+    if db.downloaded(source, track_id):
         logger.info(f"Skipping track {track_id}. Marked as downloaded in the database.")
         db.skipped_now += 1
         return None
-    source = client.source
     try:
         resp = await client.get_metadata(track_id, "track")
         album = album or AlbumMetadata.from_track_resp(resp, source)
