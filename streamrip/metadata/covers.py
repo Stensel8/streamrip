@@ -79,6 +79,23 @@ class Covers:
         return c
 
     @classmethod
+    def from_spotify(cls, resp):
+        """The covers of a Spotify album: its `images`, which come in three sizes."""
+        images = sorted(
+            (i for i in resp.get("images") or [] if i.get("url")),
+            key=lambda i: i.get("width") or 0,
+            reverse=True,
+        )
+        c = cls()
+        if images:
+            smaller = images[min(1, len(images) - 1)]["url"]
+            c.set_cover_url("original", images[0]["url"])
+            c.set_cover_url("large", images[0]["url"])
+            c.set_cover_url("small", smaller)
+            c.set_cover_url("thumbnail", images[-1]["url"])
+        return c
+
+    @classmethod
     def from_tidal(cls, resp):
         """The covers a Tidal response's `cover` id gives, or None without one."""
         uuid = resp["cover"]

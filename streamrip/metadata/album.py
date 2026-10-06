@@ -42,6 +42,19 @@ def _deezer_quality(tier: int) -> dict:
     return {"quality": tier, "container": "MP3"}
 
 
+def _spotify_copyright(copyrights: list[dict] | None) -> str | None:
+    """Spotify's copyright lines as one: "(C) 2013 Label; (P) 2013 Label"."""
+    lines = []
+    for line in copyrights or []:
+        text = (line.get("text") or "").strip()
+        if not text:
+            continue
+        if not text.startswith((COPYRIGHT, PHON_COPYRIGHT, "(C)", "(P)")):
+            text = f"({line.get('type', 'C')}) {text}"
+        lines.append(text)
+    return "; ".join(lines) or None
+
+
 @dataclass(slots=True)
 class AlbumInfo:
     id: str
@@ -257,6 +270,39 @@ class AlbumMetadata:
         )
 
     @classmethod
+    def from_spotify(cls, resp: dict) -> AlbumMetadata:
+        """Build album metadata from a Spotify album, full or as a track lists it.
+
+        The audio is lossy (it comes from YouTube Music), so there is no bit
+        depth or sampling rate; SpotifyClient says which container it ends up in.
+        """
+        date = resp.get("release_date")
+        artists = [a["name"] for a in resp.get("artists") or [] if a.get("name")]
+        tracks = resp["tracks"] if isinstance(resp.get("tracks"), list) else []
+        discs = [t.get("disc_number") or 1 for t in tracks]
+        info = AlbumInfo(
+            id=str(resp["id"]),
+            quality=1,
+            container=resp.get("container") or "AAC",
+            label=resp.get("label"),
+        )
+        return cls(
+            info,
+            (resp.get("name") or "Unknown Album").strip(),
+            ", ".join(artists) or "Unknown Artist",
+            _year(date),
+            genre=list(resp.get("genres") or []),
+            covers=Covers.from_spotify(resp),
+            tracktotal=resp.get("total_tracks") or len(tracks) or 1,
+            # A track's own album does not say how many discs it has, but the
+            # track says which one it is on.
+            disctotal=max([*discs, resp.get("_disc_number") or 1]),
+            copyright=_spotify_copyright(resp.get("copyrights")),
+            date=date,
+            albumartists=artists or None,
+        )
+
+    @classmethod
     def from_tidal(cls, resp: dict) -> AlbumMetadata | None:
         """None if the album can't be streamed."""
         if not resp.get("allowStreaming", False):
@@ -336,6 +382,10 @@ class AlbumMetadata:
             if "tracks" not in resp["album"]:
                 return cls.from_incomplete_deezer_track_resp(resp)
             return cls.from_deezer(resp["album"])
+        if source == "spotify":
+            return cls.from_spotify(
+                resp["album"] | {"_disc_number": resp.get("disc_number")}
+            )
         raise Exception("Invalid source")
 
     @classmethod
@@ -348,4 +398,6 @@ class AlbumMetadata:
             return cls.from_soundcloud(resp)
         if source == "deezer":
             return cls.from_deezer(resp)
+        if source == "spotify":
+            return cls.from_spotify(resp)
         raise Exception("Invalid source")

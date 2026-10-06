@@ -19,6 +19,7 @@ from streamrip.config import (
     MetadataConfig,
     QobuzConfig,
     SoundcloudConfig,
+    SpotifyConfig,
     TidalConfig,
     set_user_defaults,
 )
@@ -94,6 +95,7 @@ def test_sample_config_data_fields(sample_config_data):
             client_id="clientid",
             app_version="appversion",
         ),
+        spotify=SpotifyConfig(),
         lastfm=LastFmConfig(source="qobuz", fallback_source=""),
         filepaths=FilepathsConfig(
             add_singles_to_folder=False,

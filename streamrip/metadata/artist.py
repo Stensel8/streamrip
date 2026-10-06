@@ -120,6 +120,9 @@ class ArtistMetadata:
             # Deezer's album list carries no track counts to tell a duplicate
             # listing from a single that shares an album's title.
             albums = resp["albums"]
+        elif source == "spotify":
+            # SpotifyClient already left out what the artist only appears on.
+            albums = resp["albums"]
         else:
             raise NotImplementedError
         return cls(resp["name"], [a["id"] for a in albums])

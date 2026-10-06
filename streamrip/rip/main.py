@@ -6,7 +6,14 @@ import sys
 import aiofiles
 
 from .. import db
-from ..client import Client, DeezerClient, QobuzClient, SoundcloudClient, TidalClient
+from ..client import (
+    Client,
+    DeezerClient,
+    QobuzClient,
+    SoundcloudClient,
+    SpotifyClient,
+    TidalClient,
+)
 from ..config import Config
 from ..console import console
 from ..exceptions import (
@@ -63,6 +70,7 @@ class Main:
             "tidal": TidalClient(config),
             "deezer": DeezerClient(config),
             "soundcloud": SoundcloudClient(config),
+            "spotify": SpotifyClient(config),
         }
         c = self.config.session.database
         self.database = db.Database(
@@ -327,7 +335,7 @@ class Main:
         for client in self.clients.values():
             if isinstance(client, TidalClient):
                 await client.close()  # both of its logins have a session
-            elif hasattr(client, "session"):
+            elif getattr(client, "session", None) is not None:
                 await client.session.close()
 
         # close global progress bar manager

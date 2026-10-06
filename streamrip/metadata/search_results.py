@@ -382,7 +382,7 @@ def _page_items(source: str, media_type: str, page: dict) -> list[dict]:
         return page[f"{media_type}s"]["items"]
     if source == "deezer":
         return page["data"]
-    if source == "tidal":
+    if source in ("tidal", "spotify"):
         return page["items"]
     raise NotImplementedError(source)
 

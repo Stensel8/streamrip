@@ -90,6 +90,7 @@ class TestErrorHandling:
             patch("streamrip.rip.main.TidalClient"),
             patch("streamrip.rip.main.DeezerClient"),
             patch("streamrip.rip.main.SoundcloudClient"),
+            patch("streamrip.rip.main.SpotifyClient"),
         ):
             main = Main(mock_config)
 
@@ -122,6 +123,7 @@ class TestErrorHandling:
             patch("streamrip.rip.main.TidalClient"),
             patch("streamrip.rip.main.DeezerClient"),
             patch("streamrip.rip.main.SoundcloudClient"),
+            patch("streamrip.rip.main.SpotifyClient"),
         ):
             main = Main(mock_config)
 
@@ -156,6 +158,7 @@ class TestErrorHandling:
             patch("streamrip.rip.main.TidalClient"),
             patch("streamrip.rip.main.DeezerClient"),
             patch("streamrip.rip.main.SoundcloudClient"),
+            patch("streamrip.rip.main.SpotifyClient"),
         ):
             main = Main(mock_config)
 
@@ -184,6 +187,7 @@ class TestErrorHandling:
             patch("streamrip.rip.main.TidalClient"),
             patch("streamrip.rip.main.DeezerClient"),
             patch("streamrip.rip.main.SoundcloudClient"),
+            patch("streamrip.rip.main.SpotifyClient"),
         ):
             main = Main(mock_config)
             main.clients["deezer"].search = AsyncMock(return_value=[{"data": []}])

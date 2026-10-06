@@ -580,6 +580,179 @@ class SoundcloudDownloadable(Downloadable):
         return await super().size()
 
 
+def _explain_ytdlp_error(error: Exception) -> str:
+    """yt-dlp's error as a message that says what to do about it, where it can."""
+    message = re.sub(r"^ERROR:\s*", "", str(error)).strip()
+    lowered = message.lower()
+    if "javascript runtime" in lowered or "n challenge" in lowered:
+        message += (
+            " (yt-dlp needs a JavaScript runtime to read YouTube: install Deno or "
+            "Node.js, see the Spotify section of the README)"
+        )
+    elif "sign in to confirm" in lowered:
+        message += (
+            " (YouTube asks this connection to prove it is not a bot: try again "
+            "later, or from another network)"
+        )
+    return message
+
+
+def _fetch_audio(url: str, directory: str, verify_ssl: bool, report, stop) -> str:
+    """Download the best audio of `url` into `directory` with yt-dlp.
+
+    Runs in a worker thread. The best AAC stream is taken (it is used as it is),
+    else the best audio there is. Returns the path of the file.
+    """
+    from yt_dlp import YoutubeDL
+    from yt_dlp.utils import DownloadCancelled, DownloadError
+
+    class Quiet:
+        """Keep yt-dlp's chatter out of the terminal; -v shows it."""
+
+        def debug(self, msg):
+            logger.debug("yt-dlp: %s", msg)
+
+        info = debug
+
+        def warning(self, msg):
+            logger.debug("yt-dlp warning: %s", msg)
+
+        def error(self, msg):
+            logger.debug("yt-dlp error: %s", msg)
+
+    sent = 0
+
+    def hook(status):
+        nonlocal sent
+        if stop.is_set():
+            raise DownloadCancelled
+        got = status.get("downloaded_bytes") or 0
+        # A small file may report nothing but "finished".
+        if status.get("status") in ("downloading", "finished") and got > sent:
+            report(got - sent)
+            sent = got
+
+    options = {
+        "format": "bestaudio[ext=m4a]/bestaudio/best",
+        "outtmpl": os.path.join(directory.replace("%", "%%"), "%(id)s.%(ext)s"),
+        "noplaylist": True,
+        "quiet": True,
+        "no_warnings": True,
+        "noprogress": True,
+        "logger": Quiet(),
+        "retries": 5,
+        "fragment_retries": 5,
+        "nocheckcertificate": not verify_ssl,
+        "progress_hooks": [hook],
+        # YouTube hides its streams behind a script that needs a JavaScript
+        # runtime; yt-dlp only looks for Deno unless it is told about the others.
+        "js_runtimes": {"deno": {}, "node": {}, "bun": {}, "quickjs": {}},
+    }
+    with YoutubeDL(options) as ydl:
+        try:
+            info = ydl.extract_info(url, download=True)
+        except DownloadError as e:
+            raise NonStreamableError(_explain_ytdlp_error(e)) from e
+    return info["requested_downloads"][0]["filepath"]
+
+
+class YtDlpDownloadable(Downloadable):
+    """Audio from YouTube (Music), for sources that only supply the metadata.
+
+    yt-dlp fetches the best audio. An AAC stream is saved as .m4a as it is;
+    anything else, or a wish for .mp3, is re-encoded by ffmpeg at `bitrate`.
+    """
+
+    EXTENSIONS = ("m4a", "mp3")
+
+    def __init__(
+        self,
+        session: aiohttp.ClientSession,
+        url: str,
+        extension: str = "m4a",
+        bitrate: int = 256,
+        source: str = "spotify",
+        verify_ssl: bool = True,
+    ):
+        """A download of `url`, saved as `extension` (m4a or mp3)."""
+        if extension not in self.EXTENSIONS:
+            raise ValueError(
+                f"Invalid audio format {extension!r}, use one of {self.EXTENSIONS}"
+            )
+        self.session = session
+        self.url = url
+        self.extension = extension
+        self.bitrate = bitrate
+        self.source = source
+        self.verify_ssl = verify_ssl
+
+    async def size(self) -> int:
+        """0: yt-dlp only knows once it has started, which makes the bar pulse."""
+        return self._size or 0
+
+    async def _download(self, path: str, callback):
+        """Fetch the audio with yt-dlp, then put it at path in the wanted format."""
+        ffmpeg_path = find_ffmpeg()
+        if ffmpeg_path is None:
+            raise FFmpegNotFoundError(
+                "ffmpeg not found, which the audio from YouTube needs"
+            )
+        loop = asyncio.get_running_loop()
+        stop = threading.Event()
+
+        def report(n: int):
+            try:
+                loop.call_soon_threadsafe(callback, n)
+            except RuntimeError:
+                pass  # loop already closed (interpreter shutting down)
+
+        directory = tempfile.mkdtemp(prefix="__streamrip_ytdlp_")
+        try:
+            try:
+                fetched = await asyncio.to_thread(
+                    _fetch_audio, self.url, directory, self.verify_ssl, report, stop
+                )
+            except asyncio.CancelledError:
+                # The thread cannot be cancelled; tell it to stop at the next chunk.
+                stop.set()
+                raise
+            if fetched.rsplit(".", 1)[-1].lower() == "m4a" == self.extension:
+                shutil.move(fetched, path)
+            else:
+                await self._encode(ffmpeg_path, fetched, path)
+        finally:
+            shutil.rmtree(directory, ignore_errors=True)
+
+    async def _encode(self, ffmpeg_path: str, source: str, path: str):
+        """Re-encode the fetched audio to the wanted format, without its old tags."""
+        codec = "aac" if self.extension == "m4a" else "libmp3lame"
+        proc = await asyncio.create_subprocess_exec(
+            ffmpeg_path,
+            "-y",
+            "-loglevel",
+            "error",
+            "-i",
+            source,
+            "-vn",
+            "-map_metadata",
+            "-1",
+            "-c:a",
+            codec,
+            "-b:a",
+            f"{self.bitrate}k",
+            path,
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr = await proc.communicate()
+        if proc.returncode != 0 or not os.path.isfile(path):
+            raise NonStreamableError(
+                f"ffmpeg failed to encode the audio as {self.extension} (exit "
+                f"{proc.returncode}): {stderr.decode(errors='replace')[-300:]}"
+            )
+
+
 async def concat_audio_files(paths: list[str], out: str, ext: str, max_files_open=128):
     """Concatenate audio files with ffmpeg, at most max_files_open at a time.
 

@@ -5,16 +5,29 @@ from abc import ABC, abstractmethod
 
 from click import launch
 
-from ..client import Client, DeezerClient, QobuzClient, SoundcloudClient, TidalClient
+from ..client import (
+    Client,
+    DeezerClient,
+    QobuzClient,
+    SoundcloudClient,
+    SpotifyClient,
+    TidalClient,
+)
+from ..client.spotify import DEVELOPER_DASHBOARD
 from ..config import Config
 from ..console import console
 from ..exceptions import AuthenticationError, MissingCredentialsError
 from .deezer_arl_capture import DeezerArlCaptureError, capture_deezer_arl_via_browser
-from .interactive import Prompt
+from .interactive import Confirm, Prompt
 from .qobuz_token_capture import (
     QobuzTokenCaptureError,
     capture_qobuz_auth_token,
     capture_qobuz_auth_token_via_browser,
+)
+from .spotify_login import (
+    SpotifyLoginError,
+    capture_code,
+    code_from_redirect_url,
 )
 
 logger = logging.getLogger("streamrip")
@@ -308,11 +321,102 @@ class SoundcloudPrompter(CredentialPrompter):
         pass
 
 
+class SpotifyPrompter(CredentialPrompter):
+    """Spotify wants an app of the user's own, and a login through the browser."""
+
+    client: SpotifyClient
+
+    def has_creds(self) -> bool:
+        c = self.config.session.spotify
+        return c.client_id != "" and c.refresh_token != ""
+
+    async def prompt_and_login(self):
+        """Ask for the app's client id unless one is saved, then log in."""
+        c = self.config.session.spotify
+        if not c.client_id:
+            self._explain_app()
+            while not c.client_id:
+                c.client_id = Prompt.ask(
+                    "Enter the Client ID of your Spotify app"
+                ).strip()
+        while True:
+            try:
+                await self._log_in()
+                return
+            except (SpotifyLoginError, AuthenticationError) as e:
+                console.print(f"[yellow]{e}")
+                if not Confirm.ask("Try again?", default=True):
+                    raise AuthenticationError("Spotify login cancelled.") from e
+
+    def _explain_app(self):
+        """Say what the user has to make, and where, before streamrip can log in."""
+        redirect_uri = self.config.session.spotify.redirect_uri
+        console.print(
+            "\n[bold]Spotify needs an app of your own to log in with.[/bold] It "
+            "takes a minute, and is free,\nbut [bold]the account that owns the "
+            "app must have Spotify Premium[/bold]: since February 2026 Spotify "
+            "blocks the API for apps of free accounts. If you have no Premium, "
+            "someone who does can make the app and add your Spotify account "
+            "under [italic]Settings > User Management[/italic].\n\n"
+            f"  1. Go to [blue underline]{DEVELOPER_DASHBOARD}[/blue underline] "
+            "and log in, then choose [italic]Create app[/italic].\n"
+            "  2. Any name and description will do.\n"
+            f"  3. Redirect URI: [bold]{redirect_uri}[/bold]\n"
+            "     (exactly that, with 127.0.0.1 and not localhost)\n"
+            "  4. Under [italic]Which API/SDKs are you planning to use?[/italic] "
+            "tick [bold]Web API[/bold] only, accept the terms and save.\n"
+            "  5. Open the app's [italic]Settings[/italic] and copy its "
+            "[bold]Client ID[/bold]. You do not need the client secret.\n\n"
+            "streamrip uses Spotify for the track lists, tags and covers. The audio "
+            "itself is found on YouTube Music.\n"
+        )
+        _open_login_link(DEVELOPER_DASHBOARD)
+
+    async def _log_in(self):
+        """One browser login: send the user to Spotify and take the code back."""
+        url, state, verifier = self.client.authorization_url()
+        redirect_uri = self.config.session.spotify.redirect_uri
+        console.print(
+            "\nHow do you want to log in to Spotify?\n"
+            "  1. In the browser on this computer: streamrip catches the login itself\n"
+            "  2. In a browser on another device (streamrip runs on a server, say):\n"
+            "     open the link there and paste the address you end up on\n"
+        )
+        choice = Prompt.ask("Choose", choices=["1", "2"], default="1")
+        if choice == "1":
+            console.print(
+                f"\nOpening your browser. If nothing opens, go to:\n{url}\n"
+                f"Spotify must send you back to [bold]{redirect_uri}[/bold]; "
+                "if it says INVALID_CLIENT, add that as a Redirect URI to your app."
+            )
+            _open_login_link(url)
+            code = await capture_code(redirect_uri, state)
+        else:
+            console.print(f"\nOpen this link and log in:\n{url}\n")
+            console.print(
+                "The page you end up on will not load: that is as it should be. "
+                "Copy its whole address from the address bar."
+            )
+            address = Prompt.ask("Paste the address")
+            code = code_from_redirect_url(address, state)
+        await self.client.finish_login(code, verifier)
+
+    def save(self):
+        """Write the session's Spotify app and login to the config file."""
+        c = self.config.session.spotify
+        cf = self.config.file.spotify
+        for name in ("client_id", "access_token", "refresh_token", "token_expiry"):
+            setattr(cf, name, getattr(c, name))
+        self.config.file.set_modified()
+        self._announce_saved()
+
+
 PROMPTERS = {
     "qobuz": QobuzPrompter,
     "deezer": DeezerPrompter,
     "tidal": TidalPrompter,
     "soundcloud": SoundcloudPrompter,
+    "spotify": SpotifyPrompter,
 }
 
 
