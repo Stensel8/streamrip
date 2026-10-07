@@ -18,7 +18,9 @@ requests_per_minute = 35
 # Verify SSL certificates for API connections
 # Set to false if you encounter SSL certificate verification errors (not recommended)
 verify_ssl = true
-# Download and embed lyrics (currently supported for Deezer and Tidal)
+# Download and embed lyrics. Only Tidal supplies them: streamrip asks Deezer too,
+# but Deezer does not send lyrics, so its tracks are tagged without. There are
+# none to ask for from Qobuz, SoundCloud and Spotify.
 lyrics = true
 
 [qobuz]

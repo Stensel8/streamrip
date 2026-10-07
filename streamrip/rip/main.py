@@ -14,6 +14,7 @@ from ..client import (
     SpotifyClient,
     TidalClient,
 )
+from ..client.audio_match import MatchTrack
 from ..config import Config
 from ..console import console
 from ..exceptions import (
@@ -27,6 +28,7 @@ from ..media import (
     Label,
     Media,
     Pending,
+    PendingCsvPlaylist,
     PendingLastfmPlaylist,
     pending_item,
     remove_artwork_tempdirs,
@@ -36,6 +38,7 @@ from ..metadata import SearchResults
 from ..progress import clear_progress, clear_screen
 from ..utils.ffmpeg_utils import ffmpeg_missing_message, find_ffmpeg
 from .interactive import Confirm
+from .notices import notice_for
 from .parse_url import parse_url
 from .prompter import get_prompter
 
@@ -65,6 +68,8 @@ class Main:
         self.pending: list[Pending] = []
         self.media: list[Media] = []
         self.config = config
+        # Sources the user has been told about (see rip/notices.py).
+        self._announced: set[str] = set()
         self.clients: dict[str, Client] = {
             "qobuz": QobuzClient(config),
             "tidal": TidalClient(config),
@@ -160,7 +165,16 @@ class Main:
                     await self._reauthenticate(source, prompter, e)
 
         assert client.logged_in
+        self._announce(source)
         return client
+
+    def _announce(self, source: str):
+        """Tell the user what they should know about `source`, the first time."""
+        if source in self._announced:
+            return
+        self._announced.add(source)
+        if (notice := notice_for(source, self.config)) is not None:
+            console.print(notice)
 
     async def _reauthenticate(self, source: str, prompter, cause: Exception):
         """Offer a fresh login after stored credentials stop working."""
@@ -318,6 +332,29 @@ class Main:
         )
         playlist = await pending_playlist.resolve()
 
+        if playlist is not None:
+            self.media.append(playlist)
+
+    async def resolve_csv(
+        self,
+        name: str,
+        tracks: list[MatchTrack],
+        source: str,
+        fallback_source: str | None = None,
+    ):
+        """Search the tracks of a CSV list on `source`, and queue what is found.
+
+        A track `source` does not have is looked for on `fallback_source`.
+        """
+        client = await self.get_logged_in_client(source)
+        fallback_client = (
+            await self.get_logged_in_client(fallback_source)
+            if fallback_source and fallback_source != source
+            else None
+        )
+        playlist = await PendingCsvPlaylist(
+            name, tracks, client, fallback_client, self.config, self.database
+        ).resolve()
         if playlist is not None:
             self.media.append(playlist)
 

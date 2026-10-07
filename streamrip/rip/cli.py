@@ -26,8 +26,9 @@ from ..client import new_session
 from ..config import DEFAULT_CONFIG_PATH, Config, set_user_defaults
 from ..console import console
 from ..exceptions import FFmpegNotFoundError
+from ..media.csv_playlist import read_tracks
 from ..utils.ssl_utils import print_ssl_error_help
-from .interactive import Confirm
+from .interactive import Confirm, Prompt
 from .main import Main
 
 logger = logging.getLogger("streamrip")
@@ -745,6 +746,83 @@ async def lastfm(ctx, source, fallback_source, url):
         config.session.lastfm.fallback_source = fallback_source
     async with main_session(ctx) as main:
         await main.resolve_lastfm(url)
+        await main.rip()
+
+
+# Where a CSV list can be searched, and what that gives: shown when asked.
+CSV_SOURCES = {
+    "qobuz": "lossless, up to 24-bit",
+    "tidal": "lossless, hi-res where there is some",
+    "deezer": "FLAC or MP3, as your subscription allows",
+    "spotify": "lossy: the audio comes from YouTube Music",
+    "soundcloud": "MP3, and only uploads by the artists themselves",
+}
+
+
+def _ask_source(count: int) -> str:
+    """Ask where to search and download the tracks of a CSV list from."""
+    if not sys.stdin.isatty():
+        # Never block on a prompt nobody is there to answer (cron, scripts).
+        raise click.UsageError(
+            f"Say where to search the tracks with --source ({', '.join(CSV_SOURCES)})."
+        )
+    console.print(
+        f"\nFound [bold]{count}[/bold] track(s). "
+        "Where should I search and download them from?"
+    )
+    for name, what in CSV_SOURCES.items():
+        console.print(f"  [bold]{name:<11}[/bold] {what}")
+    return Prompt.ask("Source", choices=list(CSV_SOURCES))
+
+
+@rip.command("csv")
+@click.option(
+    "-s",
+    "--source",
+    type=click.Choice(list(CSV_SOURCES), case_sensitive=False),
+    help="The source to search the tracks on. Asked when left out.",
+)
+@click.option(
+    "-fs",
+    "--fallback-source",
+    type=click.Choice(list(CSV_SOURCES), case_sensitive=False),
+    help="The source to search for a track the main source does not have.",
+)
+@click.argument(
+    "path",
+    required=True,
+    type=click.Path(exists=True, readable=True, file_okay=True, dir_okay=False),
+)
+@click.pass_context
+@coro
+async def csv_list(ctx, source, fallback_source, path):
+    """Download the tracks of a CSV list, found by searching a source.
+
+    One track per row: its title and artist, and its album and length if you
+    have them. The columns of Music-Sync (https://github.com/Stensel8/Music-Sync)
+    and of other exporters are understood; a file without a header row is read
+    as "artist,title". The tracks go in a folder named after the file.
+
+    Example usage:
+
+        streamrip csv playlist.csv
+
+        streamrip csv playlist.csv --source tidal --fallback-source qobuz
+    """
+    _require_config(ctx)
+    try:
+        tracks = read_tracks(path)
+    except (OSError, ValueError) as e:
+        raise click.ClickException(str(e)) from e
+    if not tracks:
+        raise click.ClickException(
+            f"No tracks found in {path}: it needs a title for every row."
+        )
+    if source is None:
+        source = _ask_source(len(tracks))
+    async with main_session(ctx) as main:
+        name = os.path.splitext(os.path.basename(path))[0]
+        await main.resolve_csv(name, tracks, source.lower(), fallback_source)
         await main.rip()
 
 

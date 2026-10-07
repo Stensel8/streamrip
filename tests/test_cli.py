@@ -50,7 +50,7 @@ def test_help_lists_commands(tmp_path, capsys):
         "A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, SoundCloud, and Spotify."
         in " ".join(output.split())
     )
-    for command in ("url", "file", "search", "lastfm", "id", "repair", "config"):
+    for command in ("url", "file", "search", "lastfm", "csv", "id", "repair", "config"):
         assert command in output
 
 
@@ -338,6 +338,7 @@ def _broken_config(tmp_path) -> str:
         ["id", "qobuz", "track", "1"],
         ["search", "qobuz", "album", "rumours"],
         ["lastfm", "https://www.last.fm/user/x/playlists/1"],
+        ["csv", "{urls}", "--source", "tidal"],
         ["repair"],
         ["database", "browse", "downloads"],
         ["database", "clear", "downloads", "-y"],

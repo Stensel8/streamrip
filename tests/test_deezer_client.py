@@ -1,8 +1,10 @@
 """Unit tests for Deezer client behaviour that needs no network or ARL."""
 
-from unittest.mock import Mock
+import logging
+from unittest.mock import AsyncMock, Mock
 
 import pytest
+from deezer.errors import GWAPIError
 
 from streamrip.client.deezer import DeezerClient
 from streamrip.config import Config
@@ -92,3 +94,40 @@ def test_synced_lyrics_are_formatted_as_lrc():
         ]
     )
     assert lrc == "[00:01.00]Hello\n\n[00:05.50]World"
+
+
+def _client_with_a_track(**gw) -> DeezerClient:
+    client = _client()
+    client.client.api.get_track.return_value = {"id": 1, "album": {"id": 5}}
+    client.get_album = AsyncMock(return_value={"id": 5})
+    client.client.gw.get_track_lyrics.configure_mock(**gw)
+    return client
+
+
+async def test_an_error_answer_to_the_lyrics_request_means_no_lyrics(caplog):
+    """Deezer says it has none with an error: no warning for every track."""
+    client = _client_with_a_track(side_effect=GWAPIError('{"DATA_ERROR": "none"}'))
+
+    with caplog.at_level(logging.DEBUG, logger="streamrip"):
+        track = await client.get_track("1")
+
+    assert "lyrics" not in track
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+
+
+async def test_a_lyrics_request_that_breaks_is_still_a_warning(caplog):
+    client = _client_with_a_track(side_effect=ConnectionError("down"))
+
+    with caplog.at_level(logging.DEBUG, logger="streamrip"):
+        track = await client.get_track("1")
+
+    assert "lyrics" not in track
+    assert "Failed to get lyrics for 1: down" in caplog.text
+
+
+async def test_lyrics_deezer_does_send_are_still_used():
+    client = _client_with_a_track(return_value={"LYRICS_TEXT": "la la la"})
+
+    track = await client.get_track("1")
+
+    assert track["lyrics"] == "la la la"
