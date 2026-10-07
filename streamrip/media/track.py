@@ -7,8 +7,9 @@ import mutagen
 from mutagen.aiff import AIFF
 from mutagen.flac import FLAC
 
-from .. import converter
+from .. import converter, lyrics
 from ..client import Client, Downloadable
+from ..client.audio_match import MatchTrack
 from ..config import Config
 from ..db import Database
 from ..exceptions import FFmpegNotFoundError, TrackDownloadFailedError
@@ -184,6 +185,7 @@ class Track(Media):
             remove_title(id(self), self.config.session.cli.progress_bars)
 
         exclude = self.config.session.metadata.exclude
+        await self._look_up_lyrics()
         await tag_file(self.download_path, self.meta, self.cover_path, exclude)
         if self.config.session.conversion.enabled:
             try:
@@ -199,6 +201,48 @@ class Track(Media):
 
         self._remove_lossy_copies()
         self.db.set_downloaded(self.downloadable.source, self.meta.info.id)
+
+    async def _look_up_lyrics(self):
+        """Look up on LRCLIB the lyrics of a track its source sent none for.
+
+        Unless the user turned lyrics off. The length of the file just
+        downloaded is used, as synced lyrics only fit one edit of a song. A
+        missing lyric never costs the track.
+        """
+        c = self.config.session
+        if self.meta.lyrics or not c.downloads.lyrics or "lyrics" in c.metadata.exclude:
+            return
+        try:
+            audio = _open_audio(self.download_path)
+            seconds = audio.info.length if audio is not None else None
+            # An MP3 holds plain lyrics; the others the synced (LRC) ones.
+            plain = self.download_path.lower().endswith(".mp3") or (
+                c.conversion.enabled and c.conversion.codec.upper() == "MP3"
+            )
+            wanted = MatchTrack(
+                self.meta.title,
+                self.meta.artists or [self.meta.artist],
+                self.meta.album.album,
+                int(seconds * 1000) if seconds else None,
+            )
+            found = await lyrics.find_lyrics(
+                wanted, seconds, plain, c.downloads.verify_ssl
+            )
+        except lyrics.LyricsUnavailableError as e:
+            # Not "no lyrics found": LRCLIB did not answer. It is said once, in
+            # a warning, when it is left alone, and not for every track.
+            logger.debug(f"Lyrics of '{self.meta.title}' not looked up: {e}")
+            return
+        except Exception as e:
+            logger.warning(
+                f"Could not look up lyrics for '{self.meta.title}': "
+                f"{type(e).__name__}: {e}"
+            )
+            return
+        if found:
+            self.meta.lyrics = found
+        else:
+            logger.info(f"No lyrics found for '{self.meta.title}' on LRCLIB")
 
     async def _convert(self):
         c = self.config.session.conversion

@@ -10,7 +10,7 @@ from typing import Final
 logger = logging.getLogger("streamrip")
 
 # The sources a download key can start with.
-SOURCES: Final = ("qobuz", "tidal", "deezer", "soundcloud")
+SOURCES: Final = ("qobuz", "tidal", "deezer", "soundcloud", "spotify")
 
 
 def track_id(source: str, item_id: str) -> str:

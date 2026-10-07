@@ -65,6 +65,20 @@ def _no_real_update_check(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_real_lyrics_lookup(monkeypatch):
+    """A track whose source sent no lyrics is looked up on lrclib.net (lyrics.py).
+
+    Left live, every test that downloads such a track would ask the real service
+    about its made-up artist and title, in every CI run, and leave a session
+    behind that the next test's event loop trips over. The tests of the lookup
+    itself (test_lyrics.py) have a server of their own to ask.
+    """
+    monkeypatch.setattr(
+        "streamrip.media.track.lyrics.find_lyrics", AsyncMock(return_value=None)
+    )
+
+
+@pytest.fixture(autouse=True)
 def _no_live_spinners(monkeypatch):
     """console.status(...) (login, resolving, searching, update-check
     spinners) opens a Rich Live display. Confirmed live 2026-09-30: merely

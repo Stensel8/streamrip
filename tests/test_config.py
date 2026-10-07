@@ -19,6 +19,7 @@ from streamrip.config import (
     MetadataConfig,
     QobuzConfig,
     SoundcloudConfig,
+    SpotifyConfig,
     TidalConfig,
     set_user_defaults,
 )
@@ -94,6 +95,7 @@ def test_sample_config_data_fields(sample_config_data):
             client_id="clientid",
             app_version="appversion",
         ),
+        spotify=SpotifyConfig(),
         lastfm=LastFmConfig(source="qobuz", fallback_source=""),
         filepaths=FilepathsConfig(
             add_singles_to_folder=False,
@@ -192,6 +194,12 @@ def test_prefer_explicit_missing_from_toml_still_loads():
     assert "prefer_explicit" not in toml_str
     data = ConfigData.from_toml(toml_str)
     assert data.metadata.prefer_explicit is True
+
+
+def test_lyrics_are_on_by_default_and_the_template_says_where_they_come_from():
+    assert Config.defaults().session.downloads.lyrics is True
+    template = open("streamrip/config.toml").read()
+    assert "lrclib.net" in template
 
 
 # Other tests for the Config class can be added as needed

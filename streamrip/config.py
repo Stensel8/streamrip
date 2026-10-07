@@ -77,6 +77,29 @@ class SoundcloudConfig:
 
 
 @dataclass(slots=True)
+class SpotifyConfig:
+    """Spotify section of the config file.
+
+    Every option has a default, so a config written before Spotify support
+    still loads (see ConfigData.from_toml).
+    """
+
+    client_id: str = ""
+    redirect_uri: str = "http://127.0.0.1:9900/callback"
+    # The file format of what is downloaded: "m4a" (AAC) or "mp3".
+    audio_format: str = "m4a"
+    # kbps, for audio that has to be re-encoded to audio_format.
+    audio_bitrate: int = 256
+    # Accept a YouTube music video when there is no matching "song".
+    match_videos: bool = True
+    access_token: str = ""
+    refresh_token: str = ""
+    token_expiry: str = ""
+    # The audio comes from YouTube Music, in the one quality it has.
+    quality: ClassVar[int] = 0
+
+
+@dataclass(slots=True)
 class DatabaseConfig:
     downloads_enabled: bool
     downloads_path: str
@@ -184,6 +207,7 @@ class ConfigData:
     tidal: TidalConfig
     deezer: DeezerConfig
     soundcloud: SoundcloudConfig
+    spotify: SpotifyConfig
     lastfm: LastFmConfig
     filepaths: FilepathsConfig
     artwork: ArtworkConfig
@@ -204,6 +228,7 @@ class ConfigData:
         """
         # TODO: handle the mistake where Windows people forget to escape backslash
         toml = parse(toml_str)
+        _add_missing_sections(toml)
         sections = {f.name: f.type(**toml[f.name]) for f in _section_fields()}  # type: ignore
         return cls(toml=toml, **sections)
 
@@ -227,9 +252,9 @@ class ConfigData:
     def get_source(
         self,
         source: str,
-    ) -> QobuzConfig | DeezerConfig | SoundcloudConfig | TidalConfig:
+    ) -> QobuzConfig | DeezerConfig | SoundcloudConfig | SpotifyConfig | TidalConfig:
         """Return the config for the given streaming source."""
-        if source not in ("qobuz", "tidal", "deezer", "soundcloud"):
+        if source not in ("qobuz", "tidal", "deezer", "soundcloud", "spotify"):
             raise Exception(f"Invalid source {source}")
         return getattr(self, source)
 
@@ -237,6 +262,22 @@ class ConfigData:
 def _section_fields():
     """Return the ConfigData fields that hold a [section]'s own dataclass."""
     return [f for f in fields(ConfigData) if is_dataclass(f.type)]
+
+
+def _add_missing_sections(toml: TOMLDocument):
+    """Add the sections a config written by an older release lacks, from the template.
+
+    A release that brings a source brings its [section]. Without this, every
+    existing config would stop loading (and need `config reset`, which also
+    throws the logins away) until the section is added by hand.
+    """
+    missing = [f.name for f in _section_fields() if f.name not in toml]
+    if not missing:
+        return
+    with open(BLANK_CONFIG_PATH) as f:
+        template = parse(f.read())
+    for name in missing:
+        toml[name] = copy.deepcopy(template[name])
 
 
 def update_toml_section_from_config(toml_section, config):

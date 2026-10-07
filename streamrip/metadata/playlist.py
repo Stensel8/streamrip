@@ -74,6 +74,11 @@ class PlaylistMetadata:
         return cls(typed(resp["title"], str), [str(t["id"]) for t in resp["tracks"]])
 
     @classmethod
+    def from_spotify(cls, resp: dict):
+        """Build playlist metadata from SpotifyClient's playlist response."""
+        return cls(typed(resp["name"], str), [str(t["id"]) for t in resp["tracks"]])
+
+    @classmethod
     def from_resp(cls, resp: dict, source: str):
         """Dispatch to the from_* builder matching source."""
         if source == "qobuz":
@@ -84,4 +89,6 @@ class PlaylistMetadata:
             return cls.from_deezer(resp)
         if source == "tidal":
             return cls.from_tidal(resp)
+        if source == "spotify":
+            return cls.from_spotify(resp)
         raise NotImplementedError(source)
