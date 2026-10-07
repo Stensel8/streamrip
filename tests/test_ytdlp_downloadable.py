@@ -8,6 +8,7 @@ import asyncio
 import os
 import threading
 import time
+from concurrent.futures import Future
 from pathlib import Path
 
 import mutagen
@@ -148,6 +149,41 @@ async def test_a_cancelled_download_waits_for_its_thread_before_the_folder_goes(
     assert finished.is_set()
     assert seen == {"its folder was still there": True}
     assert list(scratch.iterdir()) == []  # and it is removed after
+
+
+async def test_a_download_whose_thread_never_began_ends_when_cancelled(
+    monkeypatch, tmp_path
+):
+    """A job that waits for a thread is cancelled before it runs: nothing is left
+    to wait for, so waiting for it would never end.
+    """
+
+    class NeverRuns:
+        def __init__(self, **_):
+            pass
+
+        def submit(self, *_args, **_kwargs):
+            return Future()  # pending for ever
+
+        def shutdown(self, **_):
+            pass
+
+    monkeypatch.setattr("streamrip.client.downloadable.ThreadPoolExecutor", NeverRuns)
+    monkeypatch.setattr(
+        "streamrip.client.downloadable.find_ffmpeg", lambda: "/usr/bin/ffmpeg"
+    )
+    downloadable = YtDlpDownloadable(None, "https://example.com/x", "m4a")
+    task = asyncio.create_task(
+        downloadable.download(str(tmp_path / "track.m4a"), lambda _: None)
+    )
+    await asyncio.sleep(0.05)
+
+    task.cancel()
+    await asyncio.sleep(0.05)
+    task.cancel()  # and again, as asyncio.run does
+    done, _ = await asyncio.wait([task], timeout=3)
+
+    assert done, "the cancelled download is still waiting for a thread that never began"
 
 
 def test_no_javascript_runtime_is_enabled_that_yt_dlp_cannot_sandbox(monkeypatch):

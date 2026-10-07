@@ -12,6 +12,7 @@ import tempfile
 import threading
 import time
 from abc import ABC, abstractmethod
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable
 
 import aiofiles
@@ -701,7 +702,6 @@ class YtDlpDownloadable(Downloadable):
             )
         loop = asyncio.get_running_loop()
         stop = threading.Event()
-        ended = threading.Event()
 
         def report(n: int):
             try:
@@ -710,41 +710,34 @@ class YtDlpDownloadable(Downloadable):
                 pass  # loop already closed (interpreter shutting down)
 
         directory = tempfile.mkdtemp(prefix="__streamrip_ytdlp_")
+        # A thread of its own, not one of the shared pool: yt-dlp keeps it for the
+        # whole download, and a download that waited in the pool's queue could not
+        # be told from one that is running.
+        executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="yt-dlp")
         try:
-
-            def fetch() -> str:
-                try:
-                    return _fetch_audio(
-                        self.url, directory, self.verify_ssl, report, stop
-                    )
-                finally:
-                    ended.set()
-
-            worker = asyncio.create_task(asyncio.to_thread(fetch))
-            # What went wrong in it is raised below; when the download is
-            # cancelled, how the thread ends is of no interest.
-            worker.add_done_callback(lambda task: task.cancelled() or task.exception())
+            job = executor.submit(
+                _fetch_audio, self.url, directory, self.verify_ssl, report, stop
+            )
             try:
-                await asyncio.wait([worker])
+                fetched = await asyncio.wrap_future(job)
             except asyncio.CancelledError:
                 # The thread cannot be cancelled: tell it to stop at the next
-                # chunk, and wait until it has, or it would still be writing in
-                # the directory that is removed below. That is the thread, not
-                # `worker`, which is done as soon as it is cancelled, and Python
-                # cancels it again as it unwinds the tasks.
+                # chunk, and wait until it has (or never began), or it would still
+                # be writing in the directory that is removed below. A second
+                # cancel, which asyncio.run makes as it unwinds, does not shorten that.
                 stop.set()
-                while not ended.is_set():
+                while not job.done():
                     try:
                         await asyncio.sleep(0.05)
                     except asyncio.CancelledError:
                         pass
                 raise
-            fetched = worker.result()
             if fetched.rsplit(".", 1)[-1].lower() == "m4a" == self.extension:
                 shutil.move(fetched, path)
             else:
                 await self._encode(ffmpeg_path, fetched, path)
         finally:
+            executor.shutdown(wait=False)
             shutil.rmtree(directory, ignore_errors=True)
 
     async def _encode(self, ffmpeg_path: str, source: str, path: str):
