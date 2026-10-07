@@ -47,11 +47,35 @@ def test_help_lists_commands(tmp_path, capsys):
     assert result.exit_code == 0
     output = _output(result, capsys)
     assert (
-        "A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, and SoundCloud."
+        "A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, SoundCloud, and Spotify."
         in " ".join(output.split())
     )
-    for command in ("url", "file", "search", "lastfm", "id", "repair", "config"):
+    for command in ("url", "file", "search", "lastfm", "csv", "id", "repair", "config"):
         assert command in output
+
+
+@pytest.mark.parametrize(
+    ("args", "shown"),
+    [
+        (["--help"], "Usage: streamrip [OPTIONS] COMMAND [ARGS]..."),
+        (["csv", "--help"], "Usage: streamrip csv [OPTIONS] PATH"),
+        (["csv"], "Try 'streamrip csv --help' for help."),
+        (["nonexistent"], "Try 'streamrip --help' for help."),
+    ],
+    ids=["help", "command help", "usage error", "unknown command"],
+)
+def test_the_command_is_called_streamrip_in_every_usage_line(
+    tmp_path, capsys, args, shown
+):
+    config = tmp_path / "config.toml"
+    set_user_defaults(str(config))
+
+    result = CliRunner().invoke(rip, ["--config-path", str(config), *args])
+
+    output = _output(result, capsys)
+    assert shown in output
+    assert "Usage: rip" not in output
+    assert "'rip " not in output
 
 
 def test_codec_choice_accepts_opus_and_aiff(tmp_path):
@@ -237,9 +261,11 @@ def _output(result, capsys) -> str:
 
     Rich's output goes to Click's capture or to pytest's, depending on how the
     tests are run (`log_cli` in pyproject.toml, or a Rich spinner earlier in
-    the run, change which), so tests must not assume one.
+    the run, change which), so tests must not assume one. Click prints its own
+    errors on stderr, which lands in pytest's capture the same way.
     """
-    return result.output + capsys.readouterr().out
+    captured = capsys.readouterr()
+    return result.output + captured.out + captured.err
 
 
 def _printed(result, capsys) -> str:
@@ -338,6 +364,7 @@ def _broken_config(tmp_path) -> str:
         ["id", "qobuz", "track", "1"],
         ["search", "qobuz", "album", "rumours"],
         ["lastfm", "https://www.last.fm/user/x/playlists/1"],
+        ["csv", "{urls}", "--source", "tidal"],
         ["repair"],
         ["database", "browse", "downloads"],
         ["database", "clear", "downloads", "-y"],

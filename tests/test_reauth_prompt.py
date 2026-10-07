@@ -24,6 +24,7 @@ def _main_with_expired_token():
     )
     main.clients = {"tidal": client}
     main.config = MagicMock()
+    main._announced = set()
 
     prompter = MagicMock()
     prompter.has_creds.return_value = True

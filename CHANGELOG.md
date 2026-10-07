@@ -3,6 +3,93 @@
 All notable changes in this fork of [nathom/streamrip](https://github.com/nathom/streamrip). Numbers can refer to
 upstream issues and pull requests.
 
+## 2.4.11
+
+### Spotify
+
+- **Spotify links can be downloaded**: tracks, albums, artists and playlists, as
+  `open.spotify.com` links or `spotify:` URIs, and `streamrip search spotify
+  track|album|artist|playlist ...`. Spotify encrypts its own audio, so streamrip
+  does what [spotDL](https://github.com/spotDL/spotify-downloader) does: Spotify
+  supplies the track list, tags (title, artists, album, track and disc numbers,
+  date, ISRC, and the copyright of an album: Spotify leaves it out of the album
+  it gives with a single track or a playlist track) and cover, and the audio is
+  the same recording on
+  YouTube Music, found by ISRC and then by artist, title and length, and
+  downloaded with yt-dlp. It is AAC (kept as it is) or MP3, never lossless, and a
+  track YouTube Music only has as another version (live, remix, ...) is reported
+  as not found. See the new Spotify section of the README, which also lists what
+  Spotify allows an app.
+- **You make a Spotify app of your own, and log in once.** Since February 2026
+  Spotify's API is only open to apps whose owner has Premium, with a client id
+  and no secret: streamrip asks for the Client ID the first time, explains where
+  to make the app (the redirect URI, ticking Web API), opens your browser to log
+  in (OAuth with PKCE) and catches the answer on `127.0.0.1:9900`, or lets you
+  paste the address where the browser ends up, on a server without a browser. The
+  login renews itself and is saved in the new `[spotify]` section.
+- Playlists are limited by Spotify to the ones you own or collaborate on. Other
+  playlists, and podcasts and local files, are skipped, with a message that says
+  why. Searching is capped at 50 results (Spotify gives ten per request).
+- The new `[spotify]` options: `audio_format` (`m4a` or `mp3`), `audio_bitrate`
+  (for audio that has to be re-encoded), `match_videos` (accept an official music
+  video when YouTube Music has no matching song) and `redirect_uri`.
+- A config from before this release has no `[spotify]` section: it is added from
+  the template, and written the next time the config is saved. No `config reset`.
+- New dependencies: `ytmusicapi` and `yt-dlp[default]`. yt-dlp wants a
+  JavaScript runtime (Deno or Node.js) for YouTube; a download that fails saying
+  so is explained as such.
+- Credits are at the bottom of the README: the login and API handling and the
+  matching are those of [Music-Sync](https://github.com/Stensel8/Music-Sync), the
+  idea of metadata from Spotify and audio from YouTube Music is spotDL's, and
+  [MediaHarbor](https://github.com/MediaHarbor/mediaharbor) was read as a
+  reference. Its decryption of Spotify's Widevine-protected audio is not used.
+
+### CSV lists
+
+- **`streamrip csv list.csv` downloads the tracks of a CSV list**, found by
+  searching a source, which it asks for ("Where should I search and download them
+  from?", with what each source gives) unless `--source` says. `--fallback-source`
+  gives a second source for the tracks the first does not have. The columns of
+  [Music-Sync](https://github.com/Stensel8/Music-Sync) and of Exportify,
+  TuneMyMusic and the like are understood, a file without a header row is read
+  as `artist,title`, and commas, semicolons and tabs work as separators. The first
+  five results of each search are scored on title, artist and length, as
+  Music-Sync does, so a live version, a remix or another artist's cover is not
+  taken for the track. The tracks go in a folder named after the file, as a
+  playlist.
+
+### Lyrics
+
+- **The lyrics of tracks whose source sent none are looked up** on
+  [LRCLIB](https://lrclib.net), a free, open database of lyrics that needs no
+  account: Qobuz, SoundCloud and Spotify send none, and Deezer not for every
+  track. It tells LRCLIB the artist, title and length of those tracks, so `lyrics = false`
+  under `[downloads]` turns it off, and streamrip logs "No lyrics found for ..."
+  for a track LRCLIB does not have. It asks with the length of the file
+  just downloaded, as synced lyrics only fit one edit of a song, and a search
+  result of another version, of another artist or of another length is not taken.
+  Synced (LRC) lyrics are used, plain ones for MP3. LRCLIB being slow or down
+  costs nothing: after three failures in a row it is left alone for the run, and
+  a lyric that cannot be found never fails a track. Its session is a plain one of
+  its own, never a source's, which holds that source's login.
+
+### Notices
+
+- The first time Spotify is used in a run, streamrip says its audio comes from
+  YouTube Music and is lossy, and recommends moving the playlist first with
+  [Music-Sync](https://github.com/Stensel8/Music-Sync) (to Tidal, or to a CSV for
+  `streamrip csv`), with a link.
+- The first time Deezer is used with `lyrics` on, streamrip says that Deezer does
+  not have lyrics for every track, so the others are looked up on LRCLIB, and how
+  to turn that off. The README and the comment in the config say so too. Deezer's
+  answer that it has no lyrics for a track is no longer a warning for every track;
+  a lyrics request that really fails still is.
+
+### Tests
+
+- `find_ffmpeg` is cached, and `test_ffmpeg_utils` left a fake path, or none, in
+  the cache for the tests after it. They are forgotten after each test now.
+
 ## 2.4.10
 
 ### Security

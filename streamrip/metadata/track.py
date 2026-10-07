@@ -100,6 +100,23 @@ class TrackMetadata:
         )
 
     @classmethod
+    def from_spotify(cls, album: AlbumMetadata, resp: dict) -> TrackMetadata:
+        """Build track metadata from a Spotify API track response."""
+        artists = [a["name"] for a in resp.get("artists") or [] if a.get("name")]
+        isrc = (resp.get("external_ids") or {}).get("isrc")
+        return cls(
+            TrackInfo(str(resp["id"]), bool(resp.get("explicit"))),
+            (resp.get("name") or "Unknown").strip(),
+            album,
+            ", ".join(artists) or album.albumartist,
+            resp.get("track_number", 1),
+            resp.get("disc_number", 1),
+            None,
+            isrc=isrc.upper() if isrc else None,
+            artists=artists or None,
+        )
+
+    @classmethod
     def from_tidal(cls, album: AlbumMetadata, resp: dict) -> TrackMetadata:
         """Build track metadata from a Tidal API track response."""
         title = resp["title"].strip()
@@ -132,6 +149,8 @@ class TrackMetadata:
             return cls.from_soundcloud(album, resp)
         if source == "deezer":
             return cls.from_deezer(album, resp)
+        if source == "spotify":
+            return cls.from_spotify(album, resp)
         raise Exception(f"Invalid source {source}")
 
     def format_track_path(self, format_string: str) -> str:

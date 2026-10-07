@@ -18,7 +18,14 @@ requests_per_minute = 35
 # Verify SSL certificates for API connections
 # Set to false if you encounter SSL certificate verification errors (not recommended)
 verify_ssl = true
-# Download and embed lyrics (currently supported for Deezer and Tidal)
+# Download and embed lyrics. Tidal and Deezer supply them for most tracks. For a
+# track whose source sent none (Qobuz, SoundCloud and Spotify send none at all),
+# they are looked up on lrclib.net:
+# a free, open database of lyrics that its users add, found by the artist, title
+# and length of the track, so that site is told what you download. streamrip says
+# when it finds none. Time-synced (LRC) lyrics are used, plain ones for MP3. They
+# stay the property of their owners: this is for your own library. Set this to
+# false to download no lyrics and look none up.
 lyrics = true
 
 [qobuz]
@@ -86,6 +93,38 @@ arl = ""
 # Found and kept up to date by streamrip. Leave these alone.
 client_id = ""
 app_version = ""
+
+[spotify]
+# Spotify gives streamrip the track list, tags and cover art; the audio itself
+# is found on YouTube Music (matched by ISRC, title, artist and length) and
+# downloaded from there, so it is AAC or MP3, never lossless.
+#
+# You need your own Spotify app, and Spotify only lets an app whose owner has
+# Premium use its API. Create it at https://developer.spotify.com/dashboard:
+#   - Redirect URI: exactly the redirect_uri below
+#   - "Which API/SDKs are you planning to use?": tick Web API only
+# Then copy its Client ID here (no client secret is needed), or leave it empty
+# and streamrip asks for it, and logs you in through your browser.
+# The README has the details, with screenshots.
+client_id = ""
+# Must be added to the app as a Redirect URI, character for character. Use
+# 127.0.0.1, not localhost: Spotify no longer accepts that.
+redirect_uri = "http://127.0.0.1:9900/callback"
+# What the downloaded files are: "m4a" (AAC, tagged with cover art) or "mp3".
+# YouTube Music's best AAC stream is used as it is; anything else is re-encoded.
+audio_format = "m4a"
+# kbps, only for audio that has to be re-encoded to audio_format.
+audio_bitrate = 256
+# When YouTube Music has no "song" that matches a track (some regions and
+# connections only show videos), accept an official video whose title, artist
+# and length match. Turn it off to download only exact song matches.
+match_videos = true
+
+# Do not change any of the fields below
+access_token = ""
+refresh_token = ""
+# Unix timestamp of when the access token expires
+token_expiry = ""
 
 [database]
 # Create a database that contains all the track IDs downloaded so far

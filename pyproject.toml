@@ -1,7 +1,7 @@
 [project]
 name = "streamrip"
-version = "2.4.9"
-description = "A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, and SoundCloud."
+version = "2.4.11"
+description = "A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, SoundCloud, and Spotify."
 authors = [{ name = "nathom", email = "nathanthomas707@gmail.com" }]
 maintainers = [{ name = "Stensel8" }]
 license = "GPL-3.0-only"
@@ -35,6 +35,11 @@ dependencies = [
   # Chrome-family browser when there is one (no download), or its own
   # browser after asking, when there isn't.
   "playwright>=1.40,<2",
+  # Spotify only supplies the metadata: its audio is found on YouTube Music
+  # (ytmusicapi) and downloaded from there (yt-dlp; the "default" extra brings the
+  # script YouTube's streams need, which also needs a JavaScript runtime).
+  "ytmusicapi>=1.12,<2",
+  "yt-dlp[default]>=2026.7.4,<2027",
 ]
 
 [project.optional-dependencies]

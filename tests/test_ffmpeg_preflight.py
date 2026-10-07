@@ -37,19 +37,22 @@ async def test_main_starts_with_ffmpeg():
             assert entered is main
 
 
-@pytest.mark.parametrize("command", ["url", "file", "id", "lastfm", "search"])
+@pytest.mark.parametrize("command", ["url", "file", "id", "lastfm", "search", "csv"])
 def test_every_login_command_checks_ffmpeg_first(tmp_path, command):
     """No command that can log in to a source gets there without ffmpeg."""
     cfg = tmp_path / "config.toml"
     set_user_defaults(str(cfg))
     urls = tmp_path / "urls.txt"
     urls.write_text("https://tidal.com/album/1\n")
+    tracks = tmp_path / "tracks.csv"
+    tracks.write_text("title,artists\nSong,Band\n")
     args = {
         "url": ["url", "https://tidal.com/album/1"],
         "file": ["file", str(urls)],
         "id": ["id", "qobuz", "album", "1"],
         "lastfm": ["lastfm", "https://www.last.fm/user/x/playlists/1"],
         "search": ["search", "deezer", "track", "x"],
+        "csv": ["csv", str(tracks), "--source", "tidal"],
     }[command]
     with (
         patch("streamrip.rip.main.find_ffmpeg", return_value=None),

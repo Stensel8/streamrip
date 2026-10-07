@@ -15,6 +15,12 @@ URL_REGEX = re.compile(
 )
 TIDAL_SHARE_SUFFIX_REGEX = re.compile(r"^(https?://[^/]*tidal\.com/.+?)/u/?$")
 SOUNDCLOUD_URL_REGEX = re.compile(r"https://soundcloud.com/[-\w:/]+")
+# open.spotify.com links (with an optional "intl-xx/" and the old "user/name/" in
+# them) and spotify:track:... URIs. A Spotify id is 22 letters and digits.
+SPOTIFY_URL_REGEX = re.compile(
+    r"(?:https?://open\.spotify\.com/(?:intl-[\w-]+/)?(?:embed/)?(?:user/[^/]+/)?"
+    r"|spotify:(?:user:[^:]+:)?)(track|album|artist|playlist)[/:]([0-9A-Za-z]{22})(?![0-9A-Za-z])",
+)
 QOBUZ_INTERPRETER_URL_REGEX = re.compile(
     r"https?://www\.qobuz\.com/\w\w-\w\w/interpreter/[-\w]+/([-\w]+)",
 )
@@ -237,6 +243,28 @@ class SoundcloudURL(URL):
         return cls(soundcloud_url.group(0))
 
 
+class SpotifyURL(URL):
+    """An open.spotify.com link or a spotify: URI of a track, album, artist or playlist."""
+
+    @classmethod
+    def from_str(cls, url: str) -> URL | None:
+        """The Spotify item `url` names, or None if it isn't one."""
+        match = SPOTIFY_URL_REGEX.match(url)
+        if match is None:
+            return None
+        return cls(match, "spotify")
+
+    async def into_pending(
+        self,
+        client: Client,
+        config: Config,
+        db: Database,
+    ) -> Pending:
+        """Make the pending item this URL names, by the id in it."""
+        media_type, item_id = self.match.groups()
+        return pending_item(media_type, item_id, client, config, db)
+
+
 def parse_url(url: str) -> URL | None:
     """The URL type that matches url, or None if none does."""
     url = url.strip()
@@ -244,6 +272,7 @@ def parse_url(url: str) -> URL | None:
         GenericURL.from_str(url),
         QobuzInterpreterURL.from_str(url),
         SoundcloudURL.from_str(url),
+        SpotifyURL.from_str(url),
         DeezerDynamicURL.from_str(url),
         DeezerFavoriteURL.from_str(url),
     ]

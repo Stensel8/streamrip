@@ -3,6 +3,7 @@ import logging
 
 import deezer
 import requests
+from deezer.errors import GWAPIError
 
 from ..config import Config
 from ..exceptions import (
@@ -115,7 +116,13 @@ class DeezerClient(Client):
                         lyrics_resp.get("LYRICS_SYNC_JSON")
                     ) or (lyrics_resp.get("LYRICS_TEXT") or "")
             except Exception as e:
-                logger.warning(f"Failed to get lyrics for {item_id}: {e}")
+                if isinstance(e, GWAPIError) and "DATA_ERROR" in str(e):
+                    # Deezer answers with this error where it has no lyrics. That
+                    # is not a failure: the lyrics are looked up on LRCLIB (see
+                    # track.py). Any other error answer is one.
+                    logger.debug("Deezer has no lyrics for track %s: %s", item_id, e)
+                else:
+                    logger.warning(f"Failed to get lyrics for {item_id}: {e}")
 
         return item
 
