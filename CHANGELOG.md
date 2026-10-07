@@ -3,7 +3,7 @@
 All notable changes in this fork of [nathom/streamrip](https://github.com/nathom/streamrip). Numbers can refer to
 upstream issues and pull requests.
 
-## 2.4.11 (unreleased)
+## 2.4.11
 
 ### Spotify
 
