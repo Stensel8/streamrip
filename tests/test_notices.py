@@ -29,6 +29,19 @@ def test_deezer_says_it_sends_no_lyrics_when_lyrics_are_wanted():
     assert notice_for("deezer", config) is None
 
 
+def test_deezer_says_how_to_get_lyrics_or_that_they_are_looked_up():
+    config = Config.defaults()
+
+    # Off: say what to turn on.
+    assert "lyrics_fallback = true" in notice_for("deezer", config)
+
+    # On: say where they come from, and nothing left to turn on.
+    config.session.downloads.lyrics_fallback = True
+    notice = notice_for("deezer", config)
+    assert "looked up on lrclib.net" in notice
+    assert "lyrics_fallback" not in notice
+
+
 @pytest.mark.parametrize("source", ["qobuz", "tidal", "soundcloud"])
 def test_other_sources_have_nothing_to_say(source):
     assert notice_for(source, Config.defaults()) is None

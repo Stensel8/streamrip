@@ -196,6 +196,21 @@ def test_prefer_explicit_missing_from_toml_still_loads():
     assert data.metadata.prefer_explicit is True
 
 
+def test_lyrics_fallback_is_off_by_default_and_explained_in_the_template():
+    assert Config.defaults().session.downloads.lyrics_fallback is False
+    template = open("streamrip/config.toml").read()
+    assert "\nlyrics_fallback = false\n" in template
+    assert "lrclib.net" in template
+
+
+def test_lyrics_fallback_missing_from_toml_still_loads():
+    # A config from before the option has no `lyrics_fallback` in [downloads].
+    with open("streamrip/config.toml") as f:
+        toml_str = f.read().replace("\nlyrics_fallback = false\n", "\n")
+    assert "lyrics_fallback" not in toml_str
+    assert ConfigData.from_toml(toml_str).downloads.lyrics_fallback is False
+
+
 # Other tests for the Config class can be added as needed
 
 if __name__ == "__main__":

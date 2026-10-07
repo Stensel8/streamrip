@@ -5,7 +5,7 @@ import sys
 
 import aiofiles
 
-from .. import db
+from .. import db, lyrics
 from ..client import (
     Client,
     DeezerClient,
@@ -374,6 +374,8 @@ class Main:
                 await client.close()  # both of its logins have a session
             elif getattr(client, "session", None) is not None:
                 await client.session.close()
+
+        await lyrics.close()
 
         # close global progress bar manager
         clear_progress()
