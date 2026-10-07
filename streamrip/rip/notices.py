@@ -16,14 +16,9 @@ def notice_for(source: str, config: Config) -> str | None:
             f"Deezer):\n  [link={MUSIC_SYNC}]{MUSIC_SYNC}[/link]"
         )
     if source == "deezer" and config.session.downloads.lyrics:
-        if config.session.downloads.lyrics_fallback:
-            return (
-                "[yellow]Deezer:[/yellow] Deezer does not send lyrics, so they are "
-                "looked up on lrclib.net."
-            )
         return (
-            "[yellow]Deezer:[/yellow] Deezer does not send lyrics, so its tracks are "
-            "tagged without them. [bold]lyrics_fallback = true[/bold] under "
-            "[downloads] in the config looks them up on lrclib.net."
+            "[yellow]Deezer:[/yellow] Deezer has no lyrics for every track, so the "
+            "others are looked up on lrclib.net, which is told their artist, title "
+            "and length. \\[downloads] lyrics = false in the config turns that off."
         )
     return None

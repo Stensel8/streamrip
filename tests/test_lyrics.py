@@ -287,12 +287,6 @@ def asked(monkeypatch):
     return find
 
 
-def track_wanting_lyrics(tmp_path, extension="m4a"):
-    track = _make_track(str(tmp_path), extension)
-    track.config.session.downloads.lyrics_fallback = True
-    return track
-
-
 def lyrics_in(path):
     audio = mutagen.File(path)
     tags = audio.tags
@@ -301,18 +295,8 @@ def lyrics_in(path):
     return (tags.get("\xa9lyr") or [None])[0]
 
 
-async def test_it_is_off_unless_the_user_turns_it_on(tmp_path, asked):
-    track = _make_track(str(tmp_path), "m4a")
-    assert track.config.session.downloads.lyrics_fallback is False
-
-    await track.rip()
-
-    asked.assert_not_awaited()
-    assert lyrics_in(tmp_path / "Song.m4a") is None
-
-
 async def test_lyrics_found_are_in_the_file_tagged(tmp_path, asked):
-    await track_wanting_lyrics(tmp_path).rip()
+    await _make_track(str(tmp_path), "m4a").rip()
 
     asked.assert_awaited_once()
     wanted, seconds, plain, verify_ssl = asked.await_args.args
@@ -329,7 +313,7 @@ async def test_lyrics_found_are_in_the_file_tagged(tmp_path, asked):
 
 
 async def test_the_flac_of_a_lossless_source_gets_synced_lyrics_too(tmp_path, asked):
-    await track_wanting_lyrics(tmp_path, "flac").rip()
+    await _make_track(str(tmp_path), "flac").rip()
 
     assert lyrics_in(tmp_path / "Song.flac") == SYNCED
 
@@ -346,7 +330,7 @@ async def test_the_flac_of_a_lossless_source_gets_synced_lyrics_too(tmp_path, as
 async def test_plain_lyrics_are_asked_for_where_the_format_takes_plain(
     tmp_path, asked, changes, plain
 ):
-    track = track_wanting_lyrics(tmp_path)
+    track = _make_track(str(tmp_path), "m4a")
     track.download_path = str(tmp_path / changes["download_path"])  # not even there
     if "codec" in changes:
         track.config.session.conversion.enabled = True
@@ -358,7 +342,7 @@ async def test_plain_lyrics_are_asked_for_where_the_format_takes_plain(
 
 
 async def test_the_lyrics_of_the_source_are_left_alone(tmp_path, asked):
-    track = track_wanting_lyrics(tmp_path)
+    track = _make_track(str(tmp_path), "m4a")
     track.meta.lyrics = "the lyrics the source sent"
 
     await track.rip()
@@ -373,7 +357,7 @@ async def test_the_lyrics_of_the_source_are_left_alone(tmp_path, asked):
     ids=["lyrics off", "lyrics excluded"],
 )
 async def test_nothing_is_asked_when_lyrics_are_not_wanted(tmp_path, asked, setting):
-    track = track_wanting_lyrics(tmp_path)
+    track = _make_track(str(tmp_path), "m4a")
     section, option, value = setting
     setattr(getattr(track.config.session, section), option, value)
 
@@ -386,18 +370,22 @@ async def test_a_lookup_that_breaks_costs_the_track_nothing(tmp_path, asked, cap
     asked.side_effect = RuntimeError("boom")
 
     with caplog.at_level(logging.WARNING, logger="streamrip"):
-        await track_wanting_lyrics(tmp_path).rip()
+        await _make_track(str(tmp_path), "m4a").rip()
 
     assert (tmp_path / "Song.m4a").exists()
     assert "Could not look up lyrics for 'Song': RuntimeError: boom" in caplog.text
 
 
-async def test_no_lyrics_found_means_none_in_the_file(tmp_path, asked):
+async def test_no_lyrics_found_means_none_in_the_file_and_is_said(
+    tmp_path, asked, caplog
+):
     asked.return_value = None
 
-    await track_wanting_lyrics(tmp_path).rip()
+    with caplog.at_level(logging.INFO, logger="streamrip"):
+        await _make_track(str(tmp_path), "m4a").rip()
 
     assert lyrics_in(tmp_path / "Song.m4a") is None
+    assert "No lyrics found for 'Song' on LRCLIB" in caplog.text
 
 
 async def test_the_lookup_comes_before_the_conversion(tmp_path, asked, monkeypatch):
@@ -405,7 +393,7 @@ async def test_the_lookup_comes_before_the_conversion(tmp_path, asked, monkeypat
     monkeypatch.setattr(
         "streamrip.media.track.converter.get", lambda _: FlacToFlacConverter
     )
-    track = track_wanting_lyrics(tmp_path, "flac")
+    track = _make_track(str(tmp_path), "flac")
     track.config.session.conversion.enabled = True
 
     await track.rip()

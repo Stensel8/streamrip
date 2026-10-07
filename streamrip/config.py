@@ -170,8 +170,6 @@ class DownloadsConfig:
     requests_per_minute: int
     verify_ssl: bool
     lyrics: bool = True
-    # Look up the lyrics of tracks whose source sent none (see lyrics.py).
-    lyrics_fallback: bool = False
 
 
 @dataclass(slots=True)

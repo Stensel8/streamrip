@@ -125,10 +125,9 @@ in the config. A login that stops working is asked for again.
   2. **By hand**: copy the `arl` cookie from your browser's DevTools
      ([how to find it](https://github.com/nathom/streamrip/wiki/Finding-Your-Deezer-ARL-Cookie)).
 
-  The quality follows your subscription. **Deezer does not send lyrics**: its
-  tracks are tagged without them (Tidal's have them), and streamrip says so when
-  you use Deezer. `lyrics_fallback = true` in `[downloads]` looks them up on
-  LRCLIB instead (see [Lyrics](#lyrics)); `lyrics = false` silences the note.
+  The quality follows your subscription. **Deezer has no lyrics for every
+  track**, so streamrip looks the others up on LRCLIB (see [Lyrics](#lyrics)) and
+  says so when you use Deezer; `lyrics = false` in `[downloads]` turns that off.
 - **SoundCloud** needs nothing.
 - **Spotify** needs an app of your own and a login in your browser, once. See
   [Spotify](#spotify) below.
@@ -244,21 +243,21 @@ as an image; the others fall back to colored blocks, which are less sharp.
 
 ## Lyrics
 
-Tidal sends lyrics, and streamrip embeds them (time-synced ones as LRC text,
-plain ones in an MP3). Deezer does not send any, and for Qobuz, SoundCloud and
-Spotify there are none to ask for, so those tracks are tagged without.
+Tidal and Deezer send lyrics for most tracks, and streamrip embeds them
+(time-synced ones as LRC text, plain ones in an MP3). Qobuz, SoundCloud and
+Spotify send none, so for a track whose source sent no lyrics streamrip looks them
+up on
+[LRCLIB](https://lrclib.net), a free, open database of lyrics that its users add.
+It needs no account or key.
 
-`lyrics_fallback = true` in `[downloads]` fills that gap: for a track whose
-source sent no lyrics, streamrip looks them up on [LRCLIB](https://lrclib.net), a
-free, open database of lyrics that its users add. It needs no account or key.
-
-- It is **off by default**, because it tells LRCLIB the artist, title and length
-  of every track that has no lyrics.
+- It **tells LRCLIB the artist, title and length** of every track that has no
+  lyrics. `lyrics = false` in `[downloads]` keeps that from happening.
 - The length is that of the file just downloaded, as time-synced lyrics only fit
   one edit of a song: a record has to be within a few seconds of it, and one of
   another version (live, remix, ...) or of another artist is not taken. A track
-  LRCLIB does not have stays without lyrics, and a lookup that fails never fails
-  a track; after three failures in a row LRCLIB is left alone for the run.
+  LRCLIB does not have stays without lyrics, and streamrip says so ("No lyrics
+  found for ..."). A lookup that fails never fails a track; after three failures
+  in a row LRCLIB is left alone for the run.
 - Synced (LRC) lyrics go in M4A and FLAC, plain ones in an MP3 (also when you
   convert to MP3). Lyrics a source did send are left alone, and `lyrics = false`
   or `exclude = ["lyrics"]` in `[metadata]` keeps any lookup from happening.
@@ -318,7 +317,7 @@ inspired by [rip](https://github.com/nathom/streamrip),
 [qobuz-dl](https://github.com/vitiko98/qobuz-dl),
 [Qo-DL Reborn](https://github.com/badumbass/Qo-DL-Reborn),
 [Tidal-Media-Downloader](https://github.com/yaronzz/Tidal-Media-Downloader)
-and [scdl](https://github.com/flyingrub/scdl). The optional lyrics lookup uses
+and [scdl](https://github.com/flyingrub/scdl). The lyrics lookup uses
 [LRCLIB](https://lrclib.net).
 
 ## Disclaimer

@@ -205,16 +205,12 @@ class Track(Media):
     async def _look_up_lyrics(self):
         """Look up on LRCLIB the lyrics of a track its source sent none for.
 
-        Only when the user asked for it (`lyrics_fallback`). The length of the
-        file just downloaded is used, as synced lyrics only fit one edit of a
-        song. A missing lyric never costs the track.
+        Unless the user turned lyrics off. The length of the file just
+        downloaded is used, as synced lyrics only fit one edit of a song. A
+        missing lyric never costs the track.
         """
         c = self.config.session
-        if (
-            self.meta.lyrics
-            or not (c.downloads.lyrics and c.downloads.lyrics_fallback)
-            or "lyrics" in c.metadata.exclude
-        ):
+        if self.meta.lyrics or not c.downloads.lyrics or "lyrics" in c.metadata.exclude:
             return
         try:
             audio = _open_audio(self.download_path)
@@ -240,6 +236,8 @@ class Track(Media):
             return
         if found:
             self.meta.lyrics = found
+        else:
+            logger.info(f"No lyrics found for '{self.meta.title}' on LRCLIB")
 
     async def _convert(self):
         c = self.config.session.conversion

@@ -2,8 +2,7 @@
 
 LRCLIB is a free, open database of plain and time-synced (LRC) lyrics that its
 users add. It needs no account or key. A lookup does tell it the artist, title
-and length of the track, which is why `[downloads] lyrics_fallback` is off unless
-the user turns it on.
+and length of the track, so `[downloads] lyrics = false` keeps it from happening.
 
 A track is asked for by its artist, title and length (`/api/get`, which takes a
 length within two seconds, so another edit of the song is not taken for it). When

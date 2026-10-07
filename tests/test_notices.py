@@ -20,26 +20,20 @@ def test_spotify_says_it_is_lossy_and_points_to_music_sync():
     assert "streamrip csv" in notice  # what to do with what Music-Sync exports
 
 
-def test_deezer_says_it_sends_no_lyrics_when_lyrics_are_wanted():
+def test_deezer_says_its_lyrics_are_looked_up_unless_lyrics_are_off():
     config = Config.defaults()
 
-    assert "does not send lyrics" in notice_for("deezer", config)
+    assert "lrclib.net" in notice_for("deezer", config)
 
     config.session.downloads.lyrics = False
     assert notice_for("deezer", config) is None
 
 
-def test_deezer_says_how_to_get_lyrics_or_that_they_are_looked_up():
-    config = Config.defaults()
+def test_deezer_says_where_the_lyrics_come_from_and_how_to_turn_that_off():
+    notice = notice_for("deezer", Config.defaults())
 
-    # Off: say what to turn on.
-    assert "lyrics_fallback = true" in notice_for("deezer", config)
-
-    # On: say where they come from, and nothing left to turn on.
-    config.session.downloads.lyrics_fallback = True
-    notice = notice_for("deezer", config)
     assert "looked up on lrclib.net" in notice
-    assert "lyrics_fallback" not in notice
+    assert "lyrics = false" in notice
 
 
 @pytest.mark.parametrize("source", ["qobuz", "tidal", "soundcloud"])

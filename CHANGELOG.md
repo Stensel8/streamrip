@@ -58,11 +58,12 @@ upstream issues and pull requests.
 
 ### Lyrics
 
-- **`lyrics_fallback = true` under `[downloads]` looks up the lyrics of tracks
-  whose source sent none** on [LRCLIB](https://lrclib.net), a free, open database
-  of lyrics that needs no account: Deezer sends none, and for Qobuz, SoundCloud
-  and Spotify there are none to ask for. Off by default, as it tells LRCLIB the
-  artist, title and length of those tracks. It asks with the length of the file
+- **The lyrics of tracks whose source sent none are looked up** on
+  [LRCLIB](https://lrclib.net), a free, open database of lyrics that needs no
+  account: Qobuz, SoundCloud and Spotify send none, and Deezer not for every
+  track. It tells LRCLIB the artist, title and length of those tracks, so `lyrics = false`
+  under `[downloads]` turns it off, and streamrip logs "No lyrics found for ..."
+  for a track LRCLIB does not have. It asks with the length of the file
   just downloaded, as synced lyrics only fit one edit of a song, and a search
   result of another version, of another artist or of another length is not taken.
   Synced (LRC) lyrics are used, plain ones for MP3. LRCLIB being slow or down
@@ -77,9 +78,9 @@ upstream issues and pull requests.
   [Music-Sync](https://github.com/Stensel8/Music-Sync) (to Tidal, or to a CSV for
   `streamrip csv`), with a link.
 - The first time Deezer is used with `lyrics` on, streamrip says that Deezer does
-  not send lyrics, so its tracks are tagged without them, and what to turn on
-  (`lyrics_fallback`) or, when it is on, that they are looked up. The README and
-  the comment in the config say so too. Deezer's answer that it has no lyrics for a
+  has no lyrics for every track, so the others are looked up on LRCLIB, and how to
+  turn that off. The
+  README and the comment in the config say so too. Deezer's answer that it has no lyrics for a
   track is no longer a warning for every track; a lyrics request that really
   fails still is.
 
