@@ -42,6 +42,32 @@ upstream issues and pull requests.
   [MediaHarbor](https://github.com/MediaHarbor/mediaharbor) was read as a
   reference. Its decryption of Spotify's Widevine-protected audio is not used.
 
+### CSV lists
+
+- **`streamrip csv list.csv` downloads the tracks of a CSV list**, found by
+  searching a source, which it asks for ("Where should I search and download them
+  from?", with what each source gives) unless `--source` says. `--fallback-source`
+  gives a second source for the tracks the first does not have. The columns of
+  [Music-Sync](https://github.com/Stensel8/Music-Sync) and of Exportify,
+  TuneMyMusic and the like are understood, a file without a header row is read
+  as `artist,title`, and commas, semicolons and tabs work as separators. The first
+  five results of each search are scored on title, artist and length, as
+  Music-Sync does, so a live version, a remix or another artist's cover is not
+  taken for the track. The tracks go in a folder named after the file, as a
+  playlist.
+
+### Notices
+
+- The first time Spotify is used in a run, streamrip says its audio comes from
+  YouTube Music and is lossy, and recommends moving the playlist first with
+  [Music-Sync](https://github.com/Stensel8/Music-Sync) (to Tidal, or to a CSV for
+  `streamrip csv`), with a link.
+- The first time Deezer is used with `lyrics` on, streamrip says that Deezer does
+  not send lyrics, so its tracks are tagged without them. The README and the
+  comment in the config say so too. Deezer's answer that it has no lyrics for a
+  track is no longer a warning for every track; a lyrics request that really
+  fails still is.
+
 ### Tests
 
 - `find_ffmpeg` is cached, and `test_ffmpeg_utils` left a fake path, or none, in

@@ -17,6 +17,7 @@ A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, SoundCl
 ![downloading an album](https://github.com/Stensel8/streamrip/blob/dev/demo/download_album.png?raw=true)
 
 - Tracks, albums, playlists, discographies and labels; queue several in one go
+- A CSV list of tracks (from [Music-Sync](https://github.com/Stensel8/Music-Sync) or another exporter): streamrip asks where to search it, see [CSV lists](#csv-lists)
 - Spotify links (tracks, albums, artists, playlists): Spotify gives the tags and covers, the audio is found on YouTube Music, see [Spotify](#spotify)
 - Spotify and Apple Music playlists through [last.fm](https://www.last.fm)
 - Tagged, with cover art, and converted to FLAC, ALAC, AIFF, MP3, AAC, OGG or Opus if you like
@@ -124,7 +125,9 @@ in the config. A login that stops working is asked for again.
   2. **By hand**: copy the `arl` cookie from your browser's DevTools
      ([how to find it](https://github.com/nathom/streamrip/wiki/Finding-Your-Deezer-ARL-Cookie)).
 
-  The quality follows your subscription.
+  The quality follows your subscription. **Deezer does not send lyrics**: its
+  tracks are tagged without them (Tidal's have them), and streamrip says so when
+  you use Deezer. `lyrics = false` in `[downloads]` silences that.
 - **SoundCloud** needs nothing.
 - **Spotify** needs an app of your own and a login in your browser, once. See
   [Spotify](#spotify) below.
@@ -143,6 +146,12 @@ length) and downloads that, tagged with what Spotify says. Because of that:
   not Spotify's own quality. For lossless, use Qobuz, Tidal or Deezer.
 - A track YouTube Music does not have, or has only as another version (live,
   remix, ...), is reported as not found rather than downloaded wrong.
+- **For better quality, move the playlist first.** With
+  [Music-Sync](https://github.com/Stensel8/Music-Sync) you can move your liked
+  songs and playlists from Spotify to Tidal, or export them to a CSV, and then
+  download them from a lossless source: [`streamrip csv`](#csv-lists) searches
+  such a CSV on Qobuz, Tidal or Deezer. streamrip reminds you of this the first
+  time you use Spotify in a run.
 - It needs [ffmpeg](https://ffmpeg.org) like every source, and yt-dlp, which
   wants a JavaScript runtime to read YouTube: install [Deno](https://deno.com)
   or [Node.js](https://nodejs.org) if a download fails saying so.
@@ -231,6 +240,39 @@ Every command has a `--help`.
 Search shows each result's cover next to its details. Terminals with SIXEL or
 Kitty graphics support (Konsole, foot and Windows Terminal, for example) show it
 as an image; the others fall back to colored blocks, which are less sharp.
+
+## CSV lists
+
+`streamrip csv list.csv` downloads the tracks of a CSV list by searching them on
+a source. It asks **where to search and download them from** (Qobuz, Tidal,
+Deezer, Spotify or SoundCloud, with what each gives); `--source tidal` skips the
+question, which scripts need, and `--fallback-source qobuz` tries a second
+source for the tracks the first does not have.
+
+```bash
+streamrip csv playlist.csv
+streamrip csv playlist.csv --source tidal --fallback-source qobuz
+```
+
+The list comes from anywhere: `music-sync export spotify --liked -o liked.csv`
+([Music-Sync](https://github.com/Stensel8/Music-Sync)), Exportify, TuneMyMusic or
+a spreadsheet of your own.
+
+- One track per row, with a title and an artist (several artists separated by
+  `;`), and if you have them an album and a length (`duration_ms`), which make a
+  match surer. Columns are found by their names: those of Music-Sync (`title`,
+  `artists`, `album`, `duration_ms`) and of other exporters (`Track Name`,
+  `Artist Name(s)`, `Album Name`, `Duration (ms)`, ...). A file without a header
+  row is read as `artist,title`. The file has to be UTF-8; commas, semicolons
+  (Excel in many countries) and tabs all work as separators.
+- The first five results of a search are scored on title, artist and length, as
+  Music-Sync does, and one is taken from a score of 0.8. A live version, a remix
+  or another artist's cover is not taken for the track: it is reported as not
+  found, with the track's name, instead.
+- The tracks go in a folder named after the file, like a last.fm playlist, and
+  the `[metadata]` options for playlists apply.
+- Every track is a search, paced by `requests_per_minute` in `[downloads]`, so a
+  long list takes a while.
 
 ## Contributing
 
