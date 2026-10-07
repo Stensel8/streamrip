@@ -102,11 +102,13 @@ async def test_a_link_that_is_gone_is_not_streamable(serve, tmp_path):
     assert not (tmp_path / "track.m4a").exists()
 
 
+@pytest.mark.parametrize("again", [False, True], ids=["once", "and again"])
 async def test_a_cancelled_download_waits_for_its_thread_before_the_folder_goes(
-    monkeypatch, tmp_path
+    monkeypatch, tmp_path, again
 ):
     """yt-dlp's thread cannot be cancelled: left running, it writes in a folder
-    that is already gone.
+    that is already gone (it makes the folder again). asyncio.run cancels every
+    task a second time as it unwinds, which cancels the one around the thread too.
     """
     scratch = tmp_path / "scratch"
     scratch.mkdir()
@@ -120,6 +122,8 @@ async def test_a_cancelled_download_waits_for_its_thread_before_the_folder_goes(
             pass
         time.sleep(0.1)  # a moment of work after it has noticed
         seen["its folder was still there"] = os.path.isdir(directory)
+        os.makedirs(directory, exist_ok=True)  # as yt-dlp does for a .part file
+        open(os.path.join(directory, "audio.m4a.part"), "w").close()
         finished.set()
         raise RuntimeError("stopped")
 
@@ -134,6 +138,10 @@ async def test_a_cancelled_download_waits_for_its_thread_before_the_folder_goes(
     await asyncio.to_thread(started.wait, 5)
 
     task.cancel()
+    if again:
+        await asyncio.sleep(0.05)
+        for other in asyncio.all_tasks() - {asyncio.current_task()}:
+            other.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
 

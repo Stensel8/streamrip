@@ -701,6 +701,7 @@ class YtDlpDownloadable(Downloadable):
             )
         loop = asyncio.get_running_loop()
         stop = threading.Event()
+        ended = threading.Event()
 
         def report(n: int):
             try:
@@ -710,11 +711,16 @@ class YtDlpDownloadable(Downloadable):
 
         directory = tempfile.mkdtemp(prefix="__streamrip_ytdlp_")
         try:
-            worker = asyncio.create_task(
-                asyncio.to_thread(
-                    _fetch_audio, self.url, directory, self.verify_ssl, report, stop
-                )
-            )
+
+            def fetch() -> str:
+                try:
+                    return _fetch_audio(
+                        self.url, directory, self.verify_ssl, report, stop
+                    )
+                finally:
+                    ended.set()
+
+            worker = asyncio.create_task(asyncio.to_thread(fetch))
             # What went wrong in it is raised below; when the download is
             # cancelled, how the thread ends is of no interest.
             worker.add_done_callback(lambda task: task.cancelled() or task.exception())
@@ -723,9 +729,15 @@ class YtDlpDownloadable(Downloadable):
             except asyncio.CancelledError:
                 # The thread cannot be cancelled: tell it to stop at the next
                 # chunk, and wait until it has, or it would still be writing in
-                # the directory that is removed below.
+                # the directory that is removed below. That is the thread, not
+                # `worker`, which is done as soon as it is cancelled, and Python
+                # cancels it again as it unwinds the tasks.
                 stop.set()
-                await asyncio.wait([worker])
+                while not ended.is_set():
+                    try:
+                        await asyncio.sleep(0.05)
+                    except asyncio.CancelledError:
+                        pass
                 raise
             fetched = worker.result()
             if fetched.rsplit(".", 1)[-1].lower() == "m4a" == self.extension:
