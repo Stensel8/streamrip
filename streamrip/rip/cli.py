@@ -219,6 +219,9 @@ class _StreamripGroup(HelpColorsGroup):
 
 
 @click.group(
+    # The command is `streamrip`, whatever this function is called: Click shows
+    # the name in every usage line and error ("Try 'streamrip csv --help'").
+    name="streamrip",
     cls=_StreamripGroup,
     help_headers_color="yellow",
     help_options_color="green",

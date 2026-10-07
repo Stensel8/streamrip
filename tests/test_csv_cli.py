@@ -39,6 +39,18 @@ def tracks_csv(tmp_path):
     return str(path)
 
 
+def _output(result, capsys) -> str:
+    """Everything the run printed, whichever capture it landed in.
+
+    With `log_cli` on (pyproject.toml), pytest's live log pauses and resumes its
+    capture in the middle of the run, which puts back the streams the runner
+    had swapped: what Click prints after that (its errors, on stderr) is in
+    pytest's capture, and `result.output` is empty.
+    """
+    captured = capsys.readouterr()
+    return result.output + captured.out + captured.err
+
+
 def test_the_tracks_are_searched_on_the_source_given(run, tracks_csv):
     result = run("csv", tracks_csv, "--source", "Tidal", "-fs", "qobuz")
 
@@ -62,11 +74,11 @@ def test_the_source_is_asked_when_it_is_left_out(run, tracks_csv, monkeypatch):
     assert run.calls["resolve"].await_args.args[2] == "deezer"
 
 
-def test_without_a_terminal_there_is_nobody_to_ask(run, tracks_csv):
+def test_without_a_terminal_there_is_nobody_to_ask(run, tracks_csv, capsys):
     result = run("csv", tracks_csv)  # CliRunner has no terminal
 
     assert result.exit_code == 2
-    assert "--source" in result.output
+    assert "--source" in _output(result, capsys)
     run.calls["resolve"].assert_not_awaited()
 
 
@@ -94,11 +106,11 @@ def test_every_source_can_be_chosen(run, tracks_csv, source):
     assert run("csv", tracks_csv, "-s", source).exit_code == 0
 
 
-def test_a_source_that_does_not_exist_is_refused(run, tracks_csv):
+def test_a_source_that_does_not_exist_is_refused(run, tracks_csv, capsys):
     result = run("csv", tracks_csv, "--source", "napster")
 
     assert result.exit_code == 2
-    assert "napster" in result.output
+    assert "napster" in _output(result, capsys)
 
 
 @pytest.mark.parametrize(
@@ -111,7 +123,7 @@ def test_a_source_that_does_not_exist_is_refused(run, tracks_csv):
     ids=["empty", "only a header", "not utf-8"],
 )
 def test_a_file_without_usable_tracks_ends_the_command_with_a_reason(
-    run, tmp_path, content, message
+    run, tmp_path, capsys, content, message
 ):
     path = tmp_path / "bad.csv"
     path.write_bytes(content if isinstance(content, bytes) else content.encode())
@@ -119,12 +131,12 @@ def test_a_file_without_usable_tracks_ends_the_command_with_a_reason(
     result = run("csv", str(path), "--source", "tidal")
 
     assert result.exit_code == 1
-    assert message in result.output
+    assert message in _output(result, capsys)
     run.calls["resolve"].assert_not_awaited()
 
 
-def test_a_file_that_is_not_there_is_refused(run, tmp_path):
+def test_a_file_that_is_not_there_is_refused(run, tmp_path, capsys):
     result = run("csv", str(tmp_path / "nope.csv"), "--source", "tidal")
 
     assert result.exit_code == 2
-    assert "does not exist" in result.output
+    assert "does not exist" in _output(result, capsys)
