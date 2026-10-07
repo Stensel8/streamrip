@@ -14,6 +14,7 @@ import logging
 import re
 from contextlib import nullcontext
 from dataclasses import dataclass
+from itertools import islice
 
 from rich.text import Text
 
@@ -32,6 +33,8 @@ logger = logging.getLogger("streamrip")
 MIN_SCORE = 0.8
 # How many results of a search are looked at.
 SEARCH_LIMIT = 5
+# How many rows of a file are looked at to find out what separates its cells.
+SAMPLE_ROWS = 10
 
 # Every header spelling understood, by what it means: the columns of Music-Sync,
 # and those of Exportify, TuneMyMusic, Soundiiz and the like.
@@ -93,6 +96,32 @@ def _track(record: dict[str, str]) -> MatchTrack | None:
     return MatchTrack(title, artists, record.get("album", ""), _duration_ms(record))
 
 
+def _rows(text: str, delimiter: str):
+    """The rows of a CSV text that have something in them."""
+    for row in csv.reader(io.StringIO(text), delimiter=delimiter):
+        if any(cell.strip() for cell in row):
+            yield row
+
+
+def _delimiter(text: str) -> str:
+    """What separates the cells of a CSV text: a comma, a semicolon or a tab.
+
+    It is the one that cuts the first rows into the same number of cells. Counting
+    them in the first line does not tell: a name can hold one ("Earth, Wind & Fire"
+    in a file of semicolons, quoted or not). A comma when nothing tells them apart.
+    """
+    best, best_key = ",", None
+    for delimiter in ",;\t":
+        widths = [len(row) for row in islice(_rows(text, delimiter), SAMPLE_ROWS)]
+        if max(widths, default=0) < 2:
+            continue  # it separates nothing
+        # Rows of one width first, and then as many cells as the header has.
+        key = (len(set(widths)) == 1, widths[0])
+        if best_key is None or key > best_key:
+            best, best_key = delimiter, key
+    return best
+
+
 def read_tracks(path: str) -> list[MatchTrack]:
     """The tracks in a CSV file. Rows without a title are skipped.
 
@@ -108,13 +137,7 @@ def read_tracks(path: str) -> list[MatchTrack]:
         raise ValueError(
             f"{path} is not UTF-8 encoded. Save it as UTF-8 (in Excel: CSV UTF-8)."
         ) from e
-    first_line = next((line for line in text.splitlines() if line.strip()), "")
-    delimiter = max(",;\t", key=first_line.count)  # a comma when there is a tie
-    rows = [
-        row
-        for row in csv.reader(io.StringIO(text), delimiter=delimiter)
-        if any(cell.strip() for cell in row)
-    ]
+    rows = list(_rows(text, _delimiter(text)))
     if not rows:
         return []
 

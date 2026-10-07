@@ -17,8 +17,9 @@ def notice_for(source: str, config: Config) -> str | None:
         )
     if source == "deezer" and config.session.downloads.lyrics:
         return (
-            "[yellow]Deezer:[/yellow] Deezer has no lyrics for every track, so the "
-            "others are looked up on lrclib.net, which is told their artist, title "
-            "and length. \\[downloads] lyrics = false in the config turns that off."
+            "[yellow]Deezer:[/yellow] Deezer does not have lyrics for every track, "
+            "so the others are looked up on lrclib.net, which is told their artist, "
+            "title and length. \\[downloads] lyrics = false in the config turns "
+            "that off."
         )
     return None

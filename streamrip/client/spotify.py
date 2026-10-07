@@ -396,6 +396,7 @@ class SpotifyClient(Client):
         return album
 
     async def _get_playlist(self, item_id: str) -> dict:
+        skipped = 0
         try:
             playlist = await self._api(f"playlists/{item_id}")
             tracks: list[dict] = []
@@ -413,6 +414,8 @@ class SpotifyClient(Client):
                         and track.get("id")
                     ):
                         tracks.append(self._remember(track))
+                    else:
+                        skipped += 1
         except ItemNotFoundError:
             raise NonStreamableError(PLAYLIST_NOT_READABLE) from None
         except SpotifyAPIError as e:
@@ -423,6 +426,11 @@ class SpotifyClient(Client):
             raise
         playlist["name"] = playlist.get("name") or f"Spotify playlist {item_id}"
         playlist["tracks"] = tracks
+        if skipped:
+            logger.info(
+                f"Skipped {skipped} item(s) of {playlist['name']}: local files, "
+                "podcast episodes and tracks Spotify no longer shows cannot be downloaded"
+            )
         return playlist
 
     async def _get_artist(self, item_id: str) -> dict:

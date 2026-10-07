@@ -12,7 +12,9 @@ upstream issues and pull requests.
   track|album|artist|playlist ...`. Spotify encrypts its own audio, so streamrip
   does what [spotDL](https://github.com/spotDL/spotify-downloader) does: Spotify
   supplies the track list, tags (title, artists, album, track and disc numbers,
-  date, copyright, ISRC) and cover, and the audio is the same recording on
+  date, ISRC, and the copyright of an album: Spotify leaves it out of the album
+  it gives with a single track or a playlist track) and cover, and the audio is
+  the same recording on
   YouTube Music, found by ISRC and then by artist, title and length, and
   downloaded with yt-dlp. It is AAC (kept as it is) or MP3, never lossless, and a
   track YouTube Music only has as another version (live, remix, ...) is reported
@@ -78,11 +80,10 @@ upstream issues and pull requests.
   [Music-Sync](https://github.com/Stensel8/Music-Sync) (to Tidal, or to a CSV for
   `streamrip csv`), with a link.
 - The first time Deezer is used with `lyrics` on, streamrip says that Deezer does
-  has no lyrics for every track, so the others are looked up on LRCLIB, and how to
-  turn that off. The
-  README and the comment in the config say so too. Deezer's answer that it has no lyrics for a
-  track is no longer a warning for every track; a lyrics request that really
-  fails still is.
+  not have lyrics for every track, so the others are looked up on LRCLIB, and how
+  to turn that off. The README and the comment in the config say so too. Deezer's
+  answer that it has no lyrics for a track is no longer a warning for every track;
+  a lyrics request that really fails still is.
 
 ### Tests
 

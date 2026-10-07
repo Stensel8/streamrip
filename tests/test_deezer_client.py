@@ -125,6 +125,20 @@ async def test_a_lyrics_request_that_breaks_is_still_a_warning(caplog):
     assert "Failed to get lyrics for 1: down" in caplog.text
 
 
+async def test_another_error_answer_to_the_lyrics_request_is_still_a_warning(caplog):
+    """Only "no data" means no lyrics: an error answer is not always that."""
+    client = _client_with_a_track(
+        side_effect=GWAPIError('{"GATEWAY_ERROR": "too many requests"}')
+    )
+
+    with caplog.at_level(logging.DEBUG, logger="streamrip"):
+        track = await client.get_track("1")
+
+    assert "lyrics" not in track
+    assert "Failed to get lyrics for 1:" in caplog.text
+    assert "too many requests" in caplog.text
+
+
 async def test_lyrics_deezer_does_send_are_still_used():
     client = _client_with_a_track(return_value={"LYRICS_TEXT": "la la la"})
 

@@ -646,7 +646,9 @@ def _fetch_audio(url: str, directory: str, verify_ssl: bool, report, stop) -> st
         "progress_hooks": [hook],
         # YouTube hides its streams behind a script that needs a JavaScript
         # runtime; yt-dlp only looks for Deno unless it is told about the others.
-        "js_runtimes": {"deno": {}, "node": {}, "bun": {}, "quickjs": {}},
+        # Not Bun: yt-dlp can run Deno and Node without access to the computer
+        # (and QuickJS has none), but has no way to do that for Bun.
+        "js_runtimes": {"deno": {}, "node": {}, "quickjs": {}},
     }
     with YoutubeDL(options) as ydl:
         try:
@@ -708,14 +710,24 @@ class YtDlpDownloadable(Downloadable):
 
         directory = tempfile.mkdtemp(prefix="__streamrip_ytdlp_")
         try:
-            try:
-                fetched = await asyncio.to_thread(
+            worker = asyncio.create_task(
+                asyncio.to_thread(
                     _fetch_audio, self.url, directory, self.verify_ssl, report, stop
                 )
+            )
+            # What went wrong in it is raised below; when the download is
+            # cancelled, how the thread ends is of no interest.
+            worker.add_done_callback(lambda task: task.cancelled() or task.exception())
+            try:
+                await asyncio.wait([worker])
             except asyncio.CancelledError:
-                # The thread cannot be cancelled; tell it to stop at the next chunk.
+                # The thread cannot be cancelled: tell it to stop at the next
+                # chunk, and wait until it has, or it would still be writing in
+                # the directory that is removed below.
                 stop.set()
+                await asyncio.wait([worker])
                 raise
+            fetched = worker.result()
             if fetched.rsplit(".", 1)[-1].lower() == "m4a" == self.extension:
                 shutil.move(fetched, path)
             else:

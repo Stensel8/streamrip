@@ -2,6 +2,7 @@
 
 import base64
 import hashlib
+import logging
 import time
 from urllib.parse import parse_qs, urlsplit
 
@@ -410,7 +411,7 @@ async def test_an_album_comes_with_all_of_its_tracks(make_client, spotify):
     assert album["container"] == "AAC"
 
 
-async def test_a_playlist_gives_its_tracks_from_items(make_client, spotify):
+async def test_a_playlist_gives_its_tracks_from_items(make_client, spotify, caplog):
     spotify.on("GET", f"/v1/playlists/{PLAYLIST}", {"id": PLAYLIST, "name": "CC Mix"})
     spotify.on(
         "GET",
@@ -429,13 +430,16 @@ async def test_a_playlist_gives_its_tracks_from_items(make_client, spotify):
     )
     client = make_client()
 
-    playlist = await client.get_metadata(PLAYLIST, "playlist")
+    with caplog.at_level(logging.INFO, logger="streamrip"):
+        playlist = await client.get_metadata(PLAYLIST, "playlist")
 
     assert playlist["name"] == "CC Mix"
     assert [t["id"] for t in playlist["tracks"]] == ["new", "old"]
     assert (
         spotify.requests(f"/v1/playlists/{PLAYLIST}/items")[0]["query"]["limit"] == "50"
     )
+    # What is skipped is said, with the reason: a gone track, a local file, an episode.
+    assert "Skipped 3 item(s) of CC Mix: local files, podcast episodes" in caplog.text
 
 
 async def test_the_tracks_of_a_playlist_need_no_second_request(make_client, spotify):

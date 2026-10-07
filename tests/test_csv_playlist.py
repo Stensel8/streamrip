@@ -90,6 +90,59 @@ def test_other_layouts_are_understood(tmp_path, text, expected):
     assert rows(read_tracks(write(tmp_path, text))) == expected
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        # No header row, a comma in a name, quoted: that comma ties with the
+        # semicolon of the row, and is no separator.
+        '"Earth, Wind & Fire";September\n"Daft Punk";Get Lucky\n',
+        # Excel does not quote it in a file of semicolons.
+        "Earth, Wind & Fire;September\nDaft Punk;Get Lucky\n",
+    ],
+    ids=["quoted", "not quoted"],
+)
+def test_a_comma_in_a_name_does_not_make_the_commas_the_separator(tmp_path, text):
+    assert rows(read_tracks(write(tmp_path, text))) == [
+        ("September", ["Earth, Wind & Fire"], "", None),
+        ("Get Lucky", ["Daft Punk"], "", None),
+    ]
+
+
+def test_a_header_without_a_comma_and_names_with_some_is_a_file_of_semicolons(
+    tmp_path,
+):
+    path = write(
+        tmp_path,
+        "title;artists\nSeptember;Earth, Wind & Fire\nOhio;Crosby, Stills, Nash & Young\n",
+    )
+
+    assert rows(read_tracks(path)) == [
+        ("September", ["Earth, Wind & Fire"], "", None),
+        ("Ohio", ["Crosby, Stills, Nash & Young"], "", None),
+    ]
+
+
+def test_a_semicolon_between_artists_and_a_short_row_leave_a_file_of_commas_alone(
+    tmp_path,
+):
+    path = write(
+        tmp_path,
+        "title,artists,album\n"
+        "Get Lucky,Daft Punk; Pharrell Williams,Random Access Memories\n"
+        "Song,Band\n",
+    )
+
+    assert rows(read_tracks(path)) == [
+        (
+            "Get Lucky",
+            ["Daft Punk", "Pharrell Williams"],
+            "Random Access Memories",
+            None,
+        ),
+        ("Song", ["Band"], "", None),
+    ]
+
+
 def test_a_byte_order_mark_from_excel_does_not_hide_the_header(tmp_path):
     path = write(tmp_path, "Title;Artist\nSong;Band\n", encoding="utf-8-sig")
 

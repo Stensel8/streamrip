@@ -33,6 +33,14 @@ MIN_SCORE = 0.8
 # How far, in seconds, a record's length may be from the audio's. LRCLIB's own
 # exact lookup allows two.
 MAX_LENGTH_DIFFERENCE = 3.0
+LEFT_ALONE = "LRCLIB is left alone for the rest of the run"
+
+
+class LyricsUnavailableError(Exception):
+    """LRCLIB did not answer, or is left alone for the rest of the run.
+
+    That says nothing about the lyrics of a track: LRCLIB may well have them.
+    """
 
 
 def _user_agent() -> str:
@@ -103,6 +111,10 @@ class Lrclib:
     async def _get(self, path: str, params: dict):
         """The JSON of a request, or None for "there is none"."""
         async with self._slots:
+            # Looked at again here: a lookup that waited for a slot was let in
+            # before the failures that closed the door.
+            if self._failures >= MAX_FAILURES:
+                raise LyricsUnavailableError(LEFT_ALONE)
             async with self._session.get(
                 f"{API}/{path}", params=params, headers=self._headers
             ) as resp:
@@ -112,12 +124,15 @@ class Lrclib:
                 return await resp.json(content_type=None)
 
     async def record(self, wanted: MatchTrack, seconds: float | None) -> dict | None:
-        """The LRCLIB record of a track, or None; never raises."""
+        """The LRCLIB record of a track, or None if it has none.
+
+        Raises LyricsUnavailableError when LRCLIB does not answer, or is left alone.
+        """
         key = (wanted.artist.casefold(), wanted.title.casefold(), round(seconds or 0))
         if key in self._records:
             return self._records[key]
         if self._failures >= MAX_FAILURES:
-            return None
+            raise LyricsUnavailableError(LEFT_ALONE)
         try:
             params = {"artist_name": wanted.artist, "track_name": wanted.title}
             if seconds:
@@ -141,7 +156,9 @@ class Lrclib:
                 logger.warning(
                     "LRCLIB does not answer; no more lyrics are looked up this run"
                 )
-            return None
+            raise LyricsUnavailableError(
+                f"LRCLIB did not answer ({type(e).__name__})"
+            ) from e
         self._failures = 0
         self._records[key] = record if isinstance(record, dict) else None
         return self._records[key]
@@ -158,7 +175,11 @@ _lrclib: Lrclib | None = None
 async def find_lyrics(
     wanted: MatchTrack, seconds: float | None, plain: bool, verify_ssl: bool = True
 ) -> str | None:
-    """The lyrics of a track on LRCLIB, or None. `seconds` is the audio's length."""
+    """The lyrics of a track on LRCLIB, or None if it has none there.
+
+    `seconds` is the audio's length. Raises LyricsUnavailableError when LRCLIB did not
+    answer: that is no "none".
+    """
     global _lrclib
     if _lrclib is None:
         _lrclib = Lrclib(verify_ssl)

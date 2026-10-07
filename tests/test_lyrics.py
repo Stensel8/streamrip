@@ -3,6 +3,7 @@
 The lyrics in these tests are made-up placeholders.
 """
 
+import asyncio
 import logging
 import socket
 from unittest.mock import AsyncMock
@@ -15,7 +16,13 @@ from test_track import FlacToFlacConverter, _make_track
 from streamrip import lyrics
 from streamrip.client.audio_match import MatchTrack
 from streamrip.config import Config
-from streamrip.lyrics import MAX_FAILURES, find_lyrics, lyrics_of
+from streamrip.lyrics import (
+    MAX_FAILURES,
+    Lrclib,
+    LyricsUnavailableError,
+    find_lyrics,
+    lyrics_of,
+)
 from streamrip.rip.main import Main
 
 PLAIN = "first made-up line\nsecond made-up line"
@@ -216,30 +223,57 @@ async def test_a_failing_lrclib_is_left_alone_after_a_few_tries(lrclib, caplog):
 
     with caplog.at_level(logging.WARNING, logger="streamrip"):
         for n in range(MAX_FAILURES + 3):
-            assert (
-                await find_lyrics(MatchTrack(f"Song {n}", ["Band"]), 200, False) is None
-            )
+            with pytest.raises(LyricsUnavailableError):
+                await find_lyrics(MatchTrack(f"Song {n}", ["Band"]), 200, False)
 
     assert len(lrclib.calls) == MAX_FAILURES  # the rest were not even tried
     assert caplog.text.count("LRCLIB does not answer") == 1
 
 
+async def test_a_lookup_that_waited_for_a_slot_is_not_made_once_lrclib_is_left_alone(
+    lrclib,
+):
+    lrclib.on("get", record())
+    client = Lrclib()
+    try:
+        # Every slot is taken, so lookups have to wait for one...
+        for _ in range(lyrics.CONCURRENCY):
+            await client._slots.acquire()
+        waiting = [
+            asyncio.create_task(client.record(MatchTrack(f"Song {n}", ["Band"]), 200))
+            for n in range(5)
+        ]
+        await asyncio.sleep(0)
+        # ...and while they wait, enough lookups fail for LRCLIB to be left alone.
+        client._failures = MAX_FAILURES
+        for _ in range(lyrics.CONCURRENCY):
+            client._slots.release()
+        results = await asyncio.gather(*waiting, return_exceptions=True)
+    finally:
+        await client.close()
+
+    assert all(isinstance(result, LyricsUnavailableError) for result in results)
+    assert lrclib.calls == []
+
+
 async def test_a_success_starts_the_count_again(lrclib):
     for n in range(MAX_FAILURES - 1):
         lrclib.on("get", (500, {}))
-        await find_lyrics(MatchTrack(f"Failing {n}", ["Band"]), 200, False)
+        with pytest.raises(LyricsUnavailableError):
+            await find_lyrics(MatchTrack(f"Failing {n}", ["Band"]), 200, False)
     lrclib.on("get", record())
     assert await find_lyrics(MatchTrack("Works", ["Band"]), 200, False) == SYNCED
 
     lrclib.calls.clear()
     lrclib.on("get", (500, {}))
     for n in range(MAX_FAILURES - 1):
-        await find_lyrics(MatchTrack(f"Failing again {n}", ["Band"]), 200, False)
+        with pytest.raises(LyricsUnavailableError):
+            await find_lyrics(MatchTrack(f"Failing again {n}", ["Band"]), 200, False)
     lrclib.on("get", record())
     assert await find_lyrics(MatchTrack("Still works", ["Band"]), 200, False) == SYNCED
 
 
-async def test_an_unreachable_lrclib_is_no_lyrics_not_a_crash(monkeypatch):
+async def test_an_unreachable_lrclib_is_unavailable_not_a_crash(monkeypatch):
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         port = s.getsockname()[1]
@@ -247,9 +281,27 @@ async def test_an_unreachable_lrclib_is_no_lyrics_not_a_crash(monkeypatch):
     monkeypatch.setattr(lyrics, "_lrclib", None)
 
     try:
-        assert await find_lyrics(WANTED, 200.0, plain=False) is None
+        with pytest.raises(LyricsUnavailableError):
+            await find_lyrics(WANTED, 200.0, plain=False)
     finally:
         await lyrics.close()
+
+
+async def test_a_track_is_not_said_to_have_no_lyrics_when_lrclib_does_not_answer(
+    tmp_path, lrclib, caplog, monkeypatch
+):
+    monkeypatch.setattr(lyrics, "find_lyrics", find_lyrics)  # the real lookup
+    lrclib.on("get", (500, {"statusCode": 500}))
+
+    with caplog.at_level(logging.INFO, logger="streamrip"):
+        for n in range(MAX_FAILURES + 2):
+            directory = tmp_path / str(n)
+            directory.mkdir()
+            await _make_track(str(directory), "m4a").rip()
+
+    assert (tmp_path / "0" / "Song.m4a").exists()  # no track is lost
+    assert "No lyrics found" not in caplog.text
+    assert caplog.text.count("LRCLIB does not answer") == 1
 
 
 async def test_closing_is_safe_twice_and_a_new_session_follows(lrclib):

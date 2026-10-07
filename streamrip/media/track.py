@@ -228,6 +228,11 @@ class Track(Media):
             found = await lyrics.find_lyrics(
                 wanted, seconds, plain, c.downloads.verify_ssl
             )
+        except lyrics.LyricsUnavailableError as e:
+            # Not "no lyrics found": LRCLIB did not answer. It is said once, in
+            # a warning, when it is left alone, and not for every track.
+            logger.debug(f"Lyrics of '{self.meta.title}' not looked up: {e}")
+            return
         except Exception as e:
             logger.warning(
                 f"Could not look up lyrics for '{self.meta.title}': "

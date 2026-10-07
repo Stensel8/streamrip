@@ -125,7 +125,7 @@ in the config. A login that stops working is asked for again.
   2. **By hand**: copy the `arl` cookie from your browser's DevTools
      ([how to find it](https://github.com/nathom/streamrip/wiki/Finding-Your-Deezer-ARL-Cookie)).
 
-  The quality follows your subscription. **Deezer has no lyrics for every
+  The quality follows your subscription. **Deezer does not have lyrics for every
   track**, so streamrip looks the others up on LRCLIB (see [Lyrics](#lyrics)) and
   says so when you use Deezer; `lyrics = false` in `[downloads]` turns that off.
 - **SoundCloud** needs nothing.

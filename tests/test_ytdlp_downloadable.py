@@ -4,14 +4,21 @@ The "YouTube" here is a local server that serves the audio files of the tests;
 yt-dlp reads them like any direct link.
 """
 
+import asyncio
 import os
+import threading
+import time
 from pathlib import Path
 
 import mutagen
 import pytest
 from aiohttp import web
 
-from streamrip.client.downloadable import YtDlpDownloadable, _explain_ytdlp_error
+from streamrip.client.downloadable import (
+    YtDlpDownloadable,
+    _explain_ytdlp_error,
+    _fetch_audio,
+)
 from streamrip.exceptions import FFmpegNotFoundError, NonStreamableError
 from streamrip.utils.ffmpeg_utils import find_ffmpeg
 
@@ -93,6 +100,69 @@ async def test_a_link_that_is_gone_is_not_streamable(serve, tmp_path):
         await download(url, tmp_path, "m4a")
 
     assert not (tmp_path / "track.m4a").exists()
+
+
+async def test_a_cancelled_download_waits_for_its_thread_before_the_folder_goes(
+    monkeypatch, tmp_path
+):
+    """yt-dlp's thread cannot be cancelled: left running, it writes in a folder
+    that is already gone.
+    """
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    monkeypatch.setattr("tempfile.tempdir", str(scratch))
+    started, finished = threading.Event(), threading.Event()
+    seen = {}
+
+    def fetch(url, directory, verify_ssl, report, stop):
+        started.set()
+        while not stop.wait(0.01):  # "downloading", until it is told to stop
+            pass
+        time.sleep(0.1)  # a moment of work after it has noticed
+        seen["its folder was still there"] = os.path.isdir(directory)
+        finished.set()
+        raise RuntimeError("stopped")
+
+    monkeypatch.setattr("streamrip.client.downloadable._fetch_audio", fetch)
+    monkeypatch.setattr(
+        "streamrip.client.downloadable.find_ffmpeg", lambda: "/usr/bin/ffmpeg"
+    )
+    downloadable = YtDlpDownloadable(None, "https://example.com/x", "m4a")
+    task = asyncio.create_task(
+        downloadable.download(str(tmp_path / "track.m4a"), lambda _: None)
+    )
+    await asyncio.to_thread(started.wait, 5)
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert finished.is_set()
+    assert seen == {"its folder was still there": True}
+    assert list(scratch.iterdir()) == []  # and it is removed after
+
+
+def test_no_javascript_runtime_is_enabled_that_yt_dlp_cannot_sandbox(monkeypatch):
+    options = {}
+
+    class FakeYoutubeDL:
+        def __init__(self, given):
+            options.update(given)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def extract_info(self, url, download):
+            return {"requested_downloads": [{"filepath": "audio.m4a"}]}
+
+    monkeypatch.setattr("yt_dlp.YoutubeDL", FakeYoutubeDL)
+
+    _fetch_audio("https://example.com/x", "/nowhere", True, lambda n: None, None)
+
+    assert set(options["js_runtimes"]) == {"deno", "node", "quickjs"}
 
 
 async def test_without_ffmpeg_nothing_is_fetched(monkeypatch, tmp_path):
