@@ -157,10 +157,21 @@ def best_result(
 
 def queries(wanted: MatchTrack) -> list[str]:
     """What to search for: the title without brackets and "feat." first, which is
-    how a catalogue most often has it, then the title as the list has it.
+    how a catalogue most often has it, then the title as the list has it, then
+    the title before the artist: some catalogues rank that better (Qobuz has the
+    original of "Get Lucky" in the first results of "Get Lucky Daft Punk" only).
     """
-    titles = dict.fromkeys([simplify_title(wanted.title), wanted.title])
-    return [f"{wanted.artist} {title}".strip() for title in titles]
+    title = simplify_title(wanted.title)
+    return list(
+        dict.fromkeys(
+            f"{first} {second}".strip()
+            for first, second in [
+                (wanted.artist, title),
+                (wanted.artist, wanted.title),
+                (title, wanted.artist),
+            ]
+        )
+    )
 
 
 @dataclass(slots=True)

@@ -190,15 +190,16 @@ def test_nothing_is_chosen_when_no_result_is_the_track(results):
     assert best_result(WANTED, results) is None
 
 
-def test_the_title_is_searched_without_its_brackets_first():
+def test_the_title_is_searched_without_its_brackets_first_and_before_the_artist_last():
     assert queries(WANTED) == [
         "Daft Punk Get Lucky",
         "Daft Punk Get Lucky (feat. Pharrell Williams)",
+        "Get Lucky Daft Punk",
     ]
 
 
-def test_a_plain_title_is_searched_once_and_no_artist_is_no_gap():
-    assert queries(MatchTrack("Song", ["Band"])) == ["Band Song"]
+def test_a_plain_title_is_searched_by_artist_first_and_no_artist_is_no_gap():
+    assert queries(MatchTrack("Song", ["Band"])) == ["Band Song", "Song Band"]
     assert queries(MatchTrack("Song")) == ["Song"]
 
 
