@@ -56,6 +56,20 @@ upstream issues and pull requests.
   taken for the track. The tracks go in a folder named after the file, as a
   playlist.
 
+### Lyrics
+
+- **`lyrics_fallback = true` under `[downloads]` looks up the lyrics of tracks
+  whose source sent none** on [LRCLIB](https://lrclib.net), a free, open database
+  of lyrics that needs no account: Deezer sends none, and for Qobuz, SoundCloud
+  and Spotify there are none to ask for. Off by default, as it tells LRCLIB the
+  artist, title and length of those tracks. It asks with the length of the file
+  just downloaded, as synced lyrics only fit one edit of a song, and a search
+  result of another version, of another artist or of another length is not taken.
+  Synced (LRC) lyrics are used, plain ones for MP3. LRCLIB being slow or down
+  costs nothing: after three failures in a row it is left alone for the run, and
+  a lyric that cannot be found never fails a track. Its session is a plain one of
+  its own, never a source's, which holds that source's login.
+
 ### Notices
 
 - The first time Spotify is used in a run, streamrip says its audio comes from
@@ -63,8 +77,9 @@ upstream issues and pull requests.
   [Music-Sync](https://github.com/Stensel8/Music-Sync) (to Tidal, or to a CSV for
   `streamrip csv`), with a link.
 - The first time Deezer is used with `lyrics` on, streamrip says that Deezer does
-  not send lyrics, so its tracks are tagged without them. The README and the
-  comment in the config say so too. Deezer's answer that it has no lyrics for a
+  not send lyrics, so its tracks are tagged without them, and what to turn on
+  (`lyrics_fallback`) or, when it is on, that they are looked up. The README and
+  the comment in the config say so too. Deezer's answer that it has no lyrics for a
   track is no longer a warning for every track; a lyrics request that really
   fails still is.
 

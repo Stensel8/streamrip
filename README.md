@@ -127,7 +127,8 @@ in the config. A login that stops working is asked for again.
 
   The quality follows your subscription. **Deezer does not send lyrics**: its
   tracks are tagged without them (Tidal's have them), and streamrip says so when
-  you use Deezer. `lyrics = false` in `[downloads]` silences that.
+  you use Deezer. `lyrics_fallback = true` in `[downloads]` looks them up on
+  LRCLIB instead (see [Lyrics](#lyrics)); `lyrics = false` silences the note.
 - **SoundCloud** needs nothing.
 - **Spotify** needs an app of your own and a login in your browser, once. See
   [Spotify](#spotify) below.
@@ -241,6 +242,29 @@ Search shows each result's cover next to its details. Terminals with SIXEL or
 Kitty graphics support (Konsole, foot and Windows Terminal, for example) show it
 as an image; the others fall back to colored blocks, which are less sharp.
 
+## Lyrics
+
+Tidal sends lyrics, and streamrip embeds them (time-synced ones as LRC text,
+plain ones in an MP3). Deezer does not send any, and for Qobuz, SoundCloud and
+Spotify there are none to ask for, so those tracks are tagged without.
+
+`lyrics_fallback = true` in `[downloads]` fills that gap: for a track whose
+source sent no lyrics, streamrip looks them up on [LRCLIB](https://lrclib.net), a
+free, open database of lyrics that its users add. It needs no account or key.
+
+- It is **off by default**, because it tells LRCLIB the artist, title and length
+  of every track that has no lyrics.
+- The length is that of the file just downloaded, as time-synced lyrics only fit
+  one edit of a song: a record has to be within a few seconds of it, and one of
+  another version (live, remix, ...) or of another artist is not taken. A track
+  LRCLIB does not have stays without lyrics, and a lookup that fails never fails
+  a track; after three failures in a row LRCLIB is left alone for the run.
+- Synced (LRC) lyrics go in M4A and FLAC, plain ones in an MP3 (also when you
+  convert to MP3). Lyrics a source did send are left alone, and `lyrics = false`
+  or `exclude = ["lyrics"]` in `[metadata]` keeps any lookup from happening.
+- Lyrics stay the property of their owners, and LRCLIB's come from its users:
+  this is for your own library.
+
 ## CSV lists
 
 `streamrip csv list.csv` downloads the tracks of a CSV list by searching them on
@@ -294,7 +318,8 @@ inspired by [rip](https://github.com/nathom/streamrip),
 [qobuz-dl](https://github.com/vitiko98/qobuz-dl),
 [Qo-DL Reborn](https://github.com/badumbass/Qo-DL-Reborn),
 [Tidal-Media-Downloader](https://github.com/yaronzz/Tidal-Media-Downloader)
-and [scdl](https://github.com/flyingrub/scdl).
+and [scdl](https://github.com/flyingrub/scdl). The optional lyrics lookup uses
+[LRCLIB](https://lrclib.net).
 
 ## Disclaimer
 
