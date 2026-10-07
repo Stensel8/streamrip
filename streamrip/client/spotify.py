@@ -47,7 +47,8 @@ TOKEN_URL = "https://accounts.spotify.com/api/token"
 SCOPES = ("playlist-read-private", "playlist-read-collaborative")
 
 PAGE_SIZE = 50
-# Apps in development mode get at most 10 results per search request.
+# Apps in development mode get at most 10 results per search request, and the
+# albums of an artist answer "Invalid limit" to more than that as well.
 SEARCH_PAGE_SIZE = 10
 # A menu of more results than this is five requests, and no one reads them all.
 SEARCH_MAX_RESULTS = 50
@@ -430,7 +431,7 @@ class SpotifyClient(Client):
         # The artist's own releases: not the ones they only appear on.
         async for page in self._pages(
             f"artists/{item_id}/albums",
-            {"include_groups": "album,single", "limit": PAGE_SIZE},
+            {"include_groups": "album,single", "limit": SEARCH_PAGE_SIZE},
         ):
             for album in filter(None, page.get("items") or []):
                 if album.get("id"):

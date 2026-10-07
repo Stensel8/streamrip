@@ -511,6 +511,8 @@ async def test_an_artist_comes_with_its_own_releases(make_client, spotify):
     assert [a["id"] for a in artist["albums"]] == ["a1", "a2", "a3"]
     first = spotify.requests(f"/v1/artists/{ARTIST}/albums")[0]["query"]
     assert first["include_groups"] == "album,single"
+    # Spotify answers "Invalid limit" to more than 10 for an app in development mode.
+    assert first["limit"] == "10"
 
 
 async def test_labels_are_not_a_thing_on_spotify(make_client):
