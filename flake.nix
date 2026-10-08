@@ -49,6 +49,7 @@
           wrapProgram "$out/bin/${mainProgram}" \
             --prefix PATH : ${lib.makeBinPath runtimeTools}
         '';
+        doInstallCheck = true;
         postInstallCheck = ''
           # A present [cli] must contain its required typed fields. All other
           # sections are filled from the upstream template by Config itself.
