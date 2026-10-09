@@ -25,8 +25,7 @@ class Label(Media):
     async def download(self):
         """Resolve and download every album in the label's catalog."""
         announce(self.name, self.albums)
-        enabled = self.config is not None and self.config.session.cli.progress_bars
-        await rip_albums(self.albums, self.name, enabled)
+        await rip_albums(self.albums)
 
 
 @dataclass(slots=True)
