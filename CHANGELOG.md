@@ -3,6 +3,39 @@
 All notable changes in this fork of [nathom/streamrip](https://github.com/nathom/streamrip). Numbers can refer to
 upstream issues and pull requests.
 
+## 2.5.0
+
+Thanks to [@berettavexee](https://github.com/berettavexee) for the unified progress
+bar below, and to [@Multipixelone](https://github.com/Multipixelone) for the Nix
+flake below.
+
+### Progress
+
+- **One overall progress bar, counting tracks, for every download.** An artist
+  or label download used to get a top bar counting *albums* (`3/37 albums`), and
+  a single album or playlist only the per-track rows of what was downloading
+  right then, so on a 59-track playlist you could not tell whether you were at
+  track 5 or 50. From the user's side those are the same thing: a lot of tracks,
+  and you want to see the overall progress. The album-count bar, the resolve
+  spinner ("Obtaining album info…") and the per-source bars are gone; in their
+  place is one bar (`Overall`, `12/15 tracks`) that album, playlist and artist
+  downloads all share: an artist's total grows as each of its albums starts,
+  because its tracks are only known then. A track counts on it whatever its
+  outcome, resolved or not, so the bar never stalls on a failure. The bar is
+  reset between runs, and its running total is kept by streamrip, not read back
+  from Rich's task list, which is reindexed when a task is removed. (#47)
+
+### Nix
+
+- **A Nix flake** (`nix build`, `nix run`, `nix develop`, `nix flake check`) for
+  x86_64-linux, with nixpkgs pinned in `flake.lock`, on Python 3.14: the
+  package with an explicit dependency list kept in sync with `pyproject.toml`, a
+  development shell with the same dependencies plus Poetry and Ruff, and
+  FFmpeg, Deno and Chromium on `PATH`. The package runs the non-browser test
+  suite and offline CLI smoke checks (`--version`, `--help`, loading a config).
+  Renovate keeps the nixpkgs pin up to date, and CI runs `nix flake check` on
+  every change. (#46)
+
 ## 2.4.11
 
 ### Spotify
