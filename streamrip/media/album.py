@@ -94,18 +94,12 @@ class Album(Media):
 
     async def download(self):
         """Resolve and download every track of the album."""
-        enabled = (
-            len(self.tracks) > RESOLVE_CONCURRENCY
-            and self.config.session.cli.progress_bars
+        await rip_tracks(
+            self.tracks,
+            RESOLVE_CONCURRENCY,
+            self.config.session.metadata.prefer_explicit,
+            self.config.session.cli.progress_bars,
         )
-        with progress.get_resolve_callback(
-            enabled, f"Obtaining album info: {self.meta.album}"
-        ):
-            await rip_tracks(
-                self.tracks,
-                RESOLVE_CONCURRENCY,
-                self.config.session.metadata.prefer_explicit,
-            )
         # One line for every album, however small, so the scrollback is a
         # complete record of the run -- failed tracks log their own errors.
         # (An album with nothing left to download already logged a skip.)

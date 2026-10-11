@@ -45,25 +45,27 @@ class ProgressManager:
     def __init__(self):
         """Build the resolve and download progress bars, not started yet."""
         self.started = False
-        # Its own Progress, not a task in the download one: that one's columns
-        # (bar, transfer speed, ETA) don't mean anything for "still fetching
-        # metadata" -- this is just a spinner and a line of text.
-        self.resolve_progress = Progress(
-            SpinnerColumn(), TextColumn("[cyan]{task.description}"), console=console
-        )
-        # One bar for the artist/label catalog currently running, counting
-        # albums rather than bytes -- the per-track rows below only show
-        # what's downloading *right now*, not how far into the whole
-        # discography that is.
-        self.source_progress = Progress(
-            SpinnerColumn(),
-            TextColumn("[cyan]{task.description}"),
-            BarColumn(bar_width=None),
+        # One bar for the whole job, counting tracks: the per-track rows below
+        # only show what's downloading *right now*, not how far through the
+        # album, playlist or discography that is. An artist's total grows as
+        # each of its albums starts -- the tracks are only known then.
+        self.overall_progress = Progress(
+            TextColumn("[bold white]{task.description}"),
+            BarColumn(
+                bar_width=None,
+                style="dim white",
+                complete_style="white",
+                finished_style="dim white",
+            ),
             "[progress.percentage]{task.percentage:>3.0f}%",
             "•",
-            TextColumn("{task.completed}/{task.total} albums"),
+            TextColumn("{task.completed}/{task.total} tracks"),
+            "•",
+            TimeRemainingColumn(),
             console=console,
         )
+        self._overall_task: int | None = None
+        self._overall_total = 0
         self.progress = Progress(
             SpinnerColumn(),
             TextColumn("[cyan]{task.description}"),
@@ -94,9 +96,11 @@ class ProgressManager:
 
     def _group(self) -> Group:
         """Return the renderable group the Live display shows."""
-        return Group(
-            self._title, self.source_progress, self.resolve_progress, self.progress
-        )
+        parts: list = [self._title]
+        if self._overall_task is not None:
+            parts.append(self.overall_progress)
+        parts.append(self.progress)
+        return Group(*parts)
 
     def _ensure_started(self):
         """Start the Live display on its first use."""
@@ -113,6 +117,37 @@ class ProgressManager:
             lambda n: progress.update(task_id, advance=n),
             lambda: progress.update(task_id, visible=False),
         )
+
+    def overall_add(self, n: int):
+        """Grow the overall track bar's total by `n`, creating it on first use.
+
+        The running total is kept here, not read back from Rich: its
+        ``tasks`` list is reindexed when a task is removed, so a TaskID from an
+        earlier run is not a valid index into it.
+        """
+        if n <= 0:
+            return
+        self._ensure_started()
+        self._overall_total += n
+        if self._overall_task is None:
+            self._overall_task = self.overall_progress.add_task(
+                "Overall", total=self._overall_total
+            )
+            self.live.update(self._group())
+        else:
+            self.overall_progress.update(self._overall_task, total=self._overall_total)
+
+    def overall_advance(self, n: int = 1):
+        """Count `n` more tracks as done on the overall bar."""
+        if self._overall_task is not None:
+            self.overall_progress.advance(self._overall_task, n)
+
+    def overall_reset(self):
+        """Drop the overall bar so the next run starts a fresh one."""
+        self._overall_total = 0
+        if self._overall_task is not None:
+            self.overall_progress.remove_task(self._overall_task)
+            self._overall_task = None
 
     def clear_screen(self):
         """Wipe the terminal; the live display restarts on its next use."""
@@ -171,16 +206,16 @@ def get_progress_callback(enabled: bool, total: int, desc: str) -> Handle:
     return _p._add_task(_p.progress, desc, total=total or None)
 
 
-def get_source_callback(enabled: bool, total: int, desc: str) -> Handle:
-    """Return an artist/label album-count Handle, or a no-op one if disabled."""
-    if not enabled:
-        return NO_PROGRESS
-    return _p._add_task(_p.source_progress, desc, total=total)
+def overall_add(n: int, enabled: bool = True):
+    """Add `n` tracks to the overall progress bar, unless disabled."""
+    if enabled:
+        _p.overall_add(n)
 
 
-def get_resolve_callback(enabled: bool, desc: str) -> Handle:
-    """Return a resolve progress Handle, or a no-op one if disabled."""
-    return _p._add_task(_p.resolve_progress, desc) if enabled else NO_PROGRESS
+def overall_advance(n: int = 1, enabled: bool = True):
+    """Count `n` more tracks done on the overall bar, unless disabled."""
+    if enabled:
+        _p.overall_advance(n)
 
 
 def add_title(key: int, title: str, enabled: bool = True):
@@ -203,6 +238,7 @@ def clear_screen(enabled: bool = True):
 
 def clear_progress():
     """Stop the live display, if it was started; the next bar starts it again."""
+    _p.overall_reset()
     if _p.started:
         _p.live.stop()
         _p.started = False

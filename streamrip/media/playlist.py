@@ -156,18 +156,14 @@ class Playlist(Media):
 
     async def download(self):
         """Resolve and download every track of the playlist."""
-        big = len(self.tracks) > RESOLVE_CONCURRENCY
-        if big:
+        if len(self.tracks) > RESOLVE_CONCURRENCY:
             console.log(f"Resolving {len(self.tracks)} tracks: {self.name}")
-        enabled = big and self.config.session.cli.progress_bars
-        with progress.get_resolve_callback(
-            enabled, f"Obtaining playlist info: {self.name}"
-        ):
-            await rip_tracks(
-                self.tracks,
-                RESOLVE_CONCURRENCY,
-                self.config.session.metadata.prefer_explicit,
-            )
+        await rip_tracks(
+            self.tracks,
+            RESOLVE_CONCURRENCY,
+            self.config.session.metadata.prefer_explicit,
+            self.config.session.cli.progress_bars,
+        )
 
 
 @dataclass(slots=True)

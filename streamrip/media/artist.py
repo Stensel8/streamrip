@@ -3,7 +3,6 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from .. import progress
 from ..client import Client
 from ..config import ArtistFilterConfig, Config
 from ..console import console
@@ -28,8 +27,6 @@ def announce(name: str, albums: list) -> None:
 
 async def rip_albums(
     albums: list[PendingAlbum],
-    name: str,
-    enabled: bool,
     wanted: Callable[[Album], bool] = lambda _: True,
 ):
     """Resolve and download albums one at a time; a failure costs one album.
@@ -37,16 +34,16 @@ async def rip_albums(
     One at a time, like the items of a run (rip/main.py): an album's tracks
     never mix with another's on screen, or on the rate limit.
     """
-    with progress.get_source_callback(enabled, len(albums), name) as advance:
-        for item in albums:
-            try:
-                album = await item.resolve()
-                if album is not None and wanted(album):
-                    await album.rip()
-            except Exception as e:
-                logger.error(f"Error downloading album: {type(e).__name__}: {e}")
-            finally:
-                advance(1)
+    # No album-count bar here: each album adds its tracks to the one overall
+    # bar as it downloads (media.rip_tracks), so the discography shows the same
+    # unified track progress as a single album or playlist.
+    for item in albums:
+        try:
+            album = await item.resolve()
+            if album is not None and wanted(album):
+                await album.rip()
+        except Exception as e:
+            logger.error(f"Error downloading album: {type(e).__name__}: {e}")
 
 
 @dataclass(slots=True)
@@ -88,22 +85,15 @@ class Artist(Media):
             albums = self._filter_repeats(albums)
         albums = [a for a in albums if self._wanted(a, filters)]
 
-        enabled = self.config is not None and self.config.session.cli.progress_bars
-        with progress.get_source_callback(enabled, len(albums), self.name) as advance:
-            for album in albums:
-                try:
-                    await album.rip()
-                except Exception as e:
-                    logger.error(f"Error downloading album: {type(e).__name__}: {e}")
-                finally:
-                    advance(1)
+        for album in albums:
+            try:
+                await album.rip()
+            except Exception as e:
+                logger.error(f"Error downloading album: {type(e).__name__}: {e}")
 
     async def _download_async(self, filters: ArtistFilterConfig):
         """Resolve and download albums one at a time, without repeats filtering."""
-        enabled = self.config is not None and self.config.session.cli.progress_bars
-        await rip_albums(
-            self.albums, self.name, enabled, lambda a: self._wanted(a, filters)
-        )
+        await rip_albums(self.albums, lambda a: self._wanted(a, filters))
 
     def _wanted(self, a: Album, f: ArtistFilterConfig) -> bool:
         """Whether an album passes every enabled filter except repeats."""
