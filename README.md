@@ -1,4 +1,4 @@
-![streamrip logo](https://github.com/Stensel8/streamrip/blob/dev/demo/logo.svg?raw=true)
+![streamrip logo](demo/logo.svg)
 
 [![CI](https://github.com/Stensel8/streamrip/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/Stensel8/streamrip/actions/workflows/ci.yml)
 [![Latest release](https://img.shields.io/github/v/release/Stensel8/streamrip?display_name=tag&sort=semver)](https://github.com/Stensel8/streamrip/releases/latest)
@@ -14,7 +14,7 @@ A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, SoundCl
 > APIs without notice, so it needs upkeep: it works now, with no promise that
 > it stays maintained.
 
-![downloading an album](https://github.com/Stensel8/streamrip/blob/dev/demo/download_album.png?raw=true)
+![downloading an album](demo/download_album.svg)
 
 - Tracks, albums, playlists, discographies and labels; queue several in one go
 - A CSV list of tracks (from [Music-Sync](https://github.com/Stensel8/Music-Sync) or another exporter): streamrip asks where to search it, see [CSV lists](#csv-lists)
@@ -260,7 +260,7 @@ quality to download (SoundCloud and Spotify have one):
 
 Every command has a `--help`.
 
-![streamrip interactive search](https://github.com/Stensel8/streamrip/blob/dev/demo/playlist_search.png?raw=true)
+![streamrip interactive search](demo/playlist_search.svg)
 
 Search shows each result's cover next to its details. Terminals with SIXEL or
 Kitty graphics support (Konsole, foot and Windows Terminal, for example) show it
