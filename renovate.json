@@ -12,7 +12,8 @@
   "semanticCommits": "enabled",
   "enabledManagers": [
     "poetry",
-    "github-actions"
+    "github-actions",
+    "nix"
   ],
   "labels": [
     "dependencies"
@@ -59,7 +60,22 @@
       "matchUpdateTypes": [
         "major"
       ],
-      "automerge": false
+      "automerge": true
+    },
+    {
+      "description": "Nix updates run monthly with the shared automerge policy",
+      "matchManagers": [
+        "nix"
+      ],
+      "schedule": [
+        "* 0-5 1-7 * 1"
+      ],
+      "lockFileMaintenance": {
+        "enabled": true,
+        "schedule": [
+          "* 0-5 1-7 * 1"
+        ]
+      }
     }
   ]
 }
