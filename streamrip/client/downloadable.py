@@ -37,6 +37,10 @@ logger = logging.getLogger("streamrip")
 BLOWFISH_SECRET = "g4el58wc0zvf9na1"
 # Deezer encrypts the first 2048 bytes of every stripe of this many.
 DEEZER_STRIPE = 3 * 2048
+# ffmpeg processes joining SoundCloud's HLS segments at once. Joining is a plain
+# copy, but a mix of thousands of segments is dozens of batches, and starting a
+# process for each at the same time can run into process or memory limits.
+FFMPEG_MAX_PROCESSES = 4
 
 
 def generate_temp_path(url: str):
@@ -770,11 +774,20 @@ class YtDlpDownloadable(Downloadable):
             )
 
 
-async def concat_audio_files(paths: list[str], out: str, ext: str, max_files_open=128):
+async def concat_audio_files(
+    paths: list[str],
+    out: str,
+    ext: str,
+    max_files_open=128,
+    max_processes=FFMPEG_MAX_PROCESSES,
+):
     """Concatenate audio files with ffmpeg, at most max_files_open at a time.
 
-    Each batch is joined into an intermediate file, and those are joined the
-    same way, until one file is left.
+    Each batch is joined into an intermediate file by its own ffmpeg process,
+    at most max_processes of them at once, and those files are joined the same
+    way, until one file is left. When a process fails, or the call is
+    cancelled, the processes still running are killed and the intermediate
+    files removed.
     """
     ffmpeg_path = find_ffmpeg()
     if ffmpeg_path is None:
@@ -796,9 +809,12 @@ async def concat_audio_files(paths: list[str], out: str, ext: str, max_files_ope
         with contextlib.suppress(FileNotFoundError):
             os.remove(p)  # left behind by a run that failed
 
-    processes = await asyncio.gather(
-        *(
-            asyncio.create_subprocess_exec(
+    limit = asyncio.Semaphore(max_processes)
+    started: list[asyncio.subprocess.Process] = []
+
+    async def join(batch: tuple[str, ...], outpath: str):
+        async with limit:
+            proc = await asyncio.create_subprocess_exec(
                 ffmpeg_path,
                 "-i",
                 f"concat:{'|'.join(batch)}",
@@ -810,21 +826,35 @@ async def concat_audio_files(paths: list[str], out: str, ext: str, max_files_ope
                 stdin=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.PIPE,
             )
-            for batch, outpath in zip(batches, outpaths)
-        )
-    )
-    results = await asyncio.gather(*(p.communicate() for p in processes))
+            started.append(proc)
+            _, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            raise Exception(
+                f"FFMPEG returned with status code {proc.returncode}: "
+                f"{stderr.decode(errors='replace')[-300:]}"
+            )
+
+    tasks = [
+        asyncio.create_task(join(batch, outpath))
+        for batch, outpath in zip(batches, outpaths)
+    ]
     try:
-        for proc, (_, stderr) in zip(processes, results):
-            if proc.returncode != 0:
-                raise Exception(
-                    f"FFMPEG returned with status code {proc.returncode}: "
-                    f"{stderr.decode(errors='replace')[-300:]}"
-                )
+        await asyncio.gather(*tasks)
 
         # Recurse on remaining batches
-        await concat_audio_files(outpaths, out, ext)
+        await concat_audio_files(outpaths, out, ext, max_processes=max_processes)
     finally:
+        # gather leaves the other batches running when one fails, and nothing
+        # stops them when the download is cancelled: stop the tasks, kill what
+        # they started, and only then delete the files those were writing.
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        for proc in started:
+            if proc.returncode is None:
+                with contextlib.suppress(ProcessLookupError):
+                    proc.kill()
+        await asyncio.gather(*(p.wait() for p in started), return_exceptions=True)
         # The last one was moved into place; the rest are intermediates.
         for p in outpaths:
             if os.path.exists(p):
