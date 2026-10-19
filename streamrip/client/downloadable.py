@@ -37,10 +37,6 @@ logger = logging.getLogger("streamrip")
 BLOWFISH_SECRET = "g4el58wc0zvf9na1"
 # Deezer encrypts the first 2048 bytes of every stripe of this many.
 DEEZER_STRIPE = 3 * 2048
-# ffmpeg processes joining SoundCloud's HLS segments at once. Joining is a plain
-# copy, but a mix of thousands of segments is dozens of batches, and starting a
-# process for each at the same time can run into process or memory limits.
-FFMPEG_MAX_PROCESSES = 4
 
 
 def generate_temp_path(url: str):
@@ -775,19 +771,14 @@ class YtDlpDownloadable(Downloadable):
 
 
 async def concat_audio_files(
-    paths: list[str],
-    out: str,
-    ext: str,
-    max_files_open=128,
-    max_processes=FFMPEG_MAX_PROCESSES,
+    paths: list[str], out: str, ext: str, max_files_open=128, max_processes=4
 ):
     """Concatenate audio files with ffmpeg, at most max_files_open at a time.
 
-    Each batch is joined into an intermediate file by its own ffmpeg process,
-    at most max_processes of them at once, and those files are joined the same
-    way, until one file is left. When a process fails, or the call is
-    cancelled, the processes still running are killed and the intermediate
-    files removed.
+    Each batch is joined into an intermediate file by an ffmpeg process, at most
+    max_processes at once, and those files are joined the same way, until one
+    file is left. If a process fails or the call is cancelled, the others are
+    killed and the intermediate files removed.
     """
     ffmpeg_path = find_ffmpeg()
     if ffmpeg_path is None:
@@ -810,9 +801,9 @@ async def concat_audio_files(
             os.remove(p)  # left behind by a run that failed
 
     limit = asyncio.Semaphore(max_processes)
-    started: list[asyncio.subprocess.Process] = []
+    started = []
 
-    async def join(batch: tuple[str, ...], outpath: str):
+    async def join(batch, outpath):
         async with limit:
             proc = await asyncio.create_subprocess_exec(
                 ffmpeg_path,
@@ -842,19 +833,17 @@ async def concat_audio_files(
         await asyncio.gather(*tasks)
 
         # Recurse on remaining batches
-        await concat_audio_files(outpaths, out, ext, max_processes=max_processes)
+        await concat_audio_files(outpaths, out, ext)
     finally:
-        # gather leaves the other batches running when one fails, and nothing
-        # stops them when the download is cancelled: stop the tasks, kill what
-        # they started, and only then delete the files those were writing.
+        # When one batch fails, gather leaves the others running. Stop them and
+        # kill their processes before deleting the files those are writing.
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
         for proc in started:
             if proc.returncode is None:
-                with contextlib.suppress(ProcessLookupError):
-                    proc.kill()
-        await asyncio.gather(*(p.wait() for p in started), return_exceptions=True)
+                proc.kill()
+            await proc.wait()
         # The last one was moved into place; the rest are intermediates.
         for p in outpaths:
             if os.path.exists(p):
