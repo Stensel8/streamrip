@@ -3,6 +3,30 @@
 All notable changes in this fork of [nathom/streamrip](https://github.com/nathom/streamrip). Numbers can refer to
 upstream issues and pull requests.
 
+## 2.5.1
+
+### SoundCloud
+
+- Joining the HLS segments of a long SoundCloud track no longer starts all its
+  ffmpeg processes at once. The segments are joined 128 at a time, with a
+  process for each batch, and all batches started together: a mix of thousands
+  of segments made dozens of processes, which can run into process or memory
+  limits. At most four run at a time now. (#32)
+- Cancelling a SoundCloud download (Ctrl-C), a failing ffmpeg process, or one
+  that cannot start no longer leaves anything behind. The processes still
+  running are killed, and the intermediate files they were writing are removed
+  from the temp folder. (#32)
+
+### Dependencies
+
+- The lock file moves to Playwright 1.64.0, pycryptodomex 3.24.1 and tomlkit
+  0.15.2, and also pyee 14.0.0 (which Playwright uses), platformdirs 4.13.5 and
+  certifi 2026.10.18. `pyproject.toml` allows the same versions as before: an
+  install from the repository already got the newest ones, the lock file only
+  pins what Poetry and CI use.
+- The development tools move to Ruff 0.17.1, pytest-mock 3.17.0 and pluggy
+  1.7.0, and CI to `cachix/install-nix-action` 31.11.2 and CodeQL 4.39.0.
+
 ## 2.5.0
 
 Thanks to [@berettavexee](https://github.com/berettavexee) for the unified progress

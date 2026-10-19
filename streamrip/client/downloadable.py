@@ -770,11 +770,15 @@ class YtDlpDownloadable(Downloadable):
             )
 
 
-async def concat_audio_files(paths: list[str], out: str, ext: str, max_files_open=128):
+async def concat_audio_files(
+    paths: list[str], out: str, ext: str, max_files_open=128, max_processes=4
+):
     """Concatenate audio files with ffmpeg, at most max_files_open at a time.
 
-    Each batch is joined into an intermediate file, and those are joined the
-    same way, until one file is left.
+    Each batch is joined into an intermediate file by an ffmpeg process, at most
+    max_processes at once, and those files are joined the same way, until one
+    file is left. If a process fails or the call is cancelled, the others are
+    killed and the intermediate files removed.
     """
     ffmpeg_path = find_ffmpeg()
     if ffmpeg_path is None:
@@ -796,9 +800,12 @@ async def concat_audio_files(paths: list[str], out: str, ext: str, max_files_ope
         with contextlib.suppress(FileNotFoundError):
             os.remove(p)  # left behind by a run that failed
 
-    processes = await asyncio.gather(
-        *(
-            asyncio.create_subprocess_exec(
+    limit = asyncio.Semaphore(max_processes)
+    started = []
+
+    async def join(batch, outpath):
+        async with limit:
+            proc = await asyncio.create_subprocess_exec(
                 ffmpeg_path,
                 "-i",
                 f"concat:{'|'.join(batch)}",
@@ -810,21 +817,33 @@ async def concat_audio_files(paths: list[str], out: str, ext: str, max_files_ope
                 stdin=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.PIPE,
             )
-            for batch, outpath in zip(batches, outpaths)
-        )
-    )
-    results = await asyncio.gather(*(p.communicate() for p in processes))
+            started.append(proc)
+            _, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            raise Exception(
+                f"FFMPEG returned with status code {proc.returncode}: "
+                f"{stderr.decode(errors='replace')[-300:]}"
+            )
+
+    tasks = [
+        asyncio.create_task(join(batch, outpath))
+        for batch, outpath in zip(batches, outpaths)
+    ]
     try:
-        for proc, (_, stderr) in zip(processes, results):
-            if proc.returncode != 0:
-                raise Exception(
-                    f"FFMPEG returned with status code {proc.returncode}: "
-                    f"{stderr.decode(errors='replace')[-300:]}"
-                )
+        await asyncio.gather(*tasks)
 
         # Recurse on remaining batches
         await concat_audio_files(outpaths, out, ext)
     finally:
+        # When one batch fails, gather leaves the others running. Stop them and
+        # kill their processes before deleting the files those are writing.
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        for proc in started:
+            if proc.returncode is None:
+                proc.kill()
+            await proc.wait()
         # The last one was moved into place; the rest are intermediates.
         for p in outpaths:
             if os.path.exists(p):

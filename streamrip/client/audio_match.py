@@ -123,11 +123,6 @@ def _comparable(text: str) -> str:
     return " ".join(_SPELLINGS.get(word, word) for word in words)
 
 
-def searchable(text: str) -> str:
-    """``text`` without accents and punctuation: another way to put it to a search engine."""
-    return _words(_fold(text))
-
-
 def simplify_title(title: str) -> str:
     """Drop bracketed parts, "feat." clauses and " - Remastered" style suffixes, keeping the case.
     A title that is nothing but such parts, like "(Untitled)", is kept as it is."""
