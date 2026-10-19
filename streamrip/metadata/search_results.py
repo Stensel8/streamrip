@@ -405,10 +405,6 @@ class SearchResults:
             ]
         )
 
-    def summaries(self) -> list[str]:
-        """The numbered one-line summaries the search menu shows."""
-        return [f"{i + 1}. {r.summarize()}" for i, r in enumerate(self.results)]
-
     def get_choices(self, inds: tuple[int, ...] | int):
         if isinstance(inds, int):
             inds = (inds,)
