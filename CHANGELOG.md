@@ -19,12 +19,13 @@ upstream issues and pull requests.
 
 ### Dependencies
 
-- The lock file moves to Playwright 1.64.0 and pycryptodomex 3.24.1 (and pyee
-  14.0.0, which Playwright uses). `pyproject.toml` allows the same versions as
-  before: an install from the repository already got the newest ones, the lock
-  file only pins what Poetry and CI use.
-- The development tools move to Ruff 0.17.1 and pluggy 1.7.0, and CI to
-  `cachix/install-nix-action` 31.11.2 and CodeQL 4.39.0.
+- The lock file moves to Playwright 1.64.0, pycryptodomex 3.24.1 and tomlkit
+  0.15.2, and also pyee 14.0.0 (which Playwright uses), platformdirs 4.13.5 and
+  certifi 2026.10.18. `pyproject.toml` allows the same versions as before: an
+  install from the repository already got the newest ones, the lock file only
+  pins what Poetry and CI use.
+- The development tools move to Ruff 0.17.1, pytest-mock 3.17.0 and pluggy
+  1.7.0, and CI to `cachix/install-nix-action` 31.11.2 and CodeQL 4.39.0.
 
 ### Documentation
 
