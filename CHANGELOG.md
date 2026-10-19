@@ -27,11 +27,6 @@ upstream issues and pull requests.
 - The development tools move to Ruff 0.17.1, pytest-mock 3.17.0 and pluggy
   1.7.0, and CI to `cachix/install-nix-action` 31.11.2 and CodeQL 4.39.0.
 
-### Documentation
-
-- The screenshots in the README are SVGs in the repository, not PNGs linked from
-  the `dev` branch.
-
 ## 2.5.0
 
 Thanks to [@berettavexee](https://github.com/berettavexee) for the unified progress
