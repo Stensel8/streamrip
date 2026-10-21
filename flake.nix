@@ -32,6 +32,8 @@
         pyproject = true;
         build-system = buildDependencies;
         dependencies = runtimeDependencies;
+        # Temporary: nixpkgs still has Pillow 12, pyproject.toml wants 13. See #69.
+        pythonRelaxDeps = [ "pillow" ];
         nativeBuildInputs = [ pkgs.makeWrapper ];
         nativeCheckInputs = [ pythonPackages.pytestCheckHook ] ++ devDependencies ++ runtimeTools;
         doCheck = true;
