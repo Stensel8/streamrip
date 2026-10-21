@@ -109,6 +109,24 @@ the caller's other tools. Chromium discovery does **not** establish that
 Playwright can launch it or complete a live provider login; those require
 separate interactive validation. Other systems are not currently supported.
 
+### Docker / Podman
+
+```sh
+docker run --rm -it -v ./streamrip:/data ghcr.io/stensel8/streamrip url <link>
+```
+
+The image (amd64 and arm64) has everything built in, including FFmpeg and the
+JavaScript runtime Spotify needs. Tags: `latest` and every version, like
+`2.5.2`. Config, databases and downloads all live in `/data`, so mount a
+folder there. `-it` is needed for the prompts, progress bars and search menu.
+
+- Docker with a folder of your own: add `--user "$(id -u):$(id -g)"`, so the
+  files are yours.
+- Podman: `podman run --rm -it --userns=keep-id --user "$(id -u):$(id -g)" -v ./streamrip:/data:Z ghcr.io/stensel8/streamrip ...`
+- The isolated browser window of [Logging in](#logging-in) needs a screen:
+  choose your own browser or entering it by hand instead. For Spotify, paste
+  the address.
+
 ## Logging in
 
 streamrip asks for what it needs the first time you use a source, and saves it
