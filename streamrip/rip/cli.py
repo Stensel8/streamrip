@@ -1,4 +1,3 @@
-import asyncio
 import json
 import logging
 import os
@@ -10,27 +9,33 @@ import sys
 import tomllib
 from contextlib import asynccontextmanager, closing
 from functools import wraps
+from pathlib import Path
 from typing import Any
+lazy import asyncio
 
 import click
-from click_help_colors import HelpColorsGroup  # type: ignore
-from rich.logging import RichHandler
-from rich.markdown import Markdown
-from rich.markup import escape
-from rich.traceback import install
 lazy import aiofiles
 lazy import aiohttp
+lazy from rich.logging import RichHandler
+lazy from rich.markdown import Markdown
+lazy from rich.markup import escape
 lazy from rich.table import Table
+lazy from rich.traceback import install
 
-from .. import __version__, db
-from ..client import new_session
-from ..config import DEFAULT_CONFIG_PATH, Config, set_user_defaults
-from ..console import console
-from ..exceptions import FFmpegNotFoundError
-from ..media.csv_playlist import read_tracks
-from ..utils.ssl_utils import print_ssl_error_help
-from .interactive import Confirm, Prompt
-from .main import Main
+from .. import __version__
+from ..config import DEFAULT_CONFIG_PATH
+from .stopping import terminate
+
+# Only the commands that run need these: --help and --version do not.
+lazy from .. import db
+lazy from ..client import new_session
+lazy from ..config import Config, set_user_defaults
+lazy from ..console import console
+lazy from ..exceptions import FFmpegNotFoundError
+lazy from ..media.csv_playlist import read_tracks
+lazy from ..utils.ssl_utils import print_ssl_error_help
+lazy from .interactive import Confirm, Prompt
+lazy from .main import Main
 
 logger = logging.getLogger("streamrip")
 
@@ -60,32 +65,42 @@ def coro(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
         """Run the command, report handled errors, and exit 1 for missing ffmpeg."""
+        stopped_by: list[int] = []
 
         async def run():
-            """Run the command with SIGINT cancellation where supported."""
+            """Run the command, cancelling it on Ctrl-C or SIGTERM where supported."""
             # Ctrl-C used to be ignored until whatever was in flight finished,
             # so people force-killed streamrip -- which skips the cleanup in
             # Main.__aexit__ and leaves __artwork directories behind. Cancel
             # the task instead so everything unwinds (upstream PR #1025).
+            # SIGTERM, what `podman stop`, `docker stop`, systemd and `kill`
+            # send, gets the same treatment. As the first process of a
+            # container it would otherwise be ignored until the runtime gives
+            # up waiting and kills it.
             task = asyncio.current_task()
             loop = asyncio.get_running_loop()
+            names = {signal.SIGINT: "Ctrl-C", signal.SIGTERM: "SIGTERM"}
 
-            def stop():
-                """Cancel the active task and restore default SIGINT handling."""
-                console.print("\n[yellow]Stopping... (Ctrl-C again to force)")
-                loop.remove_signal_handler(signal.SIGINT)
+            def stop(signum):
+                """Cancel the active task; a second signal then acts as usual."""
+                console.print(f"\n[yellow]Stopping... ({names[signum]} again to force)")
+                stopped_by.append(signum)
+                for other in names:
+                    loop.remove_signal_handler(other)
                 if task is not None:
                     task.cancel()
 
             try:
-                loop.add_signal_handler(signal.SIGINT, stop)
+                for signum in names:
+                    loop.add_signal_handler(signum, stop, signum)
             except NotImplementedError, RuntimeError:
-                pass  # Windows: default KeyboardInterrupt behaviour
+                pass  # Windows: default behaviour
 
             return await f(*args, **kwargs)
 
+        result = None
         try:
-            return asyncio.run(run())
+            result = asyncio.run(run())
         except asyncio.CancelledError, KeyboardInterrupt:
             console.print("[yellow]Stopped.")
         except aiohttp.ClientConnectorCertificateError as e:
@@ -94,6 +109,12 @@ def coro(f):
         except FFmpegNotFoundError as e:
             console.print(escape(str(e)), style="red")
             sys.exit(1)
+
+        if signal.SIGTERM in stopped_by:
+            # What a process ended by SIGTERM reports, whether the command gave
+            # up or a screen swallowed the cancellation; now after cleaning up.
+            sys.exit(128 + signal.SIGTERM)
+        return result
 
     return wrapper
 
@@ -153,7 +174,7 @@ def _print_update_notice(
         console.print(Markdown(notes))
 
 
-def _config_path_from(command_line: list[str] | None) -> str:
+def _config_path_from(command_line: list[str] | None) -> Path:
     """The --config-path of a command line, or the default.
 
     The update check runs before Click has parsed anything, so the config it
@@ -162,26 +183,70 @@ def _config_path_from(command_line: list[str] | None) -> str:
     args = sys.argv[1:] if command_line is None else list(command_line)
     for i, arg in enumerate(args):
         if arg == "--config-path" and i + 1 < len(args):
-            return args[i + 1]
+            return Path(args[i + 1])
         if arg.startswith("--config-path="):
-            return arg.partition("=")[2]
+            return Path(arg.partition("=")[2])
     return DEFAULT_CONFIG_PATH
 
 
-def _update_check_disabled(config_path: str) -> bool:
-    """Whether the config at config_path has `no_update_check = true` in [cli].
+def _update_check_disabled(config_path: Path) -> bool:
+    """Whether the update check is off, in the environment or in the config.
 
-    It reads that one key and nothing else. A config that cannot be read
-    leaves the check on: `rip()` is what reports a broken config.
+    `STREAMRIP_NO_UPDATE_CHECK` set to anything but "", "0", "false" or "no"
+    turns it off; so does `no_update_check = true` in [cli] of the config at
+    config_path. Of the config it reads that one key and nothing else. A config
+    that cannot be read leaves the check on: `rip()` is what reports a broken
+    config.
     """
+    if os.environ.get("STREAMRIP_NO_UPDATE_CHECK", "").lower() not in (
+        "",
+        "0",
+        "false",
+        "no",
+    ):
+        return True
     try:
-        with open(config_path, "rb") as f:
+        with config_path.open("rb") as f:
             return tomllib.load(f).get("cli", {}).get("no_update_check") is True
     except OSError, tomllib.TOMLDecodeError:
         return False
 
 
-class _StreamripGroup(HelpColorsGroup):
+def _paint(text: str, color: str) -> str:
+    """`text` in `color`, unless NO_COLOR asks for plain output."""
+    return text if os.environ.get("NO_COLOR") else click.style(text, fg=color)
+
+
+class _HelpFormatter(click.HelpFormatter):
+    """Yellow headings and green option names in --help."""
+
+    def write_usage(self, prog, args="", prefix=None):
+        super().write_usage(prog, args, prefix=_paint("Usage", "yellow") + ": ")
+
+    def write_heading(self, heading):
+        super().write_heading(_paint(heading, "yellow"))
+
+    def write_dl(self, rows, col_max=30, col_spacing=2):
+        rows = [(_paint(term, "green"), definition) for term, definition in rows]
+        super().write_dl(rows, col_max, col_spacing)
+
+
+class _ColoredHelp:
+    """Renders --help with `_HelpFormatter`. Usage errors stay plain."""
+
+    def get_help(self, ctx):
+        formatter = _HelpFormatter(
+            width=ctx.terminal_width, max_width=ctx.max_content_width
+        )
+        self.format_help(ctx, formatter)
+        return formatter.getvalue().rstrip("\n")
+
+
+class _StreamripCommand(_ColoredHelp, click.Command):
+    pass
+
+
+class _StreamripGroup(_ColoredHelp, click.Group):
     """Checks for updates before literally anything else runs.
 
     Click short-circuits --help, --version, and a bare invocation with no
@@ -193,8 +258,26 @@ class _StreamripGroup(HelpColorsGroup):
     reads that key itself.
     """
 
+    command_class = _StreamripCommand
+    group_class = type  # subgroups are this class too, so their help is colored
+
     def main(self, *args, **kwargs):
         """Check for updates, run the command, then print a notice if newer."""
+        # SIGTERM ends streamrip, finally blocks included, for as long as it
+        # runs. Without a handler a container's first process ignores it: a
+        # `podman stop` would wait for its timeout and then kill it. Commands
+        # that run an event loop replace this with their own (see `coro`).
+        try:
+            previous_sigterm = signal.signal(signal.SIGTERM, terminate)
+        except ValueError:  # not the main thread: there is no signal to catch
+            previous_sigterm = None
+        try:
+            return self._check_and_run(*args, **kwargs)
+        finally:
+            if previous_sigterm is not None:
+                signal.signal(signal.SIGTERM, previous_sigterm)
+
+    def _check_and_run(self, *args, **kwargs):
         notice = None
         command_line = args[0] if args else kwargs.get("args")
         if not _update_check_disabled(_config_path_from(command_line)):
@@ -224,15 +307,13 @@ class _StreamripGroup(HelpColorsGroup):
     # the name in every usage line and error ("Try 'streamrip csv --help'").
     name="streamrip",
     cls=_StreamripGroup,
-    help_headers_color="yellow",
-    help_options_color="green",
 )
 @click.version_option(version=__version__)
 @click.option(
     "--config-path",
     default=DEFAULT_CONFIG_PATH,
     help="Path to the configuration file",
-    type=click.Path(readable=True, writable=True),
+    type=click.Path(readable=True, writable=True, path_type=Path),
 )
 @click.option(
     "-f",
@@ -303,7 +384,7 @@ def rip(
         install(console=console, suppress=[click, asyncio], max_frames=1)
         logger.setLevel(logging.INFO)
 
-    if not os.path.isfile(config_path):
+    if not config_path.is_file():
         console.print(
             f"No file found at [bold cyan]{config_path}[/bold cyan], creating default config.",
         )
@@ -365,7 +446,9 @@ async def url(ctx, urls):
 @click.argument(
     "path",
     required=True,
-    type=click.Path(exists=True, readable=True, file_okay=True, dir_okay=False),
+    type=click.Path(
+        exists=True, readable=True, file_okay=True, dir_okay=False, path_type=Path
+    ),
 )
 @click.pass_context
 @coro
@@ -430,9 +513,9 @@ def config_open(ctx, vim):
             subprocess.run(["vim", config_path])
         else:
             logger.error("Could not find nvim or vim. Using default launcher.")
-            click.launch(config_path)
+            click.launch(str(config_path))
     else:
-        click.launch(config_path)
+        click.launch(str(config_path))
 
 
 @config.command("reset")
@@ -483,13 +566,9 @@ def database_browse(ctx, table):
 
     if table.lower() == "downloads":
         t = Table("Row", "Source", "ID", title="Downloads database")
-        # A row from before ids carried their source has none to show.
         rows = [
-            (source or "unknown", item_id)
-            for source, item_id in (
-                db.split_download_key(key)
-                for (key,) in db.Downloads(cfg.session.database.downloads_path).all()
-            )
+            db.split_download_key(key)
+            for (key,) in db.Downloads(cfg.session.database.downloads_path).all()
         ]
     else:
         t = Table(
@@ -692,7 +771,7 @@ async def repair(ctx, yes, flat):
     "-o",
     "--output-file",
     help="Write search results to a file instead of showing interactive menu.",
-    type=click.Path(writable=True),
+    type=click.Path(writable=True, path_type=Path),
 )
 @click.option(
     "-n",
@@ -752,13 +831,15 @@ async def lastfm(ctx, source, fallback_source, url):
 
 
 # Where a CSV list can be searched, and what that gives: shown when asked.
-CSV_SOURCES = {
-    "qobuz": "lossless, up to 24-bit",
-    "tidal": "lossless, hi-res where there is some",
-    "deezer": "FLAC or MP3, as your subscription allows",
-    "spotify": "lossy: the audio comes from YouTube Music",
-    "soundcloud": "MP3, and only uploads by the artists themselves",
-}
+CSV_SOURCES = frozendict(
+    {
+        "qobuz": "lossless, up to 24-bit",
+        "tidal": "lossless, hi-res where there is some",
+        "deezer": "FLAC or MP3, as your subscription allows",
+        "spotify": "lossy: the audio comes from YouTube Music",
+        "soundcloud": "MP3, and only uploads by the artists themselves",
+    }
+)
 
 
 def _ask_source(count: int) -> str:
@@ -793,7 +874,9 @@ def _ask_source(count: int) -> str:
 @click.argument(
     "path",
     required=True,
-    type=click.Path(exists=True, readable=True, file_okay=True, dir_okay=False),
+    type=click.Path(
+        exists=True, readable=True, file_okay=True, dir_okay=False, path_type=Path
+    ),
 )
 @click.pass_context
 @coro
@@ -823,8 +906,7 @@ async def csv_list(ctx, source, fallback_source, path):
     if source is None:
         source = _ask_source(len(tracks))
     async with main_session(ctx) as main:
-        name = os.path.splitext(os.path.basename(path))[0]
-        await main.resolve_csv(name, tracks, source.lower(), fallback_source)
+        await main.resolve_csv(path.stem, tracks, source.lower(), fallback_source)
         await main.rip()
 
 

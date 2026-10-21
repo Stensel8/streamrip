@@ -1,4 +1,3 @@
-import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
@@ -8,6 +7,7 @@ from streamrip.client import new_session
 from streamrip.config import Config
 from streamrip.rip.parse_url import (
     DeezerDynamicURL,
+    DeezerFavoriteURL,
     GenericURL,
     QobuzInterpreterURL,
     SoundcloudURL,
@@ -15,200 +15,125 @@ from streamrip.rip.parse_url import (
 )
 
 
-class TestParseURL(unittest.TestCase):
-    def test_deezer_dynamic_url(self):
-        """Test that Deezer dynamic URLs are matched correctly."""
-        url = "https://dzr.page.link/SnV6hCyHihkmCCwUA"
-        result = parse_url(url)
+@pytest.mark.parametrize(
+    ("url", "source", "media_type", "item_id"),
+    [
+        (
+            "https://www.qobuz.com/fr-fr/album/bizarre-ride-ii-the-pharcyde-the-pharcyde/0066991040005",
+            "qobuz",
+            "album",
+            "0066991040005",
+        ),
+        ("https://tidal.com/browse/track/3083287", "tidal", "track", "3083287"),
+        ("https://www.deezer.com/track/4195713", "deezer", "track", "4195713"),
+        # The share sheet appends "/u", which would otherwise be taken as the
+        # item id and 404 against the API.
+        ("https://tidal.com/album/152697662/u", "tidal", "album", "152697662"),
+        ("https://tidal.com/album/152697662/u/", "tidal", "album", "152697662"),
+        ("https://tidal.com/browse/album/152697662/u", "tidal", "album", "152697662"),
+    ],
+)
+def test_a_service_url_gives_its_source_type_and_id(url, source, media_type, item_id):
+    result = parse_url(url)
 
-        self.assertIsNotNone(result)
-        self.assertIsInstance(result, DeezerDynamicURL)
-        self.assertEqual(result.source, "deezer")
-
-    def test_qobuz_album_url(self):
-        """Test that Qobuz album URLs are matched correctly."""
-        url = "https://www.qobuz.com/fr-fr/album/bizarre-ride-ii-the-pharcyde-the-pharcyde/0066991040005"
-        result = parse_url(url)
-
-        self.assertIsNotNone(result)
-        self.assertIsInstance(result, GenericURL)
-        self.assertEqual(result.source, "qobuz")
-
-        # Verify the regex match groups
-        groups = result.match.groups()
-        self.assertEqual(len(groups), 3)
-        self.assertEqual(groups[0], "qobuz")  # source
-        self.assertEqual(groups[1], "album")  # media_type
-        self.assertEqual(groups[2], "0066991040005")  # item_id
-
-    def test_tidal_track_url(self):
-        """Test that Tidal track URLs are matched correctly."""
-        url = "https://tidal.com/browse/track/3083287"
-        result = parse_url(url)
-
-        self.assertIsNotNone(result)
-        self.assertIsInstance(result, GenericURL)
-        self.assertEqual(result.source, "tidal")
-
-        # Verify the regex match groups
-        groups = result.match.groups()
-        self.assertEqual(len(groups), 3)
-        self.assertEqual(groups[0], "tidal")  # source
-        self.assertEqual(groups[1], "track")  # media_type
-        self.assertEqual(groups[2], "3083287")  # item_id
-
-    def test_tidal_share_url_with_u_suffix(self):
-        """Test that Tidal share links ending in /u parse to the real item id.
-
-        The share sheet appends "/u", which would otherwise be taken as the
-        item id and 404 against the API.
-        """
-        for url in (
-            "https://tidal.com/album/152697662/u",
-            "https://tidal.com/album/152697662/u/",
-            "https://tidal.com/browse/album/152697662/u",
-        ):
-            with self.subTest(url=url):
-                result = parse_url(url)
-
-                self.assertIsNotNone(result)
-                self.assertIsInstance(result, GenericURL)
-                self.assertEqual(result.source, "tidal")
-
-                groups = result.match.groups()
-                self.assertEqual(groups[1], "album")  # media_type
-                self.assertEqual(groups[2], "152697662")  # item_id
-
-    def test_deezer_share_links(self):
-        """Old Firebase share links and the current link.deezer.com ones."""
-        for url in (
-            "https://deezer.page.link/qfomS8twgYA35mgQ7",
-            "https://dzr.page.link/qfomS8twgYA35mgQ7",
-            "https://link.deezer.com/s/30hqmqELWXacckhxPdGqX",
-        ):
-            with self.subTest(url=url):
-                result = parse_url(url)
-                self.assertIsInstance(result, DeezerDynamicURL)
-                self.assertEqual(result.source, "deezer")
-
-    def test_deezer_standard_link_regex(self):
-        """The id is read from the URL a share link redirects to."""
-        regex = DeezerDynamicURL.standard_link_re
-        for url, expected in (
-            ("https://www.deezer.com/en/track/4195713?host=0", ("track", "4195713")),
-            ("https://www.deezer.com/album/723513301", ("album", "723513301")),
-            (
-                "https://www.deezer.com/pt-br/playlist/908622995",
-                ("playlist", "908622995"),
-            ),
-        ):
-            with self.subTest(url=url):
-                self.assertEqual(regex.search(url).groups(), expected)
-
-    def test_deezer_loved_tracks_url(self):
-        from streamrip.rip.parse_url import DeezerFavoriteURL
-
-        result = parse_url("https://www.deezer.com/fr/profile/1234567/loved")
-        self.assertIsInstance(result, DeezerFavoriteURL)
-        self.assertEqual(result.match.group(1), "1234567")
-
-    def test_deezer_track_url(self):
-        """Test that Deezer track URLs are matched correctly."""
-        url = "https://www.deezer.com/track/4195713"
-        result = parse_url(url)
-
-        self.assertIsNotNone(result)
-        self.assertIsInstance(result, GenericURL)
-        self.assertEqual(result.source, "deezer")
-
-        # Verify the regex match groups
-        groups = result.match.groups()
-        self.assertEqual(len(groups), 3)
-        self.assertEqual(groups[0], "deezer")  # source
-        self.assertEqual(groups[1], "track")  # media_type
-        self.assertEqual(groups[2], "4195713")  # item_id
-
-    def test_invalid_url(self):
-        """Test that invalid URLs return None."""
-        urls = [
-            "https://example.com",
-            "not a url",
-            "https://spotify.com/track/123456",  # Unsupported source
-            "https://tidal.com/invalid/3083287",  # Invalid media type
-        ]
-
-        for url in urls:
-            result = parse_url(url)
-            self.assertIsNone(result, f"URL should not parse: {url}")
-
-    def test_alternate_url_formats(self):
-        """Test various URL formats that should be valid."""
-        # Test with different domain prefixes
-        url1 = "https://open.tidal.com/track/3083287"
-        url2 = "https://play.qobuz.com/album/0066991040005"
-        url3 = "https://listen.tidal.com/track/3083287"
-
-        for url in [url1, url2, url3]:
-            result = parse_url(url)
-            self.assertIsNotNone(result, f"Should parse URL: {url}")
-            self.assertIsInstance(result, GenericURL)
-
-    def test_url_with_language_code(self):
-        """Test URLs with different language codes."""
-        urls = [
-            "https://www.qobuz.com/us-en/album/name/id123456",
-            "https://www.qobuz.com/gb-en/album/name/id123456",
-            "https://www.deezer.com/en/track/4195713",
-            "https://www.deezer.com/fr/track/4195713",
-        ]
-
-        for url in urls:
-            result = parse_url(url)
-            self.assertIsNotNone(result, f"Should parse URL: {url}")
-            self.assertIsInstance(result, GenericURL)
-
-    def test_soundcloud_url(self):
-        """Test that Soundcloud URLs are matched correctly."""
-        urls = [
-            "https://soundcloud.com/artist-name/track-name",
-            "https://soundcloud.com/artist-name/sets/playlist-name",
-        ]
-
-        for url in urls:
-            result = parse_url(url)
-            self.assertIsNotNone(result, f"Should parse URL: {url}")
-            self.assertIsInstance(result, SoundcloudURL)
-            self.assertEqual(result.source, "soundcloud")
+    assert isinstance(result, GenericURL)
+    assert result.source == source
+    assert result.match.groups() == (source, media_type, item_id)
 
 
-class TestDeezerDynamicURL(unittest.TestCase):
-    @patch("streamrip.rip.parse_url.DeezerDynamicURL._extract_info_from_dynamic_link")
-    def test_into_pending_album(self, mock_extract):
-        """Test conversion of Deezer dynamic URL to a PendingAlbum."""
-        import asyncio
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://open.tidal.com/track/3083287",
+        "https://play.qobuz.com/album/0066991040005",
+        "https://listen.tidal.com/track/3083287",
+        "https://www.qobuz.com/us-en/album/name/id123456",
+        "https://www.qobuz.com/gb-en/album/name/id123456",
+        "https://www.deezer.com/en/track/4195713",
+        "https://www.deezer.com/fr/track/4195713",
+    ],
+)
+def test_other_subdomains_and_language_codes_are_accepted(url):
+    assert isinstance(parse_url(url), GenericURL)
 
-        async def run_test():
-            url = "https://dzr.page.link/SnV6hCyHihkmCCwUA"
-            result = parse_url(url)
 
-            # Mock the extract method to return album type and ID
-            mock_extract.return_value = ("album", "12345")
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://dzr.page.link/SnV6hCyHihkmCCwUA",
+        # Old Firebase share links and the current link.deezer.com ones.
+        "https://deezer.page.link/qfomS8twgYA35mgQ7",
+        "https://dzr.page.link/qfomS8twgYA35mgQ7",
+        "https://link.deezer.com/s/30hqmqELWXacckhxPdGqX",
+    ],
+)
+def test_deezer_share_links(url):
+    result = parse_url(url)
 
-            # Mock the client, config, db
-            mock_client = AsyncMock()
-            mock_client.source = "deezer"
-            mock_config = AsyncMock()
-            mock_db = AsyncMock()
+    assert isinstance(result, DeezerDynamicURL)
+    assert result.source == "deezer"
 
-            # Call into_pending
-            pending = await result.into_pending(mock_client, mock_config, mock_db)
 
-            # Verify the correct pending type was created
-            self.assertEqual(pending.__class__.__name__, "PendingAlbum")
-            self.assertEqual(pending.id, "12345")
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("https://www.deezer.com/en/track/4195713?host=0", ("track", "4195713")),
+        ("https://www.deezer.com/album/723513301", ("album", "723513301")),
+        ("https://www.deezer.com/pt-br/playlist/908622995", ("playlist", "908622995")),
+    ],
+)
+def test_the_id_is_read_from_the_url_a_deezer_share_link_redirects_to(url, expected):
+    assert DeezerDynamicURL.standard_link_re.search(url).groups() == expected
 
-        # Run the coroutine
-        asyncio.run(run_test())
+
+def test_deezer_loved_tracks_url():
+    result = parse_url("https://www.deezer.com/fr/profile/1234567/loved")
+
+    assert isinstance(result, DeezerFavoriteURL)
+    assert result.match.group(1) == "1234567"
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://example.com",
+        "not a url",
+        "https://spotify.com/track/123456",  # Unsupported source
+        "https://tidal.com/invalid/3083287",  # Invalid media type
+    ],
+)
+def test_invalid_urls_do_not_parse(url):
+    assert parse_url(url) is None
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://soundcloud.com/artist-name/track-name",
+        "https://soundcloud.com/artist-name/sets/playlist-name",
+    ],
+)
+def test_soundcloud_url(url):
+    result = parse_url(url)
+
+    assert isinstance(result, SoundcloudURL)
+    assert result.source == "soundcloud"
+
+
+async def test_a_deezer_dynamic_link_becomes_the_album_it_leads_to():
+    with patch(
+        "streamrip.rip.parse_url.DeezerDynamicURL._extract_info_from_dynamic_link"
+    ) as extract:
+        extract.return_value = ("album", "12345")
+        client = AsyncMock()
+        client.source = "deezer"
+
+        pending = await parse_url(
+            "https://dzr.page.link/SnV6hCyHihkmCCwUA"
+        ).into_pending(client, AsyncMock(), AsyncMock())
+
+    assert pending.__class__.__name__ == "PendingAlbum"
+    assert pending.id == "12345"
 
 
 @pytest.mark.parametrize("scheme", ["http", "https"])
@@ -306,7 +231,3 @@ async def test_interpreter_fetch_errors_close_public_session(status):
     assert sessions[0].closed
     if status != 200:
         response.text.assert_not_awaited()
-
-
-if __name__ == "__main__":
-    unittest.main()

@@ -1,5 +1,6 @@
 """streamrip needs ffmpeg: say so before logging in, not per track."""
 
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -41,7 +42,7 @@ async def test_main_starts_with_ffmpeg():
 def test_every_login_command_checks_ffmpeg_first(tmp_path, command):
     """No command that can log in to a source gets there without ffmpeg."""
     cfg = tmp_path / "config.toml"
-    set_user_defaults(str(cfg))
+    set_user_defaults(cfg)
     urls = tmp_path / "urls.txt"
     urls.write_text("https://tidal.com/album/1\n")
     tracks = tmp_path / "tracks.csv"
@@ -79,7 +80,7 @@ async def test_missing_ffmpeg_is_not_retried():
     track.downloadable.source = "tidal"
     track.config.session.cli.progress_bars = False
     track.is_single = False
-    track.download_path = "/nonexistent/track.flac"
+    track.download_path = Path("/nonexistent/track.flac")
     track.meta.title = "T"
     track.meta.tracknumber = 1
     track.meta.info.id = "1"

@@ -68,13 +68,15 @@ def typed[T](thing, expected_type: type[T]) -> T:
 
 # Tidal's audioQuality values mapped to streamrip's quality ids. HI_RES was MQA
 # (retired by Tidal); HI_RES_LOSSLESS is 24-bit FLAC.
-TIDAL_QUALITY_IDS: dict[str, int] = {
-    "LOW": 0,
-    "HIGH": 1,
-    "LOSSLESS": 2,
-    "HI_RES": 3,
-    "HI_RES_LOSSLESS": 3,
-}
+TIDAL_QUALITY_IDS: frozendict[str, int] = frozendict(
+    {
+        "LOW": 0,
+        "HIGH": 1,
+        "LOSSLESS": 2,
+        "HI_RES": 3,
+        "HI_RES_LOSSLESS": 3,
+    }
+)
 
 
 def tidal_quality_id(audio_quality: str | None) -> int:

@@ -48,7 +48,7 @@ jobs:
           python-version: "3.15"
       - name: Install dependencies
         if: matrix.language == 'python'
-        run: python -m pip install ".[ssl,ffmpeg]"
+        run: python -m pip install ".[ffmpeg]"
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0

@@ -1,9 +1,9 @@
 import asyncio
 import contextlib
 import logging
-import os
 import shutil
 import tempfile
+from pathlib import Path
 
 lazy import aiohttp
 lazy import requests
@@ -13,7 +13,7 @@ from ..client import BasicDownloadable
 from ..config import ArtworkConfig
 from ..metadata import Covers
 
-_artwork_tempdirs: set[str] = set()
+_artwork_tempdirs: set[Path] = set()
 
 logger = logging.getLogger("streamrip")
 
@@ -37,7 +37,7 @@ def _worth_retrying(e: Exception) -> bool:
     )
 
 
-async def _download_cover(session: aiohttp.ClientSession, url: str, path: str):
+async def _download_cover(session: aiohttp.ClientSession, url: str, path: Path):
     """Download one cover image, retrying a network hiccup or two."""
     for attempt in range(1, ARTWORK_ATTEMPTS + 1):
         try:
@@ -64,11 +64,11 @@ def remove_artwork_tempdirs():
 
 async def download_artwork(
     session: aiohttp.ClientSession,
-    folder: str,
+    folder: Path,
     covers: Covers,
     config: ArtworkConfig,
     for_playlist: bool,
-) -> tuple[str | None, str | None]:
+) -> tuple[Path | None, Path | None]:
     """Download artwork and update passed Covers object with filepaths.
 
     Returns (path to embedded artwork, path to hires artwork). Sizes whose
@@ -90,17 +90,17 @@ async def download_artwork(
 
     _, l_url, saved_cover_path = covers.largest()
     if saved_cover_path is None and save_artwork:
-        saved_cover_path = os.path.join(folder, "cover.jpg")
+        saved_cover_path = folder / "cover.jpg"
         assert l_url is not None
         downloadables.append(_download_cover(session, l_url, saved_cover_path))
 
     _, embed_url, embed_cover_path = covers.get_size(config.embed_size)
     if embed_cover_path is None and embed:
         assert embed_url is not None
-        os.makedirs(folder, exist_ok=True)
-        embed_dir = tempfile.mkdtemp(prefix="__artwork_", dir=folder)
+        folder.mkdir(parents=True, exist_ok=True)
+        embed_dir = Path(tempfile.mkdtemp(prefix="__artwork_", dir=folder))
         _artwork_tempdirs.add(embed_dir)
-        embed_cover_path = os.path.join(embed_dir, f"cover{hash(embed_url)}.jpg")
+        embed_cover_path = embed_dir / f"cover{hash(embed_url)}.jpg"
         downloadables.append(_download_cover(session, embed_url, embed_cover_path))
 
     if len(downloadables) == 0:
@@ -128,7 +128,7 @@ async def download_artwork(
     return embed_cover_path, saved_cover_path
 
 
-def downscale_image(input_image_path: str, max_dimension: int):
+def downscale_image(input_image_path: Path, max_dimension: int):
     """Shrink an image in place, keeping its aspect ratio, so that neither
     side is longer than max_dimension.
     """

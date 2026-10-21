@@ -15,6 +15,7 @@ import re
 from contextlib import nullcontext
 from dataclasses import dataclass
 from itertools import islice
+from pathlib import Path
 
 from rich.text import Text
 
@@ -38,31 +39,33 @@ SAMPLE_ROWS = 10
 
 # Every header spelling understood, by what it means: the columns of Music-Sync,
 # and those of Exportify, TuneMyMusic, Soundiiz and the like.
-_HEADERS = {
-    alias: field
-    for field, aliases in {
-        "title": (
-            "title",
-            "track name",
-            "track title",
-            "track",
-            "name",
-            "song",
-            "song name",
-        ),
-        "artists": (
-            "artists",
-            "artist",
-            "artist name(s)",
-            "artist names",
-            "artist name",
-        ),
-        "album": ("album", "album name"),
-        "duration_ms": ("duration_ms", "duration (ms)"),
-        "length": ("duration", "length", "time"),
-    }.items()
-    for alias in aliases
-}
+_HEADERS = frozendict(
+    {
+        alias: field
+        for field, aliases in {
+            "title": (
+                "title",
+                "track name",
+                "track title",
+                "track",
+                "name",
+                "song",
+                "song name",
+            ),
+            "artists": (
+                "artists",
+                "artist",
+                "artist name(s)",
+                "artist names",
+                "artist name",
+            ),
+            "album": ("album", "album name"),
+            "duration_ms": ("duration_ms", "duration (ms)"),
+            "length": ("duration", "length", "time"),
+        }.items()
+        for alias in aliases
+    }
+)
 
 
 def _clock_ms(text: str | None) -> int | None:
@@ -122,7 +125,7 @@ def _delimiter(text: str) -> str:
     return best
 
 
-def read_tracks(path: str) -> list[MatchTrack]:
+def read_tracks(path: Path) -> list[MatchTrack]:
     """The tracks in a CSV file. Rows without a title are skipped.
 
     The columns are found by their names. A file without a header row is read as
@@ -131,8 +134,7 @@ def read_tracks(path: str) -> list[MatchTrack]:
     """
     try:
         # utf-8-sig: Excel puts a byte order mark in front of it.
-        with open(path, encoding="utf-8-sig", newline="") as f:
-            text = f.read()
+        text = path.read_text(encoding="utf-8-sig", newline="")
     except UnicodeDecodeError as e:
         raise ValueError(
             f"{path} is not UTF-8 encoded. Save it as UTF-8 (in Excel: CSV UTF-8)."

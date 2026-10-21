@@ -30,6 +30,12 @@ def no_browser_capture(monkeypatch):
     return capture
 
 
+@pytest.fixture(autouse=True)
+def a_screen(monkeypatch):
+    """These tests describe a desktop, where the browser window is offered."""
+    monkeypatch.setattr("streamrip.rip.prompter.browser_login_available", lambda: True)
+
+
 @pytest.fixture
 def launch(monkeypatch):
     """Replace the launch of the browser for the login page."""
@@ -177,3 +183,34 @@ def test_deezer_and_qobuz_announce_a_save_the_same_way(monkeypatch, prompter):
 
     assert deezer_says == qobuz_says
     assert "saved to config file at" in deezer_says
+
+
+async def test_without_a_screen_it_goes_straight_to_entering_it_by_hand(
+    monkeypatch, prompter, no_browser_capture, launch
+):
+    """A container has no browser window to offer, so there is nothing to choose."""
+    monkeypatch.setattr("streamrip.rip.prompter.browser_login_available", lambda: False)
+    prompt = _ask(monkeypatch, "typed-arl")
+
+    await prompter.prompt_and_login()
+    prompter.save()
+
+    prompt.assert_called_once()
+    assert prompt.call_args.kwargs["password"] is True
+    no_browser_capture.assert_not_awaited()
+    launch.assert_called_with(LOGIN_URL)
+    assert prompter.config.file.deezer.arl == "typed-arl"
+
+
+async def test_the_login_address_is_shown_when_no_browser_can_open_it(
+    monkeypatch, prompter, launch
+):
+    """Over SSH or in a container the printed address is the only way there."""
+    launch.side_effect = OSError("No browser available")
+    printed = MagicMock()
+    monkeypatch.setattr("streamrip.rip.prompter.console.print", printed)
+    _ask(monkeypatch, "2", "typed-arl")
+
+    await prompter.prompt_and_login()
+
+    assert any(LOGIN_URL in str(call.args[0]) for call in printed.call_args_list)

@@ -1,6 +1,6 @@
 import logging
-import os
 from enum import Enum
+from pathlib import Path
 
 from mutagen import id3
 from mutagen.aiff import AIFF
@@ -21,38 +21,42 @@ FLAC_MAX_BLOCKSIZE = 16777215  # 16.7 MB
 
 # Where each of streamrip's tag names (see _tag_values) goes in MP3/AIFF (ID3)
 # and M4A files. FLAC's Vorbis comments take every name, upper-cased.
-MP3_KEY = {
-    "title": id3.TIT2,
-    "artist": id3.TPE1,
-    "album": id3.TALB,
-    "albumartist": id3.TPE2,
-    "composer": id3.TCOM,
-    "year": id3.TYER,
-    "genre": id3.TCON,
-    "lyrics": id3.USLT,
-    "copyright": id3.TCOP,
-    "compilation": id3.TCMP,
-    "tracknumber": id3.TRCK,
-    "discnumber": id3.TPOS,
-    "isrc": id3.TSRC,
-}
+MP3_KEY = frozendict(
+    {
+        "title": id3.TIT2,
+        "artist": id3.TPE1,
+        "album": id3.TALB,
+        "albumartist": id3.TPE2,
+        "composer": id3.TCOM,
+        "year": id3.TYER,
+        "genre": id3.TCON,
+        "lyrics": id3.USLT,
+        "copyright": id3.TCOP,
+        "compilation": id3.TCMP,
+        "tracknumber": id3.TRCK,
+        "discnumber": id3.TPOS,
+        "isrc": id3.TSRC,
+    }
+)
 
-MP4_KEY = {
-    "title": "\xa9nam",
-    "artist": "\xa9ART",
-    "album": "\xa9alb",
-    "albumartist": "aART",
-    "composer": "\xa9wrt",
-    "year": "\xa9day",
-    "description": "desc",
-    "genre": "\xa9gen",
-    "lyrics": "\xa9lyr",
-    "copyright": "cprt",
-    "compilation": "cpil",
-    "tracknumber": "trkn",
-    "discnumber": "disk",
-    "isrc": "----:com.apple.iTunes:ISRC",
-}
+MP4_KEY = frozendict(
+    {
+        "title": "\xa9nam",
+        "artist": "\xa9ART",
+        "album": "\xa9alb",
+        "albumartist": "aART",
+        "composer": "\xa9wrt",
+        "year": "\xa9day",
+        "description": "desc",
+        "genre": "\xa9gen",
+        "lyrics": "\xa9lyr",
+        "copyright": "cprt",
+        "compilation": "cpil",
+        "tracknumber": "trkn",
+        "discnumber": "disk",
+        "isrc": "----:com.apple.iTunes:ISRC",
+    }
+)
 
 
 def _names(names: list[str] | None, joined: str):
@@ -124,7 +128,7 @@ class Container(Enum):
     MP3 = 3
     AIFF = 4
 
-    def get_mutagen_class(self, path: str):
+    def get_mutagen_class(self, path: Path):
         """Open the file with this container's mutagen class.
 
         A file with no tags yet gets empty ones.
@@ -173,9 +177,9 @@ class Container(Enum):
         for k, v in tags:
             audio[k] = v
 
-    async def embed_cover(self, audio, cover_path):
+    async def embed_cover(self, audio, cover_path: Path):
         """Embed the JPEG at cover_path as the front cover (picture type 3)."""
-        if self == Container.FLAC and os.path.getsize(cover_path) > FLAC_MAX_BLOCKSIZE:
+        if self == Container.FLAC and cover_path.stat().st_size > FLAC_MAX_BLOCKSIZE:
             raise Exception("Cover art too big for FLAC")
         async with aiofiles.open(cover_path, "rb") as img:
             data = await img.read()
@@ -204,24 +208,26 @@ class Container(Enum):
             audio.save(path)
 
 
-EXTENSION_CONTAINERS = {
-    "flac": Container.FLAC,
-    "m4a": Container.AAC,
-    "mp3": Container.MP3,
-    "aiff": Container.AIFF,
-    "aif": Container.AIFF,
-}
+EXTENSION_CONTAINERS = frozendict(
+    {
+        "flac": Container.FLAC,
+        "m4a": Container.AAC,
+        "mp3": Container.MP3,
+        "aiff": Container.AIFF,
+        "aif": Container.AIFF,
+    }
+)
 # Extensions tag_file() can write to (others keep what ffmpeg copied).
 TAGGABLE_EXTENSIONS = frozenset(EXTENSION_CONTAINERS)
 
 
 async def tag_file(
-    path: str,
+    path: Path,
     meta: TrackMetadata,
-    cover_path: str | None,
+    cover_path: Path | None,
     exclude: list[str] | tuple[str, ...] = (),
 ):
-    ext = path.split(".")[-1].lower()
+    ext = path.suffix.lower().removeprefix(".")
     container = EXTENSION_CONTAINERS.get(ext)
     if container is None:
         raise Exception(f"Invalid extension {ext}")

@@ -5,8 +5,8 @@
 #
 # Uses uv (https://docs.astral.sh/uv/) to fetch Python 3.15 if it isn't
 # already installed, then creates .venv and installs streamrip into it.
-# Safe to re-run: it reuses the existing .venv and upgrades streamrip from
-# this checkout.
+# Safe to re-run: it reuses the existing .venv (recreating it if it isn't on
+# Python 3.15) and upgrades streamrip from this checkout.
 set -euo pipefail
 
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
@@ -20,13 +20,15 @@ if ! command -v uv >/dev/null 2>&1; then
     export PATH="$HOME/.local/bin:$PATH"
 fi
 
-if [ ! -d .venv ]; then
+# An older .venv (say from before the Python 3.15 requirement) can't install
+# streamrip, so only reuse one that actually runs Python 3.15.
+if ! "$venv_path/bin/python" -c 'import sys; raise SystemExit(sys.version_info[:2] != (3, 15))' 2>/dev/null; then
     echo "Creating .venv (Python 3.15)..."
-    uv venv --python 3.15 "$venv_path"
+    uv venv --clear --python 3.15 "$venv_path"
 fi
 
 echo "Installing streamrip into .venv..."
-uv pip install --python "$venv_path" --upgrade "$script_dir"
+uv pip install --python "$venv_path" --upgrade "${script_dir}[browser]"
 
 echo
 if "$streamrip_path" --version >/dev/null 2>&1; then

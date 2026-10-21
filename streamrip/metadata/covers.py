@@ -1,3 +1,5 @@
+from pathlib import Path
+
 TIDAL_COVER_URL = "https://resources.tidal.com/images/{uuid}/{width}x{height}.jpg"
 
 
@@ -5,13 +7,13 @@ class Covers:
     """An album's cover art: per size, a url and (once downloaded) a path."""
 
     SIZES = ("original", "large", "small", "thumbnail")  # largest first
-    CoverEntry = tuple[str, str | None, str | None]
+    CoverEntry = tuple[str, str | None, Path | None]
 
     def __init__(self):
         """Start with one empty entry per size."""
         self._covers: list[Covers.CoverEntry] = [(s, None, None) for s in self.SIZES]
 
-    def set_cover(self, size: str, url: str | None, path: str | None):
+    def set_cover(self, size: str, url: str | None, path: Path | None):
         """Set the URL and local path of one size."""
         self._covers[self.SIZES.index(size)] = (size, url, path)
 
@@ -19,12 +21,12 @@ class Covers:
         """Set the URL of one size, with no local path yet."""
         self.set_cover(size, url, None)
 
-    def set_path(self, size: str, path: str):
+    def set_path(self, size: str, path: Path):
         """Set the local path of one size, keeping its URL."""
         _, url, _ = self._covers[self.SIZES.index(size)]
         self.set_cover(size, url, path)
 
-    def set_largest_path(self, path: str):
+    def set_largest_path(self, path: Path):
         """Set the local path of the largest cover that has a URL."""
         size, url, _ = self.largest()
         self.set_cover(size, url, path)

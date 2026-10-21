@@ -1,5 +1,6 @@
 """Spotify's responses as streamrip's metadata, and Spotify URLs as pending items."""
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -83,7 +84,7 @@ def test_an_album_folder_has_no_empty_quality_bracket():
         "{albumartist} - {title} ({year}) [{container}] [{bit_depth}B-{sampling_rate}kHz]"
     )
 
-    assert folder == "Daft Punk - Random Access Memories (2013) [AAC]"
+    assert folder == Path("Daft Punk - Random Access Memories (2013) [AAC]")
 
 
 def test_the_copyright_lines_are_joined_and_marked():

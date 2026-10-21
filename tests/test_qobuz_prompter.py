@@ -18,6 +18,12 @@ def prompter():
 
 
 @pytest.fixture(autouse=True)
+def a_screen(monkeypatch):
+    """These tests describe a desktop, where the browser window is offered."""
+    monkeypatch.setattr("streamrip.rip.prompter.browser_login_available", lambda: True)
+
+
+@pytest.fixture(autouse=True)
 def no_snippet_capture(monkeypatch):
     """Snippet auto-capture has its own test module; keep it out of these by default."""
     capture = AsyncMock(side_effect=QobuzTokenCaptureError("timed out"))
@@ -131,3 +137,54 @@ def test_menu_offers_no_password_login(monkeypatch, prompter):
     asyncio.run(prompter._prompt_creds_and_set_session_config())
     shown = " ".join(str(c.args[0]) for c in output.call_args_list).lower()
     assert "email" not in shown and "password" not in shown
+
+
+async def test_without_a_screen_the_menu_only_offers_what_can_work(
+    monkeypatch, prompter, no_snippet_capture, no_browser_capture
+):
+    """A container has no browser window: the menu starts at the other ways."""
+    monkeypatch.setattr("streamrip.rip.prompter.browser_login_available", lambda: False)
+    no_snippet_capture.side_effect = None
+    no_snippet_capture.return_value = ("456", "captured-token")
+    monkeypatch.setattr("streamrip.rip.prompter.launch", MagicMock())
+    prompt = MagicMock(side_effect=["1"])
+    monkeypatch.setattr("streamrip.rip.prompter.Prompt.ask", prompt)
+    printed = MagicMock()
+    monkeypatch.setattr("streamrip.rip.prompter.console.print", printed)
+
+    await prompter.prompt_and_login()
+    prompter.save()
+
+    menu = next(
+        call.args[0]
+        for call in printed.call_args_list
+        if "How do you want to log in" in str(call.args[0])
+    )
+    assert "isolated browser window" not in menu
+    assert "  1. Log in in your own browser" in menu
+    assert "  2. Copy the user id and token" in menu
+    assert prompt.call_args.kwargs["choices"] == ["1", "2"]
+    assert prompt.call_args.kwargs["default"] == "1"
+    no_browser_capture.assert_not_awaited()
+    assert prompter.config.file.qobuz.user_id == "456"
+
+
+async def test_the_login_address_is_shown_when_no_browser_can_open_it(
+    monkeypatch, prompter
+):
+    """Over SSH or in a container the printed address is the only way there."""
+    monkeypatch.setattr(
+        "streamrip.rip.prompter.launch", MagicMock(side_effect=OSError("no browser"))
+    )
+    monkeypatch.setattr(
+        "streamrip.rip.prompter.Prompt.ask", MagicMock(side_effect=["3", "123", "tok"])
+    )
+    printed = MagicMock()
+    monkeypatch.setattr("streamrip.rip.prompter.console.print", printed)
+
+    await prompter.prompt_and_login()
+
+    assert any(
+        "https://play.qobuz.com/login" in str(call.args[0])
+        for call in printed.call_args_list
+    )

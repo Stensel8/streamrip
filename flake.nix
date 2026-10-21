@@ -34,14 +34,15 @@
       pythonPackages = python.pkgs;
       project = (builtins.fromTOML (builtins.readFile ./pyproject.toml)).project;
 
-      # Keep this explicit list in sync with pyproject.toml.
+      # Keep this explicit list in sync with pyproject.toml, whose `browser`
+      # extra (playwright) is part of it: Nix has Chromium and a screen to use.
       runtimeDependencies = with pythonPackages; [
         mutagen tomlkit pathvalidate textual textual-image pillow deezer-py
-        pycryptodomex m3u8 aiofiles aiohttp aiolimiter rich click click-help-colors
-        requests playwright ytmusicapi yt-dlp
-      ] ++ pythonPackages.yt-dlp.optional-dependencies.default;
+        pycryptodomex m3u8 aiofiles aiohttp aiolimiter rich click
+        requests playwright ytmusicapi yt-dlp yt-dlp-ejs websockets certifi
+      ];
       buildDependencies = [ pythonPackages.poetry-core ];
-      devDependencies = with pythonPackages; [ pytest pytest-mock pytest-asyncio certifi ];
+      devDependencies = with pythonPackages; [ pytest pytest-mock pytest-asyncio ];
       developmentPython = python.withPackages (_:
         runtimeDependencies ++ buildDependencies ++ devDependencies);
       runtimeTools = [ pkgs.ffmpeg-headless pkgs.deno pkgs.chromium ];
@@ -55,7 +56,9 @@
         build-system = buildDependencies;
         dependencies = runtimeDependencies;
         # Temporary: nixpkgs still has Pillow 12, pyproject.toml wants 13. See #69.
-        pythonRelaxDeps = [ "pillow" ];
+        # yt-dlp and yt-dlp-ejs are pinned exactly there, and nixpkgs has whichever
+        # pair it has: they only need to match each other.
+        pythonRelaxDeps = [ "pillow" "yt-dlp" "yt-dlp-ejs" ];
         nativeBuildInputs = [ pkgs.makeWrapper ];
         nativeCheckInputs = [ pythonPackages.pytestCheckHook ] ++ devDependencies ++ runtimeTools;
         doCheck = true;

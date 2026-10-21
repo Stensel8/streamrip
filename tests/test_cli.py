@@ -1,5 +1,6 @@
 import asyncio
 import sys
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -68,7 +69,7 @@ def test_the_command_is_called_streamrip_in_every_usage_line(
     tmp_path, capsys, args, shown
 ):
     config = tmp_path / "config.toml"
-    set_user_defaults(str(config))
+    set_user_defaults(config)
 
     result = CliRunner().invoke(rip, ["--config-path", str(config), *args])
 
@@ -96,7 +97,7 @@ def _seeded_databases(tmp_path):
     plus two downloaded tracks and one failed download.
     """
     path = tmp_path / "config.toml"
-    set_user_defaults(str(path))
+    set_user_defaults(path)
     doc = tomlkit.parse(path.read_text())
     doc["database"]["downloads_path"] = str(tmp_path / "downloads.db")
     doc["database"]["failed_downloads_path"] = str(tmp_path / "failed.db")
@@ -104,8 +105,8 @@ def _seeded_databases(tmp_path):
 
     downloads = db.Downloads(str(tmp_path / "downloads.db"))
     failed = db.Failed(str(tmp_path / "failed.db"))
-    for track_id in ("1", "2"):
-        downloads.add((track_id,))
+    for key in ("qobuz_1", "tidal_2"):
+        downloads.add((key,))
     failed.add(("tidal", "track", "3"))
     return str(path), downloads, failed
 
@@ -351,7 +352,7 @@ async def test_update_check_inside_event_loop_does_not_block_click(
 def _broken_config(tmp_path) -> str:
     """A config this version cannot load: an option it has no field for."""
     path = tmp_path / "config.toml"
-    set_user_defaults(str(path))
+    set_user_defaults(path)
     path.write_text(path.read_text().replace("[cli]", "[cli]\nbogus = 1", 1))
     return str(path)
 
@@ -398,7 +399,7 @@ def test_a_config_that_does_not_load_can_still_be_reset(tmp_path):
         result = CliRunner().invoke(rip, ["--config-path", cfg, *command])
         assert result.exit_code == 0, result.output
 
-    Config(cfg)  # loads now
+    Config(Path(cfg))  # loads now
 
 
 class _RepairMain:
@@ -439,7 +440,7 @@ class _RepairMain:
 def test_repair_matches_failures_by_source_and_id(tmp_path, monkeypatch, capsys):
     cfg, downloads, failed = _seeded_databases(tmp_path)
     failed.add(("qobuz", "track", "3"))  # the same id as the Tidal failure
-    downloads.add(("3",))  # marked downloaded by a version that did that
+    downloads.add(("tidal_3",))  # marked downloaded, though it failed
     _RepairMain.downloaded = [("tidal", "3")]
     monkeypatch.setattr("streamrip.rip.cli.Main", _RepairMain)
 
@@ -447,7 +448,7 @@ def test_repair_matches_failures_by_source_and_id(tmp_path, monkeypatch, capsys)
 
     assert result.exit_code == 0, result.output
     # The stale row went before the retry, or the retry would be skipped.
-    assert ("3",) not in _RepairMain.downloads_at_rip
+    assert ("tidal_3",) not in _RepairMain.downloads_at_rip
     # Tidal 3 was repaired and Qobuz 3 was not: it stays for the next run.
     assert failed.all() == [("qobuz", "track", "3")]
     assert "Repaired1/2item(s)" in _printed(result, capsys)
@@ -465,8 +466,8 @@ def test_repair_with_nothing_downloaded_keeps_every_failure(tmp_path, monkeypatc
 
 
 def test_database_browse_downloads_shows_each_rows_source(tmp_path, capsys):
-    cfg, downloads, _failed = _seeded_databases(tmp_path)  # holds bare "1" and "2"
-    downloads.add(("tidal_9",))
+    cfg, downloads, _failed = _seeded_databases(tmp_path)  # holds qobuz_1 and tidal_2
+    downloads.add(("soundcloud_9",))
 
     result = CliRunner().invoke(
         rip, ["--config-path", cfg, "database", "browse", "downloads"]
@@ -475,13 +476,13 @@ def test_database_browse_downloads_shows_each_rows_source(tmp_path, capsys):
     assert result.exit_code == 0, result.output
     out = _printed(result, capsys)
     assert "Source" in out
-    assert out.count("unknown") == 2  # the two rows from before sources
-    assert "tidal" in out
+    for source in ("qobuz", "tidal", "soundcloud"):
+        assert source in out
 
 
 def _config_with_no_update_check(tmp_path, value="true") -> str:
     path = tmp_path / "config.toml"
-    set_user_defaults(str(path))
+    set_user_defaults(path)
     path.write_text(
         path.read_text().replace(
             "# no_update_check = true", f"no_update_check = {value}"
@@ -498,10 +499,38 @@ def _update_check(monkeypatch) -> AsyncMock:
 
 def test_the_update_check_runs_unless_the_config_turns_it_off(tmp_path, monkeypatch):
     check = _update_check(monkeypatch)
-    cfg = str(tmp_path / "config.toml")
+    cfg = tmp_path / "config.toml"
     set_user_defaults(cfg)
 
-    result = CliRunner().invoke(rip, ["--config-path", cfg, "config", "path"])
+    result = CliRunner().invoke(rip, ["--config-path", str(cfg), "config", "path"])
+
+    assert result.exit_code == 0, result.output
+    check.assert_awaited_once()
+
+
+@pytest.mark.parametrize("value", ["1", "true", "yes", "anything"])
+def test_the_environment_turns_the_update_check_off(tmp_path, monkeypatch, value):
+    check = _update_check(monkeypatch)
+    monkeypatch.setenv("STREAMRIP_NO_UPDATE_CHECK", value)
+    cfg = tmp_path / "config.toml"
+    set_user_defaults(cfg)
+
+    result = CliRunner().invoke(rip, ["--config-path", str(cfg), "config", "path"])
+
+    assert result.exit_code == 0, result.output
+    check.assert_not_awaited()
+
+
+@pytest.mark.parametrize("value", ["", "0", "false", "FALSE", "no"])
+def test_an_environment_that_says_no_leaves_the_update_check_on(
+    tmp_path, monkeypatch, value
+):
+    check = _update_check(monkeypatch)
+    monkeypatch.setenv("STREAMRIP_NO_UPDATE_CHECK", value)
+    cfg = tmp_path / "config.toml"
+    set_user_defaults(cfg)
+
+    result = CliRunner().invoke(rip, ["--config-path", str(cfg), "config", "path"])
 
     assert result.exit_code == 0, result.output
     check.assert_awaited_once()

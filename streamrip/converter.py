@@ -4,10 +4,9 @@ import asyncio
 import base64
 import functools
 import logging
-import os
-import shutil
 import subprocess
 import uuid
+from pathlib import Path
 from tempfile import gettempdir
 from typing import Final
 
@@ -16,7 +15,7 @@ from .utils.ffmpeg_utils import find_ffmpeg
 
 logger = logging.getLogger("streamrip")
 
-SAMPLING_RATES = {44100, 48000, 88200, 96000, 176400, 192000}
+SAMPLING_RATES = frozenset({44100, 48000, 88200, 96000, 176400, 192000})
 
 
 class Converter:
@@ -32,7 +31,7 @@ class Converter:
 
     def __init__(
         self,
-        filename: str,
+        filename: Path,
         ffmpeg_arg: str | None = None,
         sampling_rate: int | None = None,
         bit_depth: int | None = None,
@@ -51,13 +50,12 @@ class Converter:
             )
 
         self.filename = filename
-        self.final_fn = f"{os.path.splitext(filename)[0]}.{self.container}"
+        self.final_fn = filename.with_suffix(f".{self.container}")
         # Unique per conversion: tracks from different albums often share a
         # file name ("01. Intro"), and concurrent conversions used to
         # overwrite each other's temp file.
-        self.tempfile = os.path.join(
-            gettempdir(),
-            f"__streamrip_{uuid.uuid4().hex}_{os.path.basename(self.final_fn)}",
+        self.tempfile = (
+            Path(gettempdir()) / f"__streamrip_{uuid.uuid4().hex}_{self.final_fn.name}"
         )
         self.remove_source = remove_source
         self.sampling_rate = sampling_rate
@@ -81,17 +79,16 @@ class Converter:
             stderr=asyncio.subprocess.PIPE,
         )
         _, err = await process.communicate()
-        if process.returncode != 0 or not os.path.isfile(self.tempfile):
-            if os.path.exists(self.tempfile):
-                os.remove(self.tempfile)
+        if process.returncode != 0 or not self.tempfile.is_file():
+            self.tempfile.unlink(missing_ok=True)
             raise ConversionError(
                 f"ffmpeg failed (exit {process.returncode}): "
                 f"{err.decode(errors='replace')[-300:]}"
             )
 
         if self.remove_source:
-            os.remove(self.filename)
-        shutil.move(self.tempfile, self.final_fn)
+            self.filename.unlink()
+        self.tempfile.move(self.final_fn)
         if cover_data is not None:
             await asyncio.to_thread(self._embed_cover_art, *cover_data)
 
@@ -100,7 +97,7 @@ class Converter:
         from mutagen.flac import FLAC
         from mutagen.id3 import ID3
 
-        src_ext = os.path.splitext(self.filename)[1].lower()
+        src_ext = self.filename.suffix.lower()
         try:
             if src_ext == ".flac":
                 src = FLAC(self.filename)
@@ -126,7 +123,7 @@ class Converter:
         pic.data = cover_data
         encoded = base64.b64encode(pic.write()).decode("ascii")
 
-        out_ext = os.path.splitext(self.final_fn)[1].lower()
+        out_ext = self.final_fn.suffix.lower()
         try:
             if out_ext == ".ogg":
                 from mutagen.oggvorbis import OggVorbis
@@ -148,7 +145,7 @@ class Converter:
         """Build the ffmpeg command line that performs the conversion."""
         # Only errors: they're captured for ConversionError, and anything more
         # ffmpeg prints would garble the progress bars.
-        command = [self.ffmpeg_path, "-i", self.filename, "-loglevel", "error"]
+        command = [self.ffmpeg_path, "-i", str(self.filename), "-loglevel", "error"]
         command += ["-c:a", self.get_codec_lib()]
         # The cover art is a video stream, copied where the container takes one.
         command += ["-c:v", "copy"] if self._ffmpeg_supports_art else ["-vn"]
@@ -166,7 +163,7 @@ class Converter:
         if aformat:
             command += ["-af", f"aformat={':'.join(aformat)}"]
 
-        return [*command, "-y", self.tempfile]
+        return [*command, "-y", str(self.tempfile)]
 
     def get_codec_lib(self) -> str:
         return self.codec_lib
@@ -193,19 +190,21 @@ class LAME(Converter):
     https://trac.ffmpeg.org/wiki/Encode/MP3
     """
 
-    _bitrate_map: Final[dict[int, str]] = {
-        320: "-b:a 320k",
-        245: "-q:a 0",
-        225: "-q:a 1",
-        190: "-q:a 2",
-        175: "-q:a 3",
-        165: "-q:a 4",
-        130: "-q:a 5",
-        115: "-q:a 6",
-        100: "-q:a 7",
-        85: "-q:a 8",
-        65: "-q:a 9",
-    }
+    _bitrate_map: Final = frozendict(
+        {
+            320: "-b:a 320k",
+            245: "-q:a 0",
+            225: "-q:a 1",
+            190: "-q:a 2",
+            175: "-q:a 3",
+            165: "-q:a 4",
+            130: "-q:a 5",
+            115: "-q:a 6",
+            100: "-q:a 7",
+            85: "-q:a 8",
+            65: "-q:a 9",
+        }
+    )
 
     codec_lib = "libmp3lame"
     container = "mp3"
@@ -241,13 +240,13 @@ class Vorbis(Converter):
 
     @classmethod
     def get_quality_arg(cls, rate: int) -> str:
-        arg = "-qscale:a %d"
         if rate <= 128:
-            return arg % (rate / 16 - 4)
-        if rate <= 256:
-            return arg % (rate / 32)
-
-        return arg % (rate / 64 + 4)
+            quality = rate / 16 - 4
+        elif rate <= 256:
+            quality = rate / 32
+        else:
+            quality = rate / 64 + 4
+        return f"-qscale:a {int(quality)}"
 
 
 class OPUS(Converter):

@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import sys
+from pathlib import Path
 
 lazy import aiofiles
 
@@ -44,11 +45,6 @@ from .prompter import get_prompter
 lazy from .search_menu import choose_results
 
 logger = logging.getLogger("streamrip")
-
-# Windows used to be forced onto the SelectorEventLoop because aiodns needed it,
-# but that loop cannot run subprocesses, so every ffmpeg conversion failed there.
-# aiodns is no longer used (connectors use aiohttp's ThreadedResolver), so the
-# default ProactorEventLoop is kept.
 
 
 class Main:
@@ -297,7 +293,7 @@ class Main:
             await self.add_by_id(source, first.media_type, first.id)
 
     async def search_output_file(
-        self, source: str, media_type: str, query: str, filepath: str, limit: int
+        self, source: str, media_type: str, query: str, filepath: Path, limit: int
     ):
         """Search and write the results to filepath as JSON, without downloading."""
         search_results = await self._search(source, media_type, query, limit)

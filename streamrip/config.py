@@ -1,6 +1,5 @@
 """Classes and functions that manage config state."""
 
-import contextlib
 import copy
 import logging
 import os
@@ -15,11 +14,11 @@ from tomlkit.toml_document import TOMLDocument
 
 logger = logging.getLogger("streamrip")
 
-APP_DIR = click.get_app_dir("streamrip")
-os.makedirs(APP_DIR, mode=0o700, exist_ok=True)
+APP_DIR = Path(click.get_app_dir("streamrip"))
+APP_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
 if os.name == "posix":
-    os.chmod(APP_DIR, 0o700)
-DEFAULT_CONFIG_PATH = os.path.join(APP_DIR, "config.toml")
+    APP_DIR.chmod(0o700)
+DEFAULT_CONFIG_PATH = APP_DIR / "config.toml"
 
 
 # Every option is documented in config.toml, the template each user's config
@@ -46,15 +45,15 @@ class TidalConfig:
     refresh_token: str
     token_expiry: str
     quality: int
-    hires_client: bool = False
-    client_id: str = ""
-    client_secret: str = ""
-    token_client_id: str = ""
+    hires_client: bool
+    client_id: str
+    client_secret: str
+    token_client_id: str
     # The hi-res client's own login, next to the tokens above.
-    hires_access_token: str = ""
-    hires_refresh_token: str = ""
-    hires_token_expiry: str = ""
-    hires_token_client_id: str = ""
+    hires_access_token: str
+    hires_refresh_token: str
+    hires_token_expiry: str
+    hires_token_client_id: str
 
 
 @dataclass(slots=True)
@@ -78,23 +77,19 @@ class SoundcloudConfig:
 
 @dataclass(slots=True)
 class SpotifyConfig:
-    """Spotify section of the config file.
+    """Spotify section of the config file."""
 
-    Every option has a default, so a config written before Spotify support
-    still loads (see ConfigData.from_toml).
-    """
-
-    client_id: str = ""
-    redirect_uri: str = "http://127.0.0.1:9900/callback"
+    client_id: str
+    redirect_uri: str
     # The file format of what is downloaded: "m4a" (AAC) or "mp3".
-    audio_format: str = "m4a"
+    audio_format: str
     # kbps, for audio that has to be re-encoded to audio_format.
-    audio_bitrate: int = 256
+    audio_bitrate: int
     # Accept a YouTube music video when there is no matching "song".
-    match_videos: bool = True
-    access_token: str = ""
-    refresh_token: str = ""
-    token_expiry: str = ""
+    match_videos: bool
+    access_token: str
+    refresh_token: str
+    token_expiry: str
     # The audio comes from YouTube Music, in the one quality it has.
     quality: ClassVar[int] = 0
 
@@ -145,7 +140,7 @@ class MetadataConfig:
     set_playlist_to_album: bool
     renumber_playlist_tracks: bool
     exclude: list[str]
-    prefer_explicit: bool = True
+    prefer_explicit: bool
 
 
 @dataclass(slots=True)
@@ -169,7 +164,7 @@ class DownloadsConfig:
     max_connections: int
     requests_per_minute: int
     verify_ssl: bool
-    lyrics: bool = True
+    lyrics: bool
 
 
 @dataclass(slots=True)
@@ -191,11 +186,11 @@ class CliConfig:
 
 
 HOME = Path.home()
-DEFAULT_DOWNLOADS_FOLDER = os.path.join(HOME, "StreamripDownloads")
-DEFAULT_DOWNLOADS_DB_PATH = os.path.join(APP_DIR, "downloads.db")
-DEFAULT_FAILED_DOWNLOADS_DB_PATH = os.path.join(APP_DIR, "failed_downloads.db")
-BLANK_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.toml")
-assert os.path.isfile(BLANK_CONFIG_PATH), "Template config not found"
+DEFAULT_DOWNLOADS_FOLDER = HOME / "StreamripDownloads"
+DEFAULT_DOWNLOADS_DB_PATH = APP_DIR / "downloads.db"
+DEFAULT_FAILED_DOWNLOADS_DB_PATH = APP_DIR / "failed_downloads.db"
+BLANK_CONFIG_PATH = Path(__file__).parent / "config.toml"
+assert BLANK_CONFIG_PATH.is_file(), "Template config not found"
 
 
 @dataclass(slots=True)
@@ -221,21 +216,15 @@ class ConfigData:
 
     @classmethod
     def from_toml(cls, toml_str: str):
-        """Parse a config file. Raises if its schema doesn't match this version.
-
-        Sections this version has no class for, like the [misc] of older
-        releases, are left alone.
-        """
+        """Parse a config file. Raises if its schema doesn't match this version."""
         # TODO: handle the mistake where Windows people forget to escape backslash
         toml = parse(toml_str)
-        _add_missing_sections(toml)
         sections = {f.name: f.type(**toml[f.name]) for f in _section_fields()}  # type: ignore
         return cls(toml=toml, **sections)
 
     @classmethod
     def defaults(cls):
-        with open(BLANK_CONFIG_PATH) as f:
-            return cls.from_toml(f.read())
+        return cls.from_toml(BLANK_CONFIG_PATH.read_text())
 
     def set_modified(self):
         self._modified = True
@@ -264,22 +253,6 @@ def _section_fields():
     return [f for f in fields(ConfigData) if is_dataclass(f.type)]
 
 
-def _add_missing_sections(toml: TOMLDocument):
-    """Add the sections a config written by an older release lacks, from the template.
-
-    A release that brings a source brings its [section]. Without this, every
-    existing config would stop loading (and need `config reset`, which also
-    throws the logins away) until the section is added by hand.
-    """
-    missing = [f.name for f in _section_fields() if f.name not in toml]
-    if not missing:
-        return
-    with open(BLANK_CONFIG_PATH) as f:
-        template = parse(f.read())
-    for name in missing:
-        toml[name] = copy.deepcopy(template[name])
-
-
 def update_toml_section_from_config(toml_section, config):
     for field in fields(config):
         value = getattr(config, field.name)
@@ -298,13 +271,13 @@ def update_toml_section_from_config(toml_section, config):
 class Config:
     """A user's config, loaded from a TOML file at path."""
 
-    def __init__(self, path: str, /):
+    def __init__(self, path: Path, /):
         """Load the config at path, securing it first if it holds secrets."""
         self.path = path
 
-        with open(path) as toml_file:
+        with path.open() as toml_file:
             # The packaged template is shared, but user configs contain secrets.
-            if os.name == "posix" and not os.path.samefile(path, BLANK_CONFIG_PATH):
+            if os.name == "posix" and not path.samefile(BLANK_CONFIG_PATH):
                 os.fchmod(toml_file.fileno(), 0o600)
             self.file: ConfigData = ConfigData.from_toml(toml_file.read())
 
@@ -329,7 +302,7 @@ class Config:
         self.save_file()
 
 
-def _write_config(path: str, toml: TOMLDocument):
+def _write_config(path: Path, toml: TOMLDocument):
     """Write toml to path in one step, private from its first byte.
 
     The contents go to a temporary file next to it, which replaces the config
@@ -339,12 +312,11 @@ def _write_config(path: str, toml: TOMLDocument):
     contents = dumps(toml)
     # A symlinked config (kept in a dotfiles repo, say) is written through, not
     # replaced by a regular file.
-    target = os.path.realpath(path)
+    target = path.resolve()
     # mkstemp creates the file 0600 whatever the umask, so there is no moment
     # at which the new tokens are readable by others.
-    fd, tmp_path = tempfile.mkstemp(
-        dir=os.path.dirname(target), prefix=".config-", suffix=".tmp"
-    )
+    fd, tmp_name = tempfile.mkstemp(dir=target.parent, prefix=".config-", suffix=".tmp")
+    tmp_path = Path(tmp_name)
     try:
         with os.fdopen(fd, "w") as f:
             if os.name == "posix":
@@ -352,17 +324,15 @@ def _write_config(path: str, toml: TOMLDocument):
             f.write(contents)
             f.flush()
             os.fsync(f.fileno())
-        os.replace(tmp_path, target)
+        tmp_path.replace(target)
     except BaseException:
-        with contextlib.suppress(FileNotFoundError):
-            os.remove(tmp_path)
+        tmp_path.unlink(missing_ok=True)
         raise
 
 
-def set_user_defaults(path: str, /):
+def set_user_defaults(path: Path, /):
     """Update the TOML file at the path with user-specific default values."""
-    with open(BLANK_CONFIG_PATH) as f:
-        toml = parse(f.read())
+    toml = parse(BLANK_CONFIG_PATH.read_text())
 
     toml_set_user_defaults(toml)
 
@@ -371,6 +341,6 @@ def set_user_defaults(path: str, /):
 
 def toml_set_user_defaults(toml: TOMLDocument):
     """Point toml's path-valued options at directories under this user's home."""
-    toml["downloads"]["folder"] = DEFAULT_DOWNLOADS_FOLDER  # type: ignore
-    toml["database"]["downloads_path"] = DEFAULT_DOWNLOADS_DB_PATH  # type: ignore
-    toml["database"]["failed_downloads_path"] = DEFAULT_FAILED_DOWNLOADS_DB_PATH  # type: ignore
+    toml["downloads"]["folder"] = str(DEFAULT_DOWNLOADS_FOLDER)  # type: ignore
+    toml["database"]["downloads_path"] = str(DEFAULT_DOWNLOADS_DB_PATH)  # type: ignore
+    toml["database"]["failed_downloads_path"] = str(DEFAULT_FAILED_DOWNLOADS_DB_PATH)  # type: ignore

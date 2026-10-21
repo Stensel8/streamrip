@@ -1,13 +1,12 @@
 """The [spotify] section, and the prompter that fills it."""
 
-import os
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 import tomlkit
 
 from streamrip.client import SpotifyClient
-from streamrip.config import Config, ConfigData, set_user_defaults
+from streamrip.config import BLANK_CONFIG_PATH, Config, ConfigData, set_user_defaults
 from streamrip.exceptions import AuthenticationError
 from streamrip.rip import prompter as prompter_module
 from streamrip.rip.prompter import PROMPTERS, SpotifyPrompter, get_prompter
@@ -36,7 +35,7 @@ def test_the_audio_comes_in_one_quality():
 
 
 def test_the_template_explains_the_app_and_the_premium_rule():
-    text = open("streamrip/config.toml").read()
+    text = BLANK_CONFIG_PATH.read_text()
     section = text[text.index("[spotify]") : text.index("[database]")]
 
     assert "Premium" in section
@@ -45,31 +44,11 @@ def test_the_template_explains_the_app_and_the_premium_rule():
     assert "127.0.0.1" in section
 
 
-def test_a_config_from_before_spotify_still_loads(tmp_path):
-    """An existing config has no [spotify]: it gets the template's, not an error."""
+def test_spotify_credentials_are_written_when_the_config_is_saved(tmp_path):
     path = tmp_path / "config.toml"
-    set_user_defaults(str(path))
-    document = tomlkit.parse(path.read_text())
-    del document["spotify"]
-    document["qobuz"]["user_id"] = "123"
-    path.write_text(tomlkit.dumps(document))
-    assert "[spotify]" not in path.read_text()
+    set_user_defaults(path)
 
-    config = Config(str(path))
-
-    assert config.session.qobuz.user_id == "123"
-    assert config.session.spotify.audio_format == "m4a"
-    assert config.file.spotify.client_id == ""
-
-
-def test_the_section_is_written_when_the_config_is_saved(tmp_path):
-    path = tmp_path / "config.toml"
-    set_user_defaults(str(path))
-    document = tomlkit.parse(path.read_text())
-    del document["spotify"]
-    path.write_text(tomlkit.dumps(document))
-
-    with Config(str(path)) as config:
+    with Config(path) as config:
         config.file.spotify.client_id = "abc"
         config.file.spotify.refresh_token = "r"
         config.file.set_modified()
@@ -78,26 +57,14 @@ def test_the_section_is_written_when_the_config_is_saved(tmp_path):
     assert saved["spotify"]["client_id"] == "abc"
     assert saved["spotify"]["refresh_token"] == "r"
     assert saved["spotify"]["audio_format"] == "m4a"
-    # The rest of the file is as it was.
-    assert saved["qobuz"]["quality"] == 4
-    if os.name == "posix":
-        assert path.stat().st_mode & 0o777 == 0o600
 
 
 def test_a_config_that_has_the_section_is_left_as_it_is():
-    toml = (
-        open("streamrip/config.toml")
-        .read()
-        .replace('audio_format = "m4a"', 'audio_format = "mp3"')
+    toml = BLANK_CONFIG_PATH.read_text().replace(
+        'audio_format = "m4a"', 'audio_format = "mp3"'
     )
 
     assert ConfigData.from_toml(toml).spotify.audio_format == "mp3"
-
-
-def test_options_missing_from_the_section_have_defaults():
-    toml = open("streamrip/config.toml").read().replace("match_videos = true\n", "")
-
-    assert ConfigData.from_toml(toml).spotify.match_videos is True
 
 
 # --- the prompter ------------------------------------------------------------

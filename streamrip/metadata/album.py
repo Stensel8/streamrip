@@ -1,6 +1,7 @@
 import logging
 import re
 from dataclasses import dataclass
+from pathlib import Path
 
 from ..filepath_utils import clean_filename, clean_filepath
 from .covers import Covers
@@ -96,7 +97,7 @@ class AlbumMetadata:
         _copyright = re.sub(r"(?i)\(P\)", PHON_COPYRIGHT, self.copyright)
         return re.sub(r"(?i)\(C\)", COPYRIGHT, _copyright)
 
-    def format_folder_path(self, formatter: str) -> str:
+    def format_folder_path(self, formatter: str) -> Path:
         """Render `formatter` into this album's folder name."""
         # Available keys: "albumartist", "title", "year", "bit_depth", "sampling_rate",
         # "id", "albumcomposer", "container", "tracktotal", and "version".

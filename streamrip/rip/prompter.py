@@ -17,6 +17,7 @@ from ..client.spotify import DEVELOPER_DASHBOARD
 from ..config import Config
 from ..console import console
 from ..exceptions import AuthenticationError, MissingCredentialsError
+from .browser_login import browser_login_available
 from .deezer_arl_capture import DeezerArlCaptureError, capture_deezer_arl_via_browser
 from .interactive import Confirm, Prompt
 from .qobuz_token_capture import (
@@ -40,6 +41,31 @@ def _open_login_link(url: str) -> None:
     except Exception:
         # No browser available (e.g. over SSH); use the printed link manually.
         pass
+
+
+def _show_login_link(url: str) -> None:
+    """Print the login page's address, then open it.
+
+    Qobuz and Deezer print no link of their own, and there may be no browser to
+    open it (a container, SSH): then the printed address is the way to the page.
+    """
+    console.print(f"Log in at [blue underline]{url}[/blue underline]")
+    _open_login_link(url)
+
+
+def _choose_login(service: str, options: list[tuple[str, str]], default: str) -> str:
+    """Show the numbered ways to log in, and return the key of the one chosen."""
+    if len(options) == 1:
+        return options[0][0]  # nothing to choose between
+    listing = "".join(f"  {n}. {text}\n" for n, (_, text) in enumerate(options, 1))
+    console.print(f"\nHow do you want to log in to {service}?\n{listing}")
+    keys = [key for key, _ in options]
+    choice = Prompt.ask(
+        "Choose",
+        choices=[str(n) for n in range(1, len(options) + 1)],
+        default=str(keys.index(default) + 1),
+    )
+    return keys[int(choice) - 1]
 
 
 class CredentialPrompter(ABC):
@@ -101,17 +127,26 @@ class QobuzPrompter(CredentialPrompter):
         still accepts; offer the two ways to capture it automatically (see
         qobuz_token_capture) before asking for it outright.
         """
-        console.print(
-            "\nHow do you want to log in to Qobuz?\n"
-            "  1. Open an isolated browser window that logs in and captures\n"
-            "     the token automatically\n"
-            "  2. Log in in your own browser, then paste a short script into\n"
-            "     its console to send the token back\n"
-            "  3. Copy the user id and token from your browser by hand\n"
-        )
-        choice = Prompt.ask("Choose", choices=["1", "2", "3"], default="2")
+        options = []
+        if browser_login_available():
+            options.append(
+                (
+                    "window",
+                    "Open an isolated browser window that logs in and captures\n"
+                    "     the token automatically",
+                )
+            )
+        options += [
+            (
+                "script",
+                "Log in in your own browser, then paste a short script into\n"
+                "     its console to send the token back",
+            ),
+            ("hand", "Copy the user id and token from your browser by hand"),
+        ]
+        choice = _choose_login("Qobuz", options, default="script")
 
-        if choice == "1":
+        if choice == "window":
             try:
                 user_id, token = await capture_qobuz_auth_token_via_browser()
             except QobuzTokenCaptureError as e:
@@ -119,8 +154,8 @@ class QobuzPrompter(CredentialPrompter):
             else:
                 self._set_session_creds(user_id, token)
                 return
-        elif choice == "2":
-            _open_login_link("https://play.qobuz.com/login")
+        elif choice == "script":
+            _show_login_link("https://play.qobuz.com/login")
             try:
                 user_id, token = await capture_qobuz_auth_token()
             except QobuzTokenCaptureError as e:
@@ -129,7 +164,7 @@ class QobuzPrompter(CredentialPrompter):
                 self._set_session_creds(user_id, token)
                 return
 
-        _open_login_link("https://play.qobuz.com/login")
+        _show_login_link("https://play.qobuz.com/login")
         console.print(
             "\nEnter it manually instead:\n"
             "  1. In the browser tab that just opened, open DevTools -> Network,\n"
@@ -266,15 +301,19 @@ class DeezerPrompter(CredentialPrompter):
         isolated browser window (see deezer_arl_capture) before asking for it
         outright.
         """
-        console.print(
-            "\nHow do you want to log in to Deezer?\n"
-            "  1. Open an isolated browser window that logs in and captures\n"
-            "     the ARL cookie automatically\n"
-            "  2. Copy the ARL cookie from your browser by hand\n"
-        )
-        choice = Prompt.ask("Choose", choices=["1", "2"], default="2")
+        options = []
+        if browser_login_available():
+            options.append(
+                (
+                    "window",
+                    "Open an isolated browser window that logs in and captures\n"
+                    "     the ARL cookie automatically",
+                )
+            )
+        options.append(("hand", "Copy the ARL cookie from your browser by hand"))
+        choice = _choose_login("Deezer", options, default="hand")
 
-        if choice == "1":
+        if choice == "window":
             try:
                 arl = await capture_deezer_arl_via_browser()
             except DeezerArlCaptureError as e:
@@ -283,7 +322,7 @@ class DeezerPrompter(CredentialPrompter):
                 self.config.session.deezer.arl = arl
                 return
 
-        _open_login_link("https://www.deezer.com/login")
+        _show_login_link("https://www.deezer.com/login")
         console.print(
             "\nEnter it manually instead:\n"
             "  1. In the browser tab that just opened, log in to Deezer\n"
@@ -410,13 +449,15 @@ class SpotifyPrompter(CredentialPrompter):
         self._announce_saved()
 
 
-PROMPTERS = {
-    "qobuz": QobuzPrompter,
-    "deezer": DeezerPrompter,
-    "tidal": TidalPrompter,
-    "soundcloud": SoundcloudPrompter,
-    "spotify": SpotifyPrompter,
-}
+PROMPTERS = frozendict(
+    {
+        "qobuz": QobuzPrompter,
+        "deezer": DeezerPrompter,
+        "tidal": TidalPrompter,
+        "soundcloud": SoundcloudPrompter,
+        "spotify": SpotifyPrompter,
+    }
+)
 
 
 def get_prompter(client: Client, config: Config) -> CredentialPrompter:

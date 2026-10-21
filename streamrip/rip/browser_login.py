@@ -9,7 +9,9 @@ own if there is none.
 """
 
 import asyncio
+import importlib.util
 import logging
+import os
 import shutil
 import sys
 from contextlib import asynccontextmanager
@@ -18,6 +20,20 @@ from ..console import console
 from .interactive import Confirm
 
 logger = logging.getLogger("streamrip")
+
+
+def browser_login_available() -> bool:
+    """Whether the isolated browser window can work here at all.
+
+    It needs Playwright (the `browser` extra) and, on Linux, a display to open
+    the window on: a container or an SSH session has none.
+    """
+    if importlib.util.find_spec("playwright") is None:
+        return False
+    if sys.platform.startswith("linux"):
+        return bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+    return True
+
 
 # Playwright's own channel names for already-installed browsers, tried
 # first; then common binary names on PATH for browsers Playwright doesn't

@@ -2,6 +2,7 @@
 
 import logging
 from contextlib import contextmanager
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -17,10 +18,10 @@ from streamrip.media.csv_playlist import (
 from streamrip.metadata import Summary
 
 
-def write(tmp_path, text, encoding="utf-8", name="list.csv") -> str:
+def write(tmp_path, text, encoding="utf-8", name="list.csv") -> Path:
     path = tmp_path / name
     path.write_bytes(text.encode(encoding))
-    return str(path)
+    return path
 
 
 def rows(tracks):
@@ -30,24 +31,44 @@ def rows(tracks):
 # --- reading -----------------------------------------------------------------
 
 
-def test_the_csv_of_music_sync_is_read(tmp_path):
-    path = write(
-        tmp_path,
-        "title,artists,album,duration_ms,isrc,spotify_uri,tidal_id\n"
-        "Get Lucky,Daft Punk; Pharrell Williams,Random Access Memories,369000,"
-        "GBDUW1300136,spotify:track:x,\n"
-        "Billie Jean,Michael Jackson,Thriller,293000.0,,,\n",
-    )
-
-    assert rows(read_tracks(path)) == [
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
         (
-            "Get Lucky",
-            ["Daft Punk", "Pharrell Williams"],
-            "Random Access Memories",
-            369000,
+            "title,artists,album,duration_ms,isrc,spotify_uri,tidal_id\n"
+            "Get Lucky,Daft Punk; Pharrell Williams,Random Access Memories,369000,"
+            "GBDUW1300136,spotify:track:x,\n"
+            "Billie Jean,Michael Jackson,Thriller,293000.0,,,\n",
+            [
+                (
+                    "Get Lucky",
+                    ["Daft Punk", "Pharrell Williams"],
+                    "Random Access Memories",
+                    369000,
+                ),
+                ("Billie Jean", ["Michael Jackson"], "Thriller", 293000),
+            ],
         ),
-        ("Billie Jean", ["Michael Jackson"], "Thriller", 293000),
-    ]
+        # A semicolon between artists and a short row leave a file of commas alone.
+        (
+            "title,artists,album\n"
+            "Get Lucky,Daft Punk; Pharrell Williams,Random Access Memories\n"
+            "Song,Band\n",
+            [
+                (
+                    "Get Lucky",
+                    ["Daft Punk", "Pharrell Williams"],
+                    "Random Access Memories",
+                    None,
+                ),
+                ("Song", ["Band"], "", None),
+            ],
+        ),
+    ],
+    ids=["the csv of Music-Sync", "semicolon between artists, short row"],
+)
+def test_the_columns_of_a_csv_are_read(tmp_path, text, expected):
+    assert rows(read_tracks(write(tmp_path, text))) == expected
 
 
 @pytest.mark.parametrize(
@@ -119,27 +140,6 @@ def test_a_header_without_a_comma_and_names_with_some_is_a_file_of_semicolons(
     assert rows(read_tracks(path)) == [
         ("September", ["Earth, Wind & Fire"], "", None),
         ("Ohio", ["Crosby, Stills, Nash & Young"], "", None),
-    ]
-
-
-def test_a_semicolon_between_artists_and_a_short_row_leave_a_file_of_commas_alone(
-    tmp_path,
-):
-    path = write(
-        tmp_path,
-        "title,artists,album\n"
-        "Get Lucky,Daft Punk; Pharrell Williams,Random Access Memories\n"
-        "Song,Band\n",
-    )
-
-    assert rows(read_tracks(path)) == [
-        (
-            "Get Lucky",
-            ["Daft Punk", "Pharrell Williams"],
-            "Random Access Memories",
-            None,
-        ),
-        ("Song", ["Band"], "", None),
     ]
 
 
@@ -316,7 +316,7 @@ async def test_the_tracks_found_become_a_playlist_in_a_folder_of_the_lists_name(
         ("11", 1, 3),
         ("33", 3, 3),  # the position in the list, also where one is missing
     ]
-    assert {t.folder for t in playlist.tracks} == {str(tmp_path / "Mix")}
+    assert {t.folder for t in playlist.tracks} == {tmp_path / "Mix"}
     assert all(t.client is tidal for t in playlist.tracks)
     assert ("track", "Band Song One", 5) in tidal.asked  # five results are looked at
 

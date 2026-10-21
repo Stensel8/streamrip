@@ -7,7 +7,6 @@ import random
 import time
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
-from typing import TypeVar
 
 lazy import aiohttp
 lazy import aiolimiter
@@ -30,8 +29,6 @@ RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
 MAX_API_ATTEMPTS = 4
 MAX_RETRY_DELAY = 60
 RATE_LIMIT_PAUSE = 10  # seconds per attempt when a 429 has no Retry-After
-
-T = TypeVar("T")
 
 
 def retry_after(resp, attempt: int) -> float:
@@ -81,7 +78,7 @@ class RequestClient:
             )
         owner._retry_at = max(owner._retry_at, now + seconds)
 
-    async def _get_with_retries(
+    async def _get_with_retries[T](
         self,
         url: str,
         read: Callable[[aiohttp.ClientResponse], Awaitable[T]],

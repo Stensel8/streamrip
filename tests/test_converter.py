@@ -1,9 +1,8 @@
-import os
 import shutil
+from pathlib import Path
 
 import mutagen
 import pytest
-from util import arun
 
 from streamrip import converter
 from streamrip.config import Config
@@ -22,7 +21,7 @@ class DummyConverter:
 
     def __init__(self, **kwargs):
         self.kwargs = kwargs
-        self.final_fn = "/tmp/output.opus"
+        self.final_fn = Path("/tmp/output.opus")
         self.instances.append(self)
 
     async def convert(self):
@@ -38,23 +37,25 @@ class DummyLosslessConverter(DummyConverter):
         raise AssertionError("lossless converters should not use lossy_bitrate")
 
 
-def test_lossy_bitrate_config_is_passed_to_converter(monkeypatch):
+async def test_lossy_bitrate_config_is_passed_to_converter(monkeypatch):
     monkeypatch.setattr("streamrip.media.track.converter.get", lambda _: DummyConverter)
     DummyConverter.instances = []
 
     config = Config.defaults()
     config.session.conversion.codec = "OPUS"
     config.session.conversion.lossy_bitrate = 160
-    track = Track(None, None, config, "", None, None, download_path="/tmp/source.flac")
+    track = Track(
+        None, None, config, Path(), None, None, download_path=Path("/tmp/source.flac")
+    )
 
-    arun(track._convert())
+    await track._convert()
 
     engine = DummyConverter.instances[0]
     assert engine.kwargs["ffmpeg_arg"] == "-b:a 160k"
-    assert track.download_path == "/tmp/output.opus"
+    assert track.download_path == Path("/tmp/output.opus")
 
 
-def test_lossy_bitrate_config_is_not_passed_to_lossless_converter(monkeypatch):
+async def test_lossy_bitrate_config_is_not_passed_to_lossless_converter(monkeypatch):
     monkeypatch.setattr(
         "streamrip.media.track.converter.get", lambda _: DummyLosslessConverter
     )
@@ -63,9 +64,11 @@ def test_lossy_bitrate_config_is_not_passed_to_lossless_converter(monkeypatch):
     config = Config.defaults()
     config.session.conversion.codec = "ALAC"
     config.session.conversion.lossy_bitrate = 160
-    track = Track(None, None, config, "", None, None, download_path="/tmp/source.flac")
+    track = Track(
+        None, None, config, Path(), None, None, download_path=Path("/tmp/source.flac")
+    )
 
-    arun(track._convert())
+    await track._convert()
 
     engine = DummyLosslessConverter.instances[0]
     assert engine.kwargs["ffmpeg_arg"] is None
@@ -94,31 +97,31 @@ needs_ffmpeg = pytest.mark.skipif(find_ffmpeg() is None, reason="needs ffmpeg")
         ("OGG", "ogg"),
     ],
 )
-def test_conversion(tmp_path, codec, extension):
+async def test_conversion(tmp_path, codec, extension):
     source = tmp_path / "track.wav"
     shutil.copy("tests/silence.flac", tmp_path / "track.flac")
     (tmp_path / "track.flac").rename(source)  # any input ffmpeg can read
     engine = converter.get(codec)(
-        str(source), sampling_rate=48000, bit_depth=16, remove_source=True
+        source, sampling_rate=48000, bit_depth=16, remove_source=True
     )
 
-    arun(engine.convert())
+    await engine.convert()
 
-    assert engine.final_fn == str(tmp_path / f"track.{extension}")
+    assert engine.final_fn == tmp_path / f"track.{extension}"
     assert mutagen.File(engine.final_fn) is not None
     assert not source.exists()
 
 
 @needs_ffmpeg
-def test_failed_conversion_says_why_and_cleans_up(tmp_path):
+async def test_failed_conversion_says_why_and_cleans_up(tmp_path):
     source = tmp_path / "track.flac"
     source.write_bytes(b"not audio")
-    engine = converter.LAME(str(source), remove_source=True)
+    engine = converter.LAME(source, remove_source=True)
 
     with pytest.raises(ConversionError, match="ffmpeg failed") as err:
-        arun(engine.convert())
+        await engine.convert()
 
     # ffmpeg's own words, not just that it failed (the wording varies).
     assert str(err.value).split("): ", 1)[1].strip()
     assert source.exists()
-    assert not os.path.exists(engine.tempfile)
+    assert not engine.tempfile.exists()

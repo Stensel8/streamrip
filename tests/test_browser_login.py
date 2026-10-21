@@ -102,3 +102,34 @@ async def test_the_callers_own_error_is_not_wrapped(opened):
             raise error
 
     assert caught.value is error
+
+
+@pytest.mark.parametrize(
+    ("platform", "env", "installed", "expected"),
+    [
+        ("linux", {"DISPLAY": ":0"}, True, True),
+        ("linux", {"WAYLAND_DISPLAY": "wayland-0"}, True, True),
+        ("linux", {}, True, False),  # a container, or an SSH session
+        ("linux", {"DISPLAY": ":0"}, False, False),  # the browser extra is not there
+        ("darwin", {}, True, True),
+        ("win32", {}, True, True),
+    ],
+    ids=["x11", "wayland", "no display", "no playwright", "macos", "windows"],
+)
+def test_the_browser_window_is_only_available_where_it_can_work(
+    monkeypatch, platform, env, installed, expected
+):
+    from streamrip.rip import browser_login
+
+    for name in ("DISPLAY", "WAYLAND_DISPLAY"):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setattr(browser_login.sys, "platform", platform)
+    monkeypatch.setattr(
+        browser_login.importlib.util,
+        "find_spec",
+        lambda name: object() if installed else None,
+    )
+
+    assert browser_login.browser_login_available() is expected

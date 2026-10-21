@@ -109,7 +109,9 @@ def _names(artists: list[dict] | None) -> list[dict]:
     return [{"name": a["name"]} for a in artists or [] if a.get("name")]
 
 
-RECORD_TYPES = {"album": "ALBUM", "single": "SINGLE", "compilation": "COMPILE"}
+RECORD_TYPES = frozendict(
+    {"album": "ALBUM", "single": "SINGLE", "compilation": "COMPILE"}
+)
 
 
 def summary_item(media_type: str, item: dict) -> dict:

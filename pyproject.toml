@@ -28,22 +28,28 @@ dependencies = [
   "aiolimiter>=1.2,<2",
   "rich>=13.9",
   "click>=8.1,<9",
-  "click-help-colors>=0.9.4,<0.10",
   "requests>=2.32,<3",
-  # Drives a browser for automatic Qobuz login: an already-installed
-  # Chrome-family browser when there is one (no download), or its own
-  # browser after asking, when there isn't.
-  "playwright>=1.40,<2",
   # Spotify only supplies the metadata: its audio is found on YouTube Music
-  # (ytmusicapi) and downloaded from there (yt-dlp; the "default" extra brings the
-  # script YouTube's streams need, which also needs a JavaScript runtime).
+  # (ytmusicapi) and downloaded from there with yt-dlp. YouTube's streams need
+  # a solver script (yt-dlp-ejs) that yt-dlp only accepts at the exact version
+  # it was released with, and a JavaScript runtime. They are pinned together
+  # and bumped together. yt-dlp's "default" extra is not used: it also pulls in
+  # brotli, which has no wheel for Python 3.15, only to unpack the odd
+  # brotli-compressed page.
   "ytmusicapi>=1.12,<2",
-  "yt-dlp[default]>=2026.7.4,<2027",
+  "yt-dlp==2026.8.19",
+  "yt-dlp-ejs==0.8.0",
+  "websockets>=13",
+  # The CA bundle every connection is checked against, on every system alike.
+  "certifi>=2026.10.19",
 ]
 
 [project.optional-dependencies]
-# Use certifi's CA bundle instead of the system certificates.
-ssl = ["certifi>=2026.10.19"]
+# Drives a browser for the automatic Qobuz and Deezer logins: an already
+# installed Chrome-family browser when there is one (no download), or its own
+# browser after asking, when there isn't. It needs a screen to show the window
+# on, so the container image leaves it out; the installers include it.
+browser = ["playwright>=1.40,<2"]
 # A prebuilt ffmpeg, for when there's no system ffmpeg (or none on PATH).
 ffmpeg = ["imageio-ffmpeg>=0.5"]
 
@@ -60,14 +66,13 @@ Upstream = "https://github.com/nathom/streamrip"
 packages = [{ include = "streamrip" }]
 
 [tool.poetry.group.dev.dependencies]
-ruff = ">=0.8"
-pytest = ">=8.3"
-pytest-mock = ">=3.14"
-pytest-asyncio = ">=0.25"
-certifi = ">=2026.10.19"
+ruff = ">=0.17"
+pytest = ">=9.1"
+pytest-mock = ">=3.17"
+pytest-asyncio = ">=1.4"
 
 [tool.pytest.ini_options]
-minversion = "8.0"
+minversion = "9.1"
 addopts = "-ra -q"
 testpaths = ["tests"]
 log_level = "DEBUG"
@@ -87,7 +92,7 @@ target-version = "py315"
 
 [tool.ruff.lint]
 # Enable Pyflakes (`F`) and a subset of the pycodestyle (`E`)  codes by default.
-select = ["E4", "E7", "E9", "F", "I", "UP", "ASYNC", "N", "RUF", "ERA001"]
+select = ["E4", "E7", "E9", "F", "I", "UP", "ASYNC", "N", "RUF", "ERA001", "PTH"]
 # os.path.isfile/getsize in async code are cheap stat calls, not I/O worth a
 # thread hop.
 ignore = ["ASYNC240"]

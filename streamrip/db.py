@@ -9,9 +9,6 @@ from typing import Final
 
 logger = logging.getLogger("streamrip")
 
-# The sources a download key can start with.
-SOURCES: Final = ("qobuz", "tidal", "deezer", "soundcloud", "spotify")
-
 
 def track_id(source: str, item_id: str) -> str:
     """The id of a track as the downloads table knows it.
@@ -34,15 +31,10 @@ def download_key(source: str, item_id: str) -> str:
     return f"{source}_{track_id(source, item_id)}"
 
 
-def split_download_key(key: str) -> tuple[str | None, str]:
-    """The (source, id) a downloads row holds.
-
-    The source is None for a row from before ids carried one.
-    """
-    source, separator, item_id = key.partition("_")
-    if separator and source in SOURCES:
-        return source, item_id
-    return None, key
+def split_download_key(key: str) -> tuple[str, str]:
+    """The (source, id) a downloads row holds."""
+    source, _, item_id = key.partition("_")
+    return source, item_id
 
 
 class Dummy:
@@ -87,14 +79,13 @@ class DatabaseBase:
         self.path = path
 
         self.create()
-        self.migrate()
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
         """A connection that commits (or rolls back) and is then closed.
 
         `with sqlite3.connect(...)` only ends the transaction: it leaves the
-        connection open until it is garbage collected, which Python 3.13 warns
+        connection open until it is garbage collected, which Python warns
         about.
         """
         conn = sqlite3.connect(self.path)
@@ -124,9 +115,6 @@ class DatabaseBase:
         logger.debug("executing %s", command)
         with self._connect() as conn:
             conn.execute(command)
-
-    def migrate(self):
-        """Bring a table made by an older version up to date. Nothing to do here."""
 
     def contains(self, **items) -> bool:
         """Check whether items matches an entry in the table.
@@ -216,36 +204,6 @@ class Failed(DatabaseBase):
     # `streamrip repair`.
     constraints = ("UNIQUE (source, media_type, id)",)
 
-    @staticmethod
-    def _unique_on_id_alone(conn: sqlite3.Connection, table: str) -> bool:
-        """Whether `table` is the old one, unique on its id column only."""
-        for _, index, unique, *_ in conn.execute(f"PRAGMA index_list({table})"):
-            if unique:
-                columns = [
-                    row[2] for row in conn.execute(f"PRAGMA index_info({index})")
-                ]
-                if columns == ["id"]:
-                    return True
-        return False
-
-    def migrate(self):
-        """Rebuild a table that is unique on the id alone, keeping its rows."""
-        with self._connect() as conn:
-            if not self._unique_on_id_alone(conn, self.name):
-                return
-            conn.execute("BEGIN IMMEDIATE")
-            if not self._unique_on_id_alone(conn, self.name):
-                return  # another streamrip got here first
-            logger.debug("Rebuilding %s: unique per source now", self.name)
-            columns = ", ".join(self.structure)
-            conn.execute(f"ALTER TABLE {self.name} RENAME TO {self.name}_old")
-            conn.execute(self._create_command(self.name))
-            conn.execute(
-                f"INSERT OR IGNORE INTO {self.name} ({columns}) "
-                f"SELECT {columns} FROM {self.name}_old"
-            )
-            conn.execute(f"DROP TABLE {self.name}_old")
-
 
 @dataclass(slots=True)
 class Database:
@@ -258,15 +216,8 @@ class Database:
     skipped_now: int = 0
 
     def downloaded(self, source: str, item_id: str) -> bool:
-        """Whether a track of `source` is in the library.
-
-        A row from before ids carried their source holds the bare id and
-        cannot say which source it was from. It still counts, for any of them,
-        so upgrading does not download everything again.
-        """
-        return self.downloads.contains(
-            id=download_key(source, item_id)
-        ) or self.downloads.contains(id=track_id(source, item_id))
+        """Whether a track of `source` is in the library."""
+        return self.downloads.contains(id=download_key(source, item_id))
 
     def set_downloaded(self, source: str, item_id: str, new: bool = True):
         """Record a track as in the library; new: downloaded by this run."""
@@ -274,9 +225,8 @@ class Database:
         self.downloaded_now += new
 
     def forget_downloaded(self, source: str, item_id: str):
-        """Drop a track from the library record, also as a bare legacy id."""
+        """Drop a track from the library record."""
         self.downloads.remove(id=download_key(source, item_id))
-        self.downloads.remove(id=track_id(source, item_id))
 
     def set_failed(self, source: str, media_type: str, id: str):
         self.failed.add((source, media_type, id))

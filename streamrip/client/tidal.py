@@ -48,12 +48,14 @@ HIRES_CLIENT_ID = _b64("ZlgySnhkbW50WldLMGl4VA==")
 HIRES_CLIENT_SECRET = _b64(
     "MU5tNUFmREFqeHJnSkZKYktOV0xlQXlLR1ZHbUlOdVhQUExIVlhBdnhBZz0="
 )
-QUALITY_MAP = {
-    0: "LOW",  # AAC
-    1: "HIGH",  # AAC
-    2: "LOSSLESS",  # CD Quality
-    3: "HI_RES",  # Best available: 24-bit FLAC (DASH) where the client may
-}
+QUALITY_MAP = frozendict(
+    {
+        0: "LOW",  # AAC
+        1: "HIGH",  # AAC
+        2: "LOSSLESS",  # CD Quality
+        3: "HI_RES",  # Best available: 24-bit FLAC (DASH) where the client may
+    }
+)
 # Tidal decides what it actually serves per track/client, whatever was
 # requested, and says so in the response's "audioQuality" (HI_RES_LOSSLESS
 # for a HI_RES request): TIDAL_QUALITY_IDS turns that back into a tier.
@@ -121,7 +123,7 @@ class TidalClient(Client):
             # Albums by id, for the tracks of them, and the requests for them
             # (answered or still out); see _album_of.
             self._albums: dict[str, dict] = {}
-            self._album_requests: dict[str, asyncio.Future] = {}
+            self._album_requests: dict[str, asyncio.Task] = {}
         # HTTP Basic auth for the token endpoint. Built by hand because
         # aiohttp.BasicAuth is deprecated as of aiohttp 3.14.
         credentials = f"{self.client_id}:{self.client_secret}".encode()
@@ -267,7 +269,7 @@ class TidalClient(Client):
         if album_id and album_id not in self._albums:
             request = self._album_requests.get(album_id)
             if request is None:
-                request = asyncio.ensure_future(self._api_request(f"albums/{album_id}"))
+                request = asyncio.create_task(self._api_request(f"albums/{album_id}"))
                 self._album_requests[album_id] = request
             try:
                 # Shielded: one track giving up must not cancel it for the rest.

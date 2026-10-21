@@ -411,15 +411,11 @@ class DeezerClient(Client):
                     f"The requested quality {quality} is not available and fallback is disabled."
                 )
 
-            # This used to fall back to the legacy AES-ECB CDN at
-            # e-cdns-proxy-<c>.dzcdn.net. Deezer has retired those hosts and
-            # none of the sixteen resolve any more, so the generated URL could
-            # only ever fail at download time with a DNS error pointing at the
-            # wrong culprit. Fail here instead, while we can still say why.
+            # Fail here, while we can still say why, rather than guess a URL
+            # that could only fail at download time.
             raise NonStreamableError(
                 "Deezer returned no download URL for this track at any quality, "
-                "and it has no fallback track (delisted?). The legacy CDN that "
-                "used to serve as a fallback has been retired.",
+                "and it has no fallback track (delisted?).",
             )
 
         dl_info["url"] = url

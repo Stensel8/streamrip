@@ -16,18 +16,13 @@ def test_no_verification():
     assert get_aiohttp_connector_kwargs(verify_ssl=False) == {"ssl": False}
 
 
-def test_verification_uses_certifi_when_installed(monkeypatch):
+def test_verification_uses_the_certifi_bundle(monkeypatch):
     certifi = MagicMock()
     certifi.where.return_value = "/ca.pem"
     monkeypatch.setattr(ssl_utils, "certifi", certifi)
     with patch("ssl.create_default_context") as create:
         assert get_aiohttp_connector_kwargs() == {"ssl": create.return_value}
     create.assert_called_once_with(cafile="/ca.pem")
-
-
-def test_verification_without_certifi_uses_system_certificates(monkeypatch):
-    monkeypatch.setattr(ssl_utils, "certifi", None)
-    assert get_aiohttp_connector_kwargs() == {"ssl": True}
 
 
 async def test_new_session_follows_verify_ssl():

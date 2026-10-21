@@ -1,6 +1,6 @@
 import logging
-import os
 from dataclasses import dataclass
+from pathlib import Path
 
 from .. import progress
 from ..client import BasicDownloadable, Client
@@ -22,7 +22,7 @@ logger = logging.getLogger("streamrip")
 RESOLVE_CONCURRENCY = 3
 
 
-async def download_booklets(session, booklets: list[dict], folder: str):
+async def download_booklets(session, booklets: list[dict], folder: Path):
     """Save an album's PDF booklets (Qobuz "goodies") next to its tracks."""
     pdfs = [
         (url, clean_filename(b.get("description") or b.get("name") or "Booklet"))
@@ -33,8 +33,8 @@ async def download_booklets(session, booklets: list[dict], folder: str):
     for n, (url, name) in enumerate(pdfs, 1):
         if names.count(name) > 1:
             name = f"{name} {n}"
-        path = os.path.join(folder, f"{name}.pdf")
-        if os.path.isfile(path):
+        path = folder / f"{name}.pdf"
+        if path.is_file():
             continue
         try:
             await BasicDownloadable(session, url, "pdf").download(path, lambda _: None)
@@ -49,7 +49,7 @@ class Album(Media):
     tracks: list[PendingTrack]
     config: Config
     # folder where the tracks will be downloaded
-    folder: str
+    folder: Path
     db: Database
     client: Client | None = None
     skipped_tracks: int = 0
@@ -148,7 +148,7 @@ class PendingAlbum(Pending):
         folder = album_folder(self.config, self.client.source, meta)
         if tracklist and not todo:
             return Album(meta, [], self.config, folder, self.db, skipped_tracks=done)
-        os.makedirs(folder, exist_ok=True)
+        folder.mkdir(parents=True, exist_ok=True)
         embed_cover, _ = await download_artwork(
             self.client.session,
             folder,

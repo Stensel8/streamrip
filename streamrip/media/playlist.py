@@ -1,10 +1,10 @@
 import asyncio
 import html
 import logging
-import os
 import re
 from contextlib import nullcontext
 from dataclasses import dataclass
+from pathlib import Path
 
 from rich.text import Text
 lazy import aiohttp
@@ -32,7 +32,7 @@ RESOLVE_CONCURRENCY = 20
 LASTFM_MAX_TRACKS = 10_000
 
 
-def _playlist_folder(config: Config, name: str) -> str:
+def _playlist_folder(config: Config, name: str) -> Path:
     """Return the sanitized download folder for a playlist named name.
 
     Raises ValueError if the sanitized name is empty, ".", "..", or would
@@ -42,9 +42,9 @@ def _playlist_folder(config: Config, name: str) -> str:
     folder = clean_filename(name, c.filepaths.restrict_characters)
     if folder in ("", ".", ".."):
         raise ValueError(f"Invalid playlist folder: {name!r}")
-    root = os.path.realpath(c.downloads.folder)
-    path = os.path.realpath(os.path.join(root, folder))
-    if path == root or os.path.commonpath((root, path)) != root:
+    root = Path(c.downloads.folder).resolve()
+    path = (root / folder).resolve()
+    if path == root or not path.is_relative_to(root):
         raise ValueError(f"Invalid playlist folder outside download root: {name!r}")
     return path
 
@@ -54,7 +54,7 @@ class PendingPlaylistTrack(Pending):
     id: str
     client: Client
     config: Config
-    folder: str
+    folder: Path
     playlist_name: str
     position: int
     db: Database

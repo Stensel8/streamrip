@@ -139,7 +139,8 @@ async def capture_qobuz_auth_token(timeout_s: int = 300) -> tuple[str, str]:
         console.print(_SNIPPET_TEMPLATE.format(callback_url=callback_url))
 
         try:
-            return await asyncio.wait_for(result, timeout=timeout_s)
+            async with asyncio.timeout(timeout_s):
+                return await result
         except TimeoutError as e:
             raise QobuzTokenCaptureError(
                 f"No token arrived within {timeout_s}s; enter it manually instead."

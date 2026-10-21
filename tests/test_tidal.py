@@ -153,11 +153,8 @@ async def test_dash_remux_strips_container_metadata(monkeypatch, tmp_path):
         create_subprocess,
     )
 
-    out_path = str(tmp_path / "out.flac")
-    monkeypatch.setattr(
-        "streamrip.client.downloadable.os.path.isfile",
-        lambda p: p == out_path,
-    )
+    out_path = tmp_path / "out.flac"
+    out_path.touch()  # what the fake ffmpeg would have written
 
     dl = TidalDASHDownloadable(
         FakeSession(),
@@ -431,11 +428,27 @@ async def _artist(albums, prefer_explicit=True):
     return {"albums": [a for a in resp["albums"] if a["id"] in kept]}
 
 
-async def test_artist_albums_drop_the_clean_copy_of_an_explicit_duplicate():
-    """Tidal sometimes lists one album twice: once clean, once explicit."""
+@pytest.mark.parametrize(
+    ("clean_title", "explicit_title", "tracks"),
+    [
+        # Tidal sometimes lists one album twice: once clean, once explicit.
+        ("STANS", "STANS", 12),
+        # It also tags the same edition "(Deluxe Edition)" on one release and
+        # "[Deluxe Edition]" on another -- still the same album.
+        ("Recovery (Deluxe Edition)", "Recovery [Deluxe Edition]", 19),
+    ],
+)
+async def test_artist_albums_drop_the_clean_copy_of_an_explicit_duplicate(
+    clean_title, explicit_title, tracks
+):
     albums = [
-        {"id": "1", "title": "STANS", "numberOfTracks": 12, "explicit": False},
-        {"id": "2", "title": "STANS", "numberOfTracks": 12, "explicit": True},
+        {"id": "1", "title": clean_title, "numberOfTracks": tracks, "explicit": False},
+        {
+            "id": "2",
+            "title": explicit_title,
+            "numberOfTracks": tracks,
+            "explicit": True,
+        },
     ]
     artist = await _artist(albums)
     assert [a["id"] for a in artist["albums"]] == ["2"]
@@ -457,28 +470,6 @@ async def test_artist_albums_keep_the_higher_quality_copy_when_both_explicit():
             "numberOfTracks": 19,
             "explicit": True,
             "audioQuality": "HI_RES_LOSSLESS",
-        },
-    ]
-    artist = await _artist(albums)
-    assert [a["id"] for a in artist["albums"]] == ["2"]
-
-
-async def test_artist_albums_ignore_bracket_style_when_matching_titles():
-    """Tidal tags the same edition "(Deluxe Edition)" on one release and
-    "[Deluxe Edition]" on another -- still the same album.
-    """
-    albums = [
-        {
-            "id": "1",
-            "title": "Recovery (Deluxe Edition)",
-            "numberOfTracks": 19,
-            "explicit": False,
-        },
-        {
-            "id": "2",
-            "title": "Recovery [Deluxe Edition]",
-            "numberOfTracks": 19,
-            "explicit": True,
         },
     ]
     artist = await _artist(albums)
