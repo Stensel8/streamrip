@@ -1,0 +1,77 @@
+# Builds the container image and scans it for known vulnerabilities with Trivy.
+# The check fails on a HIGH or CRITICAL one that has a fix, and the README's
+# "image vulnerabilities" badge is this workflow's status on dev. It also runs
+# every week: new vulnerabilities are found in an image that did not change.
+#
+# Trivy's supply chain was compromised in March 2026 (GHSA-69fq-xp46-6x23), so
+# the action is pinned to the commit of an immutable release, never to a tag.
+name: Image vulnerabilities
+
+on:
+  push:
+    branches: [dev, main]
+    paths:
+      - Containerfile
+      - .containerignore
+      - pyproject.toml
+      - poetry.lock
+      - .github/workflows/container-scan.yml
+  pull_request:
+    paths:
+      - Containerfile
+      - .containerignore
+      - pyproject.toml
+      - poetry.lock
+      - .github/workflows/container-scan.yml
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build the image
+        run: |
+          podman build --tag streamrip:scan .
+          podman save --format docker-archive --output image.tar streamrip:scan
+
+      - name: Scan the image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          input: image.tar
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      # The same findings for the Security tab. A pull request from a fork may
+      # not write there, so it only gets the check above.
+      - name: Report to the Security tab
+        if: always() && github.event_name != 'pull_request'
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          input: image.tar
+          format: sarif
+          output: trivy.sarif
+          severity: HIGH,CRITICAL
+          limit-severities-for-sarif: true
+          ignore-unfixed: true
+          exit-code: "0"
+
+      - name: Upload the report
+        if: always() && github.event_name != 'pull_request' && hashFiles('trivy.sarif') != ''
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
+        with:
+          sarif_file: trivy.sarif
+          category: container-image

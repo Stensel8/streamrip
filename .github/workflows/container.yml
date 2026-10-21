@@ -1,0 +1,71 @@
+# Builds the container image with Podman. A pull request only builds it and
+# runs `streamrip --version`; a published release pushes it to ghcr.io for
+# linux/amd64 and linux/arm64.
+name: Container
+
+on:
+  pull_request:
+    paths:
+      - Containerfile
+      - .containerignore
+      - .github/workflows/container.yml
+      - pyproject.toml
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/stensel8/streamrip
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build and smoke test
+        if: github.event_name == 'pull_request'
+        run: |
+          podman build --tag streamrip:ci .
+          podman run --rm streamrip:ci --version
+
+      # The arm64 half of the release image is built under emulation.
+      - name: Install the arm64 emulator
+        if: github.event_name == 'release'
+        run: sudo apt-get update && sudo apt-get install --yes qemu-user-static
+
+      - name: Build and push
+        if: github.event_name == 'release'
+        env:
+          TAG_NAME: ${{ github.event.release.tag_name }}
+          PRERELEASE: ${{ github.event.release.prerelease }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version="${TAG_NAME#v}"
+          tags=("$version")
+          # A stable release also moves its minor tag (2.5), and `latest`.
+          if [[ "$version" != *-* ]]; then
+            tags+=("${version%.*}")
+          fi
+          if [[ "$PRERELEASE" != "true" ]]; then
+            tags+=(latest)
+          fi
+
+          podman login ghcr.io --username "$GITHUB_ACTOR" --password-stdin <<<"$REGISTRY_TOKEN"
+          podman build \
+            --platform linux/amd64,linux/arm64 \
+            --manifest streamrip:release \
+            --label "org.opencontainers.image.version=$version" \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            .
+          for tag in "${tags[@]}"; do
+            podman manifest push --all streamrip:release "docker://$IMAGE:$tag"
+          done
