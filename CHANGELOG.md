@@ -3,6 +3,111 @@
 All notable changes in this fork of [nathom/streamrip](https://github.com/nathom/streamrip). Numbers can refer to
 upstream issues and pull requests.
 
+## 2.6.0
+
+streamrip now runs on Python 3.15 only, and everything written for older Python
+versions, older configs and older databases is gone. Read *Upgrading* first.
+
+### Upgrading
+
+- **Python 3.15 is required** (2.5.1 also took 3.14). The installers fetch it
+  with uv.
+- **A config from an older release no longer loads.** Every option has to be in
+  the file; streamrip says so and `streamrip config reset` writes a new one
+  (which also clears your logins). The sections and options that earlier
+  releases added (Spotify, the second Tidal login, lyrics, `prefer_explicit`) are
+  no longer filled in for an old config.
+- **Rows of the downloads database written before they carried their source**
+  (a bare `123` instead of `tidal_123`) no longer count as downloaded, so those
+  tracks download once more. The rebuilding of an old failed-downloads table
+  (one unique on its id alone) is gone too.
+- **`pip install .` no longer includes Playwright.** It is the `browser` extra
+  now: `pip install ".[browser]"`. The installers include it. The `ssl` extra is
+  gone, as certifi is always installed.
+
+### Container image
+
+- A container image for Podman and Docker, built from a `Containerfile` and
+  published to ghcr.io for amd64 and arm64 on every release. It has ffmpeg and
+  Deno built in and keeps its config, databases and downloads in `/data`:
+  `podman run --rm -it -v ./streamrip:/data ghcr.io/stensel8/streamrip url <link>`.
+  Under rootless Podman the files are yours without further flags; Docker needs
+  `--user "$(id -u):$(id -g)"`.
+- The image is about 390 MiB unpacked and 150 MiB to pull: it leaves out
+  Playwright, which needs a screen, and needs no compiler to build.
+- It does not check for updates, as a container is updated by pulling a newer
+  image and the check cost about half a second of every run. That is the new
+  `STREAMRIP_NO_UPDATE_CHECK` environment variable, which turns the check off
+  anywhere (any value but empty, `0`, `false` or `no`), next to
+  `no_update_check` in the config.
+- The image is built and scanned for known vulnerabilities with Trivy on every
+  change to it and every Monday, and the check fails on a fixable HIGH or
+  CRITICAL finding. Trivy's supply chain was compromised in March 2026, so the
+  action is pinned to the commit of an immutable release.
+
+### Stopping
+
+- SIGTERM, what `podman stop`, `docker stop`, systemd and `kill` send, now stops
+  streamrip like Ctrl-C does: the running command is cancelled and cleaned up,
+  and a second signal forces it. It exits with 143, as a process ended by SIGTERM
+  does. As the first process of a container it was ignored before, so `podman
+  stop` waited out its timeout and then killed it. This also works at a prompt
+  and in commands that need no event loop. Ctrl-C behaves as before.
+
+### Logging in
+
+- The isolated browser window of the Qobuz and Deezer logins is only offered
+  where it can work: with Playwright installed and, on Linux, a screen to open
+  it on. In a container or over SSH the menu lists the other ways, and Deezer
+  goes straight to entering the ARL by hand.
+- Qobuz and Deezer print the address of the login page before opening it. Nothing
+  showed it before, so without a browser to open it there was no telling where to
+  go.
+
+### Speed
+
+- `streamrip --version` starts in about 50 ms instead of 140 (measured with the
+  update check off). The package, the CLI and the clients load aiohttp, Pillow,
+  Textual and the other heavy libraries only when a command needs them
+  (PEP 810), and `--help` and `--version` no longer load asyncio.
+
+### Python
+
+- Native Python 3.15 throughout: paths are `pathlib.Path` instead of `os.path`
+  strings, generics use PEP 695, `asyncio.timeout` and `create_task` replace
+  `wait_for` and `ensure_future`, constants that are only read are `frozendict`,
+  and the `from __future__` imports and quoted annotations are gone. Ruff now
+  enforces the modern forms (`UP`, `PTH`).
+- The Nix flake builds on Python 3.15 as well.
+
+### Dependencies
+
+- `click-help-colors` is gone: it needs `click.MultiCommand`, which Click 9
+  removes. `--help` looks the same, with the same colors and `NO_COLOR`.
+- `yt-dlp[default]` is replaced by exact pins on yt-dlp 2026.8.19 and
+  yt-dlp-ejs 0.8.0 (yt-dlp only accepts the solver script of the version it was
+  released with), plus websockets and certifi. The extra pulled in brotli, which
+  has no wheel for Python 3.15: every dependency now installs from a wheel on
+  Linux (x86 and ARM), Windows and macOS, so no compiler is needed. yt-dlp only
+  uses brotli to unpack some pages; without it YouTube pages come gzip-compressed,
+  about 190 KB more each.
+- Renovate also pins and updates the Containerfile's base images, pins the
+  development tools to exact versions, and no longer merges major updates by
+  itself (the rule said to wait for a human but merged them).
+- Pillow 13, a security update (#68); textual-image 0.14.2 (#66); certifi
+  2026.10.19 (#71); and a refresh of the lock file (#65). The Nix build accepts
+  nixpkgs' Pillow 12 for now (#70).
+
+### Documentation and tests
+
+- The README is shorter: the three ways to run streamrip (Python, Podman or
+  Docker, Nix) with their syntax, and one example per command, for Linkin Park.
+  Spotify, logging in, lyrics, CSV lists and Nix moved to `docs/`.
+- The tests are plain pytest with `async def`, `parametrize` and `tmp_path`,
+  repeated cases are merged, and the tests that needed a Qobuz or Deezer account
+  are gone. They no longer write into the real `~/.config/streamrip`.
+- Removed what nothing used: `.github/stale.yml` and `tests/fixtures/`.
+
 ## 2.5.1
 
 ### SoundCloud
