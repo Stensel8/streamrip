@@ -10,6 +10,8 @@ _test_home = tempfile.mkdtemp(prefix="streamrip-tests-")
 atexit.register(shutil.rmtree, _test_home, ignore_errors=True)
 for _name in ("HOME", "USERPROFILE", "XDG_CONFIG_HOME", "APPDATA"):
     os.environ[_name] = _test_home
+# Set in the container image; the update check tests need it unset.
+os.environ.pop("STREAMRIP_NO_UPDATE_CHECK", None)
 
 import asyncio  # noqa: E402
 from contextlib import nullcontext  # noqa: E402

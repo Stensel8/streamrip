@@ -306,6 +306,7 @@ def test_provider_covers_prefer_larger_variant_and_keep_fallbacks(
 
 
 async def test_main_queues_original_choices_only(monkeypatch):
+    from streamrip.rip import main as main_module
     from streamrip.rip.main import Main
 
     main = Main.__new__(Main)
@@ -313,7 +314,9 @@ async def test_main_queues_original_choices_only(monkeypatch):
     main._search = AsyncMock(return_value=summaries())
     main.add_all_by_id = AsyncMock()
     choose = AsyncMock(return_value=(2, 0))
-    monkeypatch.setattr(search_menu, "choose_results", choose)
+    # main's own (lazily imported) name: patching search_menu's would miss it
+    # once main has bound it, and open the real menu.
+    monkeypatch.setattr(main_module, "choose_results", choose)
     await main.search_interactive("qobuz", "album", "test")
     choose.assert_awaited_once_with(
         main._search.return_value,
