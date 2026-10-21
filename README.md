@@ -209,13 +209,13 @@ Every command has `--help`.
 By default every source is asked for its highest quality, stepping down one
 level when a track doesn't have it. `--quality` sets the highest to ask for:
 
-| Quality | Audio                 | Sources              |
-| ------- | --------------------- | -------------------- |
-| 0       | 128 kbps MP3 or AAC   | Deezer, Tidal        |
-| 1       | 320 kbps MP3 or AAC   | Deezer, Tidal, Qobuz |
-| 2       | 16 bit, 44.1 kHz (CD) | Deezer, Tidal, Qobuz |
-| 3       | 24 bit, ≤ 96 kHz      | Tidal, Qobuz         |
-| 4       | 24 bit, ≤ 192 kHz     | Qobuz                |
+| Quality | Audio                                        | Sources              |
+| ------- | -------------------------------------------- | -------------------- |
+| 0       | 128 kbps MP3 (Deezer), 256 kbps AAC (Tidal)  | Deezer, Tidal        |
+| 1       | 320 kbps MP3 or AAC                          | Deezer, Tidal, Qobuz |
+| 2       | 16 bit, 44.1 kHz (CD)                        | Deezer, Tidal, Qobuz |
+| 3       | 24 bit, ≤ 96 kHz (Qobuz), ≤ 192 kHz (Tidal)  | Tidal, Qobuz         |
+| 4       | 24 bit, ≤ 192 kHz                            | Qobuz                |
 
 ![streamrip interactive search](demo/playlist_search.svg)
 

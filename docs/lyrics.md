@@ -19,6 +19,7 @@ It needs no account or key.
   in a row LRCLIB is left alone for the run.
 - Synced (LRC) lyrics go in M4A and FLAC, plain ones in an MP3 (also when you
   convert to MP3). Lyrics a source did send are left alone, and `lyrics = false`
-  or `exclude = ["lyrics"]` in `[metadata]` keeps any lookup from happening.
+  in `[downloads]` or `exclude = ["lyrics"]` in `[metadata]` keeps any lookup
+  from happening.
 - Lyrics stay the property of their owners, and LRCLIB's come from its users:
   this is for your own library.

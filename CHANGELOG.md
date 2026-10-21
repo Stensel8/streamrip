@@ -12,9 +12,9 @@ versions, older configs and older databases is gone. Read *Upgrading* first.
 
 - **Python 3.15 is required** (2.5.1 also took 3.14). The installers fetch it
   with uv.
-- **A config from an older release no longer loads.** Every option has to be in
-  the file; streamrip says so and `streamrip config reset` writes a new one
-  (which also clears your logins). The sections and options that earlier
+- **A config from before 2.4.11 no longer loads**, unless saved since. Every
+  option has to be in the file; streamrip says so and `streamrip config reset`
+  writes a new one (which also clears your logins). The sections and options that earlier
   releases added (Spotify, the second Tidal login, lyrics, `prefer_explicit`) are
   no longer filled in for an old config.
 - **Rows of the downloads database written before they carried their source**
@@ -49,9 +49,10 @@ versions, older configs and older databases is gone. Read *Upgrading* first.
 
 - SIGTERM, what `podman stop`, `docker stop`, systemd and `kill` send, now stops
   streamrip like Ctrl-C does: the running command is cancelled and cleaned up,
-  and a second signal forces it. It exits with 143, as a process ended by SIGTERM
-  does. As the first process of a container it was ignored before, so `podman
-  stop` waited out its timeout and then killed it. This also works at a prompt
+  and a second signal forces it (not in a container, where `stop` kills it after
+  its timeout). It exits with 143, as a process ended by SIGTERM does. As the
+  first process of a container it was ignored before, so `podman stop` waited
+  out its timeout and then killed it. This also works at a prompt
   and in commands that need no event loop. Ctrl-C behaves as before.
 
 ### Logging in
@@ -66,7 +67,7 @@ versions, older configs and older databases is gone. Read *Upgrading* first.
 
 ### Speed
 
-- `streamrip --version` starts in about 50 ms instead of 140 (measured with the
+- `streamrip --version` starts about six times faster (measured with the
   update check off). The package, the CLI and the clients load aiohttp, Pillow,
   Textual and the other heavy libraries only when a command needs them
   (PEP 810), and `--help` and `--version` no longer load asyncio.
@@ -96,7 +97,7 @@ versions, older configs and older databases is gone. Read *Upgrading* first.
   itself (the rule said to wait for a human but merged them).
 - Pillow 13, a security update (#68); textual-image 0.14.2 (#66); certifi
   2026.10.19 (#71); and a refresh of the lock file (#65). The Nix build accepts
-  nixpkgs' Pillow 12 for now (#70).
+  nixpkgs' Pillow 12 and older certifi for now (#70).
 
 ### Documentation and tests
 
