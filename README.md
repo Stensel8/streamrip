@@ -8,15 +8,14 @@
 A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, SoundCloud, and Spotify.
 
 > [!NOTE]
-> A fork of [nathom/streamrip](https://github.com/nathom/streamrip). I do my
-> best to get this broken project working again and to keep it working (see
-> [CHANGELOG.md](CHANGELOG.md)). It leans heavily on its dependencies, so I
-> keep bumping them and move along with them: you will always need the latest
-> stable Python, and have to keep up with it.
+> A fork of [nathom/streamrip](https://github.com/nathom/streamrip). I'm doing
+> my best to get this project working again and to keep it that way (see
+> [CHANGELOG.md](CHANGELOG.md)).
 >
-> Streaming services also keep changing their APIs and WAFs, so the logic
-> around them is always suspect. I try to stay clear of rate limits as much as
-> possible.
+> It relies heavily on its dependencies, so I keep them up to date, which means
+> you will always need the latest stable Python. Streaming services also change
+> their APIs and WAFs all the time, so anything that talks to them can break
+> without notice. I try to stay clear of rate limits where I can.
 
 ![downloading an album](demo/download_album.svg)
 
