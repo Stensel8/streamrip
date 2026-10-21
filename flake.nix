@@ -79,17 +79,19 @@
         '';
         doInstallCheck = true;
         postInstallCheck = ''
-          # A present [cli] must contain its required typed fields. All other
-          # sections are filled from the upstream template by Config itself.
-          cat > "$TMPDIR/smoke.toml" <<'EOF'
-          [cli]
-          progress_bars = false
-          max_search_results = 10
-          no_update_check = true
+          # A config is the packaged template with one option set; every option
+          # of it is required, so the template is the smallest valid file.
+          ${developmentPython}/bin/python - "$TMPDIR/smoke.toml" <<'EOF'
+          import sys
+          from pathlib import Path
+          from streamrip.config import BLANK_CONFIG_PATH, Config
+
+          path = Path(sys.argv[1])
+          path.write_text(
+              BLANK_CONFIG_PATH.read_text().replace("[cli]\n", "[cli]\nno_update_check = true\n", 1)
+          )
+          assert Config(path).session.cli.no_update_check
           EOF
-          ${developmentPython}/bin/python -c \
-            'import sys; from streamrip.config import Config; assert Config(sys.argv[1]).session.cli.no_update_check' \
-            "$TMPDIR/smoke.toml"
           "$out/bin/${mainProgram}" --config-path "$TMPDIR/smoke.toml" --version
           "$out/bin/${mainProgram}" --config-path "$TMPDIR/smoke.toml" --help
         '';
