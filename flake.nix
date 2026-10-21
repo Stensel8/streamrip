@@ -56,9 +56,10 @@
         build-system = buildDependencies;
         dependencies = runtimeDependencies;
         # Temporary: nixpkgs still has Pillow 12, pyproject.toml wants 13. See #69.
+        # Likewise certifi: pyproject.toml wants a newer CA bundle than nixpkgs has.
         # yt-dlp and yt-dlp-ejs are pinned exactly there, and nixpkgs has whichever
         # pair it has: they only need to match each other.
-        pythonRelaxDeps = [ "pillow" "yt-dlp" "yt-dlp-ejs" ];
+        pythonRelaxDeps = [ "pillow" "certifi" "yt-dlp" "yt-dlp-ejs" ];
         nativeBuildInputs = [ pkgs.makeWrapper ];
         nativeCheckInputs = [ pythonPackages.pytestCheckHook ] ++ devDependencies ++ runtimeTools;
         doCheck = true;
