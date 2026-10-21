@@ -1887,14 +1887,14 @@ syntax = ["tree-sitter (>=0.25.0) ; python_version >= \"3.10\"", "tree-sitter-ba
 
 [[package]]
 name = "textual-image"
-version = "0.14.1"
+version = "0.14.2"
 description = "Render images via Kitty's Terminal Graphics Protocol with Rich and Textual"
 optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 files = [
-    {file = "textual_image-0.14.1-py3-none-any.whl", hash = "sha256:fbc72aa8009c138edfdd7f57f4cd264d7da102bcc9ddbc2527ebc3491f489941"},
-    {file = "textual_image-0.14.1.tar.gz", hash = "sha256:502542955452ca6d67e4e0701021eed6bebbe2e1ccee8dfcb42e5083c9573eda"},
+    {file = "textual_image-0.14.2-py3-none-any.whl", hash = "sha256:f698d883959637515ab6c7086ffbc17fffc204a90010562b4f3bd1fba963ade4"},
+    {file = "textual_image-0.14.2.tar.gz", hash = "sha256:0ec2ac1e2a9b30bfc478708ea011eb31e7844c377322ed2094976c1a84c131ba"},
 ]
 
 [package.dependencies]
