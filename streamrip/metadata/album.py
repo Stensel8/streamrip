@@ -1,9 +1,6 @@
-from __future__ import annotations
-
 import logging
 import re
 from dataclasses import dataclass
-from typing import Optional
 
 from ..filepath_utils import clean_filename, clean_filepath
 from .covers import Covers
@@ -60,7 +57,7 @@ class AlbumInfo:
     id: str
     quality: int
     container: str
-    label: Optional[str] = None
+    label: str | None = None
     explicit: bool = False
     sampling_rate: int | float | None = None
     bit_depth: int | None = None

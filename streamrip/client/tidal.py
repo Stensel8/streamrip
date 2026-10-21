@@ -84,7 +84,7 @@ class TidalClient(Client):
     source = "tidal"
     max_quality = 3
 
-    def __init__(self, config: Config, hires_of: "TidalClient | None" = None):
+    def __init__(self, config: Config, hires_of: TidalClient | None = None):
         """Build a client lane; hires_of makes this the hi-res lane behind it."""
         self.logged_in = False
         self.global_config = config
@@ -129,7 +129,7 @@ class TidalClient(Client):
             "Authorization": "Basic " + base64.b64encode(credentials).decode()
         }
 
-    def lanes(self) -> list["TidalClient"]:
+    def lanes(self) -> list[TidalClient]:
         """This client and, with `hires_client`, the hi-res one behind it."""
         return [self, self.hires_lane] if self.hires_lane else [self]
 
@@ -238,10 +238,10 @@ class TidalClient(Client):
                 # answer, not a problem worth reporting.
                 logger.debug("No lyrics available for track %s", item_id)
             except (
+                TimeoutError,
                 NonStreamableError,
                 TypeError,
                 aiohttp.ClientError,
-                asyncio.TimeoutError,
             ) as e:
                 # Lyrics that should have been there but could not be
                 # fetched -- worth knowing about, never worth the track. Any
@@ -640,6 +640,6 @@ class TidalClient(Client):
 
         return await self._get_with_retries(f"{base}/{path}", read, params=params)
 
-    def _pause_owner(self) -> "TidalClient":
+    def _pause_owner(self) -> TidalClient:
         # The rate limit belongs to the account, so both lanes wait together.
         return self._root

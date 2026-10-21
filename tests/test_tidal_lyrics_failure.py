@@ -5,7 +5,6 @@ track in the album was reported as a download error, with only cover.jpg
 written. A 404 was already contained; any other request failure was not.
 """
 
-import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 import aiohttp
@@ -55,7 +54,7 @@ async def test_lyrics_401_does_not_abort_track(caplog):
 
 
 async def test_lyrics_timeout_does_not_abort_track():
-    item = await _client(lyrics_error=asyncio.TimeoutError()).get_metadata("1", "track")
+    item = await _client(lyrics_error=TimeoutError()).get_metadata("1", "track")
     assert item["title"] == "t"
 
 

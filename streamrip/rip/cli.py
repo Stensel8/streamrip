@@ -377,7 +377,7 @@ async def file(ctx, path):
     """
     _require_config(ctx)
     async with main_session(ctx) as main:
-        async with aiofiles.open(path, "r") as f:
+        async with aiofiles.open(path) as f:
             content = await f.read()
             try:
                 items: Any = json.loads(content)

@@ -1,5 +1,3 @@
-from typing import Optional
-
 from streamrip.config import ArtistFilterConfig
 from streamrip.media import Album, Artist
 from streamrip.metadata import AlbumInfo, AlbumMetadata
@@ -10,8 +8,8 @@ from streamrip.metadata import AlbumInfo, AlbumMetadata
 def create_album(
     title: str,
     explicit: bool,
-    sampling_rate: Optional[float],
-    bit_depth: Optional[int],
+    sampling_rate: float | None,
+    bit_depth: int | None,
     id: str,
 ) -> Album:
     info = AlbumInfo(

@@ -87,7 +87,7 @@ target-version = "py315"
 
 [tool.ruff.lint]
 # Enable Pyflakes (`F`) and a subset of the pycodestyle (`E`)  codes by default.
-select = ["E4", "E7", "E9", "F", "I", "ASYNC", "N", "RUF", "ERA001"]
+select = ["E4", "E7", "E9", "F", "I", "UP", "ASYNC", "N", "RUF", "ERA001"]
 # os.path.isfile/getsize in async code are cheap stat calls, not I/O worth a
 # thread hop.
 ignore = ["ASYNC240"]

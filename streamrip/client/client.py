@@ -69,7 +69,7 @@ class RequestClient:
             else contextlib.nullcontext()
         )
 
-    def _pause_owner(self) -> "RequestClient":
+    def _pause_owner(self) -> RequestClient:
         """The client whose 429 pause this one shares (itself, by default)."""
         return self
 
@@ -133,9 +133,9 @@ class RequestClient:
             except aiohttp.ClientSSLError:
                 raise
             except (
+                TimeoutError,
                 aiohttp.ClientConnectionError,
                 aiohttp.ClientPayloadError,
-                asyncio.TimeoutError,
             ) as e:
                 if attempt == MAX_API_ATTEMPTS:
                     raise

@@ -12,8 +12,9 @@ import tempfile
 import threading
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Callable
+from typing import Any
 
 import aiofiles
 import aiohttp

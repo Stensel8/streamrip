@@ -5,7 +5,6 @@ import logging
 import re
 import time
 from collections import OrderedDict
-from typing import Optional
 
 from ..config import Config
 from ..exceptions import (
@@ -131,7 +130,7 @@ class QobuzClient(Client):
         self.rate_limiter = self.get_rate_limiter(
             config.session.downloads.requests_per_minute,
         )
-        self.secret: Optional[str] = None
+        self.secret: str | None = None
         # True for a free account (no streaming subscription) that can still
         # download content it has *purchased* from the Qobuz download store.
         # When set, file-url requests use intent=download instead of stream.
@@ -465,7 +464,7 @@ class QobuzClient(Client):
         ) as spoofer:
             return await spoofer.get_app_id_and_secrets()
 
-    async def _test_secret(self, secret: str) -> Optional[str]:
+    async def _test_secret(self, secret: str) -> str | None:
         status, _ = await self._request_file_url("19512574", 4, secret)
         if status == 400:
             return None

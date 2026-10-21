@@ -98,7 +98,7 @@ async def capture_qobuz_auth_token(timeout_s: int = 300) -> tuple[str, str]:
     """
     nonce = secrets.token_urlsafe(16)
     loop = asyncio.get_event_loop()
-    result: "asyncio.Future[tuple[str, str]]" = loop.create_future()
+    result: asyncio.Future[tuple[str, str]] = loop.create_future()
 
     async def handle_preflight(request: web.Request) -> web.Response:
         """Answer the browser's CORS preflight OPTIONS request."""
@@ -139,7 +139,7 @@ async def capture_qobuz_auth_token(timeout_s: int = 300) -> tuple[str, str]:
 
         try:
             return await asyncio.wait_for(result, timeout=timeout_s)
-        except asyncio.TimeoutError as e:
+        except TimeoutError as e:
             raise QobuzTokenCaptureError(
                 f"No token arrived within {timeout_s}s; enter it manually instead."
             ) from e
