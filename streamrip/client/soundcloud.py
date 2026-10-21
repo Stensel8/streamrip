@@ -72,10 +72,9 @@ class SoundcloudClient(Client):
             # parse custom id that we injected
             _item_id, _ = item_id.split("|")
             return await self._get_track(_item_id)
-        elif media_type == "playlist":
+        if media_type == "playlist":
             return await self._get_playlist(item_id)
-        else:
-            raise Exception(f"{media_type} not supported")
+        raise Exception(f"{media_type} not supported")
 
     async def search(
         self,

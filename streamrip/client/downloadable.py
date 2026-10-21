@@ -5,6 +5,7 @@ import functools
 import hashlib
 import itertools
 import logging
+import operator
 import os
 import re
 import shutil
@@ -340,7 +341,7 @@ class DeezerDownloadable(Downloadable):
         md5_hash = hashlib.md5(track_id.encode()).hexdigest()
         # good luck :)
         return "".join(
-            chr(functools.reduce(lambda x, y: x ^ y, map(ord, t)))
+            chr(functools.reduce(operator.xor, map(ord, t)))
             for t in zip(md5_hash[:16], md5_hash[16:], BLOWFISH_SECRET)
         ).encode()
 
@@ -728,10 +729,8 @@ class YtDlpDownloadable(Downloadable):
                 # cancel, which asyncio.run makes as it unwinds, does not shorten that.
                 stop.set()
                 while not job.done():
-                    try:
+                    with contextlib.suppress(asyncio.CancelledError):
                         await asyncio.sleep(0.05)
-                    except asyncio.CancelledError:
-                        pass
                 raise
             if fetched.rsplit(".", 1)[-1].lower() == "m4a" == self.extension:
                 shutil.move(fetched, path)

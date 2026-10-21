@@ -315,7 +315,6 @@ class SoundcloudPrompter(CredentialPrompter):
 
     async def prompt_and_login(self):
         """Nothing to ask for: SoundCloud needs no login."""
-        pass
 
     def save(self):
         pass

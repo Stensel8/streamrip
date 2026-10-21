@@ -109,7 +109,7 @@ class Main:
 
         Each source is logged in to once.
         """
-        sources = set(s for s, _, _ in info)
+        sources = {s for s, _, _ in info}
         clients = {s: await self.get_logged_in_client(s) for s in sources}
         for source, media_type, id in info:
             self.pending.append(

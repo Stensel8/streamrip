@@ -131,9 +131,9 @@ class Container(Enum):
         """
         if self == Container.FLAC:
             return FLAC(path)
-        elif self == Container.AAC:
+        if self == Container.AAC:
             return MP4(path)
-        elif self == Container.MP3:
+        if self == Container.MP3:
             try:
                 return ID3(path)
             except ID3NoHeaderError:

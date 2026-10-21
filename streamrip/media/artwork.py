@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import logging
 import os
 import shutil
@@ -56,10 +57,8 @@ def remove_artwork_tempdirs():
     """Delete every temporary embed-artwork directory created this session."""
     logger.debug("Removing dirs %s", _artwork_tempdirs)
     for path in _artwork_tempdirs.copy():
-        try:
+        with contextlib.suppress(FileNotFoundError):
             shutil.rmtree(path)
-        except FileNotFoundError:
-            pass
         _artwork_tempdirs.discard(path)
 
 

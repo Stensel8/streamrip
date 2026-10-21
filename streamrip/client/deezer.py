@@ -78,14 +78,13 @@ class DeezerClient(Client):
         # TODO: open asyncio PR to deezer py and integrate
         if media_type == "track":
             return await self.get_track(item_id)
-        elif media_type == "album":
+        if media_type == "album":
             return await self.get_album(item_id)
-        elif media_type == "playlist":
+        if media_type == "playlist":
             return await self.get_playlist(item_id)
-        elif media_type == "artist":
+        if media_type == "artist":
             return await self.get_artist(item_id)
-        else:
-            raise Exception(f"Media type {media_type} not available on deezer")
+        raise Exception(f"Media type {media_type} not available on deezer")
 
     async def get_track(self, item_id: str) -> dict:
         """A track's metadata, with its album and, when wanted, its lyrics."""

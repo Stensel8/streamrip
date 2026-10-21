@@ -94,8 +94,7 @@ class AlbumMetadata:
             return None
         # Add special chars
         _copyright = re.sub(r"(?i)\(P\)", PHON_COPYRIGHT, self.copyright)
-        _copyright = re.sub(r"(?i)\(C\)", COPYRIGHT, _copyright)
-        return _copyright
+        return re.sub(r"(?i)\(C\)", COPYRIGHT, _copyright)
 
     def format_folder_path(self, formatter: str) -> str:
         """Render `formatter` into this album's folder name."""

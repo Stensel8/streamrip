@@ -57,7 +57,6 @@ class Dummy:
 
     def remove(self, **_):
         """No-op: there is nothing to remove."""
-        pass
 
     def clear(self) -> int:
         """No-op: there is nothing to clear."""
@@ -136,14 +135,14 @@ class DatabaseBase:
         :rtype: bool
         """
         allowed_keys = set(self.structure.keys())
-        assert all(key in allowed_keys for key in items.keys()), (
+        assert all(key in allowed_keys for key in items), (
             f"Invalid key. Valid keys: {allowed_keys}"
         )
 
         items = {k: str(v) for k, v in items.items()}
 
         with self._connect() as conn:
-            conditions = " AND ".join(f"{key}=?" for key in items.keys())
+            conditions = " AND ".join(f"{key}=?" for key in items)
             command = f"SELECT EXISTS(SELECT 1 FROM {self.name} WHERE {conditions})"
 
             logger.debug("Executing %s", command)
@@ -174,7 +173,7 @@ class DatabaseBase:
 
     def remove(self, **items):
         """Delete the rows that match every column-name=value given."""
-        conditions = " AND ".join(f"{key}=?" for key in items.keys())
+        conditions = " AND ".join(f"{key}=?" for key in items)
         command = f"DELETE FROM {self.name} WHERE {conditions}"
 
         with self._connect() as conn:

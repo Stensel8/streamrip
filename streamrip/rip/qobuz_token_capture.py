@@ -97,7 +97,7 @@ async def capture_qobuz_auth_token(timeout_s: int = 300) -> tuple[str, str]:
     can't be started; callers should fall back to manual entry.
     """
     nonce = secrets.token_urlsafe(16)
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     result: asyncio.Future[tuple[str, str]] = loop.create_future()
 
     async def handle_preflight(request: web.Request) -> web.Response:
