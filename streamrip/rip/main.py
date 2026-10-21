@@ -3,7 +3,7 @@ import json
 import logging
 import sys
 
-import aiofiles
+lazy import aiofiles
 
 from .. import db, lyrics
 from ..client import (
@@ -41,6 +41,7 @@ from .interactive import Confirm
 from .notices import notice_for
 from .parse_url import parse_url
 from .prompter import get_prompter
+lazy from .search_menu import choose_results
 
 logger = logging.getLogger("streamrip")
 
@@ -270,8 +271,6 @@ class Main:
         search_results = await self._search(source, media_type, query, limit)
         if search_results is None:
             return
-
-        from .search_menu import choose_results
 
         chosen = await choose_results(
             search_results,

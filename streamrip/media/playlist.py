@@ -6,8 +6,8 @@ import re
 from contextlib import nullcontext
 from dataclasses import dataclass
 
-import aiohttp
 from rich.text import Text
+lazy import aiohttp
 
 from .. import progress
 from ..client import Client, new_session

@@ -24,7 +24,8 @@ import json
 import logging
 import secrets
 
-from aiohttp import web
+lazy from aiohttp import web
+lazy from playwright.async_api import Error as PlaywrightError
 
 from ..console import console
 from .browser_login import (
@@ -149,8 +150,6 @@ async def capture_qobuz_auth_token(timeout_s: int = 300) -> tuple[str, str]:
 
 async def _read_token(page) -> tuple[str, str] | None:
     """(user_id, token) once Qobuz's web player has saved them, else None."""
-    from playwright.async_api import Error as PlaywrightError
-
     try:
         raw = await page.evaluate("() => localStorage.getItem('localuser')")
     except PlaywrightError:

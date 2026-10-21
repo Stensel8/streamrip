@@ -11,6 +11,8 @@ import logging
 import re
 from dataclasses import dataclass
 
+lazy from ytmusicapi import YTMusic
+
 from .audio_match import MatchTrack, rank, score
 
 logger = logging.getLogger("streamrip")
@@ -136,8 +138,6 @@ class YouTubeMusicMatcher:
     def _search_blocking(self, query: str, kind: str) -> list[dict]:
         """One YouTube Music search. Blocks: it runs in a worker thread."""
         if self._client is None:
-            from ytmusicapi import YTMusic
-
             self._client = YTMusic()
         return self._client.search(
             query, filter=kind, limit=SEARCH_LIMIT, ignore_spelling=True

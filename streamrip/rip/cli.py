@@ -12,14 +12,15 @@ from contextlib import asynccontextmanager, closing
 from functools import wraps
 from typing import Any
 
-import aiofiles
-import aiohttp
 import click
 from click_help_colors import HelpColorsGroup  # type: ignore
 from rich.logging import RichHandler
 from rich.markdown import Markdown
 from rich.markup import escape
 from rich.traceback import install
+lazy import aiofiles
+lazy import aiohttp
+lazy from rich.table import Table
 
 from .. import __version__, db
 from ..client import new_session
@@ -478,8 +479,6 @@ def database_browse(ctx, table):
 
         * failed
     """
-    from rich.table import Table
-
     cfg = _require_config(ctx)
 
     if table.lower() == "downloads":

@@ -1,9 +1,9 @@
 import asyncio
 import logging
 
-import deezer
-import requests
-from deezer.errors import GWAPIError
+lazy import deezer
+lazy import requests
+lazy from deezer.errors import GWAPIError
 
 from ..config import Config
 from ..exceptions import (

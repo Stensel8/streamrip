@@ -9,8 +9,8 @@ from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 from typing import TypeVar
 
-import aiohttp
-import aiolimiter
+lazy import aiohttp
+lazy import aiolimiter
 
 from ..utils.ssl_utils import get_aiohttp_connector_kwargs
 from .downloadable import Downloadable
@@ -24,9 +24,6 @@ DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36"
 )
-
-# Fail a stalled connection after 30s of silence, not aiohttp's default 5 minutes.
-REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=None, sock_connect=15, sock_read=30)
 
 # Rate limiting and server errors are worth another attempt; other 4xx are not.
 RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
@@ -184,9 +181,12 @@ class Client(RequestClient, ABC):
 
 
 def new_session(
-    verify_ssl: bool = True, timeout: aiohttp.ClientTimeout = REQUEST_TIMEOUT
+    verify_ssl: bool = True, timeout: aiohttp.ClientTimeout | None = None
 ) -> aiohttp.ClientSession:
     """An HTTP session; every request streamrip makes goes through one."""
+    if timeout is None:
+        # Fail a stalled connection after 30s of silence, not aiohttp's default 5 minutes.
+        timeout = aiohttp.ClientTimeout(total=None, sock_connect=15, sock_read=30)
     connector = aiohttp.TCPConnector(
         **get_aiohttp_connector_kwargs(verify_ssl=verify_ssl),
         resolver=aiohttp.ThreadedResolver(),

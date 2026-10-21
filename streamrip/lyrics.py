@@ -15,7 +15,7 @@ import asyncio
 import logging
 import re
 
-import aiohttp
+lazy import aiohttp
 
 from .client import new_session
 from .client.audio_match import MatchTrack, rank, score, simplify_title
@@ -23,7 +23,6 @@ from .client.audio_match import MatchTrack, rank, score, simplify_title
 logger = logging.getLogger("streamrip")
 
 API = "https://lrclib.net/api"
-TIMEOUT = aiohttp.ClientTimeout(total=15, sock_connect=10)
 # Requests at once; a community service asks for no more than it needs.
 CONCURRENCY = 3
 # After this many lookups in a row that fail, LRCLIB is left alone for the run.
@@ -102,7 +101,10 @@ class Lrclib:
 
     def __init__(self, verify_ssl: bool = True):
         """Open a session of its own: never a source's, which holds its login."""
-        self._session = new_session(verify_ssl=verify_ssl, timeout=TIMEOUT)
+        self._session = new_session(
+            verify_ssl=verify_ssl,
+            timeout=aiohttp.ClientTimeout(total=15, sock_connect=10),
+        )
         self._headers = {"User-Agent": _user_agent()}
         self._slots = asyncio.Semaphore(CONCURRENCY)
         self._records: dict[tuple, dict | None] = {}

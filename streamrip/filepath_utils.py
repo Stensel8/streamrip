@@ -2,7 +2,7 @@ import os
 import re
 from string import printable
 
-from pathvalidate import sanitize_filename  # type: ignore
+lazy from pathvalidate import sanitize_filename  # type: ignore
 
 ALLOWED_CHARS = set(printable)
 

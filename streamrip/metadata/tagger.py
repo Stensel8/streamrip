@@ -2,7 +2,6 @@ import logging
 import os
 from enum import Enum
 
-import aiofiles
 from mutagen import id3
 from mutagen.aiff import AIFF
 from mutagen.flac import FLAC, Picture
@@ -12,6 +11,7 @@ from mutagen.id3 import (
     ID3NoHeaderError,
 )
 from mutagen.mp4 import MP4, MP4Cover
+lazy import aiofiles
 
 from .track import TrackMetadata
 

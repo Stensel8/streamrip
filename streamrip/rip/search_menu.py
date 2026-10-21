@@ -5,14 +5,14 @@ import textwrap
 from collections import OrderedDict
 from typing import ClassVar
 
-import aiohttp
 from rich.text import Text
-from textual import on
-from textual.app import App, ComposeResult
-from textual.binding import Binding
-from textual.containers import Horizontal, VerticalScroll
-from textual.widgets import Input, OptionList, Static
-from textual.widgets.option_list import Option
+lazy import aiohttp
+lazy from textual import on
+lazy from textual.app import App, ComposeResult
+lazy from textual.binding import Binding
+lazy from textual.containers import Horizontal, VerticalScroll
+lazy from textual.widgets import Input, OptionList, Static
+lazy from textual.widgets.option_list import Option
 
 from ..client import new_session
 from ..metadata import SearchResults, Summary

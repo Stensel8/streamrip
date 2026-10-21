@@ -22,7 +22,7 @@ import secrets
 import time
 from urllib.parse import urlencode
 
-import aiohttp
+lazy import aiohttp
 
 from ..config import Config
 from ..exceptions import (

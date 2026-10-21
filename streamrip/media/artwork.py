@@ -5,9 +5,9 @@ import os
 import shutil
 import tempfile
 
-import aiohttp
-import requests
-from PIL import Image
+lazy import aiohttp
+lazy import requests
+lazy from PIL import Image
 
 from ..client import BasicDownloadable
 from ..config import ArtworkConfig

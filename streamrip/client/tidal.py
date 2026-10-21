@@ -6,7 +6,7 @@ import time
 import xml.etree.ElementTree as ET
 from json import JSONDecodeError
 
-import aiohttp
+lazy import aiohttp
 
 from ..config import Config
 from ..exceptions import (

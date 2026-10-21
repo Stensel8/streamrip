@@ -4,7 +4,7 @@ import logging
 import random
 import re
 
-import aiohttp
+lazy import aiohttp
 
 from ..config import Config
 from ..exceptions import NonStreamableError

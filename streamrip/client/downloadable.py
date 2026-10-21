@@ -17,12 +17,12 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
-import aiofiles
-import aiohttp
-import m3u8
-import requests
-from Cryptodome.Cipher import AES, Blowfish
-from Cryptodome.Util import Counter
+lazy import aiofiles
+lazy import aiohttp
+lazy import m3u8
+lazy import requests
+lazy from Cryptodome.Cipher import AES, Blowfish
+lazy from Cryptodome.Util import Counter
 
 from .. import converter
 from ..exceptions import (
