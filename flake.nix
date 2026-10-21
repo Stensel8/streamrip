@@ -8,6 +8,8 @@
       system = "x86_64-linux";
       pkgs = import nixpkgs { inherit system; };
       inherit (pkgs) lib;
+      # Not python315 yet: nixpkgs' Python 3.15 packages are not in the binary
+      # cache, so CI would have to compile them all.
       python = pkgs.python314;
       pythonPackages = python.pkgs;
       project = (builtins.fromTOML (builtins.readFile ./pyproject.toml)).project;

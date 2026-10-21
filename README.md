@@ -2,14 +2,14 @@
 
 [![CI](https://github.com/Stensel8/streamrip/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/Stensel8/streamrip/actions/workflows/ci.yml)
 [![Latest release](https://img.shields.io/github/v/release/Stensel8/streamrip?display_name=tag&sort=semver)](https://github.com/Stensel8/streamrip/releases/latest)
-[![Python 3.14 | 3.15](https://img.shields.io/badge/python-3.14%20%7C%203.15-blue)](https://github.com/Stensel8/streamrip/blob/dev/pyproject.toml)
+[![Python 3.15](https://img.shields.io/badge/python-3.15-blue)](https://github.com/Stensel8/streamrip/blob/dev/pyproject.toml)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 
 A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, SoundCloud, and Spotify.
 
 > [!NOTE]
 > A fork of [nathom/streamrip](https://github.com/nathom/streamrip) that works
-> again: Python 3.14 and 3.15, with most open upstream issues and pull requests worked
+> again: Python 3.15, with most open upstream issues and pull requests worked
 > through (see [CHANGELOG.md](CHANGELOG.md)). Streaming services change their
 > APIs without notice, so it needs upkeep: it works now, with no promise that
 > it stays maintained.
@@ -33,7 +33,7 @@ A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, SoundCl
 Open the [latest release](https://github.com/Stensel8/streamrip/releases/latest)
 and download **Source code (zip)**. Do not download the `.tar.gz` package from
 Assets; it does not include the installer scripts. Extract the source archive,
-open its directory, and run the local installer. It fetches Python 3.14 with
+open its directory, and run the local installer. It fetches Python 3.15 with
 [uv](https://docs.astral.sh/uv/) if needed and installs streamrip into a `.venv`
 next to the installer.
 
@@ -45,7 +45,7 @@ next to the installer.
 .\install.ps1
 ```
 
-With Python 3.14 already there, install it into a venv of your own, or with
+With Python 3.15 already there, install it into a venv of your own, or with
 [pipx](https://pipx.pypa.io/) or uv:
 
 ```bash
@@ -82,7 +82,7 @@ bundled one with `pip install imageio-ffmpeg` in streamrip's environment
 
 > [!IMPORTANT]
 > `pip install streamrip`, the AUR package and `brew install streamrip` install
-> **upstream** streamrip, whose last release doesn't install on Python 3.14.
+> **upstream** streamrip, whose last release doesn't install on Python 3.15.
 
 ### Nix (x86_64 Linux)
 
@@ -95,8 +95,9 @@ nix develop "path:$PWD"
 nix flake check "path:$PWD"            # package, non-browser tests, offline CLI checks
 ```
 
-The flake uses Python 3.14, reads name/version and descriptive metadata from
-`pyproject.toml`, and keeps an explicit Nix dependency list. The standard package
+The flake still uses Python 3.14 (nixpkgs has no cached Python 3.15 packages
+yet), reads name/version and descriptive metadata from `pyproject.toml`, and
+keeps an explicit Nix dependency list. The standard package
 build validates declared runtime dependency constraints. `flake.lock` pins
 nixpkgs; Poetry's `poetry.lock` is an
 independent lock and is not used by Nix. The development shell supplies the same

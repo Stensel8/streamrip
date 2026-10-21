@@ -3,7 +3,7 @@
 # explicit .venv in the current directory -- never system Python, and not
 # a global shim either.
 #
-# Uses uv (https://docs.astral.sh/uv/) to fetch Python 3.14 if it isn't
+# Uses uv (https://docs.astral.sh/uv/) to fetch Python 3.15 if it isn't
 # already installed, then creates .venv and installs streamrip into it.
 # Safe to re-run: it reuses the existing .venv and upgrades streamrip from
 # this checkout.
@@ -21,8 +21,8 @@ if ! command -v uv >/dev/null 2>&1; then
 fi
 
 if [ ! -d .venv ]; then
-    echo "Creating .venv (Python 3.14)..."
-    uv venv --python 3.14 "$venv_path"
+    echo "Creating .venv (Python 3.15)..."
+    uv venv --python 3.15 "$venv_path"
 fi
 
 echo "Installing streamrip into .venv..."
