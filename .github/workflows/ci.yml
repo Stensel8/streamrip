@@ -68,7 +68,8 @@ jobs:
   nix:
     name: Nix flake check
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # nixpkgs does not cache Python 3.15 libraries yet: a cold run builds them.
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -77,5 +78,10 @@ jobs:
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes
+      - uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.nix', 'flake.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+          gc-max-store-size-linux: 6G
       - name: Check Nix flake
         run: nix flake check --print-build-logs

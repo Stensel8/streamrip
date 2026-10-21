@@ -98,8 +98,9 @@ nix develop "path:$PWD"
 nix flake check "path:$PWD"            # package, non-browser tests, offline CLI checks
 ```
 
-The flake still uses Python 3.14 (nixpkgs has no cached Python 3.15 packages
-yet), reads name/version and descriptive metadata from `pyproject.toml`, and
+The flake uses Python 3.15. nixpkgs does not cache Python 3.15 libraries yet, so
+the first build compiles them (about an hour) and is fast afterwards. It reads
+name/version and descriptive metadata from `pyproject.toml`, and
 keeps an explicit Nix dependency list. The standard package
 build validates declared runtime dependency constraints. `flake.lock` pins
 nixpkgs; Poetry's `poetry.lock` is an

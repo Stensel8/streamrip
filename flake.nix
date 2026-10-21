@@ -6,11 +6,31 @@
   outputs = { self, nixpkgs }:
     let
       system = "x86_64-linux";
-      pkgs = import nixpkgs { inherit system; };
+      # Python 3.15 is not in the nixpkgs binary cache yet (only its default
+      # Python is), so the libraries are built here. Skip their own test suites
+      # and import checks (which need test-only modules): that is a few hundred
+      # builds fewer. streamrip's own tests still run.
+      pkgs = import nixpkgs {
+        inherit system;
+        overlays = [
+          (final: prev: {
+            pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
+              (pyFinal: pyPrev:
+                nixpkgs.lib.optionalAttrs (pyPrev.python.pythonVersion == "3.15")
+                  (builtins.mapAttrs (_: pkg:
+                    let r = builtins.tryEval pkg;
+                    in if r.success && r.value ? overridePythonAttrs
+                       then r.value.overridePythonAttrs {
+                         doCheck = false;
+                         pythonImportsCheck = [ ];
+                       }
+                       else pkg) pyPrev))
+            ];
+          })
+        ];
+      };
       inherit (pkgs) lib;
-      # Not python315 yet: nixpkgs' Python 3.15 packages are not in the binary
-      # cache, so CI would have to compile them all.
-      python = pkgs.python314;
+      python = pkgs.python315;
       pythonPackages = python.pkgs;
       project = (builtins.fromTOML (builtins.readFile ./pyproject.toml)).project;
 
