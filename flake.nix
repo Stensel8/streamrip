@@ -1,127 +1,124 @@
 {
   description = "Streamrip package and development environment";
 
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    pyproject-nix = {
+      url = "github:pyproject-nix/pyproject.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    uv2nix = {
+      url = "github:pyproject-nix/uv2nix";
+      inputs.pyproject-nix.follows = "pyproject-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    pyproject-build-systems = {
+      url = "github:pyproject-nix/build-system-pkgs";
+      inputs.pyproject-nix.follows = "pyproject-nix";
+      inputs.uv2nix.follows = "uv2nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+  };
 
-  outputs = { self, nixpkgs }:
+  outputs = { nixpkgs, pyproject-nix, uv2nix, pyproject-build-systems, ... }:
     let
       system = "x86_64-linux";
-      # Python 3.15 is not in the nixpkgs binary cache yet (only its default
-      # Python is), so the libraries are built here. Skip their own test suites
-      # and import checks (which need test-only modules): that is a few hundred
-      # builds fewer. streamrip's own tests still run.
-      pkgs = import nixpkgs {
-        inherit system;
-        overlays = [
-          (final: prev: {
-            pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
-              (pyFinal: pyPrev:
-                nixpkgs.lib.optionalAttrs (pyPrev.python.pythonVersion == "3.15")
-                  (builtins.mapAttrs (_: pkg:
-                    let r = builtins.tryEval pkg;
-                    in if r.success && r.value ? overridePythonAttrs
-                       then r.value.overridePythonAttrs {
-                         doCheck = false;
-                         pythonImportsCheck = [ ];
-                       }
-                       else pkg) pyPrev))
-              # Pillow 13, a security update, is in nixpkgs' staging but not
-              # yet in nixos-unstable. Drop this once it is (#69).
-              (pyFinal: pyPrev:
-                nixpkgs.lib.optionalAttrs (pyPrev.python.pythonVersion == "3.15") {
-                  pillow = pyPrev.pillow.overridePythonAttrs rec {
-                    version = "13.0.0";
-                    src = final.fetchFromGitHub {
-                      owner = "python-pillow";
-                      repo = "pillow";
-                      tag = version;
-                      hash = "sha256-7FHwvgfT40qiHmvcJFZN/FlOECE0YiqOLBEYCMugk+4=";
-                    };
-                  };
-                })
-            ];
-          })
-        ];
-      };
+      pkgs = nixpkgs.legacyPackages.${system};
       inherit (pkgs) lib;
-      python = pkgs.python315;
-      pythonPackages = python.pkgs;
       project = (builtins.fromTOML (builtins.readFile ./pyproject.toml)).project;
 
-      # Keep this explicit list in sync with pyproject.toml, whose `browser`
-      # extra (playwright) is part of it: Nix has Chromium and a screen to use.
-      runtimeDependencies = with pythonPackages; [
-        mutagen tomlkit pathvalidate textual textual-image pillow deezer-py
-        pycryptodomex m3u8 aiofiles aiohttp aiolimiter rich click
-        requests playwright ytmusicapi yt-dlp yt-dlp-ejs websockets certifi
-      ];
-      buildDependencies = [ pythonPackages.poetry-core ];
-      devDependencies = with pythonPackages; [ pytest pytest-mock pytest-asyncio ];
-      developmentPython = python.withPackages (_:
-        runtimeDependencies ++ buildDependencies ++ devDependencies);
+      # The packages and versions of uv.lock, installed from the same wheels pip
+      # takes: nothing is compiled, and nixpkgs' Python libraries are not used.
+      workspace = uv2nix.lib.workspace.loadWorkspace { workspaceRoot = ./.; };
+      pythonSet =
+        (pkgs.callPackage pyproject-nix.build.packages { python = pkgs.python315; })
+        .overrideScope (lib.composeManyExtensions [
+          pyproject-build-systems.overlays.wheel
+          (workspace.mkPyprojectOverlay { sourcePreference = "wheel"; })
+          (final: prev: {
+            # The Node.js in Playwright's wheel crashes once it is patched to run
+            # on Nix, so its driver runs on nixpkgs' Node.js.
+            playwright = prev.playwright.overrideAttrs (old: {
+              postInstall = (old.postInstall or "") + ''
+                ln -sf ${lib.getExe pkgs.nodejs} \
+                  "$out/${final.python.sitePackages}/playwright/driver/node"
+              '';
+            });
+          })
+        ]);
+      inherit (pythonSet.streamrip) version;
+
+      # The browser extra drives the Chromium below for the Qobuz and Deezer logins.
+      venv = pythonSet.mkVirtualEnv "streamrip-env" { streamrip = [ "browser" ]; };
       runtimeTools = [ pkgs.ffmpeg-headless pkgs.deno pkgs.chromium ];
-      mainProgram = "streamrip";
 
-      streamrip = pythonPackages.buildPythonApplication {
-        pname = project.name;
-        inherit (project) version;
-        src = lib.cleanSource self;
-        pyproject = true;
-        build-system = buildDependencies;
-        dependencies = runtimeDependencies;
-        # Temporary: pyproject.toml wants a newer certifi (CA bundle) than nixpkgs
-        # has. yt-dlp and yt-dlp-ejs are pinned exactly there, and nixpkgs has
-        # whichever pair it has: they only need to match each other.
-        pythonRelaxDeps = [ "certifi" "yt-dlp" "yt-dlp-ejs" ];
+      streamrip = pkgs.runCommand "streamrip-${version}" {
         nativeBuildInputs = [ pkgs.makeWrapper ];
-        nativeCheckInputs = [ pythonPackages.pytestCheckHook ] ++ devDependencies ++ runtimeTools;
-        doCheck = true;
-        disabledTestMarks = [ "real_browser" ];
-        pythonImportsCheck = [ "streamrip" ];
-
-        postPatch = ''
-          export HOME="$TMPDIR/streamrip-home"
-          export XDG_CONFIG_HOME="$HOME/.config"
-          export XDG_CACHE_HOME="$HOME/.cache"
-          export XDG_DATA_HOME="$HOME/.local/share"
-          mkdir -p "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_DATA_HOME"
-        '';
-        postFixup = ''
-          wrapProgram "$out/bin/${mainProgram}" \
-            --prefix PATH : ${lib.makeBinPath runtimeTools}
-        '';
-        doInstallCheck = true;
-        postInstallCheck = ''
-          # A config is the packaged template with one option set; every option
-          # of it is required, so the template is the smallest valid file.
-          ${developmentPython}/bin/python - "$TMPDIR/smoke.toml" <<'EOF'
-          import sys
-          from pathlib import Path
-          from streamrip.config import BLANK_CONFIG_PATH, Config
-
-          path = Path(sys.argv[1])
-          path.write_text(
-              BLANK_CONFIG_PATH.read_text().replace("[cli]\n", "[cli]\nno_update_check = true\n", 1)
-          )
-          assert Config(path).session.cli.no_update_check
-          EOF
-          "$out/bin/${mainProgram}" --config-path "$TMPDIR/smoke.toml" --version
-          "$out/bin/${mainProgram}" --config-path "$TMPDIR/smoke.toml" --help
-        '';
         meta = {
           inherit (project) description;
           homepage = project.urls.Homepage;
           license = lib.licenses.gpl3Only;
-          inherit mainProgram;
+          mainProgram = "streamrip";
           platforms = [ system ];
         };
-      };
+      } ''
+        makeWrapper ${venv}/bin/streamrip $out/bin/streamrip \
+          --prefix PATH : ${lib.makeBinPath runtimeTools}
+      '';
+
+      # Every extra and the dev group: pytest and the rest.
+      testEnv = pythonSet.mkVirtualEnv "streamrip-test-env" workspace.deps.all;
+      tests = pkgs.runCommand "streamrip-${version}-tests" {
+        src = lib.fileset.toSource {
+          root = ./.;
+          fileset = lib.fileset.unions [ ./pyproject.toml ./streamrip ./tests ];
+        };
+        nativeBuildInputs = [ testEnv ] ++ runtimeTools;
+      } ''
+        cp -r "$src" source && chmod -R u+w source && cd source
+        export HOME="$TMPDIR/home"
+        pytest -p no:cacheprovider -m "not real_browser"
+        touch "$out"
+      '';
+      smoke = pkgs.runCommand "streamrip-${version}-smoke" { } ''
+        export HOME="$TMPDIR/home"
+        # A config is the packaged template with one option set; every option
+        # of it is required, so the template is the smallest valid file.
+        ${venv}/bin/python - "$TMPDIR/smoke.toml" <<'EOF'
+        import sys
+        from pathlib import Path
+        from streamrip.config import BLANK_CONFIG_PATH, Config
+
+        path = Path(sys.argv[1])
+        path.write_text(
+            BLANK_CONFIG_PATH.read_text().replace("[cli]\n", "[cli]\nno_update_check = true\n", 1)
+        )
+        assert Config(path).session.cli.no_update_check
+        EOF
+        ${lib.getExe streamrip} --config-path "$TMPDIR/smoke.toml" --version
+        ${lib.getExe streamrip} --config-path "$TMPDIR/smoke.toml" --help
+        touch "$out"
+      '';
+
+      # streamrip installed editable from the checkout, so the shell runs the
+      # working tree.
+      editableSet = pythonSet.overrideScope
+        (workspace.mkEditablePyprojectOverlay { root = "$REPO_ROOT"; });
+      devEnv = editableSet.mkVirtualEnv "streamrip-dev-env" workspace.deps.all;
     in {
       packages.${system} = { default = streamrip; inherit streamrip; };
-      checks.${system}.default = streamrip;
+      checks.${system} = { inherit streamrip tests smoke; };
       devShells.${system}.default = pkgs.mkShell {
-        packages = [ developmentPython pkgs.poetry pkgs.ruff ] ++ runtimeTools;
-        # No installation of the application: tests import the working tree.
+        packages = [ devEnv pkgs.uv ] ++ runtimeTools;
+        env = {
+          UV_NO_SYNC = "1";
+          UV_PYTHON = editableSet.python.interpreter;
+          UV_PYTHON_DOWNLOADS = "never";
+        };
+        shellHook = ''
+          unset PYTHONPATH
+          export REPO_ROOT=$(git rev-parse --show-toplevel)
+        '';
       };
     };
 }

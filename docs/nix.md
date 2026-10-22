@@ -11,16 +11,13 @@ nix develop "path:$PWD"
 nix flake check "path:$PWD"            # package, non-browser tests, offline CLI checks
 ```
 
-The flake uses Python 3.15. nixpkgs does not cache Python 3.15 libraries yet, so
-the first build compiles them (about an hour) and is fast afterwards. It reads
-name/version and descriptive metadata from `pyproject.toml`, and
-keeps an explicit Nix dependency list. The standard package
-build validates declared runtime dependency constraints. `flake.lock` pins
-nixpkgs; Poetry's `poetry.lock` is an
-independent lock and is not used by Nix. The development shell supplies the same
-Python dependency set plus build/dev tools, with Poetry as a standalone
-convenience. It does not run `poetry install`: run `python -m pytest -m 'not
-real_browser'` in the checkout to test working-tree imports.
+The flake uses Python 3.15 and, through
+[uv2nix](https://github.com/pyproject-nix/uv2nix), the packages and versions of
+`uv.lock`, installed from the same wheels pip takes: nothing is compiled, and
+nixpkgs' own Python libraries are not used. `flake.lock` pins nixpkgs and the
+uv2nix inputs. The development shell has streamrip installed editable from the
+checkout, every extra, the dev tools and uv: `pytest -m 'not real_browser'`
+tests the working tree.
 
 The package and shell supply FFmpeg, Deno and Chromium on `PATH`, preserving
 the caller's other tools. Chromium discovery does **not** establish that

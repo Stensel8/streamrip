@@ -78,9 +78,23 @@ versions, older configs and older databases is gone. Read *Upgrading* first.
 - Native Python 3.15 throughout: paths are `pathlib.Path` instead of `os.path`
   strings, generics use PEP 695, `asyncio.timeout` and `create_task` replace
   `wait_for` and `ensure_future`, constants that are only read are `frozendict`,
-  and the `from __future__` imports and quoted annotations are gone. Ruff now
-  enforces the modern forms (`UP`, `PTH`).
-- The Nix flake builds on Python 3.15 as well.
+  and the `from __future__` imports and quoted annotations are gone. Imports
+  that only annotations need are lazy (PEP 810) instead of behind
+  `TYPE_CHECKING`, and comprehensions unpack (PEP 798). Ruff now enforces the
+  modern forms (`UP`, `PTH`, `B`, `C4`, `FURB`, `PERF`, `PIE`, `RET`, `SIM`, `TC`).
+
+### uv
+
+- The project is managed with [uv](https://docs.astral.sh/uv/) instead of Poetry:
+  `uv.lock` replaces `poetry.lock`, the dev tools are a `[dependency-groups]`
+  group, and `uv_build` builds the package. CI, releases, Renovate and Dependabot
+  use it too.
+- The installers run `uv sync`, so they install the versions of `uv.lock` and
+  remake a `.venv` that is not on Python 3.15 by themselves. The container image
+  is built from `uv.lock` as well.
+- The Nix flake installs the same wheels through uv2nix: it compiles nothing and
+  no longer depends on which Python libraries nixpkgs has, so the exceptions for
+  Pillow, certifi and yt-dlp are gone with it.
 
 ### Dependencies
 
@@ -97,8 +111,7 @@ versions, older configs and older databases is gone. Read *Upgrading* first.
   development tools to exact versions, and no longer merges major updates by
   itself (the rule said to wait for a human but merged them).
 - Pillow 13, a security update (#68); textual-image 0.14.2 (#66); certifi
-  2026.10.19 (#71); and a refresh of the lock file (#65). The Nix build has
-  Pillow 13 too, ahead of nixos-unstable, and accepts its older certifi for now.
+  2026.10.19 (#71); and a refresh of the lock file (#65).
 
 ### Documentation and tests
 
