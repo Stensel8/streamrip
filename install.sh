@@ -4,7 +4,8 @@
 # a global shim either.
 #
 # Uses uv (https://docs.astral.sh/uv/), which fetches Python 3.15 if it isn't
-# installed yet and installs streamrip with the versions of uv.lock. Safe to
+# installed yet and installs streamrip, with ffmpeg, at the versions of
+# uv.lock. Safe to
 # re-run: it updates .venv to this checkout (and remakes it if it isn't on
 # Python 3.15).
 set -euo pipefail
@@ -21,7 +22,7 @@ if ! command -v uv >/dev/null 2>&1; then
 fi
 
 echo "Installing streamrip into .venv..."
-UV_PROJECT_ENVIRONMENT="$venv_path" uv sync --locked --no-dev --no-editable --extra browser
+uv sync --locked --no-dev --no-editable --extra browser --extra ffmpeg
 
 echo
 if "$streamrip_path" --version >/dev/null 2>&1; then

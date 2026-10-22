@@ -32,15 +32,14 @@ Download **Source code (zip)** from the [latest release](https://github.com/Sten
 extract it and run the installer in that folder:
 
 ```bash
-./install.sh        # Linux, macOS
-.\install.ps1       # Windows (PowerShell)
+./install.sh                                              # Linux, macOS
+powershell -ExecutionPolicy Bypass -File .\install.ps1    # Windows
 ```
 
-It installs streamrip into a `.venv` there with [uv](https://docs.astral.sh/uv/),
-and Python 3.15 if you don't have it. Run `.venv/bin/streamrip`
-(Windows: `.venv\Scripts\streamrip.exe`), or activate the venv and type
-`streamrip`. It also needs [ffmpeg](https://ffmpeg.org/download.html):
-`apt install ffmpeg`, `brew install ffmpeg` or `winget install ffmpeg`.
+It installs streamrip and ffmpeg into a `.venv` there with
+[uv](https://docs.astral.sh/uv/), and Python 3.15 if you don't have it. Run
+`.venv/bin/streamrip` (Windows: `.venv\Scripts\streamrip.exe`), or activate the
+venv and type `streamrip`.
 
 > [!IMPORTANT]
 > `pip install streamrip`, the AUR package and `brew install streamrip` install
@@ -61,7 +60,7 @@ more: [docs/container.md](docs/container.md).
 ### With Nix
 
 ```bash
-nix run "path:$PWD" -- url <link>      # x86_64 Linux, from this checkout
+nix run . -- url <link>      # x86_64 Linux, from this checkout
 ```
 
 More in [docs/nix.md](docs/nix.md).

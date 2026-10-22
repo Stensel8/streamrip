@@ -3,7 +3,8 @@
 # shim either.
 #
 # Uses uv (https://docs.astral.sh/uv/), which fetches Python 3.15 if it isn't
-# installed yet and installs streamrip with the versions of uv.lock. Safe to
+# installed yet and installs streamrip, with ffmpeg, at the versions of
+# uv.lock. Safe to
 # re-run: it updates .venv to this checkout (and remakes it if it isn't on
 # Python 3.15).
 
@@ -18,8 +19,8 @@ if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
 }
 
 Write-Host "Installing streamrip into .venv..."
-$env:UV_PROJECT_ENVIRONMENT = $venvPath
-uv sync --locked --no-dev --no-editable --extra browser
+uv sync --locked --no-dev --no-editable --extra browser --extra ffmpeg
+if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
 Write-Host ""
 $version = & $streamripPath --version 2>$null

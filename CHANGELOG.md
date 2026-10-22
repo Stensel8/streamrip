@@ -33,9 +33,9 @@ versions, older configs and older databases is gone. Read *Upgrading* first.
   `podman run --rm -it -v ./streamrip:/data ghcr.io/stensel8/streamrip url <link>`.
   Under rootless Podman the files are yours without further flags; Docker needs
   `--user "$(id -u):$(id -g)"`.
-- The image is about 390 MiB unpacked and 150 MiB to pull: it leaves out
+- The image is about 390 MiB unpacked and 150 MiB to pull. It leaves out
   Playwright, which needs a screen, and pip, which only installs and carries
-  older copies of certifi and urllib3; and it needs no compiler to build.
+  older copies of certifi and urllib3. It needs no compiler to build.
 - It does not check for updates, as a container is updated by pulling a newer
   image and the check cost about half a second of every run. That is the new
   `STREAMRIP_NO_UPDATE_CHECK` environment variable, which turns the check off
@@ -90,7 +90,8 @@ versions, older configs and older databases is gone. Read *Upgrading* first.
   group, and `uv_build` builds the package. CI, releases, Renovate and Dependabot
   use it too.
 - The installers run `uv sync`, so they install the versions of `uv.lock` and
-  remake a `.venv` that is not on Python 3.15 by themselves. The container image
+  remake a `.venv` that is not on Python 3.15 by themselves. They include ffmpeg
+  now (the `ffmpeg` extra), so it no longer has to be installed separately. The container image
   is built from `uv.lock` as well.
 - The Nix flake installs the same wheels through uv2nix: it compiles nothing and
   no longer depends on which Python libraries nixpkgs has, so the exceptions for
