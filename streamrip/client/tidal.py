@@ -124,6 +124,9 @@ class TidalClient(Client):
             # (answered or still out); see _album_of.
             self._albums: dict[str, dict] = {}
             self._album_requests: dict[str, asyncio.Task] = {}
+            # Tracks as an album or playlist listed them, until asked for; see
+            # get_metadata.
+            self._listed: dict[str, dict] = {}
         # HTTP Basic auth for the token endpoint. Built by hand because
         # aiohttp.BasicAuth is deprecated as of aiohttp 3.14.
         credentials = f"{self.client_id}:{self.client_secret}".encode()
@@ -200,7 +203,10 @@ class TidalClient(Client):
         assert media_type in ("track", "album", "playlist", "video", "artist")
 
         url = f"{media_type}s/{item_id}"
-        item = await self._api_request(url)
+        # A track of an album or playlist came in full with its listing, so
+        # asking for it again would only cost a request against the rate limit.
+        listed = self._listed.pop(str(item_id), None) if media_type == "track" else None
+        item = listed or await self._api_request(url)
         if media_type == "track":
             self._note_hires_tags([item])
             item["album"] = await self._album_of(item)
@@ -308,6 +314,7 @@ class TidalClient(Client):
         if len(tracks) < len(items):
             logger.info(f"Skipping {len(items) - len(tracks)} video(s) in {url}")
         self._note_hires_tags(tracks)
+        self._listed.update((str(t["id"]), t) for t in tracks)
         return tracks
 
     async def _add_hires_format(self, album: dict):

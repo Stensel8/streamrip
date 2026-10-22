@@ -83,13 +83,19 @@ async def rip_tracks(
     Each track counts on the overall progress bar whatever its outcome. The
     count is added here, the single place album, playlist and (album by album)
     artist downloads all pass through, so the bar is one unified track total.
+    A row of its own counts the tracks resolved: on Tidal, with its rate
+    limit, that takes longer than the downloads.
     """
     slots = asyncio.Semaphore(resolve_concurrency)
+    resolving = progress.get_resolve_callback(progress_bars, len(pending))
 
     async def resolve(item):
         """Resolve one item, bounded by the resolve concurrency limit."""
         async with slots:
-            return await resolve_or_none(item)
+            try:
+                return await resolve_or_none(item)
+            finally:
+                resolving.update(1)
 
     async def rip(track):
         """Download one already-resolved track."""
@@ -101,21 +107,12 @@ async def rip_tracks(
             # Include the type: some exceptions have an empty message (#938).
             logger.error(f"Error downloading track: {type(e).__name__}: {e}")
 
-    if prefer_explicit:
-        resolved = await asyncio.gather(*map(resolve, pending))
-        tracks = filter_prefer_explicit([t for t in resolved if t is not None])
-        progress.overall_add(len(tracks), progress_bars)
-
-        async def rip_counted(track):
-            try:
-                await rip(track)
-            finally:
-                progress.overall_advance(enabled=progress_bars)
-
-        await asyncio.gather(*map(rip_counted, tracks))
-        return
-
-    progress.overall_add(len(pending), progress_bars)
+    async def rip_counted(track):
+        """Download one resolved track, and count it on the overall bar."""
+        try:
+            await rip(track)
+        finally:
+            progress.overall_advance(enabled=progress_bars)
 
     async def resolve_and_rip(item):
         """Resolve one item and download it immediately if it resolved."""
@@ -125,4 +122,12 @@ async def rip_tracks(
         finally:
             progress.overall_advance(enabled=progress_bars)
 
-    await asyncio.gather(*map(resolve_and_rip, pending))
+    with resolving:
+        if prefer_explicit:
+            resolved = await asyncio.gather(*map(resolve, pending))
+            tracks = filter_prefer_explicit([t for t in resolved if t is not None])
+            progress.overall_add(len(tracks), progress_bars)
+            await asyncio.gather(*map(rip_counted, tracks))
+        else:
+            progress.overall_add(len(pending), progress_bars)
+            await asyncio.gather(*map(resolve_and_rip, pending))

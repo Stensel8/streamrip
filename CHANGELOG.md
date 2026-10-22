@@ -72,6 +72,14 @@ versions, older configs and older databases is gone. Read *Upgrading* first.
   update check off). The package, the CLI and the clients load aiohttp, Pillow,
   Textual and the other heavy libraries only when a command needs them
   (PEP 810), and `--help` and `--version` no longer load asyncio.
+- Tidal albums and playlists take a third fewer requests: a track's metadata
+  comes from the album's or playlist's track list instead of a request of its
+  own. At the default of 35 requests a minute that is about 17 tracks a minute
+  instead of 12.
+- A row counts the tracks of an album or playlist being looked up, with the
+  time left. That is the slow part on Tidal, and with `prefer_explicit` every
+  track is looked up before the first one downloads, which looked like minutes
+  of nothing happening.
 
 ### Python
 

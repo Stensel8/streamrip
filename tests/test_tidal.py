@@ -286,7 +286,9 @@ def _album_replies(tags: list[str]):
     album = {"id": 1, "mediaMetadata": {"tags": tags}}
     items = {
         "totalNumberOfItems": 2,
-        "items": [{"type": "track", "item": {"id": i}} for i in (11, 12)],
+        "items": [
+            {"type": "track", "item": {"id": i, "album": {"id": 1}}} for i in (11, 12)
+        ],
     }
 
     async def reply(path, *_, **__):
@@ -642,17 +644,20 @@ async def test_a_single_whose_album_cannot_be_fetched_still_downloads():
     assert album.albumartist == "Megan Thee Stallion, Spiritbox"
 
 
-async def test_tracks_of_a_downloaded_album_need_no_album_request():
-    """Tracks of an album downloaded as a whole need no album request of their own."""
+async def test_tracks_of_a_downloaded_album_need_no_request_but_their_lyrics():
+    """Tracks of an album downloaded as a whole come with its listing and its
+    album: on Tidal's rate limit every request costs time."""
     c = _client()
     c._api_request = _album_replies(["LOSSLESS"])
     await c.get_metadata("1", "album")
-    reply, asked = _track_replies(album_id=1)
+    reply, _ = _track_replies(album_id=1)
     c._api_request = AsyncMock(side_effect=reply)
 
     resp = await c.get_metadata("11", "track")
 
-    assert asked == []
+    assert [call.args[0] for call in c._api_request.await_args_list] == [
+        "tracks/11/lyrics"
+    ]
     assert resp["album"]["id"] == 1
     assert "tracks" not in resp["album"]
 

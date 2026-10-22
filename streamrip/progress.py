@@ -66,6 +66,18 @@ class ProgressManager:
         )
         self._overall_task: int | None = None
         self._overall_total = 0
+        # Tracks whose metadata and stream are being looked up: on a source
+        # with a tight rate limit that takes longer than the downloads, and
+        # without it nothing on screen would move until the first one starts.
+        self.resolve_progress = Progress(
+            SpinnerColumn(),
+            TextColumn("[cyan]{task.description}"),
+            BarColumn(bar_width=None),
+            TextColumn("{task.completed}/{task.total} tracks"),
+            "•",
+            TimeRemainingColumn(),
+            console=console,
+        )
         self.progress = Progress(
             SpinnerColumn(),
             TextColumn("[cyan]{task.description}"),
@@ -99,7 +111,7 @@ class ProgressManager:
         parts: list = [self._title]
         if self._overall_task is not None:
             parts.append(self.overall_progress)
-        parts.append(self.progress)
+        parts += [self.resolve_progress, self.progress]
         return Group(*parts)
 
     def _ensure_started(self):
@@ -204,6 +216,25 @@ def get_progress_callback(enabled: bool, total: int, desc: str) -> Handle:
     if not enabled:
         return NO_PROGRESS
     return _p._add_task(_p.progress, desc, total=total or None)
+
+
+def get_resolve_callback(enabled: bool, total: int) -> Handle:
+    """A row counting the tracks looked up so far, or a no-op Handle if
+    disabled. It hides once all `total` are, or when its block is left.
+    """
+    if not enabled or total <= 0:
+        return NO_PROGRESS
+    row = _p._add_task(_p.resolve_progress, "Fetching track info", total=total)
+    left = total
+
+    def update(n: int):
+        nonlocal left
+        row.update(n)
+        left -= n
+        if left <= 0:
+            row.done()
+
+    return Handle(update, row.done)
 
 
 def overall_add(n: int, enabled: bool = True):
