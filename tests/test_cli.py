@@ -573,7 +573,7 @@ def test_only_a_real_true_turns_the_check_off(tmp_path, monkeypatch, value):
     ids=["not toml", "not utf-8"],
 )
 def test_a_config_that_cannot_be_read_does_not_turn_the_check_off(
-    tmp_path, monkeypatch, content
+    tmp_path, monkeypatch, capsys, content
 ):
     check = _update_check(monkeypatch)
     cfg = tmp_path / "config.toml"
@@ -582,7 +582,7 @@ def test_a_config_that_cannot_be_read_does_not_turn_the_check_off(
     result = CliRunner().invoke(rip, ["--config-path", str(cfg), "config", "path"])
 
     assert result.exception is None, result.exception
-    assert "Error loading config" in result.output
+    assert "Errorloadingconfig" in _printed(result, capsys)
     check.assert_awaited_once()
 
 
