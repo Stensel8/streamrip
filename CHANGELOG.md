@@ -34,7 +34,8 @@ versions, older configs and older databases is gone. Read *Upgrading* first.
   Under rootless Podman the files are yours without further flags; Docker needs
   `--user "$(id -u):$(id -g)"`.
 - The image is about 390 MiB unpacked and 150 MiB to pull: it leaves out
-  Playwright, which needs a screen, and needs no compiler to build.
+  Playwright, which needs a screen, and pip, which only installs and carries
+  older copies of certifi and urllib3; and it needs no compiler to build.
 - It does not check for updates, as a container is updated by pulling a newer
   image and the check cost about half a second of every run. That is the new
   `STREAMRIP_NO_UPDATE_CHECK` environment variable, which turns the check off
@@ -85,7 +86,7 @@ versions, older configs and older databases is gone. Read *Upgrading* first.
 
 - `click-help-colors` is gone: it needs `click.MultiCommand`, which Click 9
   removes. `--help` looks the same, with the same colors and `NO_COLOR`.
-- `yt-dlp[default]` is replaced by exact pins on yt-dlp 2026.8.19 and
+- `yt-dlp[default]` is replaced by exact pins on yt-dlp 2026.10.21 and
   yt-dlp-ejs 0.8.0 (yt-dlp only accepts the solver script of the version it was
   released with), plus websockets and certifi. The extra pulled in brotli, which
   has no wheel for Python 3.15: every dependency now installs from a wheel on

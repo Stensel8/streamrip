@@ -27,7 +27,9 @@ ENV HOME=/data
 # A container is updated by pulling a newer image, not with the pip command the
 # update notice would give, and the check costs about half a second of every run.
 ENV STREAMRIP_NO_UPDATE_CHECK=1
-RUN mkdir /data
+# pip only installs, and the image is updated by pulling a newer one. It also
+# brings its own, older copies of certifi, urllib3 and msgpack.
+RUN python -m pip uninstall --yes --root-user-action=ignore pip && mkdir /data
 WORKDIR /data
 VOLUME /data
 
