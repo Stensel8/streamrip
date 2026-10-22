@@ -8,10 +8,7 @@ from mutagen.aiff import AIFF
 from mutagen.flac import FLAC
 
 from .. import converter, lyrics
-from ..client import Client, Downloadable
 from ..client.audio_match import MatchTrack
-from ..config import Config
-from ..db import Database
 from ..exceptions import FFmpegNotFoundError, TrackDownloadFailedError
 from ..filepath_utils import (
     clean_filename,
@@ -26,6 +23,9 @@ from ..progress import add_title, get_progress_callback, remove_title
 from .artwork import download_artwork
 from .media import Media, Pending
 from .semaphore import global_download_semaphore
+lazy from ..client import Client, Downloadable
+lazy from ..config import Config
+lazy from ..db import Database
 
 logger = logging.getLogger("streamrip")
 

@@ -2,10 +2,10 @@
 
 import logging
 import sqlite3
-from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Final
+lazy from collections.abc import Iterator
 
 logger = logging.getLogger("streamrip")
 

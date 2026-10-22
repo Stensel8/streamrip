@@ -24,7 +24,6 @@ from urllib.parse import urlencode
 
 lazy import aiohttp
 
-from ..config import Config
 from ..exceptions import (
     APIError,
     AuthenticationError,
@@ -36,6 +35,7 @@ from .audio_match import MatchTrack
 from .client import Client, new_session
 from .downloadable import YtDlpDownloadable
 from .ytmusic import YouTubeMusicMatcher
+lazy from ..config import Config
 
 logger = logging.getLogger("streamrip")
 

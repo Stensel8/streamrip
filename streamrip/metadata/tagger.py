@@ -1,6 +1,6 @@
 import logging
 from enum import Enum
-from pathlib import Path
+lazy from pathlib import Path
 
 from mutagen import id3
 from mutagen.aiff import AIFF
@@ -13,7 +13,7 @@ from mutagen.id3 import (
 from mutagen.mp4 import MP4, MP4Cover
 lazy import aiofiles
 
-from .track import TrackMetadata
+lazy from .track import TrackMetadata
 
 logger = logging.getLogger("streamrip")
 

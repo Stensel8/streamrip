@@ -3,9 +3,9 @@ import re
 from abc import ABC, abstractmethod
 
 from ..client import Client, SoundcloudClient, new_session
-from ..config import Config
-from ..db import Database
 from ..media import Pending, PendingArtist, PendingPlaylist, pending_item
+lazy from ..config import Config
+lazy from ..db import Database
 
 logger = logging.getLogger("streamrip")
 URL_REGEX = re.compile(

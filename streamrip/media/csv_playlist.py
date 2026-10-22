@@ -15,18 +15,18 @@ import re
 from contextlib import nullcontext
 from dataclasses import dataclass
 from itertools import islice
-from pathlib import Path
+lazy from pathlib import Path
 
 from rich.text import Text
 
-from ..client import Client
 from ..client.audio_match import MatchTrack, rank, score, simplify_title
-from ..config import Config
 from ..console import console
-from ..db import Database
 from ..metadata import SearchResults, Summary
 from .media import Pending
 from .playlist import PendingPlaylistTrack, Playlist, _playlist_folder
+lazy from ..client import Client
+lazy from ..config import Config
+lazy from ..db import Database
 
 logger = logging.getLogger("streamrip")
 

@@ -1,7 +1,7 @@
 import logging
 import re
 from dataclasses import dataclass
-from pathlib import Path
+lazy from pathlib import Path
 
 from ..filepath_utils import clean_filename, clean_filepath
 from .covers import Covers

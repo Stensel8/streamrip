@@ -1,8 +1,8 @@
 import logging
 from dataclasses import dataclass
 
-from .album import AlbumMetadata
 from .util import deezer_artists, qobuz_artists, safe_get
+lazy from .album import AlbumMetadata
 
 logger = logging.getLogger("streamrip")
 

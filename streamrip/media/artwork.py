@@ -10,8 +10,8 @@ lazy import requests
 lazy from PIL import Image
 
 from ..client import BasicDownloadable
-from ..config import ArtworkConfig
-from ..metadata import Covers
+lazy from ..config import ArtworkConfig
+lazy from ..metadata import Covers
 
 _artwork_tempdirs: set[Path] = set()
 

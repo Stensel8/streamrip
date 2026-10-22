@@ -6,13 +6,13 @@ import logging
 import random
 import time
 from abc import ABC, abstractmethod
-from collections.abc import Awaitable, Callable
+lazy from collections.abc import Awaitable, Callable
 
 lazy import aiohttp
 lazy import aiolimiter
 
 from ..utils.ssl_utils import get_aiohttp_connector_kwargs
-from .downloadable import Downloadable
+lazy from .downloadable import Downloadable
 
 logger = logging.getLogger("streamrip")
 

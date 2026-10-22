@@ -15,8 +15,8 @@ lazy from textual.widgets import Input, OptionList, Static
 lazy from textual.widgets.option_list import Option
 
 from ..client import new_session
-from ..metadata import SearchResults, Summary
 from .cover_preview import CoverPane, decode_cover, image_widget
+lazy from ..metadata import SearchResults, Summary
 
 PREVIEW_SIZE = 0.5
 DETAILS_WIDTH = 60

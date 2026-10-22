@@ -95,6 +95,9 @@ target-version = "py315"
 select = [
   "E4", "E7", "E9", "F", "I", "UP", "ASYNC", "N", "RUF", "ERA001", "PTH",
   "B", "C4", "FURB", "PERF", "PIE", "RET", "SIM",
+  # Imports only annotations need are lazy (PEP 810): with deferred
+  # annotations (PEP 649) they are never loaded at run time.
+  "TC",
 ]
 ignore = [
   # os.path.isfile/getsize in async code are cheap stat calls, not I/O worth a
@@ -102,6 +105,8 @@ ignore = [
   "ASYNC240",
   # Media.preprocess and postprocess are hooks a subclass may leave out.
   "B027",
+  # A class in cast() is a plain name, not a string.
+  "TC006",
 ]
 
 # Allow fix for all enabled rules (when `--fix`) is provided.

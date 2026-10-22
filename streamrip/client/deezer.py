@@ -5,7 +5,6 @@ lazy import deezer
 lazy import requests
 lazy from deezer.errors import GWAPIError
 
-from ..config import Config
 from ..exceptions import (
     AuthenticationError,
     MissingCredentialsError,
@@ -13,6 +12,7 @@ from ..exceptions import (
 )
 from .client import DEFAULT_USER_AGENT, Client, new_session
 from .downloadable import DeezerDownloadable
+lazy from ..config import Config
 
 logger = logging.getLogger("streamrip")
 logging.captureWarnings(True)

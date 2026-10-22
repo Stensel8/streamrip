@@ -1,12 +1,10 @@
 import logging
 from dataclasses import dataclass
-from pathlib import Path
+lazy from pathlib import Path
 
 from .. import progress
 from ..client import BasicDownloadable, Client
-from ..config import Config
 from ..console import console
-from ..db import Database
 from ..exceptions import NonStreamableError
 from ..filepath_utils import clean_filename
 from ..metadata import AlbumMetadata
@@ -14,6 +12,8 @@ from ..metadata.util import format_quality, get_album_track_ids
 from .artwork import download_artwork
 from .media import Media, Pending, rip_tracks
 from .track import PendingTrack, album_folder
+lazy from ..config import Config
+lazy from ..db import Database
 
 logger = logging.getLogger("streamrip")
 

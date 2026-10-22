@@ -6,16 +6,7 @@ from abc import ABC, abstractmethod
 
 from click import launch
 
-from ..client import (
-    Client,
-    DeezerClient,
-    QobuzClient,
-    SoundcloudClient,
-    SpotifyClient,
-    TidalClient,
-)
 from ..client.spotify import DEVELOPER_DASHBOARD
-from ..config import Config
 from ..console import console
 from ..exceptions import AuthenticationError, MissingCredentialsError
 from .browser_login import browser_login_available, has_screen
@@ -31,6 +22,15 @@ from .spotify_login import (
     capture_code,
     code_from_redirect_url,
 )
+lazy from ..client import (
+    Client,
+    DeezerClient,
+    QobuzClient,
+    SoundcloudClient,
+    SpotifyClient,
+    TidalClient,
+)
+lazy from ..config import Config
 
 logger = logging.getLogger("streamrip")
 

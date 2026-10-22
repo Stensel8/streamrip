@@ -6,7 +6,6 @@ import re
 import time
 from collections import OrderedDict
 
-from ..config import Config
 from ..exceptions import (
     APIError,
     AuthenticationError,
@@ -18,6 +17,7 @@ from ..exceptions import (
 )
 from .client import RETRY_STATUSES, Client, RequestClient, new_session
 from .downloadable import BasicDownloadable, Downloadable
+lazy from ..config import Config
 
 logger = logging.getLogger("streamrip")
 

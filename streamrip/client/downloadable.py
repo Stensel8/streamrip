@@ -13,10 +13,10 @@ import tempfile
 import threading
 import time
 from abc import ABC, abstractmethod
-from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
+lazy from collections.abc import Callable
 
 lazy import aiofiles
 lazy import aiohttp

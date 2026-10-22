@@ -8,7 +8,6 @@ from json import JSONDecodeError
 
 lazy import aiohttp
 
-from ..config import Config
 from ..exceptions import (
     AuthenticationError,
     ItemNotFoundError,
@@ -18,6 +17,7 @@ from ..exceptions import (
 from ..metadata.util import TIDAL_QUALITY_IDS
 from .client import Client, new_session
 from .downloadable import TidalDASHDownloadable, TidalDownloadable
+lazy from ..config import Config
 
 logger = logging.getLogger("streamrip")
 

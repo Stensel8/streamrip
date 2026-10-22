@@ -11,15 +11,15 @@ lazy import aiohttp
 
 from .. import progress
 from ..client import Client, new_session
-from ..config import Config
 from ..console import console
-from ..db import Database
 from ..exceptions import NonStreamableError
 from ..filepath_utils import clean_filename
 from ..metadata import AlbumMetadata, PlaylistMetadata, SearchResults, TrackMetadata
 from .artwork import download_artwork
 from .media import Media, Pending, rip_tracks
 from .track import Track, fetch_downloadable, fetch_track_meta
+lazy from ..config import Config
+lazy from ..db import Database
 
 logger = logging.getLogger("streamrip")
 

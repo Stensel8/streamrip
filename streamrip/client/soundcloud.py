@@ -6,10 +6,10 @@ import re
 
 lazy import aiohttp
 
-from ..config import Config
 from ..exceptions import NonStreamableError
 from .client import Client, new_session
 from .downloadable import SoundcloudDownloadable
+lazy from ..config import Config
 
 # e.g. 123456-293847-121314-209849
 USER_ID = "-".join(str(random.randint(111111, 999999)) for _ in range(4))

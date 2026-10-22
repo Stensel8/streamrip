@@ -10,7 +10,7 @@ from typing import ClassVar
 
 import click
 from tomlkit.api import dumps, parse
-from tomlkit.toml_document import TOMLDocument
+lazy from tomlkit.toml_document import TOMLDocument
 
 logger = logging.getLogger("streamrip")
 

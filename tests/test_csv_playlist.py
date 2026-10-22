@@ -2,8 +2,8 @@
 
 import logging
 from contextlib import contextmanager
-from pathlib import Path
 from unittest.mock import MagicMock
+lazy from pathlib import Path
 
 import pytest
 

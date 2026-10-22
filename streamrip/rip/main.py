@@ -2,7 +2,7 @@ import asyncio
 import json
 import logging
 import sys
-from pathlib import Path
+lazy from pathlib import Path
 
 lazy import aiofiles
 
@@ -15,8 +15,6 @@ from ..client import (
     SpotifyClient,
     TidalClient,
 )
-from ..client.audio_match import MatchTrack
-from ..config import Config
 from ..console import console
 from ..exceptions import (
     APIError,
@@ -42,6 +40,8 @@ from .interactive import Confirm
 from .notices import notice_for
 from .parse_url import parse_url
 from .prompter import get_prompter
+lazy from ..client.audio_match import MatchTrack
+lazy from ..config import Config
 lazy from .search_menu import choose_results
 
 logger = logging.getLogger("streamrip")
