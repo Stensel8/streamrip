@@ -3,6 +3,11 @@
 All notable changes in this fork of [nathom/streamrip](https://github.com/nathom/streamrip). Numbers can refer to
 upstream issues and pull requests.
 
+## 2.6.1
+
+- The browser's messages ("Opening in existing browser session.", zygote
+  errors) are no longer shown in the terminal when a login page opens. (#81)
+
 ## 2.6.0
 
 streamrip now runs on Python 3.15 only, and everything written for older Python
