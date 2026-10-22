@@ -1,6 +1,9 @@
 import asyncio
 import base64
 import logging
+import os
+import sys
+import time
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -20,7 +23,7 @@ from streamrip.exceptions import (
 )
 from streamrip.metadata import AlbumMetadata, ArtistMetadata, TrackMetadata
 from streamrip.metadata.util import tidal_quality_id
-from streamrip.rip.prompter import TidalPrompter
+from streamrip.rip.prompter import TidalPrompter, _open_login_link
 
 MPD = """<?xml version="1.0" encoding="UTF-8"?>
 <MPD xmlns="urn:mpeg:dash:schema:mpd:2011" profiles="urn:mpeg:dash:profile:isoff-main:2011">
@@ -561,6 +564,27 @@ async def test_device_login_rejection_says_why(monkeypatch):
 
     with pytest.raises(AuthenticationError, match="access_denied"):
         await TidalPrompter(cfg, client)._device_login(client)
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="xdg-open is Linux's")
+def test_the_browser_does_not_print_over_the_login_prompt(monkeypatch, tmp_path, capfd):
+    """A Chrome-family browser that is already running answers on the terminal."""
+    done = tmp_path / "done"
+    xdg_open = tmp_path / "xdg-open"
+    xdg_open.write_text(
+        f"#!/bin/sh\necho 'Opening in existing browser session.'\ntouch '{done}'\n"
+    )
+    xdg_open.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{tmp_path}:{os.environ['PATH']}")
+
+    _open_login_link("https://link.tidal.com/X")
+    for _ in range(100):  # xdg-open runs on its own
+        if done.exists():
+            break
+        time.sleep(0.05)
+
+    assert done.exists()
+    assert capfd.readouterr().out == ""
 
 
 MEGAN_ACT_II = {

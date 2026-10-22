@@ -1,10 +1,13 @@
 import asyncio
 import contextlib
 import logging
+import shutil
+import subprocess
+import sys
 import time
 from abc import ABC, abstractmethod
 
-from click import launch
+import click
 
 from ..client.spotify import DEVELOPER_DASHBOARD
 from ..console import console
@@ -33,6 +36,17 @@ lazy from ..client import (
 lazy from ..config import Config
 
 logger = logging.getLogger("streamrip")
+
+
+def launch(url: str) -> None:
+    """click.launch, but keeping the browser off the terminal: one already running
+    prints over the prompt there ("Opening in existing browser session.")."""
+    if sys.platform.startswith("linux") and shutil.which("xdg-open"):
+        subprocess.Popen(
+            ["xdg-open", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+    else:
+        click.launch(url)
 
 
 def _open_login_link(url: str) -> None:
