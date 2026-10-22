@@ -78,7 +78,6 @@ class TrackMetadata:
             resp["disk_number"],
             None,
             isrc=resp.get("isrc"),
-            lyrics=resp.get("lyrics", ""),
             artists=artists,
         )
 
@@ -132,7 +131,6 @@ class TrackMetadata:
             resp.get("volumeNumber", 1),
             None,
             isrc=resp.get("isrc"),
-            lyrics=resp.get("lyrics", ""),
             artists=artists,
         )
 

@@ -226,38 +226,21 @@ class TidalClient(Client):
 
             item["albums"] = album_resp["items"]
             item["albums"].extend(ep_resp["items"])
-        elif media_type == "track" and self.global_config.session.downloads.lyrics:
-            try:
-                resp = await self._api_request(
-                    f"tracks/{item_id!s}/lyrics", base="https://tidal.com/v1"
-                )
-
-                # Use unsynced lyrics for MP3, synced for others (FLAC, OPUS, etc)
-                if (
-                    self.global_config.session.conversion.enabled
-                    and self.global_config.session.conversion.codec.upper() == "MP3"
-                ):
-                    item["lyrics"] = resp.get("lyrics") or ""
-                else:
-                    item["lyrics"] = resp.get("subtitles") or resp.get("lyrics") or ""
-            except ItemNotFoundError:
-                # Most tracks simply have no lyrics. That is the expected
-                # answer, not a problem worth reporting.
-                logger.debug("No lyrics available for track %s", item_id)
-            except (
-                TimeoutError,
-                NonStreamableError,
-                TypeError,
-                aiohttp.ClientError,
-            ) as e:
-                # Lyrics that should have been there but could not be
-                # fetched -- worth knowing about, never worth the track. Any
-                # request failure counts: a 401 from the lyrics endpoint used
-                # to escape here and abort the whole download (#959).
-                logger.warning(f"Failed to get lyrics for {item_id}: {e}")
 
         logger.debug(item)
         return item
+
+    async def get_lyrics(self, track_id: str, plain: bool) -> str:
+        """The track's lyrics: synced (LRC) where Tidal has them, unless plain."""
+        try:
+            resp = await self._api_request(
+                f"tracks/{track_id}/lyrics", base="https://tidal.com/v1"
+            )
+        except ItemNotFoundError:
+            # Most tracks simply have no lyrics: the expected answer.
+            return ""
+        lyrics = resp.get("lyrics") or ""
+        return lyrics if plain else resp.get("subtitles") or lyrics
 
     async def _album_of(self, track: dict) -> dict:
         """The track's album with its own metadata.

@@ -176,6 +176,12 @@ class Client(RequestClient, ABC):
     async def get_downloadable(self, item: str, quality: int) -> Downloadable:
         raise NotImplementedError
 
+    async def get_lyrics(self, track_id: str, plain: bool) -> str:
+        """A track's lyrics from the source, plain or else synced (LRC) where
+        there are; "" when it has none. Only Tidal sends any.
+        """
+        return ""
+
 
 def new_session(
     verify_ssl: bool = True, timeout: aiohttp.ClientTimeout | None = None

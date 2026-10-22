@@ -3,7 +3,6 @@ import logging
 
 lazy import deezer
 lazy import requests
-lazy from deezer.errors import GWAPIError
 
 from ..exceptions import (
     AuthenticationError,
@@ -90,7 +89,7 @@ class DeezerClient(Client):
         raise Exception(f"Media type {media_type} not available on deezer")
 
     async def get_track(self, item_id: str) -> dict:
-        """A track's metadata, with its album and, when wanted, its lyrics."""
+        """A track's metadata, with its album."""
         try:
             item = await asyncio.to_thread(self.client.api.get_track, item_id)
         except Exception as e:
@@ -104,37 +103,7 @@ class DeezerClient(Client):
             logger.debug(f"Album {album_id} unavailable for track {item_id}: {e}")
             item["album"]["stream_quality"] = self._target_quality()
 
-        if self.global_config.session.downloads.lyrics:
-            try:
-                lyrics_resp = await asyncio.to_thread(
-                    self.client.gw.get_track_lyrics, item_id
-                )
-                # Use unsynced lyrics for MP3, synced for others (FLAC, OPUS, etc)
-                conversion = self.global_config.session.conversion
-                if conversion.enabled and conversion.codec.upper() == "MP3":
-                    item["lyrics"] = lyrics_resp.get("LYRICS_TEXT") or ""
-                else:
-                    item["lyrics"] = self._format_synced_lyrics(
-                        lyrics_resp.get("LYRICS_SYNC_JSON")
-                    ) or (lyrics_resp.get("LYRICS_TEXT") or "")
-            except Exception as e:
-                if isinstance(e, GWAPIError) and "DATA_ERROR" in str(e):
-                    # Deezer answers with this error where it has no lyrics. That
-                    # is not a failure: the lyrics are looked up on LRCLIB (see
-                    # track.py). Any other error answer is one.
-                    logger.debug("Deezer has no lyrics for track %s: %s", item_id, e)
-                else:
-                    logger.warning(f"Failed to get lyrics for {item_id}: {e}")
-
         return item
-
-    @staticmethod
-    def _format_synced_lyrics(sync_json: list[dict] | None) -> str:
-        """Convert Deezer's LYRICS_SYNC_JSON into LRC-formatted text."""
-        return "\n".join(
-            f"{ts}{entry.get('line', '')}" if (ts := entry.get("lrc_timestamp")) else ""
-            for entry in sync_json or []
-        )
 
     async def get_album(self, item_id: str) -> dict:
         """An album's metadata, tracks and quality, cached per run."""

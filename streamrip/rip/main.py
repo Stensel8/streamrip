@@ -155,7 +155,7 @@ class Main:
         if source in self._announced:
             return
         self._announced.add(source)
-        if (notice := notice_for(source, self.config)) is not None:
+        if (notice := notice_for(source)) is not None:
             console.print(notice)
 
     async def _reauthenticate(self, source: str, prompter, cause: Exception):
