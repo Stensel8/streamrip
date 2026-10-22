@@ -12,14 +12,14 @@ on:
     branches: [dev, main]
     paths:
       - Containerfile
-      - .containerignore
+      - .dockerignore
       - pyproject.toml
       - poetry.lock
       - .github/workflows/container-scan.yml
   pull_request:
     paths:
       - Containerfile
-      - .containerignore
+      - .dockerignore
       - pyproject.toml
       - poetry.lock
       - .github/workflows/container-scan.yml
