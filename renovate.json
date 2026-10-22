@@ -11,7 +11,7 @@
   "reviewersFromCodeOwners": true,
   "semanticCommits": "enabled",
   "enabledManagers": [
-    "poetry",
+    "pep621",
     "github-actions",
     "nix",
     "dockerfile"
@@ -37,7 +37,7 @@
     },
     {
       "matchManagers": [
-        "poetry"
+        "pep621"
       ],
       "groupName": "Python packages",
       "addLabels": [
@@ -45,12 +45,12 @@
       ]
     },
     {
-      "description": "Dev tools are pinned to an exact version; the other Python packages keep their range and are pinned by poetry.lock",
+      "description": "Dev tools are pinned to an exact version; the other Python packages keep their range and are pinned by uv.lock",
       "matchManagers": [
-        "poetry"
+        "pep621"
       ],
       "matchDepTypes": [
-        "dev"
+        "dependency-groups"
       ],
       "rangeStrategy": "pin"
     },

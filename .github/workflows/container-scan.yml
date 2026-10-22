@@ -14,14 +14,14 @@ on:
       - Containerfile
       - .dockerignore
       - pyproject.toml
-      - poetry.lock
+      - uv.lock
       - .github/workflows/container-scan.yml
   pull_request:
     paths:
       - Containerfile
       - .dockerignore
       - pyproject.toml
-      - poetry.lock
+      - uv.lock
       - .github/workflows/container-scan.yml
   schedule:
     - cron: "17 4 * * 1"

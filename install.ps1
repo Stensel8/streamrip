@@ -2,14 +2,13 @@
 # .venv in the current directory -- never system Python, and not a global
 # shim either.
 #
-# Uses uv (https://docs.astral.sh/uv/) to fetch Python 3.15 if it isn't
-# already installed, then creates .venv and installs streamrip into it.
-# Safe to re-run: it reuses the existing .venv (recreating it if it isn't on
-# Python 3.15) and upgrades streamrip from this checkout.
+# Uses uv (https://docs.astral.sh/uv/), which fetches Python 3.15 if it isn't
+# installed yet and installs streamrip with the versions of uv.lock. Safe to
+# re-run: it updates .venv to this checkout (and remakes it if it isn't on
+# Python 3.15).
 
 Set-Location $PSScriptRoot
 $venvPath = Join-Path $PSScriptRoot ".venv"
-$venvPython = Join-Path $venvPath "Scripts\python.exe"
 $streamripPath = Join-Path $venvPath "Scripts\streamrip.exe"
 
 if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
@@ -18,20 +17,9 @@ if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
     $env:Path = "$env:USERPROFILE\.local\bin;$env:Path"
 }
 
-# An older .venv (say from before the Python 3.15 requirement) can't install
-# streamrip, so only reuse one that actually runs Python 3.15.
-$venvReusable = $false
-if (Test-Path $venvPython) {
-    & $venvPython -c "import sys; raise SystemExit(sys.version_info[:2] != (3, 15))" 2>$null
-    $venvReusable = ($LASTEXITCODE -eq 0)
-}
-if (-not $venvReusable) {
-    Write-Host "Creating .venv (Python 3.15)..."
-    uv venv --clear --python 3.15 "$venvPath"
-}
-
 Write-Host "Installing streamrip into .venv..."
-uv pip install --python "$venvPath" --upgrade "${PSScriptRoot}[browser]"
+$env:UV_PROJECT_ENVIRONMENT = $venvPath
+uv sync --locked --no-dev --no-editable --extra browser
 
 Write-Host ""
 $version = & $streamripPath --version 2>$null

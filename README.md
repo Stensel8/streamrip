@@ -248,9 +248,10 @@ Details per source: [Logging in](docs/logging-in.md), [Spotify](docs/spotify.md)
 ## Contributing
 
 Report problems in the [issue tracker](https://github.com/Stensel8/streamrip/issues)
-with the Bug Report or Feature Request template. For code, `poetry install --all-extras`
-sets things up; `poetry run pytest` and `poetry run ruff check . && poetry run ruff format .`
-should pass before you open a pull request to `dev`. A few tests drive a real
+with the Bug Report or Feature Request template. For code, [uv](https://docs.astral.sh/uv/)
+sets things up with `uv sync --all-extras`; `uv run pytest` and
+`uv run ruff check . && uv run ruff format .` should pass before you open a pull
+request to `dev`. A few tests drive a real
 Chrome-family browser; they are skipped when there is none, and CI fails if its
 runner has none. `pytest -m "not real_browser"` leaves them out.
 
