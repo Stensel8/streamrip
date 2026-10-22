@@ -101,7 +101,8 @@ def _track(record: dict[str, str]) -> MatchTrack | None:
 
 def _rows(text: str, delimiter: str):
     """The rows of a CSV text that have something in them."""
-    for row in csv.reader(io.StringIO(text), delimiter=delimiter):
+    # newline="": a line may end in \r alone (Excel for Mac's "CSV (Macintosh)").
+    for row in csv.reader(io.StringIO(text, newline=""), delimiter=delimiter):
         if any(cell.strip() for cell in row):
             yield row
 

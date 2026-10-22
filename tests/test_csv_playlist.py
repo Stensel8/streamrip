@@ -104,8 +104,13 @@ def test_the_columns_of_a_csv_are_read(tmp_path, text, expected):
                 ("Dancing Queen", ["ABBA"], "", None),
             ],
         ),
+        # Excel for Mac's "CSV (Macintosh)" ends a line in \r alone.
+        (
+            "artist,title\rQueen,Bohemian Rhapsody\r",
+            [("Bohemian Rhapsody", ["Queen"], "", None)],
+        ),
     ],
-    ids=["exportify", "tunemymusic", "semicolons", "tabs", "no header"],
+    ids=["exportify", "tunemymusic", "semicolons", "tabs", "no header", "mac"],
 )
 def test_other_layouts_are_understood(tmp_path, text, expected):
     assert rows(read_tracks(write(tmp_path, text))) == expected
