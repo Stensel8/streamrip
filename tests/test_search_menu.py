@@ -367,12 +367,15 @@ async def test_delayed_encoder_failure_falls_back_for_later_covers(monkeypatch):
 
     monkeypatch.setattr(CoverCache, "_fetch", AsyncMock(return_value=png()))
     async with menu(summaries("one", "two"), pixel_widget=FailingImage) as (app, pilot):
-        await pilot.pause(0.2)
+        # Until the cover is shown, not a fixed time: a busy machine is slower.
+        await app.workers.wait_for_complete()
+        await pilot.pause()
         pane = app.query_one(CoverPane)
         assert pane.pixel_widget is None
         assert pane.query_one(BlockCover).size.height > 1
         await pilot.press("down")
-        await pilot.pause(0.2)
+        await app.workers.wait_for_complete()
+        await pilot.pause()
         assert isinstance(pane.children[0], BlockCover)
 
 
