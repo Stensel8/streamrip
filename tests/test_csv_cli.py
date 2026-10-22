@@ -7,7 +7,7 @@ from click.testing import CliRunner
 
 from streamrip.config import set_user_defaults
 from streamrip.rip import cli
-from streamrip.rip.cli import CSV_SOURCES, _ask_source, rip
+from streamrip.rip.cli import SOURCES, _ask_source, rip
 from streamrip.rip.main import Main
 
 
@@ -93,10 +93,10 @@ def test_the_question_lists_every_source_and_what_it_gives(monkeypatch):
 
     shown = " ".join(str(call.args[0]) for call in console.print.call_args_list)
     assert "120" in shown
-    for name, what in CSV_SOURCES.items():
+    for name, what in SOURCES.items():
         assert name in shown
         assert what in shown
-    assert ask.call_args.kwargs["choices"] == list(CSV_SOURCES)
+    assert ask.call_args.kwargs["choices"] == list(SOURCES)
 
 
 @pytest.mark.parametrize(
