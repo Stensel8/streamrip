@@ -1,11 +1,10 @@
 import asyncio
 import logging
 
-import deezer
-import requests
-from deezer.errors import GWAPIError
+lazy import deezer
+lazy import requests
+lazy from deezer.errors import GWAPIError
 
-from ..config import Config
 from ..exceptions import (
     AuthenticationError,
     MissingCredentialsError,
@@ -13,9 +12,13 @@ from ..exceptions import (
 )
 from .client import DEFAULT_USER_AGENT, Client, new_session
 from .downloadable import DeezerDownloadable
+lazy from ..config import Config
 
 logger = logging.getLogger("streamrip")
 logging.captureWarnings(True)
+
+# Deezer's formats by quality tier.
+FORMATS = ("MP3_128", "MP3_320", "FLAC")
 
 
 class DeezerClient(Client):
@@ -78,21 +81,20 @@ class DeezerClient(Client):
         # TODO: open asyncio PR to deezer py and integrate
         if media_type == "track":
             return await self.get_track(item_id)
-        elif media_type == "album":
+        if media_type == "album":
             return await self.get_album(item_id)
-        elif media_type == "playlist":
+        if media_type == "playlist":
             return await self.get_playlist(item_id)
-        elif media_type == "artist":
+        if media_type == "artist":
             return await self.get_artist(item_id)
-        else:
-            raise Exception(f"Media type {media_type} not available on deezer")
+        raise Exception(f"Media type {media_type} not available on deezer")
 
     async def get_track(self, item_id: str) -> dict:
         """A track's metadata, with its album and, when wanted, its lyrics."""
         try:
             item = await asyncio.to_thread(self.client.api.get_track, item_id)
         except Exception as e:
-            raise NonStreamableError(e)
+            raise NonStreamableError(e) from e
 
         album_id = str(item["album"]["id"])
         try:
@@ -129,16 +131,10 @@ class DeezerClient(Client):
     @staticmethod
     def _format_synced_lyrics(sync_json: list[dict] | None) -> str:
         """Convert Deezer's LYRICS_SYNC_JSON into LRC-formatted text."""
-        if not sync_json:
-            return ""
-        lines = []
-        for entry in sync_json:
-            timestamp = entry.get("lrc_timestamp")
-            if timestamp:
-                lines.append(f"{timestamp}{entry.get('line', '')}")
-            else:
-                lines.append("")
-        return "\n".join(lines)
+        return "\n".join(
+            f"{ts}{entry.get('line', '')}" if (ts := entry.get("lrc_timestamp")) else ""
+            for entry in sync_json or []
+        )
 
     async def get_album(self, item_id: str) -> dict:
         """An album's metadata, tracks and quality, cached per run."""
@@ -204,7 +200,7 @@ class DeezerClient(Client):
             raise NonStreamableError(
                 f"Cannot access Deezer playlist {item_id}: {e}. Check that your "
                 "ARL is valid and that the playlist still exists."
-            )
+            ) from e
         data = page.get("DATA", {}) if isinstance(page, dict) else {}
         tracks = [{"id": str(t["SNG_ID"])} for t in songs if t.get("SNG_ID")]
         return {
@@ -273,12 +269,12 @@ class DeezerClient(Client):
                 else:
                     search_function = self.client.api.get_editorial_releases
             except AttributeError:
-                raise Exception(f'Invalid editorial selection "{query}"')
+                raise Exception(f'Invalid editorial selection "{query}"') from None
         else:
             try:
                 search_function = getattr(self.client.api, f"search_{media_type}")
             except AttributeError:
-                raise Exception(f"Invalid media type {media_type}")
+                raise Exception(f"Invalid media type {media_type}") from None
 
         response = await asyncio.to_thread(search_function, query, limit=limit)  # type: ignore
         if response.get("total", 0) > 0:
@@ -309,17 +305,10 @@ class DeezerClient(Client):
         # quality the caller wanted -- not at one the replaced track fell to.
         requested_quality = quality
 
-        quality_map = [
-            (9, "MP3_128"),  # quality 0
-            (3, "MP3_320"),  # quality 1
-            (1, "FLAC"),  # quality 2
-        ]
         # FILESIZE_* only sizes the progress bar. It says nothing reliable about
         # what Deezer will serve: it is often 0 for a format that is available,
         # so it must not pick the quality -- only get_track_url can.
-        size_map = [
-            int(track_info.get(f"FILESIZE_{format}", 0)) for _, format in quality_map
-        ]
+        size_map = [int(track_info.get(f"FILESIZE_{f}", 0)) for f in FORMATS]
         dl_info["quality_to_size"] = size_map
 
         # Never ask for more than the subscription allows. Deezer answers that
@@ -331,14 +320,14 @@ class DeezerClient(Client):
             if not self.config.lower_quality_if_not_available:
                 raise NonStreamableError(
                     f"Your Deezer subscription does not allow quality {quality} "
-                    f"({quality_map[quality][1]}); the maximum is {account_max}."
+                    f"({FORMATS[quality]}); the maximum is {account_max}."
                 )
             if not self._quality_warned:
                 logger.warning(
                     "Your Deezer subscription allows at most quality %d (%s); "
                     "downloading at that quality instead of %d.",
                     account_max,
-                    quality_map[account_max][1],
+                    FORMATS[account_max],
                     quality,
                 )
                 self._quality_warned = True
@@ -349,7 +338,7 @@ class DeezerClient(Client):
         token = track_info["TRACK_TOKEN"]
         url = None
         for tier in range(quality, -1, -1):
-            _, format_str = quality_map[tier]
+            format_str = FORMATS[tier]
             try:
                 logger.debug(
                     "Fetching deezer url (%s) with token %s", format_str, token
@@ -363,7 +352,7 @@ class DeezerClient(Client):
                         f"Your Deezer subscription does not allow {format_str} "
                         "downloads. FLAC (quality 2) needs Deezer HiFi/Premium, "
                         "MP3 320 (quality 1) needs a paid plan.",
-                    )
+                    ) from None
                 continue
             except deezer.WrongGeolocation:
                 if not is_retry and fallback_id:
@@ -372,7 +361,7 @@ class DeezerClient(Client):
                     )
                 raise NonStreamableError(
                     "The requested track is not available. This may be due to your country/location.",
-                )
+                ) from None
             if url:
                 if tier != quality:
                     logger.info(
@@ -412,15 +401,11 @@ class DeezerClient(Client):
                     f"The requested quality {quality} is not available and fallback is disabled."
                 )
 
-            # This used to fall back to the legacy AES-ECB CDN at
-            # e-cdns-proxy-<c>.dzcdn.net. Deezer has retired those hosts and
-            # none of the sixteen resolve any more, so the generated URL could
-            # only ever fail at download time with a DNS error pointing at the
-            # wrong culprit. Fail here instead, while we can still say why.
+            # Fail here, while we can still say why, rather than guess a URL
+            # that could only fail at download time.
             raise NonStreamableError(
                 "Deezer returned no download URL for this track at any quality, "
-                "and it has no fallback track (delisted?). The legacy CDN that "
-                "used to serve as a fallback has been retired.",
+                "and it has no fallback track (delisted?).",
             )
 
         dl_info["url"] = url
@@ -462,13 +447,7 @@ class DeezerClient(Client):
             logger.debug("No file sizes for Deezer album %s: %s", album_id, e)
             return target
         # One size per tier: FILESIZE_MP3_128, FILESIZE_MP3_320, FILESIZE_FLAC.
-        sizes = [
-            [
-                int(row.get(f"FILESIZE_{fmt}", 0))
-                for fmt in ("MP3_128", "MP3_320", "FLAC")
-            ]
-            for row in rows
-        ]
+        sizes = [[int(row.get(f"FILESIZE_{f}", 0)) for f in FORMATS] for row in rows]
         # A track with no size at all is delisted: its fallback track decides.
         sizes = [s for s in sizes if any(s)]
         for tier in range(target, 0, -1):

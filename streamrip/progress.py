@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Callable
+lazy from collections.abc import Callable
 
 from rich.console import Group
 from rich.live import Live

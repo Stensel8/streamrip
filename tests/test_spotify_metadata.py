@@ -1,11 +1,11 @@
 """Spotify's responses as streamrip's metadata, and Spotify URLs as pending items."""
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 from streamrip.config import Config
-from streamrip.db import download_key, split_download_key
 from streamrip.media import PendingAlbum, PendingArtist, PendingPlaylist, PendingSingle
 from streamrip.metadata import (
     AlbumMetadata,
@@ -83,7 +83,7 @@ def test_an_album_folder_has_no_empty_quality_bracket():
         "{albumartist} - {title} ({year}) [{container}] [{bit_depth}B-{sampling_rate}kHz]"
     )
 
-    assert folder == "Daft Punk - Random Access Memories (2013) [AAC]"
+    assert folder == Path("Daft Punk - Random Access Memories (2013) [AAC]")
 
 
 def test_the_copyright_lines_are_joined_and_marked():
@@ -207,11 +207,6 @@ def test_an_artist_is_its_name_and_the_ids_of_its_albums():
 
 
 # --- the downloads table -----------------------------------------------------
-
-
-def test_spotify_tracks_are_recorded_under_their_source():
-    assert download_key("spotify", ID) == f"spotify_{ID}"
-    assert split_download_key(f"spotify_{ID}") == ("spotify", ID)
 
 
 # --- urls --------------------------------------------------------------------

@@ -38,23 +38,26 @@ async def test_free_account_is_clamped_to_mp3_128():
     client.client.get_track_url.assert_called_once_with("token", "MP3_128")
 
 
-async def test_premium_account_is_clamped_to_mp3_320():
-    client = _client(can_stream_hq=True, can_stream_lossless=False)
-    dl = await client.get_downloadable("1", quality=2)
-    assert dl.quality == 1 and dl.extension == "mp3"
+@pytest.mark.parametrize(
+    ("can_stream_lossless", "requested", "quality", "extension"),
+    [
+        (False, 2, 1, "mp3"),  # a premium account is clamped to MP3 320
+        (True, 4, 2, "flac"),  # `streamrip --quality 4` used to raise IndexError
+    ],
+)
+async def test_the_quality_is_clamped_to_what_the_account_can_stream(
+    can_stream_lossless, requested, quality, extension
+):
+    client = _client(can_stream_hq=True, can_stream_lossless=can_stream_lossless)
+    dl = await client.get_downloadable("1", quality=requested)
+    assert dl.quality == quality
+    assert dl.extension == extension
 
 
 async def test_clamp_can_be_disabled():
     client = _client(lower_quality=False, can_stream_hq=False)
     with pytest.raises(NonStreamableError, match="subscription"):
         await client.get_downloadable("1", quality=1)
-
-
-async def test_out_of_range_quality_does_not_crash():
-    """`streamrip --quality 4` used to raise IndexError for Deezer."""
-    client = _client(can_stream_hq=True, can_stream_lossless=True)
-    dl = await client.get_downloadable("1", quality=4)
-    assert dl.quality == 2 and dl.extension == "flac"
 
 
 async def test_playlist_falls_back_to_gw_api():

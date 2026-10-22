@@ -9,7 +9,9 @@ own if there is none.
 """
 
 import asyncio
+import importlib.util
 import logging
+import os
 import shutil
 import sys
 from contextlib import asynccontextmanager
@@ -18,6 +20,24 @@ from ..console import console
 from .interactive import Confirm
 
 logger = logging.getLogger("streamrip")
+
+
+def has_screen() -> bool:
+    """Whether the user's browser runs on this machine.
+
+    On Linux that takes a display: a container or an SSH session has none, and a
+    browser elsewhere cannot reach a server streamrip starts on 127.0.0.1.
+    """
+    if sys.platform.startswith("linux"):
+        return bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+    return True
+
+
+def browser_login_available() -> bool:
+    """Whether the isolated browser window can work here: it needs Playwright
+    (the `browser` extra) and a screen."""
+    return importlib.util.find_spec("playwright") is not None and has_screen()
+
 
 # Playwright's own channel names for already-installed browsers, tried
 # first; then common binary names on PATH for browsers Playwright doesn't

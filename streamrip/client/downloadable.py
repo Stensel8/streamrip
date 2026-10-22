@@ -3,9 +3,10 @@ import base64
 import contextlib
 import functools
 import hashlib
+import http.client
 import itertools
 import logging
-import os
+import operator
 import re
 import shutil
 import tempfile
@@ -13,14 +14,16 @@ import threading
 import time
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Callable
+from pathlib import Path
+from typing import Any
+lazy from collections.abc import Callable
 
-import aiofiles
-import aiohttp
-import m3u8
-import requests
-from Cryptodome.Cipher import AES, Blowfish
-from Cryptodome.Util import Counter
+lazy import aiofiles
+lazy import aiohttp
+lazy import m3u8
+lazy import requests
+lazy from Cryptodome.Cipher import AES, Blowfish
+lazy from Cryptodome.Util import Counter
 
 from .. import converter
 from ..exceptions import (
@@ -29,20 +32,21 @@ from ..exceptions import (
     NonStreamableError,
     restriction_message,
 )
-from ..utils.ffmpeg_utils import find_ffmpeg
+from ..utils.ffmpeg_utils import ffmpeg_missing_message, find_ffmpeg
 
 logger = logging.getLogger("streamrip")
 
+# Prevent failures on CDNs (like Qobuz/Akamai) that send >100 response headers
+http.client._MAXHEADERS = 1000  # type: ignore[attr-defined]
 
 BLOWFISH_SECRET = "g4el58wc0zvf9na1"
 # Deezer encrypts the first 2048 bytes of every stripe of this many.
 DEEZER_STRIPE = 3 * 2048
 
 
-def generate_temp_path(url: str):
-    return os.path.join(
-        tempfile.gettempdir(),
-        f"__streamrip_{hash(url)}_{time.time()}.download",
+def generate_temp_path(url: str) -> Path:
+    return (
+        Path(tempfile.gettempdir()) / f"__streamrip_{hash(url)}_{time.time()}.download"
     )
 
 
@@ -77,7 +81,9 @@ def _content_range(
     return num(m.group(1)), num(m.group(2)), num(m.group(3))
 
 
-def _blocking_download(path, url, headers, report, stop: threading.Event, resume: bool):
+def _blocking_download(
+    path: Path, url, headers, report, stop: threading.Event, resume: bool
+):
     """Stream ``url`` into ``path`` with requests.
 
     Runs in a worker thread. With ``resume``, a partial file left by an
@@ -87,7 +93,7 @@ def _blocking_download(path, url, headers, report, stop: threading.Event, resume
     downscaled cover.jpg) would corrupt it.
     """
     chunk_size = 2**17  # 131 KB
-    resume_pos = os.path.getsize(path) if resume and os.path.exists(path) else 0
+    resume_pos = path.stat().st_size if resume and path.exists() else 0
     req_headers = dict(headers)
     if resume_pos > 0:
         req_headers["Range"] = f"bytes={resume_pos}-"
@@ -104,7 +110,7 @@ def _blocking_download(path, url, headers, report, stop: threading.Event, resume
             if total == resume_pos:
                 report(resume_pos)
                 return
-            os.remove(path)
+            path.unlink()
             raise IncompleteDownloadError(
                 f"416 for a {resume_pos}-byte partial file, the server announced "
                 f"Content-Range {resp.headers.get('Content-Range')!r}"
@@ -128,7 +134,7 @@ def _blocking_download(path, url, headers, report, stop: threading.Event, resume
             elif last is not None:
                 expected_size = last + 1
             if start != resume_pos or expected_size is None:
-                os.remove(path)
+                path.unlink()
                 raise IncompleteDownloadError(
                     f"asked to resume at byte {resume_pos}, the server answered "
                     f"with Content-Range {resp.headers.get('Content-Range')!r}"
@@ -137,21 +143,33 @@ def _blocking_download(path, url, headers, report, stop: threading.Event, resume
             report(resume_pos)
         else:
             mode = "wb"
-        with open(path, mode) as file:
+        with path.open(mode) as file:
             for chunk in resp.iter_content(chunk_size=chunk_size):
                 if stop.is_set():
                     raise asyncio.CancelledError
                 file.write(chunk)
                 report(len(chunk))
-    if expected_size is not None and os.path.getsize(path) != expected_size:
-        size = os.path.getsize(path)
-        os.remove(path)
+    if expected_size is not None and path.stat().st_size != expected_size:
+        size = path.stat().st_size
+        path.unlink()
         raise IncompleteDownloadError(
             f"resumed file is {size} bytes, the server announced {expected_size}"
         )
 
 
-async def fast_async_download(path, url, headers, callback, resume: bool = False):
+def _threadsafe(callback):
+    """`callback`, callable from a worker thread: it runs on the event loop."""
+    loop = asyncio.get_running_loop()
+
+    def report(n: int):
+        # RuntimeError: the loop is already closed (interpreter shutting down).
+        with contextlib.suppress(RuntimeError):
+            loop.call_soon_threadsafe(callback, n)
+
+    return report
+
+
+async def fast_async_download(path: Path, url, headers, callback, resume: bool = False):
     """Download ``url`` to ``path`` without blocking the event loop.
 
     requests with large chunks is much faster than aiohttp's 1KB reads, but
@@ -159,22 +177,14 @@ async def fast_async_download(path, url, headers, callback, resume: bool = False
     connection was active (upstream PR #982). Run it in a worker thread and
     hand progress back to the loop, since rich's display is not thread-safe.
     """
-    loop = asyncio.get_running_loop()
     stop = threading.Event()
-
-    def report(n: int):
-        try:
-            loop.call_soon_threadsafe(callback, n)
-        except RuntimeError:
-            pass  # loop already closed (interpreter shutting down)
-
     try:
         await asyncio.to_thread(
             _blocking_download,
             path,
             url,
             _plain_headers(headers),
-            report,
+            _threadsafe(callback),
             stop,
             resume,
         )
@@ -193,7 +203,7 @@ class Downloadable(ABC):
     # Set by Track for retries: continue a partial file instead of restarting.
     resume: bool = False
 
-    async def download(self, path: str, callback: Callable[[int], Any]):
+    async def download(self, path: Path, callback: Callable[[int], Any]):
         await self._download(path, callback)
 
     async def size(self) -> int:
@@ -205,7 +215,7 @@ class Downloadable(ABC):
         return self._size
 
     @abstractmethod
-    async def _download(self, path: str, callback: Callable[[int], None]):
+    async def _download(self, path: Path, callback: Callable[[int], None]):
         raise NotImplementedError
 
 
@@ -225,7 +235,7 @@ class BasicDownloadable(Downloadable):
         self.extension = extension
         self.source = source or "Unknown"
 
-    async def _download(self, path: str, callback):
+    async def _download(self, path: Path, callback):
         await fast_async_download(
             path, self.url, self.session.headers, callback, resume=self.resume
         )
@@ -273,7 +283,7 @@ class DeezerDownloadable(Downloadable):
         """
         return self._size or 0
 
-    async def _download(self, path: str, callback):
+    async def _download(self, path: Path, callback):
         """Download the file, decrypting it on the fly if it's encrypted."""
         async with self.session.get(self.url, allow_redirects=True) as resp:
             resp.raise_for_status()
@@ -339,8 +349,8 @@ class DeezerDownloadable(Downloadable):
         md5_hash = hashlib.md5(track_id.encode()).hexdigest()
         # good luck :)
         return "".join(
-            chr(functools.reduce(lambda x, y: x ^ y, map(ord, t)))
-            for t in zip(md5_hash[:16], md5_hash[16:], BLOWFISH_SECRET)
+            chr(functools.reduce(operator.xor, map(ord, t)))
+            for t in zip(md5_hash[:16], md5_hash[16:], BLOWFISH_SECRET, strict=True)
         ).encode()
 
 
@@ -368,7 +378,7 @@ class TidalDownloadable(Downloadable):
         self.url = url
         self.enc_key = encryption_key
 
-    async def _download(self, path: str, callback):
+    async def _download(self, path: Path, callback):
         """Download the file, and decrypt it if Tidal encrypted it (MQA)."""
         await fast_async_download(
             path, self.url, self.session.headers, callback, resume=self.resume
@@ -451,7 +461,7 @@ class TidalDASHDownloadable(Downloadable):
         self._size = sum(known) + (len(sizes) - len(known)) * average
         return self._size
 
-    async def _download(self, path: str, callback):
+    async def _download(self, path: Path, callback):
         """Fetch DASH segments and remux them to path, reporting bytes received.
 
         Raise FFmpegNotFoundError before fetching if ffmpeg is unavailable.
@@ -462,7 +472,7 @@ class TidalDASHDownloadable(Downloadable):
             raise FFmpegNotFoundError(
                 "ffmpeg not found, which Tidal hi-res (DASH) tracks need"
             )
-        tmp_path = path + ".dash.mp4"
+        tmp_path = path.with_name(path.name + ".dash.mp4")
         try:
             async with aiofiles.open(tmp_path, "wb") as f:
                 for url in (self.init_url, *self.segment_urls):
@@ -494,7 +504,7 @@ class TidalDASHDownloadable(Downloadable):
                 stderr=asyncio.subprocess.PIPE,
             )
             _, stderr = await proc.communicate()
-            if proc.returncode != 0 or not os.path.isfile(path):
+            if proc.returncode != 0 or not path.is_file():
                 # Without this a failed remux is silent and the track would be
                 # recorded as downloaded with nothing on disk.
                 raise NonStreamableError(
@@ -502,8 +512,7 @@ class TidalDASHDownloadable(Downloadable):
                     f"{proc.returncode}): {stderr.decode(errors='replace')[-300:]}"
                 )
         finally:
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
+            tmp_path.unlink(missing_ok=True)
 
 
 class SoundcloudDownloadable(Downloadable):
@@ -520,7 +529,7 @@ class SoundcloudDownloadable(Downloadable):
             raise Exception(f"Invalid file type: {self.file_type}")
         self.url = info["url"]
 
-    async def _download(self, path, callback):
+    async def _download(self, path: Path, callback):
         """Download by file type.
 
         An MP3 comes as HLS segments, anything else in one piece; an original upload is
@@ -538,7 +547,7 @@ class SoundcloudDownloadable(Downloadable):
         async with self.session.get(self.url) as resp:
             return m3u8.loads(await resp.text("utf-8")).segments
 
-    async def _download_mp3(self, path: str, callback):
+    async def _download_mp3(self, path: Path, callback):
         """Download every HLS segment concurrently, then concatenate them."""
         segments = await self._segments()
         self._size = len(segments)  # progress counts segments, not bytes
@@ -548,7 +557,7 @@ class SoundcloudDownloadable(Downloadable):
         segment_paths = [generate_temp_path(s.uri) for s in segments]
         tasks = [
             asyncio.create_task(self._download_segment(segment.uri, tmp, callback))
-            for segment, tmp in zip(segments, segment_paths)
+            for segment, tmp in zip(segments, segment_paths, strict=True)
         ]
         try:
             await asyncio.gather(*tasks)
@@ -560,10 +569,9 @@ class SoundcloudDownloadable(Downloadable):
             # files, or one could still create its file afterwards.
             await asyncio.gather(*tasks, return_exceptions=True)
             for tmp in segment_paths:
-                if os.path.exists(tmp):
-                    os.remove(tmp)
+                tmp.unlink(missing_ok=True)
 
-    async def _download_segment(self, segment_uri: str, tmp: str, callback):
+    async def _download_segment(self, segment_uri: str, tmp: Path, callback):
         """Download one HLS segment to tmp and report it done."""
         async with self.session.get(segment_uri) as resp:
             resp.raise_for_status()
@@ -588,7 +596,7 @@ def _explain_ytdlp_error(error: Exception) -> str:
     if "javascript runtime" in lowered or "n challenge" in lowered:
         message += (
             " (yt-dlp needs a JavaScript runtime to read YouTube: install Deno or "
-            "Node.js, see the Spotify section of the README)"
+            "Node.js, see docs/spotify.md)"
         )
     elif "sign in to confirm" in lowered:
         message += (
@@ -598,7 +606,7 @@ def _explain_ytdlp_error(error: Exception) -> str:
     return message
 
 
-def _fetch_audio(url: str, directory: str, verify_ssl: bool, report, stop) -> str:
+def _fetch_audio(url: str, directory: Path, verify_ssl: bool, report, stop) -> Path:
     """Download the best audio of `url` into `directory` with yt-dlp.
 
     Runs in a worker thread. The best AAC stream is taken (it is used as it is),
@@ -635,7 +643,7 @@ def _fetch_audio(url: str, directory: str, verify_ssl: bool, report, stop) -> st
 
     options = {
         "format": "bestaudio[ext=m4a]/bestaudio/best",
-        "outtmpl": os.path.join(directory.replace("%", "%%"), "%(id)s.%(ext)s"),
+        "outtmpl": str(Path(str(directory).replace("%", "%%")) / "%(id)s.%(ext)s"),
         "noplaylist": True,
         "quiet": True,
         "no_warnings": True,
@@ -656,7 +664,7 @@ def _fetch_audio(url: str, directory: str, verify_ssl: bool, report, stop) -> st
             info = ydl.extract_info(url, download=True)
         except DownloadError as e:
             raise NonStreamableError(_explain_ytdlp_error(e)) from e
-    return info["requested_downloads"][0]["filepath"]
+    return Path(info["requested_downloads"][0]["filepath"])
 
 
 class YtDlpDownloadable(Downloadable):
@@ -693,23 +701,16 @@ class YtDlpDownloadable(Downloadable):
         """0: yt-dlp only knows once it has started, which makes the bar pulse."""
         return self._size or 0
 
-    async def _download(self, path: str, callback):
+    async def _download(self, path: Path, callback):
         """Fetch the audio with yt-dlp, then put it at path in the wanted format."""
         ffmpeg_path = find_ffmpeg()
         if ffmpeg_path is None:
             raise FFmpegNotFoundError(
                 "ffmpeg not found, which the audio from YouTube needs"
             )
-        loop = asyncio.get_running_loop()
         stop = threading.Event()
-
-        def report(n: int):
-            try:
-                loop.call_soon_threadsafe(callback, n)
-            except RuntimeError:
-                pass  # loop already closed (interpreter shutting down)
-
-        directory = tempfile.mkdtemp(prefix="__streamrip_ytdlp_")
+        report = _threadsafe(callback)
+        directory = Path(tempfile.mkdtemp(prefix="__streamrip_ytdlp_"))
         # A thread of its own, not one of the shared pool: yt-dlp keeps it for the
         # whole download, and a download that waited in the pool's queue could not
         # be told from one that is running.
@@ -727,20 +728,18 @@ class YtDlpDownloadable(Downloadable):
                 # cancel, which asyncio.run makes as it unwinds, does not shorten that.
                 stop.set()
                 while not job.done():
-                    try:
+                    with contextlib.suppress(asyncio.CancelledError):
                         await asyncio.sleep(0.05)
-                    except asyncio.CancelledError:
-                        pass
                 raise
-            if fetched.rsplit(".", 1)[-1].lower() == "m4a" == self.extension:
-                shutil.move(fetched, path)
+            if fetched.suffix.lower() == ".m4a" and self.extension == "m4a":
+                fetched.move(path)
             else:
                 await self._encode(ffmpeg_path, fetched, path)
         finally:
             executor.shutdown(wait=False)
             shutil.rmtree(directory, ignore_errors=True)
 
-    async def _encode(self, ffmpeg_path: str, source: str, path: str):
+    async def _encode(self, ffmpeg_path: str, source: Path, path: Path):
         """Re-encode the fetched audio to the wanted format, without its old tags."""
         codec = "aac" if self.extension == "m4a" else "libmp3lame"
         proc = await asyncio.create_subprocess_exec(
@@ -763,7 +762,7 @@ class YtDlpDownloadable(Downloadable):
             stderr=asyncio.subprocess.PIPE,
         )
         _, stderr = await proc.communicate()
-        if proc.returncode != 0 or not os.path.isfile(path):
+        if proc.returncode != 0 or not path.is_file():
             raise NonStreamableError(
                 f"ffmpeg failed to encode the audio as {self.extension} (exit "
                 f"{proc.returncode}): {stderr.decode(errors='replace')[-300:]}"
@@ -771,7 +770,7 @@ class YtDlpDownloadable(Downloadable):
 
 
 async def concat_audio_files(
-    paths: list[str], out: str, ext: str, max_files_open=128, max_processes=4
+    paths: list[Path], out: Path, ext: str, max_files_open=128, max_processes=4
 ):
     """Concatenate audio files with ffmpeg, at most max_files_open at a time.
 
@@ -782,23 +781,19 @@ async def concat_audio_files(
     """
     ffmpeg_path = find_ffmpeg()
     if ffmpeg_path is None:
-        raise FFmpegNotFoundError(
-            "FFmpeg is required. Install it (apt/brew/winget install ffmpeg), or "
-            "run: pip install imageio-ffmpeg"
-        )
+        raise FFmpegNotFoundError(ffmpeg_missing_message())
 
     if len(paths) == 1:
-        shutil.move(paths[0], out)
+        paths[0].move(out)
         return
 
-    batches = list(itertools.batched(paths, max_files_open))
+    batches = list(itertools.batched(paths, max_files_open, strict=False))
     outpaths = [
-        os.path.join(tempfile.gettempdir(), f"__streamrip_ffmpeg_{hash(b[0])}.{ext}")
+        Path(tempfile.gettempdir()) / f"__streamrip_ffmpeg_{hash(b[0])}.{ext}"
         for b in batches
     ]
     for p in outpaths:
-        with contextlib.suppress(FileNotFoundError):
-            os.remove(p)  # left behind by a run that failed
+        p.unlink(missing_ok=True)  # left behind by a run that failed
 
     limit = asyncio.Semaphore(max_processes)
     started = []
@@ -808,7 +803,7 @@ async def concat_audio_files(
             proc = await asyncio.create_subprocess_exec(
                 ffmpeg_path,
                 "-i",
-                f"concat:{'|'.join(batch)}",
+                f"concat:{'|'.join(map(str, batch))}",
                 "-acodec",
                 "copy",
                 "-loglevel",
@@ -827,7 +822,7 @@ async def concat_audio_files(
 
     tasks = [
         asyncio.create_task(join(batch, outpath))
-        for batch, outpath in zip(batches, outpaths)
+        for batch, outpath in zip(batches, outpaths, strict=True)
     ]
     try:
         await asyncio.gather(*tasks)
@@ -846,5 +841,4 @@ async def concat_audio_files(
             await proc.wait()
         # The last one was moved into place; the rest are intermediates.
         for p in outpaths:
-            if os.path.exists(p):
-                os.remove(p)
+            p.unlink(missing_ok=True)

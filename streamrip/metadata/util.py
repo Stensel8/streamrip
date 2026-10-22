@@ -1,6 +1,7 @@
 import functools
 import re
-from typing import Optional, Type, TypeVar
+
+SOURCES = frozenset({"qobuz", "tidal", "deezer", "soundcloud", "spotify"})
 
 
 def get_album_track_ids(source: str, resp) -> list[str]:
@@ -62,23 +63,22 @@ def safe_get(dictionary, *keys, default=None):
     )
 
 
-T = TypeVar("T")
-
-
-def typed(thing, expected_type: Type[T]) -> T:
+def typed[T](thing, expected_type: type[T]) -> T:
     assert isinstance(thing, expected_type)
     return thing
 
 
 # Tidal's audioQuality values mapped to streamrip's quality ids. HI_RES was MQA
 # (retired by Tidal); HI_RES_LOSSLESS is 24-bit FLAC.
-TIDAL_QUALITY_IDS: dict[str, int] = {
-    "LOW": 0,
-    "HIGH": 1,
-    "LOSSLESS": 2,
-    "HI_RES": 3,
-    "HI_RES_LOSSLESS": 3,
-}
+TIDAL_QUALITY_IDS: frozendict[str, int] = frozendict(
+    {
+        "LOW": 0,
+        "HIGH": 1,
+        "LOSSLESS": 2,
+        "HI_RES": 3,
+        "HI_RES_LOSSLESS": 3,
+    }
+)
 
 
 def tidal_quality_id(audio_quality: str | None) -> int:
@@ -90,8 +90,8 @@ def tidal_quality_id(audio_quality: str | None) -> int:
 
 def format_quality(
     container: str,
-    bit_depth: Optional[int],
-    sampling_rate: Optional[int | float],
+    bit_depth: int | None,
+    sampling_rate: float | None,
 ) -> str:
     """Quality label, e.g. "[FLAC 24B-96kHz]"."""
     # Qobuz defaults missing values to -1/-1.0, which is truthy.
@@ -101,8 +101,8 @@ def format_quality(
 
 
 def get_quality_id(
-    bit_depth: Optional[int],
-    sampling_rate: Optional[int | float],
+    bit_depth: int | None,
+    sampling_rate: float | None,
 ) -> int:
     """streamrip's quality id (1-4) for a bit depth and a sampling rate in kHz."""
     if bit_depth is None or sampling_rate is None:  # is lossy

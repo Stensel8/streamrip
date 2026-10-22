@@ -1,13 +1,11 @@
-from __future__ import annotations
-
 import logging
 import re
 from abc import ABC, abstractmethod
 
 from ..client import Client, SoundcloudClient, new_session
-from ..config import Config
-from ..db import Database
 from ..media import Pending, PendingArtist, PendingPlaylist, pending_item
+lazy from ..config import Config
+lazy from ..db import Database
 
 logger = logging.getLogger("streamrip")
 URL_REGEX = re.compile(
@@ -29,15 +27,18 @@ QOBUZ_INTERPRETER_URL_REGEX = re.compile(
 class URL(ABC):
     match: re.Match
     source: str
+    # What from_str matches, unless a subclass has its own from_str.
+    regex: re.Pattern
 
     def __init__(self, match: re.Match, source: str):
         self.match = match
         self.source = source
 
     @classmethod
-    @abstractmethod
     def from_str(cls, url: str) -> URL | None:
-        raise NotImplementedError
+        """The URL `regex` matches at the start of url, or None."""
+        match = cls.regex.match(url)
+        return None if match is None else cls(match, cls.source)
 
     @abstractmethod
     async def into_pending(
@@ -84,15 +85,9 @@ class GenericURL(URL):
 
 
 class QobuzInterpreterURL(URL):
+    source = "qobuz"
+    regex = QOBUZ_INTERPRETER_URL_REGEX
     interpreter_artist_regex = re.compile(r"getSimilarArtist\(\s*'(\w+)'")
-
-    @classmethod
-    def from_str(cls, url: str) -> URL | None:
-        qobuz_interpreter_url = QOBUZ_INTERPRETER_URL_REGEX.match(url)
-        if qobuz_interpreter_url is None:
-            return None
-
-        return cls(qobuz_interpreter_url, "qobuz")
 
     async def into_pending(
         self,
@@ -119,18 +114,20 @@ class QobuzInterpreterURL(URL):
         """
         # Public pages must never inherit the API session's account credentials.
         url = url.replace("http://", "https://", 1)
-        async with new_session(verify_ssl=verify_ssl) as session:
-            # Do not let a redirect downgrade the request to plaintext HTTP.
-            async with session.get(url, allow_redirects=False) as resp:
-                if 300 <= resp.status < 400:
-                    raise ValueError(
-                        "Qobuz interpreter URL redirected. Use a URL that contains "
-                        "an artist id."
-                    )
-                resp.raise_for_status()
-                match = QobuzInterpreterURL.interpreter_artist_regex.search(
-                    await resp.text(),
+        # Do not let a redirect downgrade the request to plaintext HTTP.
+        async with (
+            new_session(verify_ssl=verify_ssl) as session,
+            session.get(url, allow_redirects=False) as resp,
+        ):
+            if 300 <= resp.status < 400:
+                raise ValueError(
+                    "Qobuz interpreter URL redirected. Use a URL that contains "
+                    "an artist id."
                 )
+            resp.raise_for_status()
+            match = QobuzInterpreterURL.interpreter_artist_regex.search(
+                await resp.text(),
+            )
 
         if match:
             return match.group(1)
@@ -142,6 +139,7 @@ class QobuzInterpreterURL(URL):
 
 
 class DeezerDynamicURL(URL):
+    source = "deezer"
     standard_link_re = re.compile(
         r"https://www\.deezer\.com/(?:[a-z]{2}(?:-[a-z]{2})?/)?(album|artist|playlist|track)/(\d+)"
     )
@@ -151,13 +149,7 @@ class DeezerDynamicURL(URL):
         r"https://(?:(?:deezer|dzr)\.page\.link|link\.deezer\.com/s)/[\w-]+"
     )
 
-    @classmethod
-    def from_str(cls, url: str) -> URL | None:
-        match = cls.dynamic_link_re.match(url)
-        if match is None:
-            return None
-
-        return cls(match, "deezer")
+    regex = dynamic_link_re
 
     async def into_pending(
         self,
@@ -195,16 +187,10 @@ class DeezerFavoriteURL(URL):
     Example: https://www.deezer.com/fr/profile/1234567/loved
     """
 
-    favorite_re = re.compile(
+    source = "deezer"
+    regex = favorite_re = re.compile(
         r"https://(?:www\.)?deezer\.com/[a-z]{2}/profile/(\d+)/loved"
     )
-
-    @classmethod
-    def from_str(cls, url: str) -> URL | None:
-        match = cls.favorite_re.match(url)
-        if match is None:
-            return None
-        return cls(match, "deezer")
 
     async def into_pending(
         self,
@@ -246,13 +232,8 @@ class SoundcloudURL(URL):
 class SpotifyURL(URL):
     """An open.spotify.com link or a spotify: URI of a track, album, artist or playlist."""
 
-    @classmethod
-    def from_str(cls, url: str) -> URL | None:
-        """The Spotify item `url` names, or None if it isn't one."""
-        match = SPOTIFY_URL_REGEX.match(url)
-        if match is None:
-            return None
-        return cls(match, "spotify")
+    source = "spotify"
+    regex = SPOTIFY_URL_REGEX
 
     async def into_pending(
         self,

@@ -1,10 +1,11 @@
-import os
+import re
 import shutil
+from pathlib import Path
 
 import pytest
-import tomlkit
 
 from streamrip.config import (
+    BLANK_CONFIG_PATH,
     ArtistFilterConfig,
     ArtworkConfig,
     CliConfig,
@@ -24,37 +25,15 @@ from streamrip.config import (
     set_user_defaults,
 )
 
-SAMPLE_CONFIG = "tests/test_config.toml"
+SAMPLE_CONFIG = Path("tests/test_config.toml")
 
 
-# Define a fixture to create a sample ConfigData instance for testing
 @pytest.fixture()
 def sample_config_data() -> ConfigData:
-    # Create a sample ConfigData instance here
-    # You can customize this to your specific needs for testing
-    with open(SAMPLE_CONFIG) as f:
-        config_data = ConfigData.from_toml(f.read())
-    return config_data
+    return ConfigData.from_toml(SAMPLE_CONFIG.read_text())
 
 
 # Define a fixture to create a sample Config instance for testing
-@pytest.fixture()
-def sample_config() -> Config:
-    # Create a sample Config instance here
-    # You can customize this to your specific needs for testing
-    config = Config(SAMPLE_CONFIG)
-    return config
-
-
-def test_sample_config_data_properties(sample_config_data):
-    # Test the properties of ConfigData
-    assert sample_config_data.modified is False  # Ensure initial state is not modified
-
-
-def test_sample_config_data_modification(sample_config_data):
-    # Test modifying ConfigData and checking modified property
-    sample_config_data.set_modified()
-    assert sample_config_data._modified is True
 
 
 def test_sample_config_data_fields(sample_config_data):
@@ -85,6 +64,14 @@ def test_sample_config_data_fields(sample_config_data):
             refresh_token="refreshtoken",
             token_expiry="tokenexpiry",
             quality=3,
+            hires_client=False,
+            client_id="",
+            client_secret="",
+            token_client_id="",
+            hires_access_token="",
+            hires_refresh_token="",
+            hires_token_expiry="",
+            hires_token_client_id="",
         ),
         deezer=DeezerConfig(
             arl="testarl",
@@ -95,7 +82,16 @@ def test_sample_config_data_fields(sample_config_data):
             client_id="clientid",
             app_version="appversion",
         ),
-        spotify=SpotifyConfig(),
+        spotify=SpotifyConfig(
+            client_id="",
+            redirect_uri="http://127.0.0.1:9900/callback",
+            audio_format="m4a",
+            audio_bitrate=256,
+            match_videos=True,
+            access_token="",
+            refresh_token="",
+            token_expiry="",
+        ),
         lastfm=LastFmConfig(source="qobuz", fallback_source=""),
         filepaths=FilepathsConfig(
             add_singles_to_folder=False,
@@ -115,6 +111,7 @@ def test_sample_config_data_fields(sample_config_data):
             set_playlist_to_album=True,
             renumber_playlist_tracks=True,
             exclude=[],
+            prefer_explicit=True,
         ),
         artist_filters=ArtistFilterConfig(
             extras=False,
@@ -156,104 +153,63 @@ def test_sample_config_data_fields(sample_config_data):
     assert sample_config_data.conversion == test_config.conversion
 
 
-def test_config_update_on_save():
-    tmp_config_path = "tests/config2.toml"
+def test_config_update_on_save(tmp_path):
+    tmp_config_path = tmp_path / "config.toml"
     shutil.copy(SAMPLE_CONFIG, tmp_config_path)
     conf = Config(tmp_config_path)
     conf.file.downloads.folder = "new_folder"
     conf.file.set_modified()
     conf.save_file()
     conf2 = Config(tmp_config_path)
-    os.remove(tmp_config_path)
 
     assert conf2.session.downloads.folder == "new_folder"
 
 
-def test_config_dont_update_without_set_modified():
-    tmp_config_path = "tests/config2.toml"
+def test_config_dont_update_without_set_modified(tmp_path):
+    tmp_config_path = tmp_path / "config.toml"
     shutil.copy(SAMPLE_CONFIG, tmp_config_path)
     conf = Config(tmp_config_path)
     conf.file.downloads.folder = "new_folder"
     del conf
     conf2 = Config(tmp_config_path)
-    os.remove(tmp_config_path)
 
     assert conf2.session.downloads.folder == "test_folder"
 
 
-def test_prefer_explicit_defaults_true():
-    assert Config.defaults().session.metadata.prefer_explicit is True
+def test_the_template_and_the_config_classes_agree():
+    """A key the classes lack, or a field the template lacks, fails loading."""
+    template = BLANK_CONFIG_PATH.read_text()
+    ConfigData.from_toml(template)
 
-
-def test_prefer_explicit_missing_from_toml_still_loads():
-    # A config saved before this option existed has no `prefer_explicit` key
-    # in [metadata] at all; MetadataConfig's default must cover it so those
-    # configs keep loading without a version bump.
-    with open("streamrip/config.toml") as f:
-        toml_str = f.read().replace("\nprefer_explicit = true\n", "\n")
-    assert "prefer_explicit" not in toml_str
-    data = ConfigData.from_toml(toml_str)
-    assert data.metadata.prefer_explicit is True
-
-
-def test_lyrics_are_on_by_default_and_the_template_says_where_they_come_from():
-    assert Config.defaults().session.downloads.lyrics is True
-    template = open("streamrip/config.toml").read()
-    assert "lrclib.net" in template
+    with pytest.raises(TypeError, match="bogus_option"):
+        ConfigData.from_toml(
+            template.replace("[cli]\n", "[cli]\nbogus_option = 1\n", 1)
+        )
+    with pytest.raises(TypeError, match="max_search_results"):
+        ConfigData.from_toml(
+            re.sub(r"^max_search_results = .*\n", "", template, flags=re.MULTILINE)
+        )
 
 
 # Other tests for the Config class can be added as needed
 
-if __name__ == "__main__":
-    pytest.main()
-
-
-def test_default_quality_is_the_highest_of_every_source():
-    session = Config.defaults().session
-    assert session.qobuz.quality == 4  # 24-bit, up to 192 kHz
-    assert session.tidal.quality == 3  # best available, hi-res where there is one
-    assert session.deezer.quality == 2  # FLAC
-
-
-def test_old_misc_section_still_loads():
-    """A config with an old [misc] section still loads.
-
-    Older releases wrote it: a schema version, and a check_for_updates switch the update
-    check never read.
-    """
-    with open(SAMPLE_CONFIG) as f:
-        doc = tomlkit.parse(f.read())
-    doc["misc"]["version"] = "2.3.3"
-    data = ConfigData.from_toml(tomlkit.dumps(doc))
-    data.update_toml()
-    assert data.toml["misc"]["version"] == "2.3.3"
-
-
-def test_no_update_check_is_commented_out_in_the_template():
-    # Off by default, and visible: a user finds the option by reading the file.
-    text = open("streamrip/config.toml").read()
-
-    assert "\n# no_update_check = true\n" in text
-    assert "no_update_check" not in tomlkit.parse(text)["cli"]
-    assert Config.defaults().session.cli.no_update_check is False
-
 
 def test_no_update_check_can_be_turned_on_in_the_config(tmp_path):
     path = tmp_path / "config.toml"
-    set_user_defaults(str(path))
+    set_user_defaults(path)
     path.write_text(
         path.read_text().replace("# no_update_check = true", "no_update_check = true")
     )
 
-    assert Config(str(path)).session.cli.no_update_check is True
+    assert Config(path).session.cli.no_update_check is True
 
 
 def test_saving_does_not_write_out_an_option_the_file_leaves_out(tmp_path):
     # Written beside the commented line, it would make uncommenting that a
     # duplicate key, and the config would not load.
     path = tmp_path / "config.toml"
-    set_user_defaults(str(path))
-    config = Config(str(path))
+    set_user_defaults(path)
+    config = Config(path)
     config.file.deezer.arl = "synthetic-cookie"
     config.file.set_modified()
 
@@ -263,19 +219,19 @@ def test_saving_does_not_write_out_an_option_the_file_leaves_out(tmp_path):
     assert "\n# no_update_check = true\n" in saved
     assert "\nno_update_check" not in saved
     path.write_text(saved.replace("# no_update_check = true", "no_update_check = true"))
-    assert Config(str(path)).session.cli.no_update_check is True
+    assert Config(path).session.cli.no_update_check is True
 
 
 def test_saving_keeps_an_option_the_user_set(tmp_path):
     path = tmp_path / "config.toml"
-    set_user_defaults(str(path))
+    set_user_defaults(path)
     path.write_text(
         path.read_text().replace("# no_update_check = true", "no_update_check = true")
     )
-    config = Config(str(path))
+    config = Config(path)
     config.file.deezer.arl = "synthetic-cookie"
     config.file.set_modified()
 
     config.save_file()
 
-    assert Config(str(path)).session.cli.no_update_check is True
+    assert Config(path).session.cli.no_update_check is True

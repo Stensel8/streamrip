@@ -105,7 +105,7 @@ app_version = ""
 #   - "Which API/SDKs are you planning to use?": tick Web API only
 # Then copy its Client ID here (no client secret is needed), or leave it empty
 # and streamrip asks for it, and logs you in through your browser.
-# The README has the details, with screenshots.
+# docs/spotify.md has the details, with screenshots.
 client_id = ""
 # Must be added to the app as a Redirect URI, character for character. Use
 # 127.0.0.1, not localhost: Spotify no longer accepts that.
@@ -234,4 +234,5 @@ progress_bars = true
 max_search_results = 100
 # streamrip asks GitHub for a newer release before every command. Uncomment this
 # to stop that, for a machine without internet access or a script that runs often.
+# Setting STREAMRIP_NO_UPDATE_CHECK=1 in the environment does the same.
 # no_update_check = true

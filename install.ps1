@@ -2,10 +2,11 @@
 # .venv in the current directory -- never system Python, and not a global
 # shim either.
 #
-# Uses uv (https://docs.astral.sh/uv/) to fetch Python 3.14 if it isn't
-# already installed, then creates .venv and installs streamrip into it.
-# Safe to re-run: it reuses the existing .venv and upgrades streamrip from
-# this checkout.
+# Uses uv (https://docs.astral.sh/uv/), which fetches Python 3.15 if it isn't
+# installed yet and installs streamrip, with ffmpeg, at the versions of
+# uv.lock. Safe to
+# re-run: it updates .venv to this checkout (and remakes it if it isn't on
+# Python 3.15).
 
 Set-Location $PSScriptRoot
 $venvPath = Join-Path $PSScriptRoot ".venv"
@@ -17,13 +18,9 @@ if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
     $env:Path = "$env:USERPROFILE\.local\bin;$env:Path"
 }
 
-if (-not (Test-Path $venvPath)) {
-    Write-Host "Creating .venv (Python 3.14)..."
-    uv venv --python 3.14 "$venvPath"
-}
-
 Write-Host "Installing streamrip into .venv..."
-uv pip install --python "$venvPath" --upgrade "$PSScriptRoot"
+uv sync --locked --no-dev --no-editable --extra browser --extra ffmpeg
+if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
 Write-Host ""
 $version = & $streamripPath --version 2>$null

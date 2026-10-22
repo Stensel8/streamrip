@@ -31,20 +31,28 @@ def test_client_id_found_in_bundle():
     assert _find_client_id("nothing to see here") is None
 
 
-def test_progressive_mp3_preferred():
-    track = _track(
-        _tc("hls", "audio/mpeg", "https://x/stream/hls"),
-        _tc("progressive", "audio/mpeg", "https://x/stream/progressive"),
-    )
-    assert SoundcloudClient._get_custom_id(track) == "1|https://x/stream/progressive"
-
-
-def test_hls_mp3_used_when_no_progressive():
-    track = _track(
-        _tc("hls", 'audio/mp4; codecs="mp4a.40.2"', "https://x/aac"),
-        _tc("hls", "audio/mpeg", "https://x/stream/hls"),
-    )
-    assert SoundcloudClient._get_custom_id(track) == "1|https://x/stream/hls"
+@pytest.mark.parametrize(
+    ("transcodings", "expected"),
+    [
+        (
+            [
+                _tc("hls", "audio/mpeg", "https://x/stream/hls"),
+                _tc("progressive", "audio/mpeg", "https://x/stream/progressive"),
+            ],
+            "1|https://x/stream/progressive",
+        ),
+        (
+            [
+                _tc("hls", 'audio/mp4; codecs="mp4a.40.2"', "https://x/aac"),
+                _tc("hls", "audio/mpeg", "https://x/stream/hls"),
+            ],
+            "1|https://x/stream/hls",
+        ),
+    ],
+    ids=["progressive mp3 preferred", "hls mp3 when no progressive"],
+)
+def test_the_mp3_transcoding_is_chosen(transcodings, expected):
+    assert SoundcloudClient._get_custom_id(_track(*transcodings)) == expected
 
 
 def test_no_mp3_transcoding_is_non_streamable_instead_of_assertion():
@@ -166,10 +174,7 @@ class _Session:
 
 
 async def _fake_concat(paths, out, _ext):
-    with open(out, "wb") as f:
-        for p in paths:
-            with open(p, "rb") as segment:
-                f.write(segment.read())
+    out.write_bytes(b"".join(p.read_bytes() for p in paths))
 
 
 @pytest.fixture
@@ -193,7 +198,7 @@ def hls(tmp_path, monkeypatch):
 async def test_hls_segments_are_joined_in_order_and_cleaned_up(hls):
     make, temp, out = hls
 
-    await make()._download(str(out), lambda _: None)
+    await make()._download(out, lambda _: None)
 
     assert out.read_bytes() == b"012"
     assert list(temp.iterdir()) == []
@@ -203,7 +208,7 @@ async def test_hls_segments_are_cleaned_up_when_one_fails(hls):
     make, temp, out = hls
 
     with pytest.raises(ConnectionError):
-        await make(failing={"https://seg/1.mp3"})._download(str(out), lambda _: None)
+        await make(failing={"https://seg/1.mp3"})._download(out, lambda _: None)
 
     assert list(temp.iterdir()) == []
 

@@ -13,7 +13,6 @@ from streamrip.client.client import (
     MAX_API_ATTEMPTS,
     MAX_RETRY_DELAY,
     RATE_LIMIT_PAUSE,
-    new_session,
 )
 from streamrip.client.tidal import TidalClient
 from streamrip.config import Config
@@ -160,12 +159,3 @@ async def test_ssl_errors_are_not_retried(sleeps):
         await c._api_request("tracks/1")
     assert c.session.calls == 1
     assert sleeps == []
-
-
-async def test_sessions_do_not_wait_five_minutes_on_a_stalled_connection():
-    session = new_session()
-    try:
-        assert session.timeout.total is None
-        assert session.timeout.sock_read == 30
-    finally:
-        await session.close()

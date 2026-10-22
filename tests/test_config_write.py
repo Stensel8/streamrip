@@ -9,8 +9,8 @@ from streamrip.config import Config, set_user_defaults
 
 def _config_with_a_new_token(tmp_path):
     path = tmp_path / "config.toml"
-    set_user_defaults(str(path))
-    config = Config(str(path))
+    set_user_defaults(path)
+    config = Config(path)
     config.file.deezer.arl = "new-synthetic-cookie"
     config.file.set_modified()
     return path, config
@@ -32,7 +32,7 @@ def test_the_new_contents_appear_in_one_step(tmp_path, monkeypatch):
     config.save_file()
 
     assert seen == [True]
-    assert Config(str(path)).file.deezer.arl == "new-synthetic-cookie"
+    assert Config(path).file.deezer.arl == "new-synthetic-cookie"
     assert [p.name for p in tmp_path.iterdir()] == ["config.toml"]
 
 
@@ -79,15 +79,15 @@ def test_a_symlinked_config_is_written_through(tmp_path):
     repo = tmp_path / "dotfiles"
     repo.mkdir()
     real = repo / "config.toml"
-    set_user_defaults(str(real))
+    set_user_defaults(real)
     link = tmp_path / "config.toml"
     link.symlink_to(real)
-    config = Config(str(link))
+    config = Config(link)
     config.file.deezer.arl = "new-synthetic-cookie"
     config.file.set_modified()
 
     config.save_file()
 
     assert link.is_symlink()
-    assert Config(str(real)).file.deezer.arl == "new-synthetic-cookie"
+    assert Config(real).file.deezer.arl == "new-synthetic-cookie"
     assert sorted(p.name for p in repo.iterdir()) == ["config.toml"]

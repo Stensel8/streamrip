@@ -22,9 +22,8 @@ import secrets
 import time
 from urllib.parse import urlencode
 
-import aiohttp
+lazy import aiohttp
 
-from ..config import Config
 from ..exceptions import (
     APIError,
     AuthenticationError,
@@ -36,6 +35,7 @@ from .audio_match import MatchTrack
 from .client import Client, new_session
 from .downloadable import YtDlpDownloadable
 from .ytmusic import YouTubeMusicMatcher
+lazy from ..config import Config
 
 logger = logging.getLogger("streamrip")
 
@@ -109,7 +109,9 @@ def _names(artists: list[dict] | None) -> list[dict]:
     return [{"name": a["name"]} for a in artists or [] if a.get("name")]
 
 
-RECORD_TYPES = {"album": "ALBUM", "single": "SINGLE", "compilation": "COMPILE"}
+RECORD_TYPES = frozendict(
+    {"album": "ALBUM", "single": "SINGLE", "compilation": "COMPILE"}
+)
 
 
 def summary_item(media_type: str, item: dict) -> dict:

@@ -1,4 +1,5 @@
 import re
+from pathlib import Path
 
 import pytest
 
@@ -9,8 +10,7 @@ toml_version_re = re.compile(r'version\s*\=\s*"([\d\.]+)"')
 
 @pytest.fixture
 def pyproject_version() -> str:
-    with open("pyproject.toml") as f:
-        m = toml_version_re.search(f.read())
+    m = toml_version_re.search(Path("pyproject.toml").read_text())
     assert m is not None
     return m.group(1)
 

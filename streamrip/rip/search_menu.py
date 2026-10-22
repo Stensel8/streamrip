@@ -5,18 +5,18 @@ import textwrap
 from collections import OrderedDict
 from typing import ClassVar
 
-import aiohttp
 from rich.text import Text
-from textual import on
-from textual.app import App, ComposeResult
-from textual.binding import Binding
-from textual.containers import Horizontal, VerticalScroll
-from textual.widgets import Input, OptionList, Static
-from textual.widgets.option_list import Option
+lazy import aiohttp
+lazy from textual import on
+lazy from textual.app import App, ComposeResult
+lazy from textual.binding import Binding
+lazy from textual.containers import Horizontal, VerticalScroll
+lazy from textual.widgets import Input, OptionList, Static
+lazy from textual.widgets.option_list import Option
 
 from ..client import new_session
-from ..metadata import SearchResults, Summary
 from .cover_preview import CoverPane, decode_cover, image_widget
+lazy from ..metadata import SearchResults, Summary
 
 PREVIEW_SIZE = 0.5
 DETAILS_WIDTH = 60
@@ -237,10 +237,9 @@ class SearchMenu(App[tuple[int, ...] | None]):
         if urls == self._cover_urls:
             await self.query_one(CoverPane).show_image(image)
 
-    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
-        if action == "toggle" and self.query_one(Input).has_focus:
-            return False  # A space belongs to the search query.
-        return True
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool:
+        # A space typed in the search query is not a toggle.
+        return not (action == "toggle" and self.query_one(Input).has_focus)
 
     def action_toggle(self):
         if self.current is None:

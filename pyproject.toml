@@ -1,52 +1,58 @@
 [project]
 name = "streamrip"
-version = "2.5.1"
+version = "2.6.0"
 description = "A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, SoundCloud, and Spotify."
 authors = [{ name = "nathom", email = "nathanthomas707@gmail.com" }]
 maintainers = [{ name = "Stensel8" }]
 license = "GPL-3.0-only"
+license-files = ["LICENSE"]
 readme = "README.md"
-requires-python = ">=3.14,<3.16"
+requires-python = ">=3.15,<3.16"
 keywords = ["hi-res", "free", "music", "download"]
 classifiers = [
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.14",
   "Programming Language :: Python :: 3.15",
 ]
 dependencies = [
-  "mutagen>=1.47,<2",
-  "tomlkit>=0.13,<1",
-  "pathvalidate>=3.2,<4",
+  "mutagen>=1.48,<2",
+  "tomlkit>=0.15,<1",
+  "pathvalidate>=3.3,<4",
   "textual>=8.2.8,<9",
   "textual-image>=0.14.1,<0.15",
   "Pillow>=13,<14",
   "deezer-py>=1.3.7,<2",
-  "pycryptodomex>=3.20,<4",
+  "pycryptodomex>=3.23,<4",
   "m3u8>=6,<7",
-  "aiofiles>=24.1",
-  "aiohttp>=3.11,<4",
+  "aiofiles>=25.1",
+  "aiohttp>=3.14,<4",
   "aiolimiter>=1.2,<2",
-  "rich>=13.9",
-  "click>=8.1,<9",
-  "click-help-colors>=0.9.4,<0.10",
-  "requests>=2.32,<3",
-  # Drives a browser for automatic Qobuz login: an already-installed
-  # Chrome-family browser when there is one (no download), or its own
-  # browser after asking, when there isn't.
-  "playwright>=1.40,<2",
+  "rich>=15",
+  "click>=8.4,<9",
+  "requests>=2.34,<3",
   # Spotify only supplies the metadata: its audio is found on YouTube Music
-  # (ytmusicapi) and downloaded from there (yt-dlp; the "default" extra brings the
-  # script YouTube's streams need, which also needs a JavaScript runtime).
+  # (ytmusicapi) and downloaded from there with yt-dlp. YouTube's streams need
+  # a solver script (yt-dlp-ejs) that yt-dlp only accepts at the exact version
+  # it was released with, and a JavaScript runtime. They are pinned together
+  # and bumped together. yt-dlp's "default" extra is not used: it also pulls in
+  # brotli, which has no wheel for Python 3.15, only to unpack the odd
+  # brotli-compressed page.
   "ytmusicapi>=1.12,<2",
-  "yt-dlp[default]>=2026.7.4,<2027",
+  "yt-dlp==2026.10.21",
+  "yt-dlp-ejs==0.8.0",
+  "websockets>=17",
+  # The CA bundle every connection is checked against, on every system alike.
+  "certifi>=2026.10.19",
 ]
 
 [project.optional-dependencies]
-# Use certifi's CA bundle instead of the system certificates.
-ssl = ["certifi>=2026.10.19"]
+# Drives a browser for the automatic Qobuz and Deezer logins: an already
+# installed Chrome-family browser when there is one (no download), or its own
+# browser after asking, when there isn't. It needs a screen to show the window
+# on, so the container image leaves it out; the installers include it.
+browser = ["playwright>=1.64,<2"]
 # A prebuilt ffmpeg, for when there's no system ffmpeg (or none on PATH).
-ffmpeg = ["imageio-ffmpeg>=0.5"]
+ffmpeg = ["imageio-ffmpeg>=0.6"]
 
 [project.scripts]
 streamrip = "streamrip.rip:rip"
@@ -57,18 +63,16 @@ Repository = "https://github.com/Stensel8/streamrip"
 "Bug Reports" = "https://github.com/Stensel8/streamrip/issues"
 Upstream = "https://github.com/nathom/streamrip"
 
-[tool.poetry]
-packages = [{ include = "streamrip" }]
-
-[tool.poetry.group.dev.dependencies]
-ruff = ">=0.8"
-pytest = ">=8.3"
-pytest-mock = ">=3.14"
-pytest-asyncio = ">=0.25"
-certifi = ">=2026.10.19"
+[dependency-groups]
+dev = [
+  "ruff==0.17.1",
+  "pytest==9.1.1",
+  "pytest-mock==3.17.0",
+  "pytest-asyncio==1.4.0",
+]
 
 [tool.pytest.ini_options]
-minversion = "8.0"
+minversion = "9.1"
 addopts = "-ra -q"
 testpaths = ["tests"]
 log_level = "DEBUG"
@@ -80,18 +84,38 @@ markers = [
 log_cli = true
 
 [build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
-build-backend = "poetry.core.masonry.api"
+requires = ["uv_build>=0.13.5,<0.14"]
+build-backend = "uv_build"
+
+[tool.uv]
+# The uv that wrote uv.lock's format; an older one fails with this, not on the lock.
+required-version = ">=0.13"
+
+[tool.uv.build-backend]
+# The package is streamrip/ at the top of the checkout, not under src/.
+module-root = ""
 
 [tool.ruff]
-target-version = "py314"
+target-version = "py315"
 
 [tool.ruff.lint]
 # Enable Pyflakes (`F`) and a subset of the pycodestyle (`E`)  codes by default.
-select = ["E4", "E7", "E9", "F", "I", "ASYNC", "N", "RUF", "ERA001"]
-# os.path.isfile/getsize in async code are cheap stat calls, not I/O worth a
-# thread hop.
-ignore = ["ASYNC240"]
+select = [
+  "E4", "E7", "E9", "F", "I", "UP", "ASYNC", "N", "RUF", "ERA001", "PTH",
+  "B", "C4", "FURB", "PERF", "PIE", "RET", "SIM",
+  # Imports only annotations need are lazy (PEP 810): with deferred
+  # annotations (PEP 649) they are never loaded at run time.
+  "TC",
+]
+ignore = [
+  # os.path.isfile/getsize in async code are cheap stat calls, not I/O worth a
+  # thread hop.
+  "ASYNC240",
+  # Media.preprocess and postprocess are hooks a subclass may leave out.
+  "B027",
+  # A class in cast() is a plain name, not a string.
+  "TC006",
+]
 
 # Allow fix for all enabled rules (when `--fix`) is provided.
 fixable = ["ALL"]

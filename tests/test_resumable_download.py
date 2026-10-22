@@ -8,10 +8,10 @@ correct file.
 
 import hashlib
 import http.server
-import os
 import threading
 
 import pytest
+import requests
 
 from streamrip.client.downloadable import _content_range, fast_async_download
 from streamrip.exceptions import IncompleteDownloadError
@@ -26,6 +26,11 @@ def _start_server(handler_cls):
     port = srv.server_address[1]
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv, port
+
+
+def _stop_server(srv):
+    srv.shutdown()
+    srv.server_close()  # or its listening socket stays open
 
 
 async def test_resume_with_range_support(tmp_path):
@@ -60,7 +65,7 @@ async def test_resume_with_range_support(tmp_path):
 
     srv, port = _start_server(Handler)
     url = f"http://127.0.0.1:{port}/track.flac"
-    path = str(tmp_path / "track.flac")
+    path = tmp_path / "track.flac"
 
     last_exc = None
     for attempt in range(4):
@@ -71,12 +76,11 @@ async def test_resume_with_range_support(tmp_path):
         except Exception as e:
             last_exc = e
 
-    srv.shutdown()
+    _stop_server(srv)
 
     assert last_exc is None
-    assert os.path.getsize(path) == total
-    with open(path, "rb") as f:
-        assert hashlib.sha256(f.read()).hexdigest() == full_sha
+    assert path.stat().st_size == total
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == full_sha
     # The retry sent a Range header (resume actually happened).
     assert any(r and r.startswith("bytes=") for r in request_ranges)
 
@@ -112,7 +116,7 @@ async def test_resume_falls_back_when_range_ignored(tmp_path):
 
     srv, port = _start_server(Handler)
     url = f"http://127.0.0.1:{port}/x.flac"
-    path = str(tmp_path / "x.flac")
+    path = tmp_path / "x.flac"
 
     for attempt in range(4):
         try:
@@ -121,12 +125,11 @@ async def test_resume_falls_back_when_range_ignored(tmp_path):
         except Exception:
             pass
 
-    srv.shutdown()
+    _stop_server(srv)
 
     # No duplicated bytes despite the partial file already existing.
-    assert os.path.getsize(path) == total
-    with open(path, "rb") as f:
-        assert hashlib.sha256(f.read()).hexdigest() == full_sha
+    assert path.stat().st_size == total
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == full_sha
 
 
 async def test_existing_file_is_overwritten_without_resume(tmp_path):
@@ -152,9 +155,9 @@ async def test_existing_file_is_overwritten_without_resume(tmp_path):
     path = tmp_path / "cover.jpg"
     path.write_bytes(b"old, smaller file")
     await fast_async_download(
-        str(path), f"http://127.0.0.1:{port}/c.jpg", {}, lambda n: None
+        path, f"http://127.0.0.1:{port}/c.jpg", {}, lambda n: None
     )
-    srv.shutdown()
+    _stop_server(srv)
     assert path.read_bytes() == payload
 
 
@@ -178,9 +181,9 @@ async def test_multidict_headers_are_accepted(tmp_path):
     srv, port = _start_server(Handler)
     headers = CIMultiDict({"User-Agent": "streamrip-test"})
     await fast_async_download(
-        str(tmp_path / "f"), f"http://127.0.0.1:{port}/", headers, lambda n: None
+        tmp_path / "f", f"http://127.0.0.1:{port}/", headers, lambda n: None
     )
-    srv.shutdown()
+    _stop_server(srv)
     assert seen["ua"] == "streamrip-test"
 
 
@@ -228,18 +231,18 @@ async def test_resume_at_the_wrong_offset_starts_over(tmp_path):
 
     srv, port = _start_server(_interrupting_handler(payload, wrong_offset))
     url = f"http://127.0.0.1:{port}/track.flac"
-    path = str(tmp_path / "track.flac")
+    path = tmp_path / "track.flac"
 
-    with pytest.raises(Exception):  # the dropped first response
+    with pytest.raises(requests.RequestException):  # the dropped first response
         await fast_async_download(path, url, {}, lambda n: None)
-    assert os.path.exists(path)
+    assert path.exists()
     with pytest.raises(IncompleteDownloadError, match="resume at byte"):
         await fast_async_download(path, url, {}, lambda n: None, resume=True)
-    srv.shutdown()
+    _stop_server(srv)
 
     # Removed, so the next attempt starts from scratch instead of resuming
     # onto the same mismatch.
-    assert not os.path.exists(path)
+    assert not path.exists()
 
 
 async def test_resume_that_does_not_add_up_to_the_total_starts_over(tmp_path):
@@ -256,15 +259,15 @@ async def test_resume_that_does_not_add_up_to_the_total_starts_over(tmp_path):
 
     srv, port = _start_server(_interrupting_handler(payload, wrong_total))
     url = f"http://127.0.0.1:{port}/track.flac"
-    path = str(tmp_path / "track.flac")
+    path = tmp_path / "track.flac"
 
-    with pytest.raises(Exception):
+    with pytest.raises(requests.RequestException):
         await fast_async_download(path, url, {}, lambda n: None)
     with pytest.raises(IncompleteDownloadError, match="announced"):
         await fast_async_download(path, url, {}, lambda n: None, resume=True)
-    srv.shutdown()
+    _stop_server(srv)
 
-    assert not os.path.exists(path)
+    assert not path.exists()
 
 
 @pytest.mark.parametrize(
@@ -299,15 +302,15 @@ async def test_resume_with_unknown_total_that_stops_early_starts_over(tmp_path):
 
     srv, port = _start_server(_interrupting_handler(payload, unknown_total_cut_short))
     url = f"http://127.0.0.1:{port}/track.flac"
-    path = str(tmp_path / "track.flac")
+    path = tmp_path / "track.flac"
 
-    with pytest.raises(Exception):
+    with pytest.raises(requests.RequestException):
         await fast_async_download(path, url, {}, lambda n: None)
     with pytest.raises(IncompleteDownloadError, match="announced"):
         await fast_async_download(path, url, {}, lambda n: None, resume=True)
-    srv.shutdown()
+    _stop_server(srv)
 
-    assert not os.path.exists(path)
+    assert not path.exists()
 
 
 def _answer_416(total):
@@ -330,9 +333,9 @@ async def test_416_accepts_a_partial_file_of_the_announced_length(tmp_path):
     path.write_bytes(b"x" * 1000)
 
     await fast_async_download(
-        str(path), f"http://127.0.0.1:{port}/t", {}, lambda n: None, resume=True
+        path, f"http://127.0.0.1:{port}/t", {}, lambda n: None, resume=True
     )
-    srv.shutdown()
+    _stop_server(srv)
 
     assert path.read_bytes() == b"x" * 1000
 
@@ -346,8 +349,8 @@ async def test_416_for_a_partial_file_of_another_length_starts_over(tmp_path):
 
     with pytest.raises(IncompleteDownloadError, match="416"):
         await fast_async_download(
-            str(path), f"http://127.0.0.1:{port}/t", {}, lambda n: None, resume=True
+            path, f"http://127.0.0.1:{port}/t", {}, lambda n: None, resume=True
         )
-    srv.shutdown()
+    _stop_server(srv)
 
     assert not path.exists()

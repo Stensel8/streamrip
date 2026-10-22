@@ -1,14 +1,13 @@
 import json
+from pathlib import Path
 
 import pytest
 
 from streamrip.metadata import AlbumMetadata, TrackMetadata
 
-with open("tests/qobuz_album_resp.json") as f:
-    qobuz_album_resp = json.load(f)
+qobuz_album_resp = json.loads(Path("tests/qobuz_album_resp.json").read_text())
 
-with open("tests/qobuz_track_resp.json") as f:
-    qobuz_track_resp = json.load(f)
+qobuz_track_resp = json.loads(Path("tests/qobuz_track_resp.json").read_text())
 
 
 def test_album_metadata_qobuz():
@@ -107,7 +106,7 @@ def test_tidal_hires_album_folder_shows_the_real_stream_format():
     folder = m.format_folder_path(
         "{title} [{container}] [{bit_depth}B-{sampling_rate}kHz]"
     )
-    assert folder == "Album [FLAC] [24B-96kHz]"
+    assert folder == Path("Album [FLAC] [24B-96kHz]")
 
 
 def test_tidal_hires_album_keeps_fractional_khz():
@@ -224,7 +223,7 @@ def test_deezer_album_labels_follow_the_stream_quality():
         16,
         44.1,
     )
-    assert flac.format_folder_path(fmt) == "A - Album (2020) [FLAC] [16B-44.1kHz]"
+    assert flac.format_folder_path(fmt) == Path("A - Album (2020) [FLAC] [16B-44.1kHz]")
 
     # An MP3 tier has no bit depth: its folder name drops that bracket instead
     # of saying "[UnknownB-UnknownkHz]".
@@ -234,7 +233,7 @@ def test_deezer_album_labels_follow_the_stream_quality():
         None,
         None,
     )
-    assert mp3.format_folder_path(fmt) == "A - Album (2020) [MP3]"
+    assert mp3.format_folder_path(fmt) == Path("A - Album (2020) [MP3]")
 
 
 def test_soundcloud_track_metadata():
@@ -330,4 +329,4 @@ def test_lossy_folder_names_drop_only_brackets_that_are_all_quality(fmt, folder)
         **{f"cover_{s}": "u" for s in ("xl", "big", "medium", "small")},
     }
 
-    assert AlbumMetadata.from_deezer(resp).format_folder_path(fmt) == folder
+    assert AlbumMetadata.from_deezer(resp).format_folder_path(fmt) == Path(folder)

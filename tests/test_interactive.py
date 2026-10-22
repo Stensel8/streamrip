@@ -3,10 +3,10 @@ import signal
 
 import pytest
 
-from streamrip.rip.interactive import Confirm, Prompt, _native_sigint
+from streamrip.rip.interactive import Confirm, Prompt, _native_signals
 
 
-async def test_native_sigint_restores_asyncios_handler_afterward():
+async def test_native_signals_restores_asyncios_handler_afterward():
     """While blocked on input(), Ctrl-C must raise KeyboardInterrupt, the way
     `coro` (rip/cli.py) hands SIGINT to asyncio for cancelling a running
     download -- but Prompt.ask/Confirm.ask block synchronously, so asyncio's
@@ -21,7 +21,7 @@ async def test_native_sigint_restores_asyncios_handler_afterward():
     loop.add_signal_handler(signal.SIGINT, stop)
     installed = signal.getsignal(signal.SIGINT)
     try:
-        with _native_sigint():
+        with _native_signals():
             assert signal.getsignal(signal.SIGINT) is signal.default_int_handler
 
         assert signal.getsignal(signal.SIGINT) is installed
@@ -29,15 +29,27 @@ async def test_native_sigint_restores_asyncios_handler_afterward():
         loop.remove_signal_handler(signal.SIGINT)
 
 
-async def test_native_sigint_outside_an_event_loop(monkeypatch):
+async def test_native_signals_make_sigterm_end_the_process_at_a_prompt():
+    """`podman stop` while a prompt waits must not sit out its timeout."""
+    loop = asyncio.get_running_loop()
+    loop.add_signal_handler(signal.SIGTERM, lambda: None)
+    installed = signal.getsignal(signal.SIGTERM)
+    try:
+        with _native_signals():
+            handler = signal.getsignal(signal.SIGTERM)
+            with pytest.raises(SystemExit) as ended:
+                handler(signal.SIGTERM, None)
+            assert ended.value.code == 128 + signal.SIGTERM
+
+        assert signal.getsignal(signal.SIGTERM) is installed
+    finally:
+        loop.remove_signal_handler(signal.SIGTERM)
+
+
+def test_native_signals_outside_an_event_loop():
     """Nothing to swap when there's no asyncio loop to hand SIGINT back to."""
     previous = signal.getsignal(signal.SIGINT)
-
-    def fake_get_running_loop():
-        raise RuntimeError("no running event loop")
-
-    monkeypatch.setattr(asyncio, "get_running_loop", fake_get_running_loop)
-    with _native_sigint():
+    with _native_signals():
         assert signal.getsignal(signal.SIGINT) == previous
     assert signal.getsignal(signal.SIGINT) == previous
 

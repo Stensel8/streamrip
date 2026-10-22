@@ -306,6 +306,7 @@ def test_provider_covers_prefer_larger_variant_and_keep_fallbacks(
 
 
 async def test_main_queues_original_choices_only(monkeypatch):
+    from streamrip.rip import main as main_module
     from streamrip.rip.main import Main
 
     main = Main.__new__(Main)
@@ -313,7 +314,9 @@ async def test_main_queues_original_choices_only(monkeypatch):
     main._search = AsyncMock(return_value=summaries())
     main.add_all_by_id = AsyncMock()
     choose = AsyncMock(return_value=(2, 0))
-    monkeypatch.setattr(search_menu, "choose_results", choose)
+    # main's own (lazily imported) name: patching search_menu's would miss it
+    # once main has bound it, and open the real menu.
+    monkeypatch.setattr(main_module, "choose_results", choose)
     await main.search_interactive("qobuz", "album", "test")
     choose.assert_awaited_once_with(
         main._search.return_value,
@@ -364,12 +367,15 @@ async def test_delayed_encoder_failure_falls_back_for_later_covers(monkeypatch):
 
     monkeypatch.setattr(CoverCache, "_fetch", AsyncMock(return_value=png()))
     async with menu(summaries("one", "two"), pixel_widget=FailingImage) as (app, pilot):
-        await pilot.pause(0.2)
+        # Until the cover is shown, not a fixed time: a busy machine is slower.
+        await app.workers.wait_for_complete()
+        await pilot.pause()
         pane = app.query_one(CoverPane)
         assert pane.pixel_widget is None
         assert pane.query_one(BlockCover).size.height > 1
         await pilot.press("down")
-        await pilot.pause(0.2)
+        await app.workers.wait_for_complete()
+        await pilot.pause()
         assert isinstance(pane.children[0], BlockCover)
 
 

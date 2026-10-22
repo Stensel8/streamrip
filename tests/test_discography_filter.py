@@ -1,4 +1,4 @@
-from typing import Optional
+import pytest
 
 from streamrip.config import ArtistFilterConfig
 from streamrip.media import Album, Artist
@@ -10,8 +10,8 @@ from streamrip.metadata import AlbumInfo, AlbumMetadata
 def create_album(
     title: str,
     explicit: bool,
-    sampling_rate: Optional[float],
-    bit_depth: Optional[int],
+    sampling_rate: float | None,
+    bit_depth: int | None,
     id: str,
 ) -> Album:
     info = AlbumInfo(
@@ -56,31 +56,24 @@ def test_different_titles():
     assert "another album" in titles
 
 
-def test_same_title_different_bit_depth():
-    # when bit_depth differs, the album with higher bit_depth wins
-    album1 = create_album("Test Album", False, 44.1, 16, id="a1")
-    album2 = create_album("Test Album (Deluxe)", False, 44.1, 24, id="a2")
+@pytest.mark.parametrize(
+    ("first", "second"),
+    [
+        # a higher bit depth wins
+        (("Test Album", False, 44.1, 16), ("Test Album (Deluxe)", False, 44.1, 24)),
+        # the same bit depth: a higher sampling rate wins
+        (("Test Album", False, 44.1, 24), ("Test Album (Live)", False, 96, 24)),
+        # both tied: the explicit one wins
+        (("Test Album", False, 96, 24), ("Test Album (Edited)", True, 96, 24)),
+        # no quality known (counted as 0): the explicit one wins
+        (("Test Album", False, None, None), ("Test Album", True, None, None)),
+    ],
+)
+def test_the_better_of_two_editions_is_kept(first, second):
+    album1 = create_album(*first, id="a1")
+    album2 = create_album(*second, id="a2")
     result = Artist._filter_repeats([album1, album2])
-    assert len(result) == 1
-    assert result[0] == album2
-
-
-def test_same_title_tie_bit_depth_different_sampling():
-    # same bit_depth; higher sampling_rate should win
-    album1 = create_album("Test Album", False, 44.1, 24, id="a1")
-    album2 = create_album("Test Album (Live)", False, 96, 24, id="a2")
-    result = Artist._filter_repeats([album1, album2])
-    assert len(result) == 1
-    assert result[0] == album2
-
-
-def test_same_title_tie_bit_depth_and_sampling_different_explicit():
-    # if bit_depth and sampling_rate are tied, explicit true is prioritized
-    album1 = create_album("Test Album", False, 96, 24, id="a1")
-    album2 = create_album("Test Album (Edited)", True, 96, 24, id="a2")
-    result = Artist._filter_repeats([album1, album2])
-    assert len(result) == 1
-    assert result[0] == album2
+    assert result == [album2]
 
 
 def test_grouping_normalization():
@@ -106,16 +99,6 @@ def test_multiple_groups():
     winners = {a.meta.info.id for a in result}
     # expected winners: album a2, album b1, album c1
     assert winners == {"a2", "b1", "c1"}
-
-
-def test_missing_values():
-    # albums with missing sampling_rate and bit_depth (treated as 0) should be sorted by explicit flag
-    album1 = create_album("Test Album", False, None, None, id="a1")
-    album2 = create_album("Test Album", True, None, None, id="a2")
-    result = Artist._filter_repeats([album1, album2])
-    assert len(result) == 1
-    # explicit true wins over false when other quality metrics are equal (or missing)
-    assert result[0] == album2
 
 
 def test_title_starting_with_a_bracket():

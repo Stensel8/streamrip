@@ -16,7 +16,7 @@ All network calls are mocked; these run without Qobuz credentials.
 
 from unittest.mock import AsyncMock
 
-from util import arun
+import pytest
 
 from streamrip.client.qobuz import QobuzClient, file_url_signature
 from streamrip.config import Config
@@ -50,7 +50,7 @@ def _login_resp(parameters):
     }
 
 
-def _run_login(monkeypatch, parameters) -> QobuzClient:
+async def _login(monkeypatch, parameters) -> QobuzClient:
     client = _make_client()
     monkeypatch.setattr(
         "streamrip.client.qobuz.new_session", lambda **_: _FakeSession()
@@ -63,87 +63,54 @@ def _run_login(monkeypatch, parameters) -> QobuzClient:
     monkeypatch.setattr(
         client, "_get_valid_secret", AsyncMock(return_value="fakesecret")
     )
-    arun(client.login())
+    await client.login()
     return client
 
 
-def test_subscriber_login_not_download_only(monkeypatch):
-    """Non-empty credential.parameters -> NOT download_only, does not raise."""
-    client = _run_login(monkeypatch, {"lossy_streaming": True, "hires_streaming": True})
-    assert client.download_only is False
+@pytest.mark.parametrize(
+    ("parameters", "download_only"),
+    [
+        # A subscriber keeps streaming: no regression.
+        ({"lossy_streaming": True, "hires_streaming": True}, False),
+        # A free account can't stream but can still download what it bought.
+        ([], True),
+    ],
+)
+async def test_login_flags_an_account_that_cannot_stream_as_download_only(
+    monkeypatch, parameters, download_only
+):
+    """Empty credential.parameters means download only; neither case raises."""
+    client = await _login(monkeypatch, parameters)
+
+    assert client.download_only is download_only
     assert client.logged_in is True
 
 
-def test_free_account_login_sets_download_only(monkeypatch):
-    """Empty credential.parameters -> download_only=True, does NOT raise."""
-    client = _run_login(monkeypatch, [])
-    assert client.download_only is True
-    # Login still succeeds; the account can download purchased content.
-    assert client.logged_in is True
-
-
-def _capture_file_url_params(monkeypatch, download_only: bool) -> dict:
+@pytest.mark.parametrize(
+    ("download_only", "intent"), [(True, "download"), (False, "stream")]
+)
+async def test_the_file_url_request_uses_the_matching_intent(
+    monkeypatch, download_only, intent
+):
+    """The intent is the same in the params and in the signed preimage."""
+    secret = "abc123secret"
+    track_id = "19512574"
+    quality = 3
     client = _make_client()
     client.download_only = download_only
     captured: dict = {}
 
     async def fake_api(epoint, params):
-        captured["epoint"] = epoint
         captured["params"] = params
         return (200, {})
 
     monkeypatch.setattr(client, "_api_request", fake_api)
-    arun(client._request_file_url("19512574", 3, "abc123secret"))
-    return captured
-
-
-def test_request_file_url_download_intent_when_download_only(monkeypatch):
-    """download_only=True -> intent=download in BOTH params and signed preimage."""
-    secret = "abc123secret"
-    track_id = "19512574"
-    quality = 3
-    client = _make_client()
-    client.download_only = True
-    captured: dict = {}
-
-    async def fake_api(epoint, params):
-        captured["params"] = params
-        return (200, {})
-
-    monkeypatch.setattr(client, "_api_request", fake_api)
-    arun(client._request_file_url(track_id, quality, secret))
+    await client._request_file_url(track_id, quality, secret)
 
     params = captured["params"]
-    # 1. params dict uses intent=download
-    assert params["intent"] == "download"
-    # 2. the signed preimage used intent=download too (reconstruct + md5 match)
-    format_id = QobuzClient.get_quality(quality)
+    assert params["intent"] == intent
     assert params["request_sig"] == file_url_signature(
-        format_id, "download", track_id, params["request_ts"], secret
-    )
-
-
-def test_request_file_url_stream_intent_when_subscriber(monkeypatch):
-    """download_only=False -> intent=stream in BOTH params and signed preimage."""
-    secret = "abc123secret"
-    track_id = "19512574"
-    quality = 3
-    client = _make_client()
-    client.download_only = False
-    captured: dict = {}
-
-    async def fake_api(epoint, params):
-        captured["params"] = params
-        return (200, {})
-
-    monkeypatch.setattr(client, "_api_request", fake_api)
-    arun(client._request_file_url(track_id, quality, secret))
-
-    params = captured["params"]
-    assert params["intent"] == "stream"
-    format_id = QobuzClient.get_quality(quality)
-    assert params["request_sig"] == file_url_signature(
-        format_id, "stream", track_id, params["request_ts"], secret
+        QobuzClient.get_quality(quality), intent, track_id, params["request_ts"], secret
     )
 
 
