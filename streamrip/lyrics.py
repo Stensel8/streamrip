@@ -17,6 +17,7 @@ import re
 
 lazy import aiohttp
 
+from . import __version__
 from .client import new_session
 from .client.audio_match import MatchTrack, rank, score, simplify_title
 
@@ -44,10 +45,6 @@ class LyricsUnavailableError(Exception):
 
 def _user_agent() -> str:
     """What LRCLIB asks for: a User-Agent that says what is asking."""
-    # Not imported at the top: the package imports this module while it is still
-    # being set up, before it has a version.
-    from . import __version__
-
     return f"streamrip/{__version__} (https://github.com/Stensel8/streamrip)"
 
 
