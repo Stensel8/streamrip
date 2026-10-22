@@ -65,6 +65,8 @@ class Track(Media):
     # Is None if a cover doesn't exist for the track
     cover_path: Path | None
     db: Database
+    # Asked for the track's lyrics after the download; see _look_up_lyrics.
+    client: Client | None = None
     download_path: Path = Path()
     is_single: bool = False
     # Base name (no extension) `download_path` is built from; kept around to
@@ -201,22 +203,37 @@ class Track(Media):
         self.db.set_downloaded(self.downloadable.source, self.meta.info.id)
 
     async def _look_up_lyrics(self):
-        """Look up on LRCLIB the lyrics of a track its source sent none for.
+        """The track's lyrics from its source or else from LRCLIB.
 
-        Unless the user turned lyrics off. The length of the file just
-        downloaded is used, as synced lyrics only fit one edit of a song. A
+        Unless the user turned lyrics off. Asked for after the download, so the
+        download needs no request for them. LRCLIB is given the length of the
+        file just downloaded, as synced lyrics only fit one edit of a song. A
         missing lyric never costs the track.
         """
         c = self.config.session
-        if self.meta.lyrics or not c.downloads.lyrics or "lyrics" in c.metadata.exclude:
+        if not c.downloads.lyrics or "lyrics" in c.metadata.exclude:
             return
+        # An MP3 holds plain lyrics; the others the synced (LRC) ones.
+        plain = self.download_path.suffix.lower() == ".mp3" or (
+            c.conversion.enabled and c.conversion.codec.upper() == "MP3"
+        )
+        if self.client is not None:
+            try:
+                self.meta.lyrics = await self.client.get_lyrics(
+                    self.meta.info.id, plain
+                )
+            except Exception as e:
+                # Lyrics that should have been there: worth knowing about, never
+                # worth the track (a 401 used to cost a whole album, #959).
+                logger.warning(
+                    f"Could not get the lyrics of '{self.meta.title}' from "
+                    f"{self.client.source}: {type(e).__name__}: {e}"
+                )
+            if self.meta.lyrics:
+                return
         try:
             audio = _open_audio(self.download_path)
             seconds = audio.info.length if audio is not None else None
-            # An MP3 holds plain lyrics; the others the synced (LRC) ones.
-            plain = self.download_path.suffix.lower() == ".mp3" or (
-                c.conversion.enabled and c.conversion.codec.upper() == "MP3"
-            )
             wanted = MatchTrack(
                 self.meta.title,
                 self.meta.artists or [self.meta.artist],
@@ -422,10 +439,19 @@ class PendingTrack(Pending):
     db: Database
     # cover_path is None <==> Artwork for this track doesn't exist in API
     cover_path: Path | None
+    meta: TrackMetadata | None = None
+
+    async def look_up(self) -> TrackMetadata | None:
+        """This track's metadata, fetched once; None if it's not to download."""
+        if self.meta is None:
+            self.meta = await fetch_track_meta(
+                self.client, self.db, self.id, self.album
+            )
+        return self.meta
 
     async def resolve(self) -> Track | None:
         """Fetch this track's metadata and download info, resolving into a Track."""
-        meta = await fetch_track_meta(self.client, self.db, self.id, self.album)
+        meta = await self.look_up()
         if meta is None:
             return None
         downloadable = await fetch_downloadable(
@@ -439,7 +465,15 @@ class PendingTrack(Pending):
             and self.album.disctotal > 1
         ):
             folder = folder / f"Disc {meta.discnumber}"
-        return Track(meta, downloadable, self.config, folder, self.cover_path, self.db)
+        return Track(
+            meta,
+            downloadable,
+            self.config,
+            folder,
+            self.cover_path,
+            self.db,
+            self.client,
+        )
 
 
 @dataclass(slots=True)
@@ -483,5 +517,12 @@ class PendingSingle(Pending):
             folder.mkdir(parents=True, exist_ok=True)
 
         return Track(
-            meta, downloadable, self.config, folder, cover_path, self.db, is_single=True
+            meta,
+            downloadable,
+            self.config,
+            folder,
+            cover_path,
+            self.db,
+            self.client,
+            is_single=True,
         )

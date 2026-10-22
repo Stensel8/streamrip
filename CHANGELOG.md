@@ -72,6 +72,21 @@ versions, older configs and older databases is gone. Read *Upgrading* first.
   update check off). The package, the CLI and the clients load aiohttp, Pillow,
   Textual and the other heavy libraries only when a command needs them
   (PEP 810), and `--help` and `--version` no longer load asyncio.
+- Tidal albums and playlists take a third fewer requests: a track's metadata
+  comes from the album's or playlist's track list instead of a request of its
+  own. At the default of 35 requests a minute that is about 17 tracks a minute
+  instead of 12.
+- Downloads start sooner with `prefer_explicit`, on Tidal right away. Choosing
+  between a clean and an explicit copy only needs the tracks' metadata, so only
+  that is looked up for every track first (on Tidal without a request), and each
+  track's stream is fetched as it downloads. Before, every track was fully
+  resolved first, which on Tidal looked like minutes of nothing happening. An
+  11-track Tidal album takes about 37 seconds of requests instead of 56.
+- A row counts the tracks being looked up, with the time left.
+- Lyrics are fetched after a track has downloaded, not before.
+- Deezer's lyrics are looked up on LRCLIB, like Qobuz's. Deezer's own lyrics
+  request answered "no data" for nearly every track, and the notice about that
+  on first use is gone.
 
 ### Python
 

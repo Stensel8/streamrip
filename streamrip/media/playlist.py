@@ -60,10 +60,17 @@ class PendingPlaylistTrack(Pending):
     db: Database
     # Number of tracks in the playlist, for the track total when renumbering.
     total: int = 0
+    meta: TrackMetadata | None = None
+
+    async def look_up(self) -> TrackMetadata | None:
+        """This track's metadata, fetched once; None if it's not to download."""
+        if self.meta is None:
+            self.meta = await fetch_track_meta(self.client, self.db, self.id)
+        return self.meta
 
     async def resolve(self) -> Track | None:
         """Fetch metadata and cover art, and resolve into a downloadable Track."""
-        meta = await fetch_track_meta(self.client, self.db, self.id)
+        meta = await self.look_up()
         if meta is None:
             return None
         downloadable = await fetch_downloadable(
@@ -107,7 +114,15 @@ class PendingPlaylistTrack(Pending):
             c.artwork,
             for_playlist=True,
         )
-        return Track(meta, downloadable, self.config, self.folder, cover_path, self.db)
+        return Track(
+            meta,
+            downloadable,
+            self.config,
+            self.folder,
+            cover_path,
+            self.db,
+            self.client,
+        )
 
     async def _served_track_meta(self, served_id: str) -> TrackMetadata | None:
         """The metadata of the track actually served, or None to keep the original.

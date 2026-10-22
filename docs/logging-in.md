@@ -47,9 +47,8 @@ defaults to pasting the address.
   2. **By hand**: copy the `arl` cookie from your browser's DevTools
      ([how to find it](https://github.com/nathom/streamrip/wiki/Finding-Your-Deezer-ARL-Cookie)).
 
-  The quality follows your subscription. **Deezer does not have lyrics for every
-  track**, so streamrip looks the others up on LRCLIB (see [Lyrics](lyrics.md)) and
-  says so when you use Deezer; `lyrics = false` in `[downloads]` turns that off.
+  The quality follows your subscription. Lyrics come from LRCLIB, as for Qobuz
+  (see [Lyrics](lyrics.md)).
 - **SoundCloud** needs nothing.
 - **Spotify** needs an app of your own and a login in your browser, once. See
   [Spotify](spotify.md).

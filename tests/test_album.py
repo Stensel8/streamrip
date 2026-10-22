@@ -33,6 +33,9 @@ async def test_resolves_only_a_few_tracks_at_once():
     concurrent = peak = 0
 
     class Pending:
+        async def look_up(self):
+            return MagicMock()
+
         async def resolve(self):
             nonlocal concurrent, peak
             concurrent += 1
@@ -59,6 +62,9 @@ async def test_a_downloading_track_does_not_hold_a_resolve_slot():
             await all_resolved.wait()
 
     class Pending:
+        async def look_up(self):
+            return MagicMock()
+
         async def resolve(self):
             nonlocal resolved
             await asyncio.sleep(0)
