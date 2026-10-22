@@ -54,6 +54,17 @@ def test_overall_add_zero_creates_no_bar(manager):
     assert manager._overall_task is None
 
 
+def test_resolve_row_counts_tracks_and_goes_once_all_are_resolved(manager):
+    """Looking up an album's tracks shows on screen, and stops showing once
+    the last one is looked up, while they download."""
+    resolved = progress.get_resolve_callback(True, 3)
+    resolved.update(2)
+    task = manager.resolve_progress.tasks[0]
+    assert (task.completed, task.total, task.visible) == (2, 3, True)
+    resolved.update(1)
+    assert not task.visible
+
+
 def test_overall_disabled_adds_nothing(manager):
     progress.overall_add(5, enabled=False)
     progress.overall_advance(enabled=False)

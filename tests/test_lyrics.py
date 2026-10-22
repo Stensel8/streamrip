@@ -6,7 +6,7 @@ The lyrics in these tests are made-up placeholders.
 import asyncio
 import logging
 import socket
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import mutagen
 import pytest
@@ -393,14 +393,34 @@ async def test_plain_lyrics_are_asked_for_where_the_format_takes_plain(
     assert asked.await_args.args[2] is plain
 
 
-async def test_the_lyrics_of_the_source_are_left_alone(tmp_path, asked):
-    track = _make_track(tmp_path, "m4a")
-    track.meta.lyrics = "the lyrics the source sent"
+def _from_tidal(track, **get_lyrics):
+    track.client = MagicMock(source="tidal")
+    track.client.get_lyrics = AsyncMock(**get_lyrics)
+    return track
+
+
+async def test_the_lyrics_of_the_source_come_first(tmp_path, asked):
+    track = _from_tidal(_make_track(tmp_path, "m4a"), return_value="from tidal")
 
     await track.rip()
 
+    track.client.get_lyrics.assert_awaited_once_with("123", False)
     asked.assert_not_awaited()
-    assert lyrics_in(tmp_path / "Song.m4a") == "the lyrics the source sent"
+    assert lyrics_in(tmp_path / "Song.m4a") == "from tidal"
+
+
+@pytest.mark.parametrize(
+    "answer", ["", RuntimeError("401")], ids=["none", "request failed"]
+)
+async def test_lyrics_the_source_has_not_are_looked_up(tmp_path, asked, answer):
+    """A source failing its lyrics costs the track nothing: a 401 from Tidal's
+    used to fail the whole album (#959)."""
+    track = _from_tidal(_make_track(tmp_path, "m4a"), side_effect=[answer])
+
+    await track.rip()
+
+    asked.assert_awaited_once()
+    assert lyrics_in(tmp_path / "Song.m4a") == SYNCED
 
 
 @pytest.mark.parametrize(

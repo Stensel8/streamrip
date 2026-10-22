@@ -2,12 +2,11 @@
 
 # Lyrics
 
-Tidal and Deezer send lyrics for most tracks, and streamrip embeds them
-(time-synced ones as LRC text, plain ones in an MP3). Qobuz, SoundCloud and
-Spotify send none, so for a track whose source sent no lyrics streamrip looks them
-up on
+Tidal sends lyrics for most tracks, and streamrip embeds them (time-synced ones
+as LRC text, plain ones in an MP3). Qobuz, Deezer, SoundCloud and Spotify send
+none, so for a track whose source has no lyrics streamrip looks them up on
 [LRCLIB](https://lrclib.net), a free, open database of lyrics that its users add.
-It needs no account or key.
+It needs no account or key. Lyrics are fetched once a track has downloaded.
 
 - It **tells LRCLIB the artist, title and length** of every track that has no
   lyrics. `lyrics = false` in `[downloads]` keeps that from happening.

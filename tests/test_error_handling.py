@@ -18,10 +18,12 @@ class TestErrorHandling:
         mock_client = MagicMock()
 
         mock_track_success = MagicMock()
+        mock_track_success.look_up = AsyncMock(return_value=MagicMock())
         mock_track_success.resolve = AsyncMock(return_value=MagicMock())
         mock_track_success.resolve.return_value.rip = AsyncMock()
 
         mock_track_failure = MagicMock()
+        mock_track_failure.look_up = AsyncMock(return_value=MagicMock())
         mock_track_failure.resolve = AsyncMock(
             side_effect=json.JSONDecodeError("Expecting value", "", 0)
         )
@@ -52,11 +54,13 @@ class TestErrorHandling:
 
         # Create a list of mock tracks - one will succeed, one will fail
         mock_track_success = MagicMock()
+        mock_track_success.look_up = AsyncMock(return_value=MagicMock())
         mock_track_success.resolve = AsyncMock(return_value=MagicMock())
         mock_track_success.resolve.return_value.rip = AsyncMock()
 
         # This track will raise a JSONDecodeError when resolved
         mock_track_failure = MagicMock()
+        mock_track_failure.look_up = AsyncMock(return_value=MagicMock())
         mock_track_failure.resolve = AsyncMock(
             side_effect=json.JSONDecodeError("Expecting value", "", 0)
         )

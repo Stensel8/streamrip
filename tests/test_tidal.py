@@ -286,7 +286,9 @@ def _album_replies(tags: list[str]):
     album = {"id": 1, "mediaMetadata": {"tags": tags}}
     items = {
         "totalNumberOfItems": 2,
-        "items": [{"type": "track", "item": {"id": i}} for i in (11, 12)],
+        "items": [
+            {"type": "track", "item": {"id": i, "album": {"id": 1}}} for i in (11, 12)
+        ],
     }
 
     async def reply(path, *_, **__):
@@ -642,19 +644,44 @@ async def test_a_single_whose_album_cannot_be_fetched_still_downloads():
     assert album.albumartist == "Megan Thee Stallion, Spiritbox"
 
 
-async def test_tracks_of_a_downloaded_album_need_no_album_request():
-    """Tracks of an album downloaded as a whole need no album request of their own."""
+async def test_tracks_of_a_downloaded_album_need_no_request_of_their_own():
+    """Tracks of an album downloaded as a whole come with its listing and its
+    album: on Tidal's rate limit every request costs time."""
     c = _client()
     c._api_request = _album_replies(["LOSSLESS"])
     await c.get_metadata("1", "album")
-    reply, asked = _track_replies(album_id=1)
-    c._api_request = AsyncMock(side_effect=reply)
+    c._api_request = AsyncMock(side_effect=AssertionError("no request"))
 
     resp = await c.get_metadata("11", "track")
 
-    assert asked == []
     assert resp["album"]["id"] == 1
     assert "tracks" not in resp["album"]
+
+
+@pytest.mark.parametrize(
+    ("resp", "plain", "expected"),
+    [
+        ({"lyrics": "la", "subtitles": "[00:01.00] la"}, False, "[00:01.00] la"),
+        ({"lyrics": "la", "subtitles": "[00:01.00] la"}, True, "la"),
+        ({"lyrics": "la"}, False, "la"),
+    ],
+    ids=["synced", "plain for an mp3", "plain where there are no synced"],
+)
+async def test_lyrics_are_synced_where_tidal_has_them(resp, plain, expected):
+    c = _client()
+    c._api_request = AsyncMock(return_value=resp)
+
+    assert await c.get_lyrics("1", plain) == expected
+    c._api_request.assert_awaited_once_with(
+        "tracks/1/lyrics", base="https://tidal.com/v1"
+    )
+
+
+async def test_a_track_without_lyrics_has_none_and_that_is_no_error():
+    c = _client()
+    c._api_request = AsyncMock(side_effect=ItemNotFoundError("404"))
+
+    assert await c.get_lyrics("1", False) == ""
 
 
 def _slow(reply):

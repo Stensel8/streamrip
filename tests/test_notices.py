@@ -10,7 +10,7 @@ from streamrip.rip.notices import MUSIC_SYNC, notice_for
 
 
 def test_spotify_says_it_is_lossy_and_points_to_music_sync():
-    notice = notice_for("spotify", Config.defaults())
+    notice = notice_for("spotify")
 
     assert "lossy" in notice
     assert "YouTube Music" in notice
@@ -19,18 +19,9 @@ def test_spotify_says_it_is_lossy_and_points_to_music_sync():
     assert "streamrip csv" in notice  # what to do with what Music-Sync exports
 
 
-def test_deezer_says_its_lyrics_are_looked_up_unless_lyrics_are_off():
-    config = Config.defaults()
-
-    assert "lrclib.net" in notice_for("deezer", config)
-
-    config.session.downloads.lyrics = False
-    assert notice_for("deezer", config) is None
-
-
-@pytest.mark.parametrize("source", ["qobuz", "tidal", "soundcloud"])
+@pytest.mark.parametrize("source", ["qobuz", "tidal", "deezer", "soundcloud"])
 def test_other_sources_have_nothing_to_say(source):
-    assert notice_for(source, Config.defaults()) is None
+    assert notice_for(source) is None
 
 
 async def test_a_source_is_announced_once_however_often_it_is_used():
@@ -46,6 +37,5 @@ async def test_a_source_is_announced_once_however_often_it_is_used():
             await main.get_logged_in_client(source)
 
     printed = [call.args[0] for call in console.print.call_args_list]
-    assert len(printed) == 2
+    assert len(printed) == 1
     assert "Spotify" in printed[0]
-    assert "Deezer" in printed[1]
