@@ -117,7 +117,7 @@ versions, older configs and older databases is gone. Read *Upgrading* first.
 
 - The README is shorter: the three ways to run streamrip (Python, Podman or
   Docker, Nix) with their syntax, and one example per command, for Linkin Park.
-  Spotify, logging in, lyrics, CSV lists and Nix moved to `docs/`.
+  Spotify, logging in, lyrics, CSV lists, the container and Nix moved to `docs/`.
 - The tests are plain pytest with `async def`, `parametrize` and `tmp_path`,
   repeated cases are merged, and the tests that needed a Qobuz or Deezer account
   are gone. They no longer write into the real `~/.config/streamrip`.

@@ -10,204 +10,82 @@ A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, SoundCl
 
 > [!NOTE]
 > A fork of [nathom/streamrip](https://github.com/nathom/streamrip) that I keep
-> working and up to date (see [CHANGELOG.md](CHANGELOG.md)). It needs the latest
-> stable Python. Streaming services change their APIs all the time, so anything
-> that talks to them can break without notice.
+> working and up to date ([changes](CHANGELOG.md)). It needs the latest stable
+> Python, and streaming services change their APIs without notice, so things can
+> break.
 
 ![downloading an album](demo/download_album.svg)
 
-- Tracks, albums, playlists, discographies and labels
-- Spotify links, with the audio found on YouTube Music ([details](docs/spotify.md))
-- CSV lists of tracks ([details](docs/csv-lists.md)) and last.fm playlists
+- Tracks, albums, playlists, discographies and labels, Spotify links
+  ([details](docs/spotify.md)), CSV lists ([details](docs/csv-lists.md)) and
+  last.fm playlists
 - Interactive search on every source
-- Tagged, with cover art and lyrics, and converted to FLAC, ALAC, AIFF, MP3, AAC, OGG or Opus if you like
+- Tags, cover art and lyrics, and if you like conversion to FLAC, ALAC, AIFF, MP3,
+  AAC, OGG or Opus
 - Remembers what it downloaded; `streamrip repair` retries what failed
 
-## Run it
-
-Pick one. The streamrip commands are the same in all three (see [Use it](#use-it)).
+## Install
 
 ### With Python
 
-Download **Source code (zip)** from the [latest release](https://github.com/Stensel8/streamrip/releases/latest)
-and extract it. (Not the `.tar.gz` under Assets: it lacks the installer. For the
-unstable development version, take the [`dev` zip](https://github.com/Stensel8/streamrip/archive/refs/heads/dev.zip).)
-In the extracted folder:
+Download **Source code (zip)** from the [latest release](https://github.com/Stensel8/streamrip/releases/latest),
+extract it and run the installer in that folder:
 
 ```bash
 ./install.sh        # Linux, macOS
 .\install.ps1       # Windows (PowerShell)
 ```
 
-It fetches Python 3.15 with [uv](https://docs.astral.sh/uv/) if you don't have
-it, and installs streamrip into a `.venv` next to the installer. Then:
-
-```bash
-.venv/bin/streamrip url <link>            # Linux, macOS
-.venv\Scripts\streamrip.exe url <link>    # Windows
-```
-
-Or activate the venv once (`source .venv/bin/activate`, fish: `activate.fish`;
-Windows: `.venv\Scripts\Activate.ps1`) and type `streamrip url <link>`.
-
-Already have Python 3.15? `pip install ".[browser]"` in a venv of your own, or
-`pipx install ".[browser]"` / `uv tool install ".[browser]"`. The `browser` part
-adds the isolated browser window of the Qobuz and Deezer logins, which needs a
-screen: leave it out on a server.
+It installs streamrip into a `.venv` there with [uv](https://docs.astral.sh/uv/),
+and Python 3.15 if you don't have it. Run `.venv/bin/streamrip`
+(Windows: `.venv\Scripts\streamrip.exe`), or activate the venv and type
+`streamrip`. It also needs [ffmpeg](https://ffmpeg.org/download.html):
+`apt install ffmpeg`, `brew install ffmpeg` or `winget install ffmpeg`.
 
 > [!IMPORTANT]
 > `pip install streamrip`, the AUR package and `brew install streamrip` install
 > **upstream** streamrip, which doesn't work on Python 3.15.
 
-streamrip also needs [ffmpeg](https://ffmpeg.org/download.html) (Tidal hi-res,
-SoundCloud, conversion): `apt install ffmpeg`, `brew install ffmpeg` or
-`winget install ffmpeg`, or `pip install imageio-ffmpeg` into streamrip's
-environment (`pipx inject streamrip imageio-ffmpeg` for pipx).
-
 ### With Podman or Docker
 
-The image has everything built in: ffmpeg, and the JavaScript runtime Spotify
-needs. It runs on amd64 and arm64. Tags: `latest` and every version, like `2.6.0`.
-It is scanned for known vulnerabilities on every change and every week (see the badge).
-It does not check for updates, as a container is updated by pulling the newest
-image: `podman pull ghcr.io/stensel8/streamrip`.
+Everything built in, ffmpeg too, for amd64 and arm64:
 
 ```bash
-mkdir -p streamrip      # the folder must exist
+mkdir -p streamrip
 podman run --rm -it -v ./streamrip:/data ghcr.io/stensel8/streamrip url <link>
 ```
 
-Everything after the image name is a streamrip command, exactly as above.
-Config, databases and downloads all live in `/data`, hence the folder; `-it` is
-for the prompts, progress bars and search menu.
-
-- **Docker:** the same, with `--user "$(id -u):$(id -g)"` after `run`, so the
-  files are yours.
-- **SELinux** (Fedora, RHEL): add `:Z` to the volume: `-v ./streamrip:/data:Z`.
-
-To type it like the Python version:
-
-```bash
-alias streamrip='podman run --rm -it -v "$HOME/streamrip:/data" ghcr.io/stensel8/streamrip'
-```
-
-Build the image yourself with `podman build -t streamrip .` (it reads the
-`Containerfile`; Docker: `docker build -f Containerfile -t streamrip .`).
-
-A container has no screen, and your browser can't reach it: Qobuz and Deezer
-ask for the login by hand, and for Spotify you paste the address
-([Logging in](docs/logging-in.md)).
+Config, databases and downloads end up in `./streamrip`. Docker, SELinux and
+more: [docs/container.md](docs/container.md).
 
 ### With Nix
 
-On x86_64 Linux, from this checkout:
-
 ```bash
-nix run "path:$PWD" -- url <link>
+nix run "path:$PWD" -- url <link>      # x86_64 Linux, from this checkout
 ```
 
 More in [docs/nix.md](docs/nix.md).
 
-## Use it
-
-Every example downloads Linkin Park from Tidal. Links from Qobuz, Deezer,
-SoundCloud and Spotify work the same way.
-
-An artist, with their whole discography (`[artist_filters]` in the config says
-what to leave out):
+## Use
 
 ```bash
-streamrip url https://tidal.com/browse/artist/14123
-```
-
-An album:
-
-```bash
-streamrip url https://tidal.com/browse/album/234793
-```
-
-A track:
-
-```bash
-streamrip url https://tidal.com/browse/track/1225577
-```
-
-Several links at once:
-
-```bash
-streamrip url https://tidal.com/browse/album/1225569 https://tidal.com/browse/album/234793 https://tidal.com/browse/track/1225577
-```
-
-The links in a file, one per line:
-
-```bash
-streamrip file urls.txt
-```
-
-An item by its ID, without a link (source, type, id):
-
-```bash
-streamrip id tidal album 234793
-```
-
-Search, and pick from the results:
-
-```bash
-streamrip search tidal album 'linkin park meteora'
-```
-
-Search, and take the first result without asking:
-
-```bash
-streamrip search --first tidal track 'linkin park in the end'
-```
-
-A CSV list of tracks ([more](docs/csv-lists.md)):
-
-```bash
-streamrip csv linkin-park.csv
-```
-
-```csv
-title,artists
-In the End,Linkin Park
-Numb,Linkin Park
-```
-
-A last.fm playlist:
-
-```bash
+streamrip url https://tidal.com/browse/album/234793           # an album, artist, playlist or track
+streamrip url <link> <link>                                     # several at once
+streamrip file urls.txt                                         # the links in a file, one per line
+streamrip id tidal album 234793                                 # by source, type and ID
+streamrip search tidal album 'linkin park meteora'              # search, and pick
+streamrip search --first tidal track 'linkin park in the end'   # search, and take the first
+streamrip csv linkin-park.csv                                   # a CSV list of tracks
 streamrip lastfm https://www.last.fm/user/nathan3895/playlists/12126195
+streamrip --codec mp3 url <link>                                # convert while downloading
+streamrip --quality 2 url <link>                                # at most CD quality
+streamrip repair                                                # retry what failed
+streamrip config open                                           # every option, explained
 ```
 
-Convert while downloading (FLAC, ALAC, AIFF, MP3, AAC, OGG or OPUS):
-
-```bash
-streamrip --codec mp3 url https://tidal.com/browse/album/234793
-```
-
-Stop at a quality (see below):
-
-```bash
-streamrip --quality 2 url https://tidal.com/browse/album/234793
-```
-
-Retry what failed:
-
-```bash
-streamrip repair
-```
-
-Every option, explained, in your config:
-
-```bash
-streamrip config open
-```
-
-Every command has `--help`.
-
-By default every source is asked for its highest quality, stepping down one
-level when a track doesn't have it. `--quality` sets the highest to ask for:
+Links from Qobuz, Deezer, SoundCloud and Spotify work the same way, and every
+command has `--help`. Each source is asked for its highest quality, stepping down
+when a track doesn't have it; `--quality` sets the highest to ask for:
 
 | Quality | Audio                                        | Sources              |
 | ------- | -------------------------------------------- | -------------------- |
@@ -218,10 +96,6 @@ level when a track doesn't have it. `--quality` sets the highest to ask for:
 | 4       | 24 bit, ≤ 192 kHz                            | Qobuz                |
 
 ![streamrip interactive search](demo/playlist_search.svg)
-
-Search shows each result's cover next to its details: as an image in terminals
-with SIXEL or Kitty graphics (Konsole, foot, Windows Terminal), as colored
-blocks elsewhere.
 
 ## Logging in
 
@@ -243,17 +117,15 @@ Details per source: [Logging in](docs/logging-in.md), [Spotify](docs/spotify.md)
 - [Spotify](docs/spotify.md): the app you need, what works, and why it isn't lossless
 - [CSV lists](docs/csv-lists.md): download a list exported from Music-Sync, Exportify or a spreadsheet
 - [Lyrics](docs/lyrics.md): where they come from, and how to turn the lookup off
+- [Podman and Docker](docs/container.md): the image, its volume, and building it yourself
 - [Nix](docs/nix.md): the flake and its development shell
 
 ## Contributing
 
-Report problems in the [issue tracker](https://github.com/Stensel8/streamrip/issues)
-with the Bug Report or Feature Request template. For code, [uv](https://docs.astral.sh/uv/)
-sets things up with `uv sync --all-extras`; `uv run pytest` and
+Report problems in the [issue tracker](https://github.com/Stensel8/streamrip/issues).
+For code, `uv sync --all-extras` sets things up, and `uv run pytest` and
 `uv run ruff check . && uv run ruff format .` should pass before you open a pull
-request to `dev`. A few tests drive a real
-Chrome-family browser; they are skipped when there is none, and CI fails if its
-runner has none. `pytest -m "not real_browser"` leaves them out.
+request to `dev`. Tests that drive a real browser are skipped when there is none.
 
 ## Acknowledgements
 
