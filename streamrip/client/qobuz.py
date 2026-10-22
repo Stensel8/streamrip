@@ -5,9 +5,7 @@ import logging
 import re
 import time
 from collections import OrderedDict
-from typing import Optional
 
-from ..config import Config
 from ..exceptions import (
     APIError,
     AuthenticationError,
@@ -19,6 +17,7 @@ from ..exceptions import (
 )
 from .client import RETRY_STATUSES, Client, RequestClient, new_session
 from .downloadable import BasicDownloadable, Downloadable
+lazy from ..config import Config
 
 logger = logging.getLogger("streamrip")
 
@@ -131,7 +130,7 @@ class QobuzClient(Client):
         self.rate_limiter = self.get_rate_limiter(
             config.session.downloads.requests_per_minute,
         )
-        self.secret: Optional[str] = None
+        self.secret: str | None = None
         # True for a free account (no streaming subscription) that can still
         # download content it has *purchased* from the Qobuz download store.
         # When set, file-url requests use intent=download instead of stream.
@@ -204,9 +203,9 @@ class QobuzClient(Client):
                 "Invalid Qobuz user id or user_auth_token. The token may have "
                 "expired; log in again to get a fresh one."
             )
-        elif status == 400:
+        if status == 400:
             raise InvalidAppIdError(f"Qobuz rejected app id {c.app_id}")
-        elif status != 200:
+        if status != 200:
             raise APIError(
                 f"Qobuz login failed (HTTP {status}): "
                 f"{resp.get('message') or 'no message'}"
@@ -248,7 +247,6 @@ class QobuzClient(Client):
             # tracks may come back empty (July 2026 API change); track_ids is
             # the replacement. Request both so either response shape works.
             "playlist": "tracks,track_ids",
-            "label": "albums",
             # Qobuz's album/get stopped inlining "tracks" (July 2026); request
             # the id list instead. Consumed by get_album_track_ids().
             "album": "track_ids",
@@ -445,19 +443,13 @@ class QobuzClient(Client):
         # Qobuz may cap the requested page size. Keep that validated size,
         # but never use response offsets to control progress or allocate a
         # batch of requests from response metadata.
-        pages = [page]
-        for offset in range(page_size, total, page_size):
-            pages.append(
-                await self._request_ok(
-                    epoint,
-                    {
-                        **params,
-                        "offset": offset,
-                        "limit": min(page_size, total - offset),
-                    },
-                )
+        return [page] + [
+            await self._request_ok(
+                epoint,
+                {**params, "offset": offset, "limit": min(page_size, total - offset)},
             )
-        return pages
+            for offset in range(page_size, total, page_size)
+        ]
 
     async def _get_app_id_and_secrets(self) -> tuple[str, list[str]]:
         async with QobuzSpoofer(
@@ -465,11 +457,11 @@ class QobuzClient(Client):
         ) as spoofer:
             return await spoofer.get_app_id_and_secrets()
 
-    async def _test_secret(self, secret: str) -> Optional[str]:
+    async def _test_secret(self, secret: str) -> str | None:
         status, _ = await self._request_file_url("19512574", 4, secret)
         if status == 400:
             return None
-        if status == 200 or status == 401:
+        if status in {200, 401}:
             return secret
         logger.warning("Got status %d when testing secret", status)
         return None

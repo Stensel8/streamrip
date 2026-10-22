@@ -15,55 +15,49 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.14"
-      - run: python -m pip install ruff
-      - run: ruff check .
-      - run: ruff format --check .
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      # The ruff of uv.lock, without installing streamrip.
+      - run: uv run --locked --only-group dev ruff check .
+      - run: uv run --locked --only-group dev ruff format --check .
 
   test:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.14", "3.15"]
+        python-version: ["3.15"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: ${{ matrix.python-version }}
-          allow-prereleases: true
-      - name: Install Poetry
-        run: python -m pip install "poetry>=2.1,<3"
-      - name: Check that poetry.lock matches pyproject.toml
-        run: poetry check --lock
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      # --locked fails when uv.lock no longer matches pyproject.toml.
       - name: Install dependencies
-        run: poetry install --no-interaction --all-extras
+        run: uv sync --locked --all-extras --python ${{ matrix.python-version }}
       - name: Run tests
-        run: poetry run pytest
+        run: uv run --locked pytest
 
-  # Installing the way users do: plain pip, on every platform.
+  # Installing the way users do: with the installer, on every platform.
   install:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: ["3.14", "3.15"]
+        python-version: ["3.15"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: ${{ matrix.python-version }}
-          allow-prereleases: true
-      - run: python -m pip install .
-      - run: streamrip --version
-      - run: streamrip --help
+      # The installer fetches uv and Python 3.15 itself, and fails when
+      # streamrip --version does.
+      - if: runner.os != 'Windows'
+        run: ./install.sh && .venv/bin/streamrip --help
+      - if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./install.ps1
+      - if: runner.os == 'Windows'
+        run: .venv\Scripts\streamrip.exe --help
 
   nix:
     name: Nix flake check
@@ -77,5 +71,10 @@ jobs:
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes
+      - uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.nix', 'flake.lock', 'uv.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+          gc-max-store-size-linux: 6G
       - name: Check Nix flake
         run: nix flake check --print-build-logs

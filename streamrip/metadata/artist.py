@@ -1,8 +1,6 @@
-from __future__ import annotations
-
 import logging
-from collections.abc import Callable, Hashable
 from dataclasses import dataclass
+lazy from collections.abc import Callable, Hashable
 
 from .util import tidal_quality_id
 

@@ -3,10 +3,11 @@
 # explicit .venv in the current directory -- never system Python, and not
 # a global shim either.
 #
-# Uses uv (https://docs.astral.sh/uv/) to fetch Python 3.14 if it isn't
-# already installed, then creates .venv and installs streamrip into it.
-# Safe to re-run: it reuses the existing .venv and upgrades streamrip from
-# this checkout.
+# Uses uv (https://docs.astral.sh/uv/), which fetches Python 3.15 if it isn't
+# installed yet and installs streamrip, with ffmpeg, at the versions of
+# uv.lock. Safe to
+# re-run: it updates .venv to this checkout (and remakes it if it isn't on
+# Python 3.15).
 set -euo pipefail
 
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
@@ -20,13 +21,8 @@ if ! command -v uv >/dev/null 2>&1; then
     export PATH="$HOME/.local/bin:$PATH"
 fi
 
-if [ ! -d .venv ]; then
-    echo "Creating .venv (Python 3.14)..."
-    uv venv --python 3.14 "$venv_path"
-fi
-
 echo "Installing streamrip into .venv..."
-uv pip install --python "$venv_path" --upgrade "$script_dir"
+uv sync --locked --no-dev --no-editable --extra browser --extra ffmpeg
 
 echo
 if "$streamrip_path" --version >/dev/null 2>&1; then

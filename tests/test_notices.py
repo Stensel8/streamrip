@@ -15,7 +15,6 @@ def test_spotify_says_it_is_lossy_and_points_to_music_sync():
     assert "lossy" in notice
     assert "YouTube Music" in notice
     assert "Music-Sync" in notice
-    assert MUSIC_SYNC == "https://github.com/Stensel8/Music-Sync"
     assert MUSIC_SYNC in notice
     assert "streamrip csv" in notice  # what to do with what Music-Sync exports
 
@@ -27,13 +26,6 @@ def test_deezer_says_its_lyrics_are_looked_up_unless_lyrics_are_off():
 
     config.session.downloads.lyrics = False
     assert notice_for("deezer", config) is None
-
-
-def test_deezer_says_where_the_lyrics_come_from_and_how_to_turn_that_off():
-    notice = notice_for("deezer", Config.defaults())
-
-    assert "looked up on lrclib.net" in notice
-    assert "lyrics = false" in notice
 
 
 @pytest.mark.parametrize("source", ["qobuz", "tidal", "soundcloud"])

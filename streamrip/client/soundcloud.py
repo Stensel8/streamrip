@@ -4,12 +4,12 @@ import logging
 import random
 import re
 
-import aiohttp
+lazy import aiohttp
 
-from ..config import Config
 from ..exceptions import NonStreamableError
 from .client import Client, new_session
 from .downloadable import SoundcloudDownloadable
+lazy from ..config import Config
 
 # e.g. 123456-293847-121314-209849
 USER_ID = "-".join(str(random.randint(111111, 999999)) for _ in range(4))
@@ -28,7 +28,6 @@ class SoundcloudClient(Client):
 
     NON_STREAMABLE = "_non_streamable"
     ORIGINAL_DOWNLOAD = "_original_download"
-    NOT_RESOLVED = "_not_resolved"
 
     def __init__(self, config: Config):
         self.global_config = config
@@ -72,10 +71,9 @@ class SoundcloudClient(Client):
             # parse custom id that we injected
             _item_id, _ = item_id.split("|")
             return await self._get_track(_item_id)
-        elif media_type == "playlist":
+        if media_type == "playlist":
             return await self._get_playlist(item_id)
-        else:
-            raise Exception(f"{media_type} not supported")
+        raise Exception(f"{media_type} not supported")
 
     async def search(
         self,
@@ -143,9 +141,6 @@ class SoundcloudClient(Client):
             )
             download_info = stream
 
-        if download_info == self.NOT_RESOLVED:
-            raise NotImplementedError(item_info)
-
         # download_info contains a transcoding url, which resolves to the
         # actual (signed) media url
         resp_json, status = await self._request(download_info)
@@ -194,7 +189,7 @@ class SoundcloudClient(Client):
         responses = await asyncio.gather(
             *(
                 self._api_request("tracks", params={"ids": ",".join(map(str, batch))})
-                for batch in itertools.batched(unresolved, MAX_BATCH_SIZE)
+                for batch in itertools.batched(unresolved, MAX_BATCH_SIZE, strict=False)
             )
         )
         assert all(status == 200 for _, status in responses)

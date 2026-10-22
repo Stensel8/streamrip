@@ -8,12 +8,14 @@ from datetime import UTC, datetime
 from .util import qobuz_artists
 
 TIDAL_IMAGE = "https://resources.tidal.com/images/{uuid}/{size}x{size}.jpg"
-RELEASE_TYPES = {
-    "ALBUM": "Album",
-    "EP": "EP",
-    "SINGLE": "Single",
-    "COMPILE": "Compilation",
-}
+RELEASE_TYPES = frozendict(
+    {
+        "ALBUM": "Album",
+        "EP": "EP",
+        "SINGLE": "Single",
+        "COMPILE": "Compilation",
+    }
+)
 
 
 @dataclass(slots=True)
@@ -366,12 +368,14 @@ def playlist_summary(item: dict) -> Summary:
     )
 
 
-SUMMARIES = {
-    "track": track_summary,
-    "album": album_summary,
-    "artist": artist_summary,
-    "playlist": playlist_summary,
-}
+SUMMARIES = frozendict(
+    {
+        "track": track_summary,
+        "album": album_summary,
+        "artist": artist_summary,
+        "playlist": playlist_summary,
+    }
+)
 
 
 def _page_items(source: str, media_type: str, page: dict) -> list[dict]:
@@ -405,9 +409,7 @@ class SearchResults:
             ]
         )
 
-    def get_choices(self, inds: tuple[int, ...] | int):
-        if isinstance(inds, int):
-            inds = (inds,)
+    def get_choices(self, inds: tuple[int, ...]):
         return [self.results[i] for i in inds]
 
     def as_list(self, source: str) -> list[dict[str, str]]:

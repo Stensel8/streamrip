@@ -1,7 +1,7 @@
 import logging
 from dataclasses import dataclass
 
-from .util import safe_get, typed
+from .util import SOURCES, safe_get, typed
 
 logger = logging.getLogger("streamrip")
 
@@ -81,14 +81,6 @@ class PlaylistMetadata:
     @classmethod
     def from_resp(cls, resp: dict, source: str):
         """Dispatch to the from_* builder matching source."""
-        if source == "qobuz":
-            return cls.from_qobuz(resp)
-        if source == "soundcloud":
-            return cls.from_soundcloud(resp)
-        if source == "deezer":
-            return cls.from_deezer(resp)
-        if source == "tidal":
-            return cls.from_tidal(resp)
-        if source == "spotify":
-            return cls.from_spotify(resp)
-        raise NotImplementedError(source)
+        if source not in SOURCES:
+            raise NotImplementedError(source)
+        return getattr(cls, f"from_{source}")(resp)

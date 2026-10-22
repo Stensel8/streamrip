@@ -93,9 +93,11 @@ async def test_failed_login_does_not_quote_the_token():
     c._api_request = AsyncMock(return_value=(401, {}))
     session = MagicMock()
     session.close = AsyncMock()
-    with patch("streamrip.client.qobuz.new_session", return_value=session):
-        with pytest.raises(AuthenticationError) as err:
-            await c.login()
+    with (
+        patch("streamrip.client.qobuz.new_session", return_value=session),
+        pytest.raises(AuthenticationError) as err,
+    ):
+        await c.login()
     assert TOKEN not in str(err.value)
     assert "user_auth_token" in str(err.value)
     # A failed login must not leave the aiohttp session open.

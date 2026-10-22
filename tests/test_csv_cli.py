@@ -15,7 +15,7 @@ from streamrip.rip.main import Main
 def run(tmp_path):
     """Invoke `streamrip csv ...` with downloading and logging in left out."""
     config = tmp_path / "config.toml"
-    set_user_defaults(str(config))
+    set_user_defaults(config)
     calls = {}
 
     def invoke(*args):

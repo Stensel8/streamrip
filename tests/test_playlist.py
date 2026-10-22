@@ -1,5 +1,6 @@
 import asyncio
 from contextlib import asynccontextmanager
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -219,9 +220,9 @@ def test_tracks_uploaded_to_deezer_are_left_out_of_a_playlist():
 def test_playlist_folder_is_one_folder_and_follows_restrict_characters():
     config = Config.defaults()
     config.session.downloads.folder = "/music"
-    assert _playlist_folder(config, "Café / Mix") == "/music/Café  Mix"
+    assert _playlist_folder(config, "Café / Mix") == Path("/music/Café  Mix")
     config.session.filepaths.restrict_characters = True
-    assert _playlist_folder(config, "Café / Mix") == "/music/Caf  Mix"
+    assert _playlist_folder(config, "Café / Mix") == Path("/music/Caf  Mix")
 
 
 @pytest.mark.parametrize("name", ["", ".", "..", "/", ".. /", "é"])
@@ -280,7 +281,7 @@ async def test_remote_playlist_title_is_checked_before_tracks_are_created(
         if name == "..":
             assert playlist is None
         else:
-            assert playlist.tracks[0].folder == str(tmp_path / "music" / "Mix")
+            assert playlist.tracks[0].folder == tmp_path / "music" / "Mix"
     if name == "..":
         query.assert_not_awaited()
     assert not (tmp_path / "music").exists()

@@ -1,4 +1,3 @@
-from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -23,8 +22,8 @@ async def test_artwork_cleanup_preserves_existing_files(
     downloaded = []
 
     async def download(self, path, callback):
-        Path(path).write_bytes(b"image")
-        downloaded.append(Path(path))
+        path.write_bytes(b"image")
+        downloaded.append(path)
         if download_fails:
             raise OSError("download interrupted")
 
@@ -38,21 +37,21 @@ async def test_artwork_cleanup_preserves_existing_files(
         covers = Covers()
         covers.set_cover("large", "https://example.test/cover.jpg", None)
         await artwork.download_artwork(
-            MagicMock(), str(folder), covers, config, for_playlist
+            MagicMock(), folder, covers, config, for_playlist
         )
 
     owned = set(artwork._artwork_tempdirs)
     artwork.remove_artwork_tempdirs()
     assert sentinel.read_text() == "existing artwork"
     assert len(owned) == 2
-    assert all(not Path(path).exists() for path in owned)
+    assert all(not path.exists() for path in owned)
     assert not artwork._artwork_tempdirs
     assert all(path.parent != legacy for path in downloaded)
     if not for_playlist:
         assert (folder / "cover.jpg").read_bytes() == b"image"
 
     # A later cleanup must not delete a path recreated after the first cleanup.
-    recreated = Path(owned.pop())
+    recreated = owned.pop()
     recreated.mkdir()
     artwork.remove_artwork_tempdirs()
     assert recreated.is_dir()
@@ -67,7 +66,7 @@ def _flaky_download(monkeypatch, failures):
         calls.append(path)
         if pending:
             raise pending.pop(0)
-        Path(path).write_bytes(b"image")
+        path.write_bytes(b"image")
 
     async def no_sleep(_):
         pass
@@ -96,9 +95,9 @@ async def test_a_network_hiccup_does_not_cost_the_album_its_cover(
     calls = _flaky_download(monkeypatch, [error("interrupted download")])
     covers, config = _saved_cover_only()
     _, saved = await artwork.download_artwork(
-        MagicMock(), str(tmp_path), covers, config, False
+        MagicMock(), tmp_path, covers, config, False
     )
-    assert saved == str(tmp_path / "cover.jpg")
+    assert saved == tmp_path / "cover.jpg"
     assert (tmp_path / "cover.jpg").read_bytes() == b"image"
     assert len(calls) == 2
 
@@ -108,7 +107,7 @@ async def test_a_missing_cover_is_not_retried(tmp_path, monkeypatch):
     calls = _flaky_download(monkeypatch, [not_found])
     covers, config = _saved_cover_only()
     result = await artwork.download_artwork(
-        MagicMock(), str(tmp_path), covers, config, False
+        MagicMock(), tmp_path, covers, config, False
     )
     assert result == (None, None)
     assert len(calls) == 1
@@ -121,7 +120,7 @@ async def test_a_cover_that_keeps_failing_gives_up(tmp_path, monkeypatch):
     )
     covers, config = _saved_cover_only()
     result = await artwork.download_artwork(
-        MagicMock(), str(tmp_path), covers, config, False
+        MagicMock(), tmp_path, covers, config, False
     )
     assert result == (None, None)
     assert len(calls) == artwork.ARTWORK_ATTEMPTS

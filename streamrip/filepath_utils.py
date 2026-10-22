@@ -1,10 +1,11 @@
 import os
 import re
+from pathlib import Path
 from string import printable
 
-from pathvalidate import sanitize_filename  # type: ignore
+lazy from pathvalidate import sanitize_filename  # type: ignore
 
-ALLOWED_CHARS = set(printable)
+ALLOWED_CHARS = frozenset(printable)
 
 # What separates the folders of a path template: both kinds of slash on every
 # system, since a template written on Windows has to work elsewhere too.
@@ -30,7 +31,7 @@ def clean_filename(fn: str, restrict: bool = False) -> str:
     return path
 
 
-def clean_filepath(fn: str, restrict: bool = False) -> str:
+def clean_filepath(fn: str, restrict: bool = False) -> Path:
     """Clean a relative folder path made from a template and metadata.
 
     Every component is cleaned like a file name, which also keeps it within
@@ -48,10 +49,10 @@ def clean_filepath(fn: str, restrict: bool = False) -> str:
         if part in (".", ".."):
             part = part.replace(".", "_")
         parts.append(part)
-    return os.sep.join(parts) or "Unknown"
+    return Path(*parts) if parts else Path("Unknown")
 
 
-def ensure_inside(root: str, path: str) -> str:
+def ensure_inside(root: Path, path: Path) -> Path:
     """Return path, or raise ValueError unless it is somewhere below root.
 
     The paths are compared as written, `..` resolved but symlinks not
@@ -59,20 +60,23 @@ def ensure_inside(root: str, path: str) -> str:
     on a NAS say, is theirs to make. Whatever streaming services send as
     metadata cannot make one.
     """
-    root_abs, path_abs = os.path.abspath(root), os.path.abspath(path)
-    try:
-        inside = (
-            path_abs != root_abs
-            and os.path.commonpath((root_abs, path_abs)) == root_abs
-        )
-    except ValueError:  # another drive, on Windows
-        inside = False
-    if not inside:
-        raise ValueError(f"{path!r} is not inside the download folder {root!r}")
+    # Not Path.resolve(), which would follow symlinks.
+    root_abs = Path(os.path.abspath(root))  # noqa: PTH100
+    path_abs = Path(os.path.abspath(path))  # noqa: PTH100
+    if path_abs == root_abs or not path_abs.is_relative_to(root_abs):
+        raise ValueError(f"'{path}' is not inside the download folder '{root}'")
     return path
 
 
 def fit_filename(stem: str, extension: str) -> str:
-    """Build ``stem.extension`` shortened so the whole name fits one component."""
+    """Build ``stem.extension`` shortened so the whole name fits one component.
+
+    A stem that is no name (empty, as a title of only characters a file name
+    can't hold leaves it, or "." or "..") becomes "Unknown": ".flac" or
+    "..flac" would be a hidden file without an extension.
+    """
     budget = MAX_COMPONENT_BYTES - len(extension.encode()) - 1
-    return f"{truncate_str(stem, budget)}.{extension}"
+    stem = truncate_str(stem, budget)
+    if stem in ("", ".", ".."):
+        stem = "Unknown"
+    return f"{stem}.{extension}"

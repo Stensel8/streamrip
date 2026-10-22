@@ -6,9 +6,8 @@ import time
 import xml.etree.ElementTree as ET
 from json import JSONDecodeError
 
-import aiohttp
+lazy import aiohttp
 
-from ..config import Config
 from ..exceptions import (
     AuthenticationError,
     ItemNotFoundError,
@@ -18,6 +17,7 @@ from ..exceptions import (
 from ..metadata.util import TIDAL_QUALITY_IDS
 from .client import Client, new_session
 from .downloadable import TidalDASHDownloadable, TidalDownloadable
+lazy from ..config import Config
 
 logger = logging.getLogger("streamrip")
 
@@ -48,12 +48,14 @@ HIRES_CLIENT_ID = _b64("ZlgySnhkbW50WldLMGl4VA==")
 HIRES_CLIENT_SECRET = _b64(
     "MU5tNUFmREFqeHJnSkZKYktOV0xlQXlLR1ZHbUlOdVhQUExIVlhBdnhBZz0="
 )
-QUALITY_MAP = {
-    0: "LOW",  # AAC
-    1: "HIGH",  # AAC
-    2: "LOSSLESS",  # CD Quality
-    3: "HI_RES",  # Best available: 24-bit FLAC (DASH) where the client may
-}
+QUALITY_MAP = frozendict(
+    {
+        0: "LOW",  # AAC
+        1: "HIGH",  # AAC
+        2: "LOSSLESS",  # CD Quality
+        3: "HI_RES",  # Best available: 24-bit FLAC (DASH) where the client may
+    }
+)
 # Tidal decides what it actually serves per track/client, whatever was
 # requested, and says so in the response's "audioQuality" (HI_RES_LOSSLESS
 # for a HI_RES request): TIDAL_QUALITY_IDS turns that back into a tier.
@@ -84,7 +86,7 @@ class TidalClient(Client):
     source = "tidal"
     max_quality = 3
 
-    def __init__(self, config: Config, hires_of: "TidalClient | None" = None):
+    def __init__(self, config: Config, hires_of: TidalClient | None = None):
         """Build a client lane; hires_of makes this the hi-res lane behind it."""
         self.logged_in = False
         self.global_config = config
@@ -121,7 +123,7 @@ class TidalClient(Client):
             # Albums by id, for the tracks of them, and the requests for them
             # (answered or still out); see _album_of.
             self._albums: dict[str, dict] = {}
-            self._album_requests: dict[str, asyncio.Future] = {}
+            self._album_requests: dict[str, asyncio.Task] = {}
         # HTTP Basic auth for the token endpoint. Built by hand because
         # aiohttp.BasicAuth is deprecated as of aiohttp 3.14.
         credentials = f"{self.client_id}:{self.client_secret}".encode()
@@ -129,7 +131,7 @@ class TidalClient(Client):
             "Authorization": "Basic " + base64.b64encode(credentials).decode()
         }
 
-    def lanes(self) -> list["TidalClient"]:
+    def lanes(self) -> list[TidalClient]:
         """This client and, with `hires_client`, the hi-res one behind it."""
         return [self, self.hires_lane] if self.hires_lane else [self]
 
@@ -180,12 +182,11 @@ class TidalClient(Client):
             )
 
         try:
-            self.token_expiry = float(t.token_expiry)
+            expiry = float(t.token_expiry)
         except TypeError, ValueError:
-            self.token_expiry = 0.0
-        self.refresh_token = t.refresh_token
+            expiry = 0.0
 
-        if self.token_expiry - time.time() < 86400:  # 1 day
+        if expiry - time.time() < 86400:  # 1 day
             await self._refresh_access_token()
         else:
             await self._login_by_access_token(t.access_token, c.user_id)
@@ -238,10 +239,10 @@ class TidalClient(Client):
                 # answer, not a problem worth reporting.
                 logger.debug("No lyrics available for track %s", item_id)
             except (
+                TimeoutError,
                 NonStreamableError,
                 TypeError,
                 aiohttp.ClientError,
-                asyncio.TimeoutError,
             ) as e:
                 # Lyrics that should have been there but could not be
                 # fetched -- worth knowing about, never worth the track. Any
@@ -267,7 +268,7 @@ class TidalClient(Client):
         if album_id and album_id not in self._albums:
             request = self._album_requests.get(album_id)
             if request is None:
-                request = asyncio.ensure_future(self._api_request(f"albums/{album_id}"))
+                request = asyncio.create_task(self._api_request(f"albums/{album_id}"))
                 self._album_requests[album_id] = request
             try:
                 # Shielded: one track giving up must not cancel it for the rest.
@@ -302,7 +303,7 @@ class TidalClient(Client):
                 for offset in range(100, first.get("totalNumberOfItems", 0), 100)
             )
         )
-        items = [i for page in (first, *pages) for i in page["items"]]
+        items = [*page["items"] for page in (first, *pages)]
         tracks = [i["item"] for i in items if i.get("type", "track") == "track"]
         if len(tracks) < len(items):
             logger.info(f"Skipping {len(items) - len(tracks)} video(s) in {url}")
@@ -405,9 +406,9 @@ class TidalClient(Client):
             self.hires_lane is not None
             and quality >= HIRES_TIER
             and str(track_id) not in self._no_hires
+            and (downloadable := await self.hires_lane._try_hires(track_id)) is not None
         ):
-            if (downloadable := await self.hires_lane._try_hires(track_id)) is not None:
-                return downloadable
+            return downloadable
 
         resp = await self._playback_info(track_id, quality)
 
@@ -433,7 +434,9 @@ class TidalClient(Client):
             manifest = json.loads(base64.b64decode(resp["manifest"]).decode("utf-8"))
         except JSONDecodeError, UnicodeDecodeError, ValueError:
             if quality <= 0:
-                raise NonStreamableError(f"Could not read manifest for {track_id}")
+                raise NonStreamableError(
+                    f"Could not read manifest for {track_id}"
+                ) from None
             logger.warning(
                 f"Failed to get manifest for {track_id}. Retrying with lower quality."
             )
@@ -565,7 +568,7 @@ class TidalClient(Client):
         """
         data = {
             "client_id": self.client_id,
-            "refresh_token": self.refresh_token,
+            "refresh_token": self.tokens.refresh_token,
             "grant_type": "refresh_token",
             "scope": "r_usr+w_usr+w_sub",
         }
@@ -616,9 +619,11 @@ class TidalClient(Client):
         token endpoint). The status is not checked.
         """
         headers = self.auth_headers if auth else None
-        async with self.rate_limiter:
-            async with self.session.post(url, data=data, headers=headers) as resp:
-                return await resp.json()
+        async with (
+            self.rate_limiter,
+            self.session.post(url, data=data, headers=headers) as resp,
+        ):
+            return await resp.json()
 
     async def _api_request(self, path: str, params=None, base: str = BASE) -> dict:
         """GET a Tidal API path, with the retries of Client._get_with_retries."""
@@ -640,6 +645,6 @@ class TidalClient(Client):
 
         return await self._get_with_retries(f"{base}/{path}", read, params=params)
 
-    def _pause_owner(self) -> "TidalClient":
+    def _pause_owner(self) -> TidalClient:
         # The rate limit belongs to the account, so both lanes wait together.
         return self._root

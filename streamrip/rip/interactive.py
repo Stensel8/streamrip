@@ -1,7 +1,7 @@
 """Prompt/Confirm drop-ins that make Ctrl-C work while blocked on them.
 
-`coro` (rip/cli.py) hands SIGINT to asyncio so Ctrl-C can cancel a running
-download cleanly. rich.prompt.Prompt.ask and Confirm.ask block
+`coro` (rip/cli.py) hands SIGINT and SIGTERM to asyncio so Ctrl-C and a
+`podman stop` can cancel a running download cleanly. rich.prompt.Prompt.ask and Confirm.ask block
 synchronously on input() though, and asyncio's handler can't run until
 that call returns -- so while blocked on one of them, Ctrl-C does nothing
 but echo ^C into the input line, until something else hands control back
@@ -21,24 +21,33 @@ from contextlib import contextmanager
 from rich.prompt import Confirm as _Confirm
 from rich.prompt import Prompt as _Prompt
 
+from .stopping import terminate
+
 
 @contextmanager
-def _native_sigint():
-    """Swap SIGINT to the plain KeyboardInterrupt handler for this block."""
+def _native_signals():
+    """Make Ctrl-C and SIGTERM act at once for this block.
+
+    SIGINT gets the plain KeyboardInterrupt handler, SIGTERM one that exits.
+    """
     try:
         asyncio.get_running_loop()
     except RuntimeError:
         yield  # Not inside an event loop (e.g. a unit test); nothing to swap.
         return
 
-    previous = signal.getsignal(signal.SIGINT)
+    previous_int = signal.getsignal(signal.SIGINT)
+    previous_term = signal.getsignal(signal.SIGTERM)
     signal.signal(signal.SIGINT, signal.default_int_handler)
+    signal.signal(signal.SIGTERM, terminate)
     try:
         yield
     finally:
-        # Whatever was installed before -- asyncio's own handler on POSIX,
-        # or this same default on Windows, where `coro` never replaces it.
-        signal.signal(signal.SIGINT, previous)
+        # Whatever was installed before -- asyncio's own handlers on POSIX,
+        # or the defaults on Windows, where `coro` never replaces them.
+        signal.signal(signal.SIGINT, previous_int)
+        if previous_term is not None:
+            signal.signal(signal.SIGTERM, previous_term)
 
 
 class Prompt(_Prompt):
@@ -47,7 +56,7 @@ class Prompt(_Prompt):
     @classmethod
     def ask(cls, *args, **kwargs):
         """Same as rich.prompt.Prompt.ask, with Ctrl-C handled natively."""
-        with _native_sigint():
+        with _native_signals():
             return super().ask(*args, **kwargs)
 
 
@@ -57,5 +66,5 @@ class Confirm(_Confirm):
     @classmethod
     def ask(cls, *args, **kwargs):
         """Same as rich.prompt.Confirm.ask, with Ctrl-C handled natively."""
-        with _native_sigint():
+        with _native_signals():
             return super().ask(*args, **kwargs)

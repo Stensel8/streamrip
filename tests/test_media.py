@@ -1,3 +1,5 @@
+import pytest
+
 from streamrip.media.media import filter_prefer_explicit
 from streamrip.metadata import (
     AlbumInfo,
@@ -30,20 +32,24 @@ class FakeResolvedTrack:
         )
 
 
-def test_prefer_explicit_drops_clean_duplicate():
-    clean = FakeResolvedTrack("Song", "Artist", False)
-    explicit = FakeResolvedTrack("Song", "Artist", True)
-    assert filter_prefer_explicit([clean, explicit]) == [explicit]
+@pytest.mark.parametrize(
+    ("clean", "explicit"),
+    [
+        (("Song", "Artist"), ("Song", "Artist")),
+        # Same song, different casing/whitespace -- still recognized as a dupe.
+        (("  song  ", "ARTIST"), ("Song", "artist")),
+    ],
+)
+def test_prefer_explicit_drops_the_clean_duplicate(clean, explicit):
+    clean_track = FakeResolvedTrack(*clean, False)
+    explicit_track = FakeResolvedTrack(*explicit, True)
+    assert filter_prefer_explicit([clean_track, explicit_track]) == [explicit_track]
 
 
-def test_prefer_explicit_keeps_clean_only():
-    clean = FakeResolvedTrack("Song", "Artist", False)
-    assert filter_prefer_explicit([clean]) == [clean]
-
-
-def test_prefer_explicit_keeps_explicit_only():
-    explicit = FakeResolvedTrack("Song", "Artist", True)
-    assert filter_prefer_explicit([explicit]) == [explicit]
+@pytest.mark.parametrize("explicit", [False, True])
+def test_prefer_explicit_keeps_a_track_that_has_no_duplicate(explicit):
+    track = FakeResolvedTrack("Song", "Artist", explicit)
+    assert filter_prefer_explicit([track]) == [track]
 
 
 def test_prefer_explicit_leaves_unrelated_tracks_alone():
@@ -52,10 +58,3 @@ def test_prefer_explicit_leaves_unrelated_tracks_alone():
     other = FakeResolvedTrack("Other Song", "Artist", False)
     result = filter_prefer_explicit([clean, explicit, other])
     assert set(result) == {explicit, other}
-
-
-def test_prefer_explicit_matches_title_and_artist_loosely():
-    # Same song, different casing/whitespace -- still recognized as a dupe.
-    clean = FakeResolvedTrack("  song  ", "ARTIST", False)
-    explicit = FakeResolvedTrack("Song", "artist", True)
-    assert filter_prefer_explicit([clean, explicit]) == [explicit]

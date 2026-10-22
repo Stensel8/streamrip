@@ -1,17 +1,14 @@
 import asyncio
 import logging
-import os
 from dataclasses import dataclass
+from pathlib import Path
 
 import mutagen
 from mutagen.aiff import AIFF
 from mutagen.flac import FLAC
 
 from .. import converter, lyrics
-from ..client import Client, Downloadable
 from ..client.audio_match import MatchTrack
-from ..config import Config
-from ..db import Database
 from ..exceptions import FFmpegNotFoundError, TrackDownloadFailedError
 from ..filepath_utils import (
     clean_filename,
@@ -26,6 +23,9 @@ from ..progress import add_title, get_progress_callback, remove_title
 from .artwork import download_artwork
 from .media import Media, Pending
 from .semaphore import global_download_semaphore
+lazy from ..client import Client, Downloadable
+lazy from ..config import Config
+lazy from ..db import Database
 
 logger = logging.getLogger("streamrip")
 
@@ -37,7 +37,7 @@ MAX_DOWNLOAD_ATTEMPTS = 4
 DEDUP_EXTENSIONS = ("flac", "m4a", "mp3")
 
 
-def _open_audio(path: str):
+def _open_audio(path: Path):
     """`path` as a mutagen file with format-independent tag names, or None."""
     try:
         return mutagen.File(path, easy=True)
@@ -61,11 +61,11 @@ class Track(Media):
     meta: TrackMetadata
     downloadable: Downloadable
     config: Config
-    folder: str
+    folder: Path
     # Is None if a cover doesn't exist for the track
-    cover_path: str | None
+    cover_path: Path | None
     db: Database
-    download_path: str = ""
+    download_path: Path = Path()
     is_single: bool = False
     # Base name (no extension) `download_path` is built from; kept around to
     # find a sibling file that only differs by extension.
@@ -78,7 +78,7 @@ class Track(Media):
     async def rip(self):
         """Record failures from every processing phase for summaries and repair."""
         try:
-            await super(Track, self).rip()
+            await super().rip()
         except TrackDownloadFailedError:
             raise  # The exhausted download was already recorded.
         except Exception:
@@ -90,7 +90,7 @@ class Track(Media):
     async def preprocess(self):
         """Set the download path and skip it if a lossless copy already exists."""
         self._set_download_path()
-        os.makedirs(self.folder, exist_ok=True)
+        self.folder.mkdir(parents=True, exist_ok=True)
         if self.downloadable.extension != "flac" and self._copies_on_disk(
             lossless=True
         ):
@@ -138,8 +138,6 @@ class Track(Media):
                     ) as callback:
                         await self.downloadable.download(self.download_path, callback)
                     return
-                except asyncio.CancelledError:
-                    raise
                 except Exception as e:
                     error = f"{type(e).__name__}: {e}"
                     # A missing ffmpeg does not fix itself in 2-8 seconds.
@@ -158,8 +156,8 @@ class Track(Media):
                         f"Persistent error downloading track '{self.meta.title}', "
                         f"skipping: {error}"
                     )
-                    if os.path.isfile(self.download_path):
-                        os.remove(self.download_path)
+                    if self.download_path.is_file():
+                        self.download_path.unlink()
                     # postprocess() normally does this, but raising below
                     # skips it, which would leave a phantom title in the
                     # progress display for the rest of the run.
@@ -216,7 +214,7 @@ class Track(Media):
             audio = _open_audio(self.download_path)
             seconds = audio.info.length if audio is not None else None
             # An MP3 holds plain lyrics; the others the synced (LRC) ones.
-            plain = self.download_path.lower().endswith(".mp3") or (
+            plain = self.download_path.suffix.lower() == ".mp3" or (
                 c.conversion.enabled and c.conversion.codec.upper() == "MP3"
             )
             wanted = MatchTrack(
@@ -262,7 +260,7 @@ class Track(Media):
         self.download_path = engine.final_fn  # because the extension changed
         # ffmpeg does not reliably carry every tag into the new container, so
         # re-tag the converted file where we know how to.
-        if self.download_path.rsplit(".", 1)[-1].lower() in TAGGABLE_EXTENSIONS:
+        if self.download_path.suffix.lower().removeprefix(".") in TAGGABLE_EXTENSIONS:
             await tag_file(
                 self.download_path,
                 self.meta,
@@ -281,16 +279,15 @@ class Track(Media):
             track_path = track_path[: c.truncate_to]
 
         self._path_stem = track_path
-        self.download_path = os.path.join(
-            self.folder,
-            fit_filename(track_path, self.downloadable.extension),
+        self.download_path = self.folder / fit_filename(
+            track_path, self.downloadable.extension
         )
 
-    def _sibling_path(self, extension: str) -> str:
+    def _sibling_path(self, extension: str) -> Path:
         """Path this track would have on disk with a different extension."""
-        return os.path.join(self.folder, fit_filename(self._path_stem, extension))
+        return self.folder / fit_filename(self._path_stem, extension)
 
-    def _copies_on_disk(self, lossless: bool) -> list[str]:
+    def _copies_on_disk(self, lossless: bool) -> list[Path]:
         """Lossless (or lossy) files of this same track under another extension.
 
         A matching filename stem alone doesn't prove it's the same track: a
@@ -304,7 +301,7 @@ class Track(Media):
         copies = []
         for ext in DEDUP_EXTENSIONS:
             path = self._sibling_path(ext)
-            if path == self.download_path or not os.path.isfile(path):
+            if path == self.download_path or not path.is_file():
                 continue
             audio = _open_audio(path)
             if (
@@ -327,23 +324,24 @@ class Track(Media):
             return
         for path in self._copies_on_disk(lossless=False):
             logger.info(f"Removing lower-quality copy: {path}")
-            os.remove(path)
+            path.unlink()
 
 
-def album_folder(config: Config, source: str, album: AlbumMetadata) -> str:
+def album_folder(config: Config, source: str, album: AlbumMetadata) -> Path:
     """The folder an album's tracks go in, inside the downloads folder.
 
     Raises ValueError if it would be anywhere else: the names in it come from
     a streaming service.
     """
     c = config.session
-    parent = c.downloads.folder
+    root = Path(c.downloads.folder)
+    parent = root
     if c.downloads.source_subdirectories:
-        parent = os.path.join(parent, source.capitalize())
+        parent = parent / source.capitalize()
     folder = album.format_folder_path(c.filepaths.folder_format)
     return ensure_inside(
-        c.downloads.folder,
-        os.path.join(parent, clean_filepath(folder, c.filepaths.restrict_characters)),
+        root,
+        parent / clean_filepath(folder.as_posix(), c.filepaths.restrict_characters),
     )
 
 
@@ -399,7 +397,7 @@ async def fetch_downloadable(
     client: Client, config: Config, db: Database, track_id: str
 ) -> Downloadable | None:
     """Return a Downloadable for the track, or None and record the failure."""
-    quality = config.session.get_source(client.source).quality
+    quality = getattr(config.session, client.source).quality
     try:
         return await client.get_downloadable(track_id, quality)
     except Exception as e:
@@ -420,10 +418,10 @@ class PendingTrack(Pending):
     album: AlbumMetadata
     client: Client
     config: Config
-    folder: str
+    folder: Path
     db: Database
     # cover_path is None <==> Artwork for this track doesn't exist in API
-    cover_path: str | None
+    cover_path: Path | None
 
     async def resolve(self) -> Track | None:
         """Fetch this track's metadata and download info, resolving into a Track."""
@@ -440,7 +438,7 @@ class PendingTrack(Pending):
             self.config.session.downloads.disc_subdirectories
             and self.album.disctotal > 1
         ):
-            folder = os.path.join(folder, f"Disc {meta.discnumber}")
+            folder = folder / f"Disc {meta.discnumber}"
         return Track(meta, downloadable, self.config, folder, self.cover_path, self.db)
 
 
@@ -465,8 +463,8 @@ class PendingSingle(Pending):
         if in_album_folder:
             folder = album_folder(self.config, self.client.source, album)
         else:
-            folder = c.downloads.folder
-        os.makedirs(folder, exist_ok=True)
+            folder = Path(c.downloads.folder)
+        folder.mkdir(parents=True, exist_ok=True)
 
         (cover_path, _), downloadable = await asyncio.gather(
             download_artwork(
@@ -481,8 +479,8 @@ class PendingSingle(Pending):
         # disc's subfolder (`streamrip repair` downloads singles too). Only
         # when it's in the album's folder, not as a bare "Disc N" in the root.
         if in_album_folder and c.downloads.disc_subdirectories and album.disctotal > 1:
-            folder = os.path.join(folder, f"Disc {meta.discnumber}")
-            os.makedirs(folder, exist_ok=True)
+            folder = folder / f"Disc {meta.discnumber}"
+            folder.mkdir(parents=True, exist_ok=True)
 
         return Track(
             meta, downloadable, self.config, folder, cover_path, self.db, is_single=True

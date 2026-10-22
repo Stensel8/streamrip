@@ -535,7 +535,7 @@ def search_answer(media_type, total_pages, per_page):
     def answer(request: web.Request):
         offset = int(request.query["offset"])
         size = int(request.query["limit"])
-        pages = {t: (offset // per_page) for t in (media_type,)}
+        pages = dict.fromkeys((media_type,), offset // per_page)
         items = [track_obj(f"id{offset + i}") for i in range(min(size, per_page))]
         last = pages[media_type] + 1 >= total_pages
         return {f"{media_type}s": {"items": items, "next": None if last else "more"}}

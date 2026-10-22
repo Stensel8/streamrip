@@ -72,44 +72,17 @@ def test_set_downloaded_counts_only_new_downloads(tmp_path):
     assert database.downloaded_now == 1
 
 
-def test_a_row_from_before_ids_carried_a_source_still_counts_for_every_source(
-    tmp_path,
-):
-    # Nothing says which source a bare id came from. Not matching it would
-    # download a whole library again after upgrading.
-    database = _database(tmp_path)
-    database.downloads.add(("123",))
-
-    assert database.downloaded("tidal", "123")
-    assert database.downloaded("qobuz", "123")
-    assert not database.downloaded("qobuz", "124")
-
-
-def test_forgetting_a_track_forgets_its_legacy_row_too(tmp_path):
-    database = _database(tmp_path)
-    database.downloads.add(("123",))
-    database.set_downloaded("tidal", "123")
-    database.set_downloaded("qobuz", "123")
-
-    database.forget_downloaded("tidal", "123")
-
-    assert database.downloads.all() == [("qobuz_123",)]
-
-
 @pytest.mark.parametrize(
     ("key", "expected"),
     [
         ("tidal_2430924980", ("tidal", "2430924980")),
         ("soundcloud_9", ("soundcloud", "9")),
         ("qobuz_a_b", ("qobuz", "a_b")),  # only the first underscore splits
-        ("2430924980", (None, "2430924980")),  # legacy
-        ("unknown_1", (None, "unknown_1")),  # not one of ours
     ],
 )
 def test_a_download_key_splits_into_source_and_id(key, expected):
     assert db.split_download_key(key) == expected
-    if expected[0]:
-        assert db.download_key(*expected) == key
+    assert db.download_key(*expected) == key
 
 
 def test_failures_of_different_sources_with_the_same_id_are_both_kept(tmp_path):
@@ -143,65 +116,6 @@ def test_the_same_failure_twice_is_still_one_row(tmp_path):
     assert database.failed.all() == [("tidal", "track", "42")]
 
 
-def _old_failed_database(path, rows):
-    """A failed_downloads table as versions before 2.4.10 made it."""
-    conn = sqlite3.connect(path)
-    with conn:
-        conn.execute(
-            "CREATE TABLE failed_downloads (source TEXT NOT NULL, "
-            "media_type TEXT NOT NULL, id TEXT UNIQUE NOT NULL)"
-        )
-        conn.executemany("INSERT INTO failed_downloads VALUES (?, ?, ?)", rows)
-    conn.close()
-
-
-def test_an_old_failed_table_is_rebuilt_keeping_its_rows(tmp_path):
-    path = str(tmp_path / "failed.db")
-    rows = [("tidal", "track", "1"), ("qobuz", "album", "2")]
-    _old_failed_database(path, rows)
-
-    failed = db.Failed(path)
-
-    assert sorted(failed.all()) == sorted(rows)
-    # Unique per source now: the same id of another source fits beside it.
-    failed.add(("qobuz", "track", "1"))
-    assert ("qobuz", "track", "1") in failed.all()
-    conn = sqlite3.connect(path)
-    tables = [row[0] for row in conn.execute("SELECT name FROM sqlite_master")]
-    conn.close()
-    assert "failed_downloads_old" not in tables
-
-
-def test_rebuilding_an_old_failed_table_happens_once(tmp_path):
-    path = str(tmp_path / "failed.db")
-    _old_failed_database(path, [("tidal", "track", "1")])
-    db.Failed(path).add(("qobuz", "track", "1"))
-
-    again = db.Failed(path)
-
-    assert sorted(again.all()) == [("qobuz", "track", "1"), ("tidal", "track", "1")]
-
-
-def test_a_new_failed_table_is_not_rebuilt(tmp_path):
-    failed = db.Failed(str(tmp_path / "failed.db"))
-    failed.add(("tidal", "track", "1"))
-    conn = sqlite3.connect(failed.path)
-    before = conn.execute(
-        "SELECT sql FROM sqlite_master WHERE name = 'failed_downloads'"
-    ).fetchone()
-    conn.close()
-
-    db.Failed(failed.path)
-
-    conn = sqlite3.connect(failed.path)
-    after = conn.execute(
-        "SELECT sql FROM sqlite_master WHERE name = 'failed_downloads'"
-    ).fetchone()
-    conn.close()
-    assert before == after
-    assert "UNIQUE (source, media_type, id)" in after[0]
-
-
 def test_an_existing_database_without_the_table_gets_it(tmp_path):
     path = str(tmp_path / "downloads.db")
     sqlite3.connect(path).close()  # a file, but nothing in it
@@ -213,7 +127,7 @@ def test_an_existing_database_without_the_table_gets_it(tmp_path):
 
 
 def test_no_connection_is_left_open(tmp_path):
-    # `with sqlite3.connect()` leaves its connection open, which Python 3.13
+    # `with sqlite3.connect()` leaves its connection open, which Python
     # warns about each time one is garbage collected.
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
@@ -266,16 +180,8 @@ def test_a_soundcloud_track_is_recorded_under_the_number_whatever_it_was_called_
     assert database.downloads.all() == [("soundcloud_671678984",)]
 
 
-def test_a_legacy_row_matches_a_soundcloud_track_by_its_whole_id(tmp_path):
-    database = _database(tmp_path)
-    database.downloads.add(("671678984",))  # as versions before 2.4.10 wrote it
-
-    assert database.downloaded("soundcloud", SOUNDCLOUD_ID)
-
-
 def test_forgetting_a_soundcloud_track_by_its_whole_id(tmp_path):
     database = _database(tmp_path)
-    database.downloads.add(("671678984",))
     database.set_downloaded("soundcloud", "671678984")
 
     database.forget_downloaded("soundcloud", SOUNDCLOUD_ID)

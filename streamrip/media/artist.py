@@ -1,16 +1,16 @@
 import logging
 import re
-from collections.abc import Callable
 from dataclasses import dataclass
+lazy from collections.abc import Callable
 
-from ..client import Client
-from ..config import ArtistFilterConfig, Config
 from ..console import console
-from ..db import Database
 from ..exceptions import NonStreamableError
 from ..metadata import ArtistMetadata
 from .album import Album, PendingAlbum
 from .media import Media, Pending
+lazy from ..client import Client
+lazy from ..config import ArtistFilterConfig, Config
+lazy from ..db import Database
 
 logger = logging.getLogger("streamrip")
 

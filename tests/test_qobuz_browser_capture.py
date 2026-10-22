@@ -18,34 +18,29 @@ def _page(html: str):
     return handler
 
 
-async def test_reads_token_already_in_local_storage(serve):
-    html = """
-    <script>
-      localStorage.setItem("localuser", JSON.stringify({id: 123, token: "abc-token"}));
-    </script>
-    """
-    url = await serve({"/": _page(html)})
+@pytest.mark.parametrize(
+    ("script", "expected"),
+    [
+        (
+            'localStorage.setItem("localuser", JSON.stringify({id: 123, token: "abc-token"}));',
+            ("123", "abc-token"),
+        ),
+        (
+            "setTimeout(() => {"
+            'localStorage.setItem("localuser", JSON.stringify({id: 456, token: "delayed-token"}));'
+            "}, 1500);",
+            ("456", "delayed-token"),
+        ),
+    ],
+    ids=["already in local storage", "appears after a delay"],
+)
+async def test_reads_the_token_from_local_storage(serve, script, expected):
+    url = await serve({"/": _page(f"<script>{script}</script>")})
     result = await capture_qobuz_auth_token_via_browser(
         timeout_s=15, login_url=url, headless=True
     )
 
-    assert result == ("123", "abc-token")
-
-
-async def test_catches_token_that_appears_after_a_delay(serve):
-    html = """
-    <script>
-      setTimeout(() => {
-        localStorage.setItem("localuser", JSON.stringify({id: 456, token: "delayed-token"}));
-      }, 1500);
-    </script>
-    """
-    url = await serve({"/": _page(html)})
-    result = await capture_qobuz_auth_token_via_browser(
-        timeout_s=15, login_url=url, headless=True
-    )
-
-    assert result == ("456", "delayed-token")
+    assert result == expected
 
 
 async def test_times_out_when_never_logged_in(serve):

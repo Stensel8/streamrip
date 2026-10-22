@@ -1,11 +1,12 @@
 """Names from a streaming service must never lead out of the downloads folder."""
 
 import os
+from pathlib import Path
 
 import pytest
 
 from streamrip.config import Config
-from streamrip.filepath_utils import clean_filepath, ensure_inside
+from streamrip.filepath_utils import clean_filepath, ensure_inside, fit_filename
 from streamrip.media import track as track_module
 from streamrip.media.track import album_folder
 from streamrip.metadata import AlbumMetadata
@@ -33,11 +34,11 @@ HOSTILE = [
 def test_a_cleaned_path_stays_inside_the_folder_it_is_joined_to(template):
     cleaned = clean_filepath(template)
 
-    assert cleaned
-    assert not os.path.isabs(cleaned)
-    assert ".." not in cleaned.split(os.sep)
-    assert "." not in cleaned.split(os.sep)
-    ensure_inside("/music", os.path.join("/music", cleaned))
+    assert cleaned.parts
+    assert not cleaned.is_absolute()
+    assert ".." not in cleaned.parts
+    assert "." not in cleaned.parts
+    ensure_inside(Path("/music"), Path("/music") / cleaned)
 
 
 @pytest.mark.parametrize("restrict", [False, True])
@@ -45,22 +46,29 @@ def test_a_cleaned_path_stays_inside_the_folder_it_is_joined_to(template):
 def test_restricting_characters_changes_nothing_about_that(template, restrict):
     cleaned = clean_filepath(template, restrict)
 
-    ensure_inside("/music", os.path.join("/music", cleaned))
+    ensure_inside(Path("/music"), Path("/music") / cleaned)
 
 
 def test_dot_components_become_underscores_and_empty_ones_vanish():
-    assert clean_filepath("../x/./y//z") == os.sep.join(["__", "x", "_", "y", "z"])
-    assert clean_filepath("/Artist/Title") == os.sep.join(["Artist", "Title"])
+    assert clean_filepath("../x/./y//z") == Path("__", "x", "_", "y", "z")
+    assert clean_filepath("/Artist/Title") == Path("Artist", "Title")
 
 
 def test_a_path_with_nothing_left_is_not_the_downloads_folder_itself():
-    assert clean_filepath("//") == "Unknown"
-    assert clean_filepath("") == "Unknown"
+    assert clean_filepath("//") == Path("Unknown")
+    assert clean_filepath("") == Path("Unknown")
 
 
 def test_a_dots_only_name_has_nothing_left_to_be_a_folder():
     # pathvalidate drops trailing dots, so "..." is empty, which is dropped.
-    assert clean_filepath("...") == "Unknown"
+    assert clean_filepath("...") == Path("Unknown")
+
+
+@pytest.mark.parametrize("stem", ["", ".", ".."])
+def test_a_file_name_with_no_name_left_still_has_its_extension(stem):
+    """A title of only characters a file name can't hold, or of dots, leaves
+    no ".flac" or "..flac"."""
+    assert fit_filename(stem, "flac") == "Unknown.flac"
 
 
 @pytest.mark.parametrize(
@@ -72,9 +80,9 @@ def test_backslashes_separate_folders_on_every_system(template):
     # out as `../..` is.
     cleaned = clean_filepath(template)
 
-    assert not os.path.isabs(cleaned)
-    assert ".." not in cleaned.split(os.sep)
-    ensure_inside("/music", os.path.join("/music", cleaned))
+    assert not cleaned.is_absolute()
+    assert ".." not in cleaned.parts
+    ensure_inside(Path("/music"), Path("/music") / cleaned)
 
 
 def test_a_backslash_template_is_the_same_as_a_slash_template():
@@ -84,7 +92,7 @@ def test_a_backslash_template_is_the_same_as_a_slash_template():
 def test_long_components_are_still_truncated():
     cleaned = clean_filepath(("é" * 300) + "/" + ("日本語" * 100))
 
-    assert all(len(part.encode()) <= 240 for part in cleaned.split(os.sep))
+    assert all(len(part.encode()) <= 240 for part in cleaned.parts)
 
 
 @pytest.mark.parametrize(
@@ -92,7 +100,7 @@ def test_long_components_are_still_truncated():
     ["/music/a", "/music/a/b", "/music/../music/a", "/music/Artist ../x"],
 )
 def test_ensure_inside_accepts_what_is_below_the_root(path):
-    assert ensure_inside("/music", path) == path
+    assert ensure_inside(Path("/music"), Path(path)) == Path(path)
 
 
 @pytest.mark.parametrize(
@@ -109,7 +117,7 @@ def test_ensure_inside_accepts_what_is_below_the_root(path):
 )
 def test_ensure_inside_rejects_everything_else(path):
     with pytest.raises(ValueError, match="not inside the download folder"):
-        ensure_inside("/music", path)
+        ensure_inside(Path("/music"), Path(path))
 
 
 @pytest.mark.skipif(os.name != "posix", reason="symlinks need privileges on Windows")
@@ -120,9 +128,9 @@ def test_ensure_inside_leaves_symlinks_the_user_made_alone(tmp_path):
     root = tmp_path / "music"
     root.mkdir()
     (root / "Artist").symlink_to(nas)
-    path = str(root / "Artist" / "Album")
+    path = root / "Artist" / "Album"
 
-    assert ensure_inside(str(root), path) == path
+    assert ensure_inside(root, path) == path
 
 
 def _album(artist: str, title: str = "Title") -> AlbumMetadata:
@@ -139,8 +147,8 @@ def test_an_artist_called_dots_cannot_move_an_album_out_of_the_downloads_folder(
 
     folder = album_folder(config, "soundcloud", _album(artist))
 
-    ensure_inside("/music", folder)
-    assert os.path.basename(folder) == "Title"
+    ensure_inside(Path("/music"), folder)
+    assert folder.name == "Title"
 
 
 def test_an_empty_artist_does_not_turn_the_folder_into_an_absolute_path():
@@ -149,7 +157,7 @@ def test_an_empty_artist_does_not_turn_the_folder_into_an_absolute_path():
     config.session.downloads.folder = "/music"
     config.session.filepaths.folder_format = "{albumartist}/{title}"
 
-    assert album_folder(config, "qobuz", _album("")) == "/music/Title"
+    assert album_folder(config, "qobuz", _album("")) == Path("/music/Title")
 
 
 def test_a_folder_format_cannot_climb_out_either():
@@ -159,14 +167,14 @@ def test_a_folder_format_cannot_climb_out_either():
 
     folder = album_folder(config, "qobuz", _album("Björk"))
 
-    assert folder == os.path.join("/music/downloads", "__", "__", "Björk", "Title")
+    assert folder == Path("/music/downloads/__/__/Björk/Title")
 
 
 def test_album_folder_refuses_a_path_outside_the_downloads_folder(monkeypatch):
     # The last line of defence, whatever the cleaning above lets through.
     config = Config.defaults()
     config.session.downloads.folder = "/music"
-    monkeypatch.setattr(track_module, "clean_filepath", lambda *_: "../escaped")
+    monkeypatch.setattr(track_module, "clean_filepath", lambda *_: Path("../escaped"))
 
     with pytest.raises(ValueError, match="not inside the download folder"):
         album_folder(config, "qobuz", _album("Björk"))

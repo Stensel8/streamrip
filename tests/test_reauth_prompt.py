@@ -53,16 +53,20 @@ async def test_prompts_and_recovers_when_user_agrees():
 
 async def test_propagates_when_user_declines():
     main, _, prompter = _main_with_expired_token()
-    with _patches(prompter, isatty=True, confirm=False):
-        with pytest.raises(AuthenticationError, match="refresh token has expired"):
-            await main.get_logged_in_client("tidal")
+    with (
+        _patches(prompter, isatty=True, confirm=False),
+        pytest.raises(AuthenticationError, match="refresh token has expired"),
+    ):
+        await main.get_logged_in_client("tidal")
     prompter.prompt_and_login.assert_not_awaited()
 
 
 async def test_never_prompts_without_a_terminal():
     """streamrip runs from cron and from scripts, where a hidden y/n hangs forever."""
     main, _, prompter = _main_with_expired_token()
-    with _patches(prompter, isatty=False, confirm=True):
-        with pytest.raises(AuthenticationError, match="interactive terminal"):
-            await main.get_logged_in_client("tidal")
+    with (
+        _patches(prompter, isatty=False, confirm=True),
+        pytest.raises(AuthenticationError, match="interactive terminal"),
+    ):
+        await main.get_logged_in_client("tidal")
     prompter.prompt_and_login.assert_not_awaited()

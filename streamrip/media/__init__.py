@@ -12,13 +12,15 @@ from .playlist import (
 )
 from .track import PendingSingle, PendingTrack, Track
 
-PENDING_TYPES: dict[str, type[Pending]] = {
-    "track": PendingSingle,
-    "album": PendingAlbum,
-    "playlist": PendingPlaylist,
-    "artist": PendingArtist,
-    "label": PendingLabel,
-}
+PENDING_TYPES: frozendict[str, type[Pending]] = frozendict(
+    {
+        "track": PendingSingle,
+        "album": PendingAlbum,
+        "playlist": PendingPlaylist,
+        "artist": PendingArtist,
+        "label": PendingLabel,
+    }
+)
 
 
 def pending_item(media_type: str, item_id: str, client, config, db) -> Pending:

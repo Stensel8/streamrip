@@ -1,14 +1,14 @@
 import logging
 from dataclasses import dataclass
 
-from ..client import Client
-from ..config import Config
-from ..db import Database
 from ..exceptions import NonStreamableError
 from ..metadata import LabelMetadata
 from .album import PendingAlbum
 from .artist import announce, rip_albums
 from .media import Media, Pending
+lazy from ..client import Client
+lazy from ..config import Config
+lazy from ..db import Database
 
 logger = logging.getLogger("streamrip")
 

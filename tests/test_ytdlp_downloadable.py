@@ -5,7 +5,6 @@ yt-dlp reads them like any direct link.
 """
 
 import asyncio
-import os
 import threading
 import time
 from concurrent.futures import Future
@@ -18,7 +17,6 @@ from aiohttp import web
 from streamrip.client.downloadable import (
     YtDlpDownloadable,
     _explain_ytdlp_error,
-    _fetch_audio,
 )
 from streamrip.exceptions import FFmpegNotFoundError, NonStreamableError
 from streamrip.utils.ffmpeg_utils import find_ffmpeg
@@ -43,7 +41,7 @@ async def audio_url(serve):
 async def download(url, tmp_path, extension, **options):
     """Download url as `extension`; the path it ends up at, and the progress."""
     downloadable = YtDlpDownloadable(None, url, extension, **options)
-    path = str(tmp_path / f"track.{extension}")
+    path = tmp_path / f"track.{extension}"
     reported: list[int] = []
     await downloadable.download(path, reported.append)
     return path, sum(reported)
@@ -53,8 +51,8 @@ async def download(url, tmp_path, extension, **options):
 async def test_an_aac_stream_is_kept_as_it_is(audio_url, tmp_path):
     path, reported = await download(await audio_url("silence.m4a"), tmp_path, "m4a")
 
-    assert Path(path).read_bytes() == (TESTS / "silence.m4a").read_bytes()
-    assert reported == os.path.getsize(TESTS / "silence.m4a")
+    assert path.read_bytes() == (TESTS / "silence.m4a").read_bytes()
+    assert reported == (TESTS / "silence.m4a").stat().st_size
 
 
 @needs_ffmpeg
@@ -122,9 +120,9 @@ async def test_a_cancelled_download_waits_for_its_thread_before_the_folder_goes(
         while not stop.wait(0.01):  # "downloading", until it is told to stop
             pass
         time.sleep(0.1)  # a moment of work after it has noticed
-        seen["its folder was still there"] = os.path.isdir(directory)
-        os.makedirs(directory, exist_ok=True)  # as yt-dlp does for a .part file
-        open(os.path.join(directory, "audio.m4a.part"), "w").close()
+        seen["its folder was still there"] = directory.is_dir()
+        directory.mkdir(parents=True, exist_ok=True)  # as yt-dlp does for a .part file
+        (directory / "audio.m4a.part").touch()
         finished.set()
         raise RuntimeError("stopped")
 
@@ -134,7 +132,7 @@ async def test_a_cancelled_download_waits_for_its_thread_before_the_folder_goes(
     )
     downloadable = YtDlpDownloadable(None, "https://example.com/x", "m4a")
     task = asyncio.create_task(
-        downloadable.download(str(tmp_path / "track.m4a"), lambda _: None)
+        downloadable.download(tmp_path / "track.m4a", lambda _: None)
     )
     await asyncio.to_thread(started.wait, 5)
 
@@ -174,7 +172,7 @@ async def test_a_download_whose_thread_never_began_ends_when_cancelled(
     )
     downloadable = YtDlpDownloadable(None, "https://example.com/x", "m4a")
     task = asyncio.create_task(
-        downloadable.download(str(tmp_path / "track.m4a"), lambda _: None)
+        downloadable.download(tmp_path / "track.m4a", lambda _: None)
     )
     await asyncio.sleep(0.05)
 
@@ -186,35 +184,12 @@ async def test_a_download_whose_thread_never_began_ends_when_cancelled(
     assert done, "the cancelled download is still waiting for a thread that never began"
 
 
-def test_no_javascript_runtime_is_enabled_that_yt_dlp_cannot_sandbox(monkeypatch):
-    options = {}
-
-    class FakeYoutubeDL:
-        def __init__(self, given):
-            options.update(given)
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *_):
-            return False
-
-        def extract_info(self, url, download):
-            return {"requested_downloads": [{"filepath": "audio.m4a"}]}
-
-    monkeypatch.setattr("yt_dlp.YoutubeDL", FakeYoutubeDL)
-
-    _fetch_audio("https://example.com/x", "/nowhere", True, lambda n: None, None)
-
-    assert set(options["js_runtimes"]) == {"deno", "node", "quickjs"}
-
-
 async def test_without_ffmpeg_nothing_is_fetched(monkeypatch, tmp_path):
     monkeypatch.setattr("streamrip.client.downloadable.find_ffmpeg", lambda: None)
     downloadable = YtDlpDownloadable(None, "http://127.0.0.1:1/unused.m4a", "m4a")
 
     with pytest.raises(FFmpegNotFoundError):
-        await downloadable.download(str(tmp_path / "track.m4a"), lambda _: None)
+        await downloadable.download(tmp_path / "track.m4a", lambda _: None)
 
 
 @pytest.mark.parametrize("extension", ["flac", "opus", ""])

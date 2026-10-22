@@ -33,20 +33,20 @@ def test_creation_and_reset_are_private(tmp_path, existing_mode):
         path.chmod(existing_mode)
     parent_mode = mode(tmp_path)
 
-    set_user_defaults(str(path))
+    set_user_defaults(path)
 
     assert mode(path) == 0o600
     assert mode(tmp_path) == parent_mode
-    assert Config(str(path)).file.deezer.arl == ""
+    assert Config(path).file.deezer.arl == ""
 
 
 def test_loading_existing_credentials_repairs_permissions(tmp_path):
     path = tmp_path / "config.toml"
-    path.write_text(open(BLANK_CONFIG_PATH).read())
+    path.write_text(BLANK_CONFIG_PATH.read_text())
     path.chmod(0o644)
     original = path.read_bytes()
 
-    config = Config(str(path))
+    config = Config(path)
     config.save_file()  # Nothing was marked modified.
 
     assert mode(path) == 0o600
@@ -56,8 +56,8 @@ def test_loading_existing_credentials_repairs_permissions(tmp_path):
 @pytest.mark.parametrize("remove_file", [False, True])
 def test_saving_credentials_secures_existing_or_recreated_file(tmp_path, remove_file):
     path = tmp_path / "config.toml"
-    set_user_defaults(str(path))
-    config = Config(str(path))
+    set_user_defaults(path)
+    config = Config(path)
     config.file.qobuz.auth_token = "synthetic-qobuz-token"
     config.file.deezer.arl = "synthetic-deezer-cookie"
     config.file.tidal.refresh_token = "synthetic-tidal-token"
@@ -70,7 +70,7 @@ def test_saving_credentials_secures_existing_or_recreated_file(tmp_path, remove_
     config.save_file()
 
     assert mode(path) == 0o600
-    saved = Config(str(path)).file
+    saved = Config(path).file
     assert saved.qobuz.auth_token == "synthetic-qobuz-token"
     assert saved.deezer.arl == "synthetic-deezer-cookie"
     assert saved.tidal.refresh_token == "synthetic-tidal-token"
@@ -81,8 +81,8 @@ def test_permission_failure_aborts_before_changing_contents(
     tmp_path, monkeypatch, operation
 ):
     path = tmp_path / "config.toml"
-    set_user_defaults(str(path))
-    config = Config(str(path))
+    set_user_defaults(path)
+    config = Config(path)
     config.file.deezer.arl = "new-synthetic-cookie"
     config.file.set_modified()
     path.chmod(0o644)
@@ -98,7 +98,7 @@ def test_permission_failure_aborts_before_changing_contents(
         if operation == "save":
             config.save_file()
         else:
-            set_user_defaults(str(path))
+            set_user_defaults(path)
 
     assert path.read_bytes() == original
     assert descriptors

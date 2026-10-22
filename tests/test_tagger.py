@@ -1,11 +1,10 @@
-import os
 import shutil
+from pathlib import Path
 
 import pytest
 from mutagen.flac import FLAC
 from mutagen.id3 import ID3
 from mutagen.mp4 import MP4
-from util import arun
 
 from streamrip.metadata import (
     AlbumInfo,
@@ -16,17 +15,21 @@ from streamrip.metadata import (
     tag_file,
 )
 
-TEST_FLAC_ORIGINAL = "tests/silence.flac"
-TEST_FLAC_COPY = "tests/silence_copy.flac"
-TEST_M4A = "tests/silence.m4a"
-test_cover = "tests/1x1_pixel.jpg"
+TESTS = Path(__file__).parent
+TEST_FLAC = TESTS / "silence.flac"
+TEST_M4A = TESTS / "silence.m4a"
+TEST_COVER = TESTS / "1x1_pixel.jpg"
 
 
-def wipe_test_flac():
-    audio = FLAC(TEST_FLAC_COPY)
-    # Remove all tags
+@pytest.fixture()
+def flac_path(tmp_path) -> Path:
+    """A copy of the silent FLAC with every tag removed."""
+    path = tmp_path / "track.flac"
+    shutil.copy(TEST_FLAC, path)
+    audio = FLAC(path)
     audio.delete()
     audio.save()
+    return path
 
 
 @pytest.fixture()
@@ -56,11 +59,9 @@ def sample_metadata() -> TrackMetadata:
     )
 
 
-def test_tag_flac_no_cover(sample_metadata):
-    shutil.copy(TEST_FLAC_ORIGINAL, TEST_FLAC_COPY)
-    wipe_test_flac()
-    arun(tag_file(TEST_FLAC_COPY, sample_metadata, None))
-    file = FLAC(TEST_FLAC_COPY)
+async def test_tag_flac_no_cover(sample_metadata, flac_path):
+    await tag_file(flac_path, sample_metadata, None)
+    file = FLAC(flac_path)
     assert file["title"][0] == "testtitle"
     assert file["album"][0] == "testalbum"
     assert file["composer"][0] == "testcomposer"
@@ -77,53 +78,40 @@ def test_tag_flac_no_cover(sample_metadata):
     assert file["isrc"][0] == "USABC1234567"
     # Empty lyrics (the default) are left out, not written as "".
     assert "lyrics" not in file
-    os.remove(TEST_FLAC_COPY)
 
 
-def test_tag_flac_cover(sample_metadata):
-    shutil.copy(TEST_FLAC_ORIGINAL, TEST_FLAC_COPY)
-    wipe_test_flac()
-    arun(tag_file(TEST_FLAC_COPY, sample_metadata, test_cover))
-    file = FLAC(TEST_FLAC_COPY)
+async def test_tag_flac_cover(sample_metadata, flac_path):
+    await tag_file(flac_path, sample_metadata, TEST_COVER)
+    file = FLAC(flac_path)
     assert file["title"][0] == "testtitle"
-    with open(test_cover, "rb") as img:
-        assert file.pictures[0].data == img.read()
-    os.remove(TEST_FLAC_COPY)
+    assert file.pictures[0].data == TEST_COVER.read_bytes()
 
 
-def test_tag_flac_multiple_artists(sample_metadata):
+async def test_tag_flac_multiple_artists(sample_metadata, flac_path):
     """Several credited artists land as separate ARTIST fields.
 
     Not as one "A, B" string that a player has to split on its own.
     """
     sample_metadata.artists = ["The Kid LAROI", "Lil Mosey"]
-    shutil.copy(TEST_FLAC_ORIGINAL, TEST_FLAC_COPY)
-    wipe_test_flac()
-    arun(tag_file(TEST_FLAC_COPY, sample_metadata, None))
-    file = FLAC(TEST_FLAC_COPY)
-    assert list(file["artist"]) == ["The Kid LAROI", "Lil Mosey"]
-    os.remove(TEST_FLAC_COPY)
+    await tag_file(flac_path, sample_metadata, None)
+    assert list(FLAC(flac_path)["artist"]) == ["The Kid LAROI", "Lil Mosey"]
 
 
-def test_tag_flac_multiple_album_artists(sample_metadata):
+async def test_tag_flac_multiple_album_artists(sample_metadata, flac_path):
     """The same for an album credited to several artists.
 
     One "A, B, C" ALBUMARTIST shows up in a library as a single artist of that name.
     """
     sample_metadata.album.albumartists = ["Slander", "Spiritbox", "Vastive"]
-    shutil.copy(TEST_FLAC_ORIGINAL, TEST_FLAC_COPY)
-    wipe_test_flac()
-    arun(tag_file(TEST_FLAC_COPY, sample_metadata, None))
-    file = FLAC(TEST_FLAC_COPY)
-    assert list(file["albumartist"]) == ["Slander", "Spiritbox", "Vastive"]
-    os.remove(TEST_FLAC_COPY)
+    await tag_file(flac_path, sample_metadata, None)
+    assert list(FLAC(flac_path)["albumartist"]) == ["Slander", "Spiritbox", "Vastive"]
 
 
-def test_tag_m4a(sample_metadata, tmp_path):
-    path = str(tmp_path / "track.m4a")
+async def test_tag_m4a(sample_metadata, tmp_path):
+    path = tmp_path / "track.m4a"
     shutil.copy(TEST_M4A, path)
     sample_metadata.artists = ["A", "B"]
-    arun(tag_file(path, sample_metadata, test_cover))
+    await tag_file(path, sample_metadata, TEST_COVER)
     tags = MP4(path).tags
     assert tags["\xa9nam"] == ["testtitle"]
     assert tags["\xa9ART"] == ["A", "B"]
@@ -141,12 +129,12 @@ def test_tag_m4a(sample_metadata, tmp_path):
     assert len(tags["covr"]) == 1
 
 
-def test_tag_mp3(sample_metadata, tmp_path):
-    path = str(tmp_path / "track.mp3")
-    open(path, "wb").close()  # an ID3 tag doesn't need an audio stream
+async def test_tag_mp3(sample_metadata, tmp_path):
+    path = tmp_path / "track.mp3"
+    path.touch()  # an ID3 tag doesn't need an audio stream
     sample_metadata.artists = ["A", "B"]
     sample_metadata.album.compilation = "1"
-    arun(tag_file(path, sample_metadata, None))
+    await tag_file(path, sample_metadata, None)
     tags = ID3(path, translate=False)  # as written, not upgraded to v2.4
     assert tags.version[:2] == (2, 3)
     assert tags["TIT2"].text == ["testtitle"]
@@ -164,12 +152,12 @@ def test_tag_mp3(sample_metadata, tmp_path):
     assert not tags.getall("USLT")
 
 
-def test_exclude_only_drops_the_named_tag(sample_metadata, tmp_path):
+async def test_exclude_only_drops_the_named_tag(sample_metadata, tmp_path):
     # Excluding the composer used to drop the year from M4A files too, as
     # both were mapped onto the same atom.
-    path = str(tmp_path / "track.m4a")
+    path = tmp_path / "track.m4a"
     shutil.copy(TEST_M4A, path)
-    arun(tag_file(path, sample_metadata, test_cover, exclude=["composer", "cover"]))
+    await tag_file(path, sample_metadata, TEST_COVER, exclude=["composer", "cover"])
     tags = MP4(path).tags
     assert "\xa9wrt" not in tags
     assert "covr" not in tags
@@ -177,19 +165,19 @@ def test_exclude_only_drops_the_named_tag(sample_metadata, tmp_path):
 
 
 @pytest.mark.parametrize("ext", ["flac", "m4a", "mp3"])
-def test_retagging_keeps_a_single_cover(sample_metadata, tmp_path, ext):
+async def test_retagging_keeps_a_single_cover(sample_metadata, tmp_path, ext):
     # A converted file is tagged a second time, and ffmpeg may already have
     # copied the cover into it. FLAC's add_picture appends where ID3 and MP4
     # replace, so a re-tagged FLAC used to carry the cover twice.
-    path = str(tmp_path / f"track.{ext}")
+    path = tmp_path / f"track.{ext}"
     if ext == "flac":
-        shutil.copy(TEST_FLAC_ORIGINAL, path)
+        shutil.copy(TEST_FLAC, path)
     elif ext == "m4a":
         shutil.copy(TEST_M4A, path)
     else:
-        open(path, "wb").close()
-    arun(tag_file(path, sample_metadata, test_cover))
-    arun(tag_file(path, sample_metadata, test_cover))
+        path.touch()
+    await tag_file(path, sample_metadata, TEST_COVER)
+    await tag_file(path, sample_metadata, TEST_COVER)
     if ext == "flac":
         covers = FLAC(path).pictures
     elif ext == "m4a":

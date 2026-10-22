@@ -1,5 +1,6 @@
 """streamrip needs ffmpeg: say so before logging in, not per track."""
 
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -23,10 +24,12 @@ def _main():
 async def test_main_refuses_to_start_without_ffmpeg():
     """Reject context entry with installation guidance when ffmpeg is missing."""
     main = _main()
-    with patch("streamrip.rip.main.find_ffmpeg", return_value=None):
-        with pytest.raises(FFmpegNotFoundError, match="No ffmpeg installation"):
-            async with main:
-                pytest.fail("Main must not be entered without ffmpeg")
+    with (
+        patch("streamrip.rip.main.find_ffmpeg", return_value=None),
+        pytest.raises(FFmpegNotFoundError, match="No ffmpeg installation"),
+    ):
+        async with main:
+            pytest.fail("Main must not be entered without ffmpeg")
 
 
 async def test_main_starts_with_ffmpeg():
@@ -41,7 +44,7 @@ async def test_main_starts_with_ffmpeg():
 def test_every_login_command_checks_ffmpeg_first(tmp_path, command):
     """No command that can log in to a source gets there without ffmpeg."""
     cfg = tmp_path / "config.toml"
-    set_user_defaults(str(cfg))
+    set_user_defaults(cfg)
     urls = tmp_path / "urls.txt"
     urls.write_text("https://tidal.com/album/1\n")
     tracks = tmp_path / "tracks.csv"
@@ -65,7 +68,7 @@ def test_every_login_command_checks_ffmpeg_first(tmp_path, command):
     assert result.exit_code == 1
     printed = "".join(str(call.args[0]) for call in console.print.call_args_list)
     assert "No ffmpeg installation found" in printed
-    assert "pipx inject streamrip imageio-ffmpeg" in printed
+    assert "run streamrip's installer again" in printed
     login.assert_not_called()
 
 
@@ -79,16 +82,16 @@ async def test_missing_ffmpeg_is_not_retried():
     track.downloadable.source = "tidal"
     track.config.session.cli.progress_bars = False
     track.is_single = False
-    track.download_path = "/nonexistent/track.flac"
+    track.download_path = Path("/nonexistent/track.flac")
     track.meta.title = "T"
     track.meta.tracknumber = 1
     track.meta.info.id = "1"
     with (
         patch("streamrip.media.track.format_quality", return_value="FLAC"),
         patch("streamrip.media.track.asyncio.sleep", AsyncMock()) as sleep,
+        pytest.raises(TrackDownloadFailedError),
     ):
-        with pytest.raises(TrackDownloadFailedError):
-            await Track.download(track)
+        await Track.download(track)
     assert track.downloadable.download.await_count == 1
     sleep.assert_not_called()
     assert MAX_DOWNLOAD_ATTEMPTS > 1

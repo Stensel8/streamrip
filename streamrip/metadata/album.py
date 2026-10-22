@@ -1,13 +1,18 @@
-from __future__ import annotations
-
 import logging
 import re
 from dataclasses import dataclass
-from typing import Optional
+lazy from pathlib import Path
 
 from ..filepath_utils import clean_filename, clean_filepath
 from .covers import Covers
-from .util import deezer_artists, get_quality_id, safe_get, tidal_quality_id, typed
+from .util import (
+    SOURCES,
+    deezer_artists,
+    get_quality_id,
+    safe_get,
+    tidal_quality_id,
+    typed,
+)
 
 PHON_COPYRIGHT = "\u2117"
 COPYRIGHT = "\u00a9"
@@ -60,7 +65,7 @@ class AlbumInfo:
     id: str
     quality: int
     container: str
-    label: Optional[str] = None
+    label: str | None = None
     explicit: bool = False
     sampling_rate: int | float | None = None
     bit_depth: int | None = None
@@ -97,10 +102,9 @@ class AlbumMetadata:
             return None
         # Add special chars
         _copyright = re.sub(r"(?i)\(P\)", PHON_COPYRIGHT, self.copyright)
-        _copyright = re.sub(r"(?i)\(C\)", COPYRIGHT, _copyright)
-        return _copyright
+        return re.sub(r"(?i)\(C\)", COPYRIGHT, _copyright)
 
-    def format_folder_path(self, formatter: str) -> str:
+    def format_folder_path(self, formatter: str) -> Path:
         """Render `formatter` into this album's folder name."""
         # Available keys: "albumartist", "title", "year", "bit_depth", "sampling_rate",
         # "id", "albumcomposer", "container", "tracktotal", and "version".
@@ -390,14 +394,6 @@ class AlbumMetadata:
 
     @classmethod
     def from_album_resp(cls, resp: dict, source: str) -> AlbumMetadata | None:
-        if source == "qobuz":
-            return cls.from_qobuz(resp)
-        if source == "tidal":
-            return cls.from_tidal(resp)
-        if source == "soundcloud":
-            return cls.from_soundcloud(resp)
-        if source == "deezer":
-            return cls.from_deezer(resp)
-        if source == "spotify":
-            return cls.from_spotify(resp)
-        raise Exception("Invalid source")
+        if source not in SOURCES:
+            raise Exception("Invalid source")
+        return getattr(cls, f"from_{source}")(resp)

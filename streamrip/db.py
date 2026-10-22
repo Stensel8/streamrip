@@ -2,15 +2,12 @@
 
 import logging
 import sqlite3
-from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Final
+lazy from collections.abc import Generator
 
 logger = logging.getLogger("streamrip")
-
-# The sources a download key can start with.
-SOURCES: Final = ("qobuz", "tidal", "deezer", "soundcloud", "spotify")
 
 
 def track_id(source: str, item_id: str) -> str:
@@ -34,15 +31,10 @@ def download_key(source: str, item_id: str) -> str:
     return f"{source}_{track_id(source, item_id)}"
 
 
-def split_download_key(key: str) -> tuple[str | None, str]:
-    """The (source, id) a downloads row holds.
-
-    The source is None for a row from before ids carried one.
-    """
-    source, separator, item_id = key.partition("_")
-    if separator and source in SOURCES:
-        return source, item_id
-    return None, key
+def split_download_key(key: str) -> tuple[str, str]:
+    """The (source, id) a downloads row holds."""
+    source, _, item_id = key.partition("_")
+    return source, item_id
 
 
 class Dummy:
@@ -57,7 +49,6 @@ class Dummy:
 
     def remove(self, **_):
         """No-op: there is nothing to remove."""
-        pass
 
     def clear(self) -> int:
         """No-op: there is nothing to clear."""
@@ -88,14 +79,13 @@ class DatabaseBase:
         self.path = path
 
         self.create()
-        self.migrate()
 
     @contextmanager
-    def _connect(self) -> Iterator[sqlite3.Connection]:
+    def _connect(self) -> Generator[sqlite3.Connection]:
         """A connection that commits (or rolls back) and is then closed.
 
         `with sqlite3.connect(...)` only ends the transaction: it leaves the
-        connection open until it is garbage collected, which Python 3.13 warns
+        connection open until it is garbage collected, which Python warns
         about.
         """
         conn = sqlite3.connect(self.path)
@@ -105,29 +95,21 @@ class DatabaseBase:
         finally:
             conn.close()
 
-    def _create_command(self, name: str, *, if_not_exists: bool = False) -> str:
-        """The statement that creates this table as `name`."""
-        columns = [
-            f"{key} {' '.join(map(str.upper, props))} NOT NULL"
-            for key, props in self.structure.items()
-        ]
-        guard = "IF NOT EXISTS " if if_not_exists else ""
-        body = ", ".join([*columns, *self.constraints])
-        return f"CREATE TABLE {guard}{name} ({body})"
-
     def create(self):
         """Create the table, unless the database already has it.
 
         One statement, so two streamrips starting together cannot both decide
         the table is missing.
         """
-        command = self._create_command(self.name, if_not_exists=True)
+        columns = [
+            f"{key} {' '.join(map(str.upper, props))} NOT NULL"
+            for key, props in self.structure.items()
+        ]
+        body = ", ".join([*columns, *self.constraints])
+        command = f"CREATE TABLE IF NOT EXISTS {self.name} ({body})"
         logger.debug("executing %s", command)
         with self._connect() as conn:
             conn.execute(command)
-
-    def migrate(self):
-        """Bring a table made by an older version up to date. Nothing to do here."""
 
     def contains(self, **items) -> bool:
         """Check whether items matches an entry in the table.
@@ -136,14 +118,14 @@ class DatabaseBase:
         :rtype: bool
         """
         allowed_keys = set(self.structure.keys())
-        assert all(key in allowed_keys for key in items.keys()), (
+        assert all(key in allowed_keys for key in items), (
             f"Invalid key. Valid keys: {allowed_keys}"
         )
 
         items = {k: str(v) for k, v in items.items()}
 
         with self._connect() as conn:
-            conditions = " AND ".join(f"{key}=?" for key in items.keys())
+            conditions = " AND ".join(f"{key}=?" for key in items)
             command = f"SELECT EXISTS(SELECT 1 FROM {self.name} WHERE {conditions})"
 
             logger.debug("Executing %s", command)
@@ -174,7 +156,7 @@ class DatabaseBase:
 
     def remove(self, **items):
         """Delete the rows that match every column-name=value given."""
-        conditions = " AND ".join(f"{key}=?" for key in items.keys())
+        conditions = " AND ".join(f"{key}=?" for key in items)
         command = f"DELETE FROM {self.name} WHERE {conditions}"
 
         with self._connect() as conn:
@@ -217,36 +199,6 @@ class Failed(DatabaseBase):
     # `streamrip repair`.
     constraints = ("UNIQUE (source, media_type, id)",)
 
-    @staticmethod
-    def _unique_on_id_alone(conn: sqlite3.Connection, table: str) -> bool:
-        """Whether `table` is the old one, unique on its id column only."""
-        for _, index, unique, *_ in conn.execute(f"PRAGMA index_list({table})"):
-            if unique:
-                columns = [
-                    row[2] for row in conn.execute(f"PRAGMA index_info({index})")
-                ]
-                if columns == ["id"]:
-                    return True
-        return False
-
-    def migrate(self):
-        """Rebuild a table that is unique on the id alone, keeping its rows."""
-        with self._connect() as conn:
-            if not self._unique_on_id_alone(conn, self.name):
-                return
-            conn.execute("BEGIN IMMEDIATE")
-            if not self._unique_on_id_alone(conn, self.name):
-                return  # another streamrip got here first
-            logger.debug("Rebuilding %s: unique per source now", self.name)
-            columns = ", ".join(self.structure)
-            conn.execute(f"ALTER TABLE {self.name} RENAME TO {self.name}_old")
-            conn.execute(self._create_command(self.name))
-            conn.execute(
-                f"INSERT OR IGNORE INTO {self.name} ({columns}) "
-                f"SELECT {columns} FROM {self.name}_old"
-            )
-            conn.execute(f"DROP TABLE {self.name}_old")
-
 
 @dataclass(slots=True)
 class Database:
@@ -259,15 +211,8 @@ class Database:
     skipped_now: int = 0
 
     def downloaded(self, source: str, item_id: str) -> bool:
-        """Whether a track of `source` is in the library.
-
-        A row from before ids carried their source holds the bare id and
-        cannot say which source it was from. It still counts, for any of them,
-        so upgrading does not download everything again.
-        """
-        return self.downloads.contains(
-            id=download_key(source, item_id)
-        ) or self.downloads.contains(id=track_id(source, item_id))
+        """Whether a track of `source` is in the library."""
+        return self.downloads.contains(id=download_key(source, item_id))
 
     def set_downloaded(self, source: str, item_id: str, new: bool = True):
         """Record a track as in the library; new: downloaded by this run."""
@@ -275,9 +220,8 @@ class Database:
         self.downloaded_now += new
 
     def forget_downloaded(self, source: str, item_id: str):
-        """Drop a track from the library record, also as a bare legacy id."""
+        """Drop a track from the library record."""
         self.downloads.remove(id=download_key(source, item_id))
-        self.downloads.remove(id=track_id(source, item_id))
 
     def set_failed(self, source: str, media_type: str, id: str):
         self.failed.add((source, media_type, id))

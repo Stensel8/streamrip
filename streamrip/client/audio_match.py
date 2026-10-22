@@ -39,24 +39,29 @@ Track = MatchTrack
 
 # Words that mark another version of a recording, with their spellings. A live version is not the studio
 # version: when the two titles do not carry the same ones, the title score is halved.
-VERSION_TAGS = {
-    "live": r"live",
-    "remix": r"remix|rmx",
-    "acoustic": r"acoustic|unplugged",
-    "instrumental": r"instrumental",
-    "a cappella": r"a ?cappella|acapella",
-    "demo": r"demo",
-    "karaoke": r"karaoke",
-    "cover": r"cover",
-    "radio edit": r"radio edit",
-    "extended": r"extended",
-    "sped up": r"sped up",
-    "slowed": r"slowed",
-    "re-recorded": r"re-?recorded|\w+'s version",  # "Love Story (Taylor's Version)" is not the 2008 recording
-}
-_TAGS = {
-    tag: re.compile(rf"\b(?:{spellings})\b") for tag, spellings in VERSION_TAGS.items()
-}
+VERSION_TAGS = frozendict(
+    {
+        "live": r"live",
+        "remix": r"remix|rmx",
+        "acoustic": r"acoustic|unplugged",
+        "instrumental": r"instrumental",
+        "a cappella": r"a ?cappella|acapella",
+        "demo": r"demo",
+        "karaoke": r"karaoke",
+        "cover": r"cover",
+        "radio edit": r"radio edit",
+        "extended": r"extended",
+        "sped up": r"sped up",
+        "slowed": r"slowed",
+        "re-recorded": r"re-?recorded|\w+'s version",  # "Love Story (Taylor's Version)" is not the 2008 recording
+    }
+)
+_TAGS = frozendict(
+    {
+        tag: re.compile(rf"\b(?:{spellings})\b")
+        for tag, spellings in VERSION_TAGS.items()
+    }
+)
 
 _BRACKETS = re.compile(r"[(\[{][^)\]}]*[)\]}]")
 _FEATURING = re.compile(r"\s+(?:feat\.?|ft\.?|featuring)\s+.*$", re.IGNORECASE)
@@ -77,11 +82,14 @@ _APOSTROPHES = str.maketrans(
 )  # curly quotes, grave, acute
 # Words that services abbreviate differently: "Pt. 2" is "Part 2", "Rock 'n' Roll" is "Rock and Roll".
 # Roman numerals are numbers too, except "i", "v" and "x", which are also words and letters.
-_SPELLINGS = {"pt": "part", "vol": "volume", "n": "and"} | dict(
-    zip(
-        ["ii", "iii", "iv", "vi", "vii", "viii", "ix"],
-        ["2", "3", "4", "6", "7", "8", "9"],
-        strict=True,
+_SPELLINGS = frozendict(
+    {"pt": "part", "vol": "volume", "n": "and"}
+    | dict(
+        zip(
+            ["ii", "iii", "iv", "vi", "vii", "viii", "ix"],
+            ["2", "3", "4", "6", "7", "8", "9"],
+            strict=True,
+        )
     )
 )
 # What joins several artists in one name: "Macklemore & Ryan Lewis", "Nicky Jam x J Balvin",

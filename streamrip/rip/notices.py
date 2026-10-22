@@ -1,6 +1,6 @@
 """What to tell the user, once per run, the first time they use a source."""
 
-from ..config import Config
+lazy from ..config import Config
 
 MUSIC_SYNC = "https://github.com/Stensel8/Music-Sync"
 

@@ -6,14 +6,13 @@ import logging
 import random
 import time
 from abc import ABC, abstractmethod
-from collections.abc import Awaitable, Callable
-from typing import TypeVar
+lazy from collections.abc import Awaitable, Callable
 
-import aiohttp
-import aiolimiter
+lazy import aiohttp
+lazy import aiolimiter
 
 from ..utils.ssl_utils import get_aiohttp_connector_kwargs
-from .downloadable import Downloadable
+lazy from .downloadable import Downloadable
 
 logger = logging.getLogger("streamrip")
 
@@ -25,16 +24,11 @@ DEFAULT_USER_AGENT = (
     "(KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36"
 )
 
-# Fail a stalled connection after 30s of silence, not aiohttp's default 5 minutes.
-REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=None, sock_connect=15, sock_read=30)
-
 # Rate limiting and server errors are worth another attempt; other 4xx are not.
 RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
 MAX_API_ATTEMPTS = 4
 MAX_RETRY_DELAY = 60
 RATE_LIMIT_PAUSE = 10  # seconds per attempt when a 429 has no Retry-After
-
-T = TypeVar("T")
 
 
 def retry_after(resp, attempt: int) -> float:
@@ -69,7 +63,7 @@ class RequestClient:
             else contextlib.nullcontext()
         )
 
-    def _pause_owner(self) -> "RequestClient":
+    def _pause_owner(self) -> RequestClient:
         """The client whose 429 pause this one shares (itself, by default)."""
         return self
 
@@ -84,7 +78,7 @@ class RequestClient:
             )
         owner._retry_at = max(owner._retry_at, now + seconds)
 
-    async def _get_with_retries(
+    async def _get_with_retries[T](
         self,
         url: str,
         read: Callable[[aiohttp.ClientResponse], Awaitable[T]],
@@ -133,9 +127,9 @@ class RequestClient:
             except aiohttp.ClientSSLError:
                 raise
             except (
+                TimeoutError,
                 aiohttp.ClientConnectionError,
                 aiohttp.ClientPayloadError,
-                asyncio.TimeoutError,
             ) as e:
                 if attempt == MAX_API_ATTEMPTS:
                     raise
@@ -184,9 +178,12 @@ class Client(RequestClient, ABC):
 
 
 def new_session(
-    verify_ssl: bool = True, timeout: aiohttp.ClientTimeout = REQUEST_TIMEOUT
+    verify_ssl: bool = True, timeout: aiohttp.ClientTimeout | None = None
 ) -> aiohttp.ClientSession:
     """An HTTP session; every request streamrip makes goes through one."""
+    if timeout is None:
+        # Fail a stalled connection after 30s of silence, not aiohttp's default 5 minutes.
+        timeout = aiohttp.ClientTimeout(total=None, sock_connect=15, sock_read=30)
     connector = aiohttp.TCPConnector(
         **get_aiohttp_connector_kwargs(verify_ssl=verify_ssl),
         resolver=aiohttp.ThreadedResolver(),

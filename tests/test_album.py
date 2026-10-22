@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -24,7 +25,7 @@ def _album(tracks):
     config = MagicMock()
     config.session.metadata.prefer_explicit = False
     return Album(
-        meta=_meta(), tracks=tracks, config=config, folder="/x", db=MagicMock()
+        meta=_meta(), tracks=tracks, config=config, folder=Path("/x"), db=MagicMock()
     )
 
 
@@ -91,7 +92,7 @@ def _pending_album(monkeypatch, tmp_path, tracklist, downloaded):
     )
     monkeypatch.setattr(album_module, "download_artwork", artwork)
     monkeypatch.setattr(
-        album_module, "album_folder", lambda config, source, m: str(tmp_path / "Encore")
+        album_module, "album_folder", lambda config, source, m: tmp_path / "Encore"
     )
     return PendingAlbum("1", client, config, db), artwork
 
@@ -153,7 +154,7 @@ class _FakeDownloadable:
         if "broken" in self.url:
             raise ConnectionError("gone")
         type(self).downloaded.append(self.url)
-        with open(path, "wb") as f:
+        with path.open("wb") as f:
             f.write(b"%PDF")
 
 
@@ -169,7 +170,7 @@ async def test_booklets_are_saved_as_pdfs(monkeypatch, tmp_path, caplog):
         {"description": "Digital Booklet", "url": "https://q/5.pdf"},
     ]
 
-    await album_module.download_booklets(None, booklets, str(tmp_path))
+    await album_module.download_booklets(None, booklets, tmp_path)
 
     assert _FakeDownloadable.downloaded == ["https://q/1.pdf", "https://q/5.pdf"]
     # Only names that would collide get a number.

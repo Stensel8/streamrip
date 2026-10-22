@@ -1,25 +1,25 @@
 import asyncio
 import html
 import logging
-import os
 import re
 from contextlib import nullcontext
 from dataclasses import dataclass
+from pathlib import Path
 
-import aiohttp
 from rich.text import Text
+lazy import aiohttp
 
 from .. import progress
 from ..client import Client, new_session
-from ..config import Config
 from ..console import console
-from ..db import Database
 from ..exceptions import NonStreamableError
 from ..filepath_utils import clean_filename
 from ..metadata import AlbumMetadata, PlaylistMetadata, SearchResults, TrackMetadata
 from .artwork import download_artwork
 from .media import Media, Pending, rip_tracks
 from .track import Track, fetch_downloadable, fetch_track_meta
+lazy from ..config import Config
+lazy from ..db import Database
 
 logger = logging.getLogger("streamrip")
 
@@ -32,7 +32,7 @@ RESOLVE_CONCURRENCY = 20
 LASTFM_MAX_TRACKS = 10_000
 
 
-def _playlist_folder(config: Config, name: str) -> str:
+def _playlist_folder(config: Config, name: str) -> Path:
     """Return the sanitized download folder for a playlist named name.
 
     Raises ValueError if the sanitized name is empty, ".", "..", or would
@@ -42,9 +42,9 @@ def _playlist_folder(config: Config, name: str) -> str:
     folder = clean_filename(name, c.filepaths.restrict_characters)
     if folder in ("", ".", ".."):
         raise ValueError(f"Invalid playlist folder: {name!r}")
-    root = os.path.realpath(c.downloads.folder)
-    path = os.path.realpath(os.path.join(root, folder))
-    if path == root or os.path.commonpath((root, path)) != root:
+    root = Path(c.downloads.folder).resolve()
+    path = (root / folder).resolve()
+    if path == root or not path.is_relative_to(root):
         raise ValueError(f"Invalid playlist folder outside download root: {name!r}")
     return path
 
@@ -54,7 +54,7 @@ class PendingPlaylistTrack(Pending):
     id: str
     client: Client
     config: Config
-    folder: str
+    folder: Path
     playlist_name: str
     position: int
     db: Database
@@ -340,7 +340,7 @@ class PendingLastfmPlaylist(Pending):
             """The (title, artist) pairs of a last.fm playlist page."""
             # Each track is a link with its title, then one with its artist.
             titles = [html.unescape(t) for t in title_tags.findall(page_text)]
-            return list(zip(titles[::2], titles[1::2]))
+            return list(zip(titles[::2], titles[1::2], strict=False))
 
         async def fetch(session: aiohttp.ClientSession, url, **kwargs):
             async with session.get(url, **kwargs) as resp:

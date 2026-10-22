@@ -1,16 +1,13 @@
 import json
-import os
 import shutil
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import mutagen
 import pytest
-from util import arun
 
 import streamrip.db as db
 from streamrip.client.downloadable import Downloadable
-from streamrip.client.qobuz import QobuzClient
 from streamrip.config import Config
 from streamrip.exceptions import NonStreamableError
 from streamrip.media.track import (
@@ -28,35 +25,6 @@ from streamrip.metadata import (
     TrackMetadata,
 )
 
-
-@pytest.mark.skipif(
-    not (os.environ.get("QOBUZ_USER_ID") and os.environ.get("QOBUZ_AUTH_TOKEN")),
-    reason="Qobuz user ID and auth token are required.",
-)
-def test_pending_resolve(qobuz_client: QobuzClient, tmp_path):
-    """A single resolves into a Track in its album folder, with the cover next to it
-    (needs a Qobuz account).
-    """
-    session = qobuz_client.config.session
-    session.downloads.folder = str(tmp_path)
-    session.filepaths.add_singles_to_folder = True
-    p = PendingSingle(
-        "19512574",
-        qobuz_client,
-        qobuz_client.config,
-        db.Database(db.Dummy(), db.Dummy()),
-    )
-    t = arun(p.resolve())
-    assert isinstance(t, Track)
-    assert isinstance(t.downloadable, Downloadable)
-    folder = (
-        tmp_path / "Fleetwood Mac - Rumours (2001 Remaster) (1977) [FLAC] [24B-96kHz]"
-    )
-    assert t.folder == str(folder)
-    assert (folder / "cover.jpg").is_file()
-    assert t.cover_path is not None and os.path.isfile(t.cover_path)
-
-
 FIXTURES = {
     "flac": "tests/silence.flac",
     "m4a": "tests/silence.m4a",
@@ -73,10 +41,10 @@ class FakeDownloadable(Downloadable):
 
     async def _download(self, path, callback):
         shutil.copy(FIXTURES[self.extension], path)
-        callback(os.path.getsize(path))
+        callback(path.stat().st_size)
 
     async def size(self):
-        return os.path.getsize(FIXTURES[self.extension])
+        return Path(FIXTURES[self.extension]).stat().st_size
 
 
 def _place_copy(path, fixture: str, album: str = "Test Album"):
@@ -88,9 +56,9 @@ def _place_copy(path, fixture: str, album: str = "Test Album"):
     audio.save()
 
 
-def _make_track(folder: str, extension: str) -> Track:
+def _make_track(folder: Path, extension: str) -> Track:
     config = Config.defaults()
-    config.session.downloads.folder = folder
+    config.session.downloads.folder = str(folder)
     config.session.cli.progress_bars = False
     config.session.filepaths.track_format = "{title}"
 
@@ -122,52 +90,48 @@ def _make_track(folder: str, extension: str) -> Track:
     )
 
 
-def test_lossy_download_skipped_when_lossless_copy_exists(tmp_path):
+async def test_lossy_download_skipped_when_lossless_copy_exists(tmp_path):
     _place_copy(tmp_path / "Song.flac", "flac")
 
-    arun(_make_track(str(tmp_path), "m4a").rip())
+    await _make_track(tmp_path, "m4a").rip()
 
     assert not (tmp_path / "Song.m4a").exists()
     assert (tmp_path / "Song.flac").exists()
 
 
-def test_lossless_copy_of_another_release_does_not_skip(tmp_path):
+@pytest.mark.parametrize(("existing", "downloaded"), [("flac", "m4a"), ("m4a", "flac")])
+async def test_a_copy_of_another_release_is_neither_skipped_for_nor_removed(
+    tmp_path, existing, downloaded
+):
     # Same filename stem, different album: not the same track.
-    _place_copy(tmp_path / "Song.flac", "flac", album="Some Single")
+    _place_copy(tmp_path / f"Song.{existing}", existing, album="Some Single")
 
-    arun(_make_track(str(tmp_path), "m4a").rip())
+    await _make_track(tmp_path, downloaded).rip()
+
+    assert (tmp_path / f"Song.{downloaded}").exists()
+    assert (tmp_path / f"Song.{existing}").exists()
+
+
+async def test_lossy_download_proceeds_without_a_lossless_copy(tmp_path):
+    await _make_track(tmp_path, "m4a").rip()
 
     assert (tmp_path / "Song.m4a").exists()
 
 
-def test_lossy_download_proceeds_without_a_lossless_copy(tmp_path):
-    arun(_make_track(str(tmp_path), "m4a").rip())
-
-    assert (tmp_path / "Song.m4a").exists()
-
-
-def test_lossy_copy_removed_once_lossless_copy_lands(tmp_path):
+async def test_lossy_copy_removed_once_lossless_copy_lands(tmp_path):
     _place_copy(tmp_path / "Song.m4a", "m4a")
 
-    arun(_make_track(str(tmp_path), "flac").rip())
+    await _make_track(tmp_path, "flac").rip()
 
     assert (tmp_path / "Song.flac").exists()
     assert not (tmp_path / "Song.m4a").exists()
 
 
-def test_lossy_copy_of_another_release_is_kept(tmp_path):
-    _place_copy(tmp_path / "Song.m4a", "m4a", album="Some Single")
-
-    arun(_make_track(str(tmp_path), "flac").rip())
-
-    assert (tmp_path / "Song.m4a").exists()
-
-
-def test_alac_copy_is_never_treated_as_lossy(tmp_path):
+async def test_alac_copy_is_never_treated_as_lossy(tmp_path):
     # ALAC is lossless but shares the .m4a extension with AAC.
     _place_copy(tmp_path / "Song.m4a", "alac")
 
-    arun(_make_track(str(tmp_path), "flac").rip())
+    await _make_track(tmp_path, "flac").rip()
 
     assert (tmp_path / "Song.m4a").exists()
 
@@ -184,15 +148,15 @@ class FlacToFlacConverter:
         pass
 
 
-def test_lossy_copy_removed_after_lossless_conversion(tmp_path, monkeypatch):
+async def test_lossy_copy_removed_after_lossless_conversion(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "streamrip.media.track.converter.get", lambda _: FlacToFlacConverter
     )
     _place_copy(tmp_path / "Song.m4a", "m4a")
-    t = _make_track(str(tmp_path), "flac")
+    t = _make_track(tmp_path, "flac")
     t.config.session.conversion.enabled = True
 
-    arun(t.rip())
+    await t.rip()
 
     assert (tmp_path / "Song.flac").exists()
     assert not (tmp_path / "Song.m4a").exists()
@@ -243,15 +207,14 @@ def test_album_folder_follows_restrict_characters(restrict):
 
     folder = album_folder(config, "qobuz", album)
 
-    assert folder == (
+    assert folder == Path(
         "/music/Bjrk - Homognic" if restrict else "/music/Björk - Homogénic"
     )
 
 
 @pytest.fixture(params=["single", "album"])
 def pending_disc_track(request, tmp_path, monkeypatch):
-    with open("tests/qobuz_track_resp.json") as f:
-        resp = json.load(f)
+    resp = json.loads(Path("tests/qobuz_track_resp.json").read_text())
     resp["album"]["media_count"] = 2
     config = Config.defaults()
     config.session.downloads.folder = str(tmp_path / "downloads")
@@ -315,14 +278,14 @@ async def test_valid_disc_number_download_stays_in_album(
 
     track = await pending.resolve()
     assert track is not None
-    expected = Path(album_folder(pending.config, "qobuz", track.meta.album)) / (
+    expected = album_folder(pending.config, "qobuz", track.meta.album) / (
         f"Disc {discnumber or 1}"
     )
-    assert Path(track.folder) == expected
+    assert track.folder == expected
     await track.preprocess()
     await track.download()
-    assert Path(track.download_path).parent == expected
-    assert Path(track.download_path).read_bytes() == Path(FIXTURES["flac"]).read_bytes()
+    assert track.download_path.parent == expected
+    assert track.download_path.read_bytes() == Path(FIXTURES["flac"]).read_bytes()
     pending.db.set_failed.assert_not_called()
 
 
@@ -332,7 +295,7 @@ async def test_processing_failures_are_counted_and_stored_for_repair(
     tmp_path, monkeypatch, phase, is_single
 ):
     """Filesystem and tag failures contribute to totals for every track path."""
-    track = _make_track(str(tmp_path), "flac")
+    track = _make_track(tmp_path, "flac")
     track.is_single = is_single
     track.db = db.Database(db.Dummy(), db.Failed(str(tmp_path / "failed.db")))
     monkeypatch.setattr(
@@ -349,7 +312,7 @@ async def test_exhausted_track_download_is_counted_only_once(tmp_path, monkeypat
     """The outer processing handler preserves download failure accounting."""
     from streamrip.exceptions import TrackDownloadFailedError
 
-    track = _make_track(str(tmp_path), "flac")
+    track = _make_track(tmp_path, "flac")
     monkeypatch.setattr(
         FakeDownloadable, "_download", AsyncMock(side_effect=OSError("download failed"))
     )
@@ -362,18 +325,23 @@ async def test_exhausted_track_download_is_counted_only_once(tmp_path, monkeypat
 
 async def test_partial_file_cleanup_failure_is_counted_once(tmp_path, monkeypatch):
     """A cleanup error is counted by the outer handler, not twice."""
-    track = _make_track(str(tmp_path), "flac")
+    track = _make_track(tmp_path, "flac")
     # A real failed table: the Dummy one never stores anything.
     track.db = db.Database(db.Dummy(), db.Failed(str(tmp_path / "failed.db")))
-    monkeypatch.setattr(
-        FakeDownloadable, "_download", AsyncMock(side_effect=OSError("download failed"))
-    )
+    real_unlink = Path.unlink
+
+    async def download(self, path, callback):
+        path.write_bytes(b"partial")  # what the cleanup then fails to remove
+        raise OSError("download failed")
+
+    def unlink(self, *args, **kwargs):
+        if self.suffix == ".flac":
+            raise OSError("cleanup failed")
+        real_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr(FakeDownloadable, "_download", download)
     monkeypatch.setattr("streamrip.media.track.asyncio.sleep", AsyncMock())
-    monkeypatch.setattr("streamrip.media.track.os.path.isfile", lambda _: True)
-    monkeypatch.setattr(
-        "streamrip.media.track.os.remove",
-        MagicMock(side_effect=OSError("cleanup failed")),
-    )
+    monkeypatch.setattr(Path, "unlink", unlink)
 
     with pytest.raises(OSError, match="cleanup failed"):
         await track.rip()

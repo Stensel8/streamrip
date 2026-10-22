@@ -1,38 +1,29 @@
+import atexit
 import os
-from contextlib import nullcontext
-from unittest.mock import AsyncMock
+import shutil
+import tempfile
 
-import pytest
-from aiohttp import web
-from util import arun
+# streamrip.config makes the app's config folder when it is imported, and tests
+# that write a default config put databases in it. Point it somewhere
+# temporary first, or every run fills the real ~/.config/streamrip.
+_test_home = tempfile.mkdtemp(prefix="streamrip-tests-")
+atexit.register(shutil.rmtree, _test_home, ignore_errors=True)
+for _name in ("HOME", "USERPROFILE", "XDG_CONFIG_HOME", "APPDATA"):
+    os.environ[_name] = _test_home
+# Set in the container image; the update check tests need it unset.
+os.environ.pop("STREAMRIP_NO_UPDATE_CHECK", None)
 
-import streamrip.media.semaphore as semaphore_module
-from streamrip import __version__
-from streamrip.client.qobuz import QobuzClient
-from streamrip.config import Config
-from streamrip.console import console
-from streamrip.rip.interactive import Confirm
+import asyncio  # noqa: E402
+from contextlib import nullcontext  # noqa: E402
+from unittest.mock import AsyncMock  # noqa: E402
 
+import pytest  # noqa: E402
+from aiohttp import web  # noqa: E402
 
-@pytest.fixture(scope="session")
-def qobuz_client():
-    """A logged-in Qobuz client, for the tests that need a real account
-    (QOBUZ_USER_ID and QOBUZ_AUTH_TOKEN; they're skipped without them).
-    """
-    if "QOBUZ_USER_ID" not in os.environ or "QOBUZ_AUTH_TOKEN" not in os.environ:
-        pytest.skip("Qobuz user ID and auth token are required.")
-    config = Config.defaults()
-    config.session.qobuz.user_id = os.environ["QOBUZ_USER_ID"]
-    config.session.qobuz.auth_token = os.environ["QOBUZ_AUTH_TOKEN"]
-    if "QOBUZ_APP_ID" in os.environ and "QOBUZ_SECRETS" in os.environ:
-        config.session.qobuz.app_id = os.environ["QOBUZ_APP_ID"]
-        config.session.qobuz.secrets = os.environ["QOBUZ_SECRETS"].split(",")
-    client = QobuzClient(config)
-    arun(client.login())
-
-    yield client
-
-    arun(client.session.close())
+import streamrip.media.semaphore as semaphore_module  # noqa: E402
+from streamrip import __version__  # noqa: E402
+from streamrip.console import console  # noqa: E402
+from streamrip.rip.interactive import Confirm  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -131,7 +122,7 @@ def _installed_browser() -> str | None:
                 await browser.close()
             return name
 
-    return arun(probe())
+    return asyncio.run(probe())
 
 
 def _no_prompt(*_args, **_kwargs):

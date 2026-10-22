@@ -6,13 +6,13 @@ ids comes back in the ``track_ids`` extra instead.
 """
 
 import json
+from pathlib import Path
 from unittest.mock import AsyncMock
 
 from streamrip.client.qobuz import QobuzClient
 from streamrip.metadata import PlaylistMetadata
 
-with open("tests/qobuz_track_resp.json") as f:
-    TRACK = json.load(f)
+TRACK = json.loads(Path("tests/qobuz_track_resp.json").read_text())
 
 
 def test_track_ids_preferred_over_truncated_inline_list():

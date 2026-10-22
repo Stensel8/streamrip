@@ -1,6 +1,7 @@
 # Dependabot handles security updates; Renovate (renovate.json) handles the
-# regular version updates, SHA pinning and lock file maintenance. Keeping the
-# version updates in one tool avoids two PRs for every release.
+# regular version updates, SHA and digest pinning and lock file maintenance.
+# Keeping the version updates in one tool avoids two PRs for every release.
+# Dependabot does not read a Containerfile, so the base images are Renovate's.
 #
 # open-pull-requests-limit: 0 turns Dependabot's version updates off without
 # affecting security updates (enable "Dependabot security updates" in the
@@ -8,7 +9,7 @@
 # open version updates as well.
 version: 2
 updates:
-  - package-ecosystem: pip
+  - package-ecosystem: uv
     directory: "/"
     target-branch: dev
     schedule:

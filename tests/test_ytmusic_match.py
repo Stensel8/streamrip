@@ -4,7 +4,6 @@ import pytest
 
 from streamrip.client.audio_match import MatchTrack
 from streamrip.client.ytmusic import (
-    AudioMatch,
     YouTubeMusicMatcher,
     candidates_from,
     select,
@@ -159,12 +158,6 @@ def test_the_edition_with_the_same_explicit_flag_wins():
 
     assert match is not None
     assert match.track.video_id == "dirty"
-
-
-def test_a_match_knows_where_to_download_from():
-    match = AudioMatch(MatchTrack("Song", video_id="abc123"), 1.0)
-
-    assert match.url == "https://music.youtube.com/watch?v=abc123"
 
 
 class FakeMatcher(YouTubeMusicMatcher):

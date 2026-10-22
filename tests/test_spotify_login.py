@@ -26,14 +26,17 @@ def test_a_redirect_with_the_right_state_gives_its_code():
     assert check_redirect({"code": "abc", "state": "s1"}, "s1") == "abc"
 
 
-def test_a_refused_login_says_so():
-    with pytest.raises(SpotifyLoginError, match="access_denied"):
-        check_redirect({"error": "access_denied", "state": "s1"}, "s1")
-
-
-def test_a_redirect_from_another_login_is_refused():
-    with pytest.raises(SpotifyLoginError, match="state mismatch"):
-        check_redirect({"code": "abc", "state": "someone-elses"}, "s1")
+@pytest.mark.parametrize(
+    ("params", "message"),
+    [
+        ({"error": "access_denied", "state": "s1"}, "access_denied"),
+        ({"code": "abc", "state": "someone-elses"}, "state mismatch"),
+    ],
+    ids=["a refused login says so", "a redirect from another login is refused"],
+)
+def test_a_redirect_that_is_not_ours_is_rejected(params, message):
+    with pytest.raises(SpotifyLoginError, match=message):
+        check_redirect(params, "s1")
 
 
 def test_a_redirect_without_a_code_is_refused():

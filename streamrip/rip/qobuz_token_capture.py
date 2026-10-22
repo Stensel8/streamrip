@@ -24,7 +24,8 @@ import json
 import logging
 import secrets
 
-from aiohttp import web
+lazy from aiohttp import web
+lazy from playwright.async_api import Error as PlaywrightError
 
 from ..console import console
 from .browser_login import (
@@ -97,8 +98,8 @@ async def capture_qobuz_auth_token(timeout_s: int = 300) -> tuple[str, str]:
     can't be started; callers should fall back to manual entry.
     """
     nonce = secrets.token_urlsafe(16)
-    loop = asyncio.get_event_loop()
-    result: "asyncio.Future[tuple[str, str]]" = loop.create_future()
+    loop = asyncio.get_running_loop()
+    result: asyncio.Future[tuple[str, str]] = loop.create_future()
 
     async def handle_preflight(request: web.Request) -> web.Response:
         """Answer the browser's CORS preflight OPTIONS request."""
@@ -138,8 +139,9 @@ async def capture_qobuz_auth_token(timeout_s: int = 300) -> tuple[str, str]:
         console.print(_SNIPPET_TEMPLATE.format(callback_url=callback_url))
 
         try:
-            return await asyncio.wait_for(result, timeout=timeout_s)
-        except asyncio.TimeoutError as e:
+            async with asyncio.timeout(timeout_s):
+                return await result
+        except TimeoutError as e:
             raise QobuzTokenCaptureError(
                 f"No token arrived within {timeout_s}s; enter it manually instead."
             ) from e
@@ -149,8 +151,6 @@ async def capture_qobuz_auth_token(timeout_s: int = 300) -> tuple[str, str]:
 
 async def _read_token(page) -> tuple[str, str] | None:
     """(user_id, token) once Qobuz's web player has saved them, else None."""
-    from playwright.async_api import Error as PlaywrightError
-
     try:
         raw = await page.evaluate("() => localStorage.getItem('localuser')")
     except PlaywrightError:

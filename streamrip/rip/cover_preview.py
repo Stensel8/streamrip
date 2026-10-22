@@ -4,13 +4,13 @@ import io
 import logging
 import sys
 
-from PIL import Image, ImageOps
 from rich.color import Color
 from rich.control import Control
 from rich.style import Style
 from rich.text import Text
-from textual.containers import Container
-from textual.widgets import Static
+lazy from PIL import Image, ImageOps
+lazy from textual.containers import Container
+lazy from textual.widgets import Static
 
 logger = logging.getLogger("streamrip")
 
@@ -122,8 +122,10 @@ def _cell(pixels: list) -> tuple[str, tuple, tuple]:
         dark, light = order[:split], order[split:]
         fg, bg = _mean([pixels[i] for i in dark]), _mean([pixels[i] for i in light])
         error = sum(
-            sum((a - b) ** 2 for a, b in zip(pixels[i], fg)) for i in dark
-        ) + sum(sum((a - b) ** 2 for a, b in zip(pixels[i], bg)) for i in light)
+            sum((a - b) ** 2 for a, b in zip(pixels[i], fg, strict=True)) for i in dark
+        ) + sum(
+            sum((a - b) ** 2 for a, b in zip(pixels[i], bg, strict=True)) for i in light
+        )
         if best is None or error < best[0]:
             best = (error, sum(1 << i for i in dark), fg, bg)
     return _sextant(best[1]), best[2], best[3]

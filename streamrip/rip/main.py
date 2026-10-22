@@ -2,8 +2,9 @@ import asyncio
 import json
 import logging
 import sys
+lazy from pathlib import Path
 
-import aiofiles
+lazy import aiofiles
 
 from .. import db, lyrics
 from ..client import (
@@ -14,8 +15,6 @@ from ..client import (
     SpotifyClient,
     TidalClient,
 )
-from ..client.audio_match import MatchTrack
-from ..config import Config
 from ..console import console
 from ..exceptions import (
     APIError,
@@ -41,13 +40,11 @@ from .interactive import Confirm
 from .notices import notice_for
 from .parse_url import parse_url
 from .prompter import get_prompter
+lazy from ..client.audio_match import MatchTrack
+lazy from ..config import Config
+lazy from .search_menu import choose_results
 
 logger = logging.getLogger("streamrip")
-
-# Windows used to be forced onto the SelectorEventLoop because aiodns needed it,
-# but that loop cannot run subprocesses, so every ffmpeg conversion failed there.
-# aiodns is no longer used (connectors use aiohttp's ThreadedResolver), so the
-# default ProactorEventLoop is kept.
 
 
 class Main:
@@ -85,21 +82,6 @@ class Main:
             else db.Dummy(),
         )
 
-    async def add(self, url: str):
-        """Add url as a pending item.
-
-        Do not `asyncio.gather` calls to this! Use `add_all` for concurrency.
-        """
-        parsed = parse_url(url)
-        if parsed is None:
-            raise Exception(f"Unable to parse url {url}")
-
-        client = await self.get_logged_in_client(parsed.source)
-        self.pending.append(
-            await parsed.into_pending(client, self.config, self.database),
-        )
-        logger.debug("Added url=%s", url)
-
     async def add_by_id(self, source: str, media_type: str, id: str):
         """Queue one item by its id."""
         await self.add_all_by_id([(source, media_type, id)])
@@ -109,7 +91,7 @@ class Main:
 
         Each source is logged in to once.
         """
-        sources = set(s for s, _, _ in info)
+        sources = {s for s, _, _ in info}
         clients = {s: await self.get_logged_in_client(s) for s in sources}
         for source, media_type, id in info:
             self.pending.append(
@@ -271,8 +253,6 @@ class Main:
         if search_results is None:
             return
 
-        from .search_menu import choose_results
-
         chosen = await choose_results(
             search_results,
             source,
@@ -298,7 +278,7 @@ class Main:
             await self.add_by_id(source, first.media_type, first.id)
 
     async def search_output_file(
-        self, source: str, media_type: str, query: str, filepath: str, limit: int
+        self, source: str, media_type: str, query: str, filepath: Path, limit: int
     ):
         """Search and write the results to filepath as JSON, without downloading."""
         search_results = await self._search(source, media_type, query, limit)
