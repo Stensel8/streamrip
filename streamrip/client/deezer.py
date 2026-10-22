@@ -230,22 +230,11 @@ class DeezerClient(Client):
         return artist
 
     async def search(self, media_type: str, query: str, limit: int = 200) -> list[dict]:
-        """Search Deezer, or fetch an editorial selection for "featured"."""
-        if media_type == "featured":
-            try:
-                if query:
-                    search_function = getattr(self.client.api, f"get_editorial_{query}")
-                else:
-                    search_function = self.client.api.get_editorial_releases
-            except AttributeError:
-                raise Exception(f'Invalid editorial selection "{query}"') from None
-        else:
-            try:
-                search_function = getattr(self.client.api, f"search_{media_type}")
-            except AttributeError:
-                raise Exception(f"Invalid media type {media_type}") from None
-
-        response = await asyncio.to_thread(search_function, query, limit=limit)  # type: ignore
+        try:
+            search_function = getattr(self.client.api, f"search_{media_type}")
+        except AttributeError:
+            raise Exception(f"Invalid media type {media_type}") from None
+        response = await asyncio.to_thread(search_function, query, limit=limit)
         if response.get("total", 0) > 0:
             return [response]
         return []

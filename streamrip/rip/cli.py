@@ -765,6 +765,18 @@ async def repair(ctx, yes, flat):
             )
 
 
+# The sources, and what a download from each gives: shown when asked.
+SOURCES = frozendict(
+    {
+        "qobuz": "lossless, up to 24-bit",
+        "tidal": "lossless, hi-res where there is some",
+        "deezer": "FLAC or MP3, as your subscription allows",
+        "spotify": "lossy: the audio comes from YouTube Music",
+        "soundcloud": "MP3, and only uploads by the artists themselves",
+    }
+)
+
+
 @rip.command()
 @click.option(
     "-f",
@@ -785,9 +797,12 @@ async def repair(ctx, yes, flat):
     "(default: [cli] max_search_results in the config)",
     type=click.IntRange(min=1),
 )
-@click.argument("source", required=True)
-@click.argument("media-type", required=True)
-@click.argument("query", required=True)
+@click.argument("source", type=click.Choice(list(SOURCES), case_sensitive=False))
+@click.argument(
+    "media-type",
+    type=click.Choice(["track", "album", "artist", "playlist"], case_sensitive=False),
+)
+@click.argument("query")
 @click.pass_context
 @coro
 async def search(ctx, first, output_file, num_results, source, media_type, query):
@@ -814,10 +829,16 @@ async def search(ctx, first, output_file, num_results, source, media_type, query
 
 
 @rip.command()
-@click.option("-s", "--source", help="The source to search tracks on.")
+@click.option(
+    "-s",
+    "--source",
+    type=click.Choice(list(SOURCES), case_sensitive=False),
+    help="The source to search tracks on.",
+)
 @click.option(
     "-fs",
     "--fallback-source",
+    type=click.Choice(list(SOURCES), case_sensitive=False),
     help="The source to search tracks on if no results were found with the main source.",
 )
 @click.argument("url", required=True)
@@ -835,45 +856,33 @@ async def lastfm(ctx, source, fallback_source, url):
         await main.rip()
 
 
-# Where a CSV list can be searched, and what that gives: shown when asked.
-CSV_SOURCES = frozendict(
-    {
-        "qobuz": "lossless, up to 24-bit",
-        "tidal": "lossless, hi-res where there is some",
-        "deezer": "FLAC or MP3, as your subscription allows",
-        "spotify": "lossy: the audio comes from YouTube Music",
-        "soundcloud": "MP3, and only uploads by the artists themselves",
-    }
-)
-
-
 def _ask_source(count: int) -> str:
     """Ask where to search and download the tracks of a CSV list from."""
     if not sys.stdin.isatty():
         # Never block on a prompt nobody is there to answer (cron, scripts).
         raise click.UsageError(
-            f"Say where to search the tracks with --source ({', '.join(CSV_SOURCES)})."
+            f"Say where to search the tracks with --source ({', '.join(SOURCES)})."
         )
     console.print(
         f"\nFound [bold]{count}[/bold] track(s). "
         "Where should I search and download them from?"
     )
-    for name, what in CSV_SOURCES.items():
+    for name, what in SOURCES.items():
         console.print(f"  [bold]{name:<11}[/bold] {what}")
-    return Prompt.ask("Source", choices=list(CSV_SOURCES))
+    return Prompt.ask("Source", choices=list(SOURCES))
 
 
 @rip.command("csv")
 @click.option(
     "-s",
     "--source",
-    type=click.Choice(list(CSV_SOURCES), case_sensitive=False),
+    type=click.Choice(list(SOURCES), case_sensitive=False),
     help="The source to search the tracks on. Asked when left out.",
 )
 @click.option(
     "-fs",
     "--fallback-source",
-    type=click.Choice(list(CSV_SOURCES), case_sensitive=False),
+    type=click.Choice(list(SOURCES), case_sensitive=False),
     help="The source to search for a track the main source does not have.",
 )
 @click.argument(
@@ -916,8 +925,13 @@ async def csv_list(ctx, source, fallback_source, path):
 
 
 @rip.command()
-@click.argument("source")
-@click.argument("media-type")
+@click.argument("source", type=click.Choice(list(SOURCES), case_sensitive=False))
+@click.argument(
+    "media-type",
+    type=click.Choice(
+        ["track", "album", "artist", "playlist", "label"], case_sensitive=False
+    ),
+)
 @click.argument("id")
 @click.pass_context
 @coro
