@@ -3,6 +3,16 @@
 All notable changes in this fork of [nathom/streamrip](https://github.com/nathom/streamrip). Numbers can refer to
 upstream issues and pull requests.
 
+## 2.6.1
+
+### Logging in
+
+- On Linux, the browser that opens a login page no longer writes to the
+  terminal. A Chrome-family browser that was already running printed "Opening
+  in existing browser session." and a few zygote errors right under the login
+  link, twice for the two Tidal logins. `xdg-open` now sends its output to
+  `/dev/null`. (#81)
+
 ## 2.6.0
 
 streamrip now runs on Python 3.15 only, and everything written for older Python
