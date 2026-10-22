@@ -5,7 +5,7 @@ import sqlite3
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Final
-lazy from collections.abc import Iterator
+lazy from collections.abc import Generator
 
 logger = logging.getLogger("streamrip")
 
@@ -81,7 +81,7 @@ class DatabaseBase:
         self.create()
 
     @contextmanager
-    def _connect(self) -> Iterator[sqlite3.Connection]:
+    def _connect(self) -> Generator[sqlite3.Connection]:
         """A connection that commits (or rolls back) and is then closed.
 
         `with sqlite3.connect(...)` only ends the transaction: it leaves the

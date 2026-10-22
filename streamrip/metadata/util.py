@@ -89,7 +89,7 @@ def tidal_quality_id(audio_quality: str | None) -> int:
 def format_quality(
     container: str,
     bit_depth: int | None,
-    sampling_rate: int | float | None,
+    sampling_rate: float | None,
 ) -> str:
     """Quality label, e.g. "[FLAC 24B-96kHz]"."""
     # Qobuz defaults missing values to -1/-1.0, which is truthy.
@@ -100,7 +100,7 @@ def format_quality(
 
 def get_quality_id(
     bit_depth: int | None,
-    sampling_rate: int | float | None,
+    sampling_rate: float | None,
 ) -> int:
     """streamrip's quality id (1-4) for a bit depth and a sampling rate in kHz."""
     if bit_depth is None or sampling_rate is None:  # is lossy

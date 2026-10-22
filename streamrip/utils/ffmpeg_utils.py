@@ -4,7 +4,7 @@ import functools
 import shutil
 
 
-@functools.lru_cache(maxsize=1)
+@functools.cache
 def find_ffmpeg() -> str | None:
     """Return a path to an ffmpeg executable, or None if none is available.
 

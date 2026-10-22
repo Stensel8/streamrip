@@ -462,7 +462,7 @@ class QobuzClient(Client):
         status, _ = await self._request_file_url("19512574", 4, secret)
         if status == 400:
             return None
-        if status == 200 or status == 401:
+        if status in {200, 401}:
             return secret
         logger.warning("Got status %d when testing secret", status)
         return None

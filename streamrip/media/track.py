@@ -78,7 +78,7 @@ class Track(Media):
     async def rip(self):
         """Record failures from every processing phase for summaries and repair."""
         try:
-            await super(Track, self).rip()
+            await super().rip()
         except TrackDownloadFailedError:
             raise  # The exhausted download was already recorded.
         except Exception:

@@ -304,7 +304,7 @@ class TidalClient(Client):
                 for offset in range(100, first.get("totalNumberOfItems", 0), 100)
             )
         )
-        items = [i for page in (first, *pages) for i in page["items"]]
+        items = [*page["items"] for page in (first, *pages)]
         tracks = [i["item"] for i in items if i.get("type", "track") == "track"]
         if len(tracks) < len(items):
             logger.info(f"Skipping {len(items) - len(tracks)} video(s) in {url}")
