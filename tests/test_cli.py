@@ -567,15 +567,22 @@ def test_only_a_real_true_turns_the_check_off(tmp_path, monkeypatch, value):
     check.assert_awaited_once()
 
 
+@pytest.mark.parametrize(
+    "content",
+    [b"this is [not toml", 'folder = "Música"'.encode("cp1252")],
+    ids=["not toml", "not utf-8"],
+)
 def test_a_config_that_cannot_be_read_does_not_turn_the_check_off(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, content
 ):
     check = _update_check(monkeypatch)
     cfg = tmp_path / "config.toml"
-    cfg.write_text("this is [not toml")
+    cfg.write_bytes(content)
 
-    CliRunner().invoke(rip, ["--config-path", str(cfg), "config", "path"])
+    result = CliRunner().invoke(rip, ["--config-path", str(cfg), "config", "path"])
 
+    assert result.exception is None, result.exception
+    assert "Error loading config" in result.output
     check.assert_awaited_once()
 
 

@@ -48,12 +48,11 @@ versions, older configs and older databases is gone. Read *Upgrading* first.
 ### Stopping
 
 - SIGTERM, what `podman stop`, `docker stop`, systemd and `kill` send, now stops
-  streamrip like Ctrl-C does: the running command is cancelled and cleaned up,
-  and a second signal forces it (not in a container, where `stop` kills it after
-  its timeout). It exits with 143, as a process ended by SIGTERM does. As the
-  first process of a container it was ignored before, so `podman stop` waited
-  out its timeout and then killed it. This also works at a prompt
-  and in commands that need no event loop. Ctrl-C behaves as before.
+  streamrip like Ctrl-C does: the running command is cancelled and cleaned up.
+  It exits with 143, as a process ended by SIGTERM does. As the first process of
+  a container it was ignored before, so `podman stop` waited out its timeout and
+  then killed it. This also works at a prompt and in commands that need no event
+  loop. Ctrl-C behaves as before, and a second one forces it.
 
 ### Logging in
 

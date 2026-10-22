@@ -79,19 +79,22 @@ def coro(f):
             # up waiting and kills it.
             task = asyncio.current_task()
             loop = asyncio.get_running_loop()
-            names = {signal.SIGINT: "Ctrl-C", signal.SIGTERM: "SIGTERM"}
+            signals = (signal.SIGINT, signal.SIGTERM)
 
             def stop(signum):
                 """Cancel the active task; a second signal then acts as usual."""
-                console.print(f"\n[yellow]Stopping... ({names[signum]} again to force)")
+                # Only Ctrl-C's usual act forces it everywhere: a container's
+                # first process ignores a SIGTERM left at its default.
+                hint = " (Ctrl-C again to force)" if signum == signal.SIGINT else ""
+                console.print(f"\n[yellow]Stopping...{hint}")
                 stopped_by.append(signum)
-                for other in names:
+                for other in signals:
                     loop.remove_signal_handler(other)
                 if task is not None:
                     task.cancel()
 
             try:
-                for signum in names:
+                for signum in signals:
                     loop.add_signal_handler(signum, stop, signum)
             except NotImplementedError, RuntimeError:
                 pass  # Windows: default behaviour
@@ -208,7 +211,7 @@ def _update_check_disabled(config_path: Path) -> bool:
     try:
         with config_path.open("rb") as f:
             return tomllib.load(f).get("cli", {}).get("no_update_check") is True
-    except OSError, tomllib.TOMLDecodeError:
+    except OSError, ValueError:  # not TOML, or not UTF-8
         return False
 
 
@@ -253,9 +256,9 @@ class _StreamripGroup(_ColoredHelp, click.Group):
     subcommand before the group's own callback (`rip()` below) ever runs --
     so a check placed there misses all three. `main()` is Click's actual
     entry point, called before any of that, for every invocation alike:
-    one check covers all of them (asked for explicitly, 2026-09-30). Only
-    `no_update_check = true` in the config turns it off, which is why `main()`
-    reads that key itself.
+    one check covers all of them (asked for explicitly, 2026-09-30).
+    `STREAMRIP_NO_UPDATE_CHECK` or `no_update_check = true` in the config turns
+    it off, which is why `main()` reads that key itself.
     """
 
     command_class = _StreamripCommand
