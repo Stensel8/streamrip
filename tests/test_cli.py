@@ -60,6 +60,24 @@ def test_the_command_is_called_streamrip_in_every_usage_line(
     assert "'rip " not in output
 
 
+@pytest.mark.parametrize(
+    ("args", "wrong"),
+    [
+        (["search", "artist", "tidal", "linkin park"], "artist"),
+        (["search", "tidal", "artists", "linkin park"], "artists"),
+        (["id", "album", "tidal", "234793"], "album"),
+    ],
+)
+def test_a_wrong_source_or_media_type_is_a_usage_error(tmp_path, capsys, args, wrong):
+    config = tmp_path / "config.toml"
+    set_user_defaults(config)
+
+    result = CliRunner().invoke(rip, ["--config-path", str(config), *args])
+
+    assert result.exit_code == 2
+    assert f"'{wrong}' is not one of" in _output(result, capsys)
+
+
 def test_codec_choice_accepts_opus_and_aiff(tmp_path):
     cfg = str(tmp_path / "config.toml")
     for codec in ("opus", "AIFF"):
