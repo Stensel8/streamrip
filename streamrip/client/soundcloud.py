@@ -28,7 +28,6 @@ class SoundcloudClient(Client):
 
     NON_STREAMABLE = "_non_streamable"
     ORIGINAL_DOWNLOAD = "_original_download"
-    NOT_RESOLVED = "_not_resolved"
 
     def __init__(self, config: Config):
         self.global_config = config
@@ -141,9 +140,6 @@ class SoundcloudClient(Client):
                 status,
             )
             download_info = stream
-
-        if download_info == self.NOT_RESOLVED:
-            raise NotImplementedError(item_info)
 
         # download_info contains a transcoding url, which resolves to the
         # actual (signed) media url

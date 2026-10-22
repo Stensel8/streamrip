@@ -247,7 +247,6 @@ class QobuzClient(Client):
             # tracks may come back empty (July 2026 API change); track_ids is
             # the replacement. Request both so either response shape works.
             "playlist": "tracks,track_ids",
-            "label": "albums",
             # Qobuz's album/get stopped inlining "tracks" (July 2026); request
             # the id list instead. Consumed by get_album_track_ids().
             "album": "track_ids",

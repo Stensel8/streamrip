@@ -5,7 +5,14 @@ lazy from pathlib import Path
 
 from ..filepath_utils import clean_filename, clean_filepath
 from .covers import Covers
-from .util import deezer_artists, get_quality_id, safe_get, tidal_quality_id, typed
+from .util import (
+    SOURCES,
+    deezer_artists,
+    get_quality_id,
+    safe_get,
+    tidal_quality_id,
+    typed,
+)
 
 PHON_COPYRIGHT = "\u2117"
 COPYRIGHT = "\u00a9"
@@ -387,14 +394,6 @@ class AlbumMetadata:
 
     @classmethod
     def from_album_resp(cls, resp: dict, source: str) -> AlbumMetadata | None:
-        if source == "qobuz":
-            return cls.from_qobuz(resp)
-        if source == "tidal":
-            return cls.from_tidal(resp)
-        if source == "soundcloud":
-            return cls.from_soundcloud(resp)
-        if source == "deezer":
-            return cls.from_deezer(resp)
-        if source == "spotify":
-            return cls.from_spotify(resp)
-        raise Exception("Invalid source")
+        if source not in SOURCES:
+            raise Exception("Invalid source")
+        return getattr(cls, f"from_{source}")(resp)

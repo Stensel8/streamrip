@@ -409,9 +409,7 @@ class SearchResults:
             ]
         )
 
-    def get_choices(self, inds: tuple[int, ...] | int):
-        if isinstance(inds, int):
-            inds = (inds,)
+    def get_choices(self, inds: tuple[int, ...]):
         return [self.results[i] for i in inds]
 
     def as_list(self, source: str) -> list[dict[str, str]]:

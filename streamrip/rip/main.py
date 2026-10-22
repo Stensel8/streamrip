@@ -82,21 +82,6 @@ class Main:
             else db.Dummy(),
         )
 
-    async def add(self, url: str):
-        """Add url as a pending item.
-
-        Do not `asyncio.gather` calls to this! Use `add_all` for concurrency.
-        """
-        parsed = parse_url(url)
-        if parsed is None:
-            raise Exception(f"Unable to parse url {url}")
-
-        client = await self.get_logged_in_client(parsed.source)
-        self.pending.append(
-            await parsed.into_pending(client, self.config, self.database),
-        )
-        logger.debug("Added url=%s", url)
-
     async def add_by_id(self, source: str, media_type: str, id: str):
         """Queue one item by its id."""
         await self.add_all_by_id([(source, media_type, id)])

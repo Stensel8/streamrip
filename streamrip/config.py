@@ -222,10 +222,6 @@ class ConfigData:
         sections = {f.name: f.type(**toml[f.name]) for f in _section_fields()}  # type: ignore
         return cls(toml=toml, **sections)
 
-    @classmethod
-    def defaults(cls):
-        return cls.from_toml(BLANK_CONFIG_PATH.read_text())
-
     def set_modified(self):
         self._modified = True
 
@@ -237,15 +233,6 @@ class ConfigData:
         """Write every section's current dataclass values back into self.toml."""
         for f in _section_fields():
             update_toml_section_from_config(self.toml[f.name], getattr(self, f.name))
-
-    def get_source(
-        self,
-        source: str,
-    ) -> QobuzConfig | DeezerConfig | SoundcloudConfig | SpotifyConfig | TidalConfig:
-        """Return the config for the given streaming source."""
-        if source not in ("qobuz", "tidal", "deezer", "soundcloud", "spotify"):
-            raise Exception(f"Invalid source {source}")
-        return getattr(self, source)
 
 
 def _section_fields():
@@ -333,14 +320,7 @@ def _write_config(path: Path, toml: TOMLDocument):
 def set_user_defaults(path: Path, /):
     """Update the TOML file at the path with user-specific default values."""
     toml = parse(BLANK_CONFIG_PATH.read_text())
-
-    toml_set_user_defaults(toml)
-
-    _write_config(path, toml)
-
-
-def toml_set_user_defaults(toml: TOMLDocument):
-    """Point toml's path-valued options at directories under this user's home."""
     toml["downloads"]["folder"] = str(DEFAULT_DOWNLOADS_FOLDER)  # type: ignore
     toml["database"]["downloads_path"] = str(DEFAULT_DOWNLOADS_DB_PATH)  # type: ignore
     toml["database"]["failed_downloads_path"] = str(DEFAULT_FAILED_DOWNLOADS_DB_PATH)  # type: ignore
+    _write_config(path, toml)

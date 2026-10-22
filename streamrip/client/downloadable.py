@@ -32,7 +32,7 @@ from ..exceptions import (
     NonStreamableError,
     restriction_message,
 )
-from ..utils.ffmpeg_utils import find_ffmpeg
+from ..utils.ffmpeg_utils import ffmpeg_missing_message, find_ffmpeg
 
 logger = logging.getLogger("streamrip")
 
@@ -157,6 +157,18 @@ def _blocking_download(
         )
 
 
+def _threadsafe(callback):
+    """`callback`, callable from a worker thread: it runs on the event loop."""
+    loop = asyncio.get_running_loop()
+
+    def report(n: int):
+        # RuntimeError: the loop is already closed (interpreter shutting down).
+        with contextlib.suppress(RuntimeError):
+            loop.call_soon_threadsafe(callback, n)
+
+    return report
+
+
 async def fast_async_download(path: Path, url, headers, callback, resume: bool = False):
     """Download ``url`` to ``path`` without blocking the event loop.
 
@@ -165,21 +177,14 @@ async def fast_async_download(path: Path, url, headers, callback, resume: bool =
     connection was active (upstream PR #982). Run it in a worker thread and
     hand progress back to the loop, since rich's display is not thread-safe.
     """
-    loop = asyncio.get_running_loop()
     stop = threading.Event()
-
-    def report(n: int):
-        # RuntimeError: the loop is already closed (interpreter shutting down).
-        with contextlib.suppress(RuntimeError):
-            loop.call_soon_threadsafe(callback, n)
-
     try:
         await asyncio.to_thread(
             _blocking_download,
             path,
             url,
             _plain_headers(headers),
-            report,
+            _threadsafe(callback),
             stop,
             resume,
         )
@@ -703,14 +708,8 @@ class YtDlpDownloadable(Downloadable):
             raise FFmpegNotFoundError(
                 "ffmpeg not found, which the audio from YouTube needs"
             )
-        loop = asyncio.get_running_loop()
         stop = threading.Event()
-
-        def report(n: int):
-            # RuntimeError: the loop is already closed (interpreter shutting down).
-            with contextlib.suppress(RuntimeError):
-                loop.call_soon_threadsafe(callback, n)
-
+        report = _threadsafe(callback)
         directory = Path(tempfile.mkdtemp(prefix="__streamrip_ytdlp_"))
         # A thread of its own, not one of the shared pool: yt-dlp keeps it for the
         # whole download, and a download that waited in the pool's queue could not
@@ -782,10 +781,7 @@ async def concat_audio_files(
     """
     ffmpeg_path = find_ffmpeg()
     if ffmpeg_path is None:
-        raise FFmpegNotFoundError(
-            "FFmpeg is required. Install it (apt/brew/winget install ffmpeg), or "
-            "run: pip install imageio-ffmpeg"
-        )
+        raise FFmpegNotFoundError(ffmpeg_missing_message())
 
     if len(paths) == 1:
         paths[0].move(out)

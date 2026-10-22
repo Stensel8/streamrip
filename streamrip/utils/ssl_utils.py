@@ -24,6 +24,5 @@ def print_ssl_error_help():
         '     Example: streamrip --no-ssl-verify url "https://tidal.com/browse/playlist/..."'
     )
     print()
-    print("  2. Update your certificates:")
-    print("     pip install --upgrade certifi")
+    print("  2. Update streamrip: the certificates it trusts (certifi) come with it")
     sys.exit(1)

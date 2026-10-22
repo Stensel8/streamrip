@@ -1,7 +1,7 @@
 import logging
 from dataclasses import dataclass
 
-from .util import deezer_artists, qobuz_artists, safe_get
+from .util import SOURCES, deezer_artists, qobuz_artists, safe_get
 lazy from .album import AlbumMetadata
 
 logger = logging.getLogger("streamrip")
@@ -139,17 +139,9 @@ class TrackMetadata:
     @classmethod
     def from_resp(cls, album: AlbumMetadata, source, resp) -> TrackMetadata | None:
         """Dispatch to the from_* builder matching source."""
-        if source == "qobuz":
-            return cls.from_qobuz(album, resp)
-        if source == "tidal":
-            return cls.from_tidal(album, resp)
-        if source == "soundcloud":
-            return cls.from_soundcloud(album, resp)
-        if source == "deezer":
-            return cls.from_deezer(album, resp)
-        if source == "spotify":
-            return cls.from_spotify(album, resp)
-        raise Exception(f"Invalid source {source}")
+        if source not in SOURCES:
+            raise Exception(f"Invalid source {source}")
+        return getattr(cls, f"from_{source}")(album, resp)
 
     def format_track_path(self, format_string: str) -> str:
         # Available keys: "id", "tracknumber", "discnumber", "artist", "album",

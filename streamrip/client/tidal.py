@@ -182,12 +182,11 @@ class TidalClient(Client):
             )
 
         try:
-            self.token_expiry = float(t.token_expiry)
+            expiry = float(t.token_expiry)
         except TypeError, ValueError:
-            self.token_expiry = 0.0
-        self.refresh_token = t.refresh_token
+            expiry = 0.0
 
-        if self.token_expiry - time.time() < 86400:  # 1 day
+        if expiry - time.time() < 86400:  # 1 day
             await self._refresh_access_token()
         else:
             await self._login_by_access_token(t.access_token, c.user_id)
@@ -569,7 +568,7 @@ class TidalClient(Client):
         """
         data = {
             "client_id": self.client_id,
-            "refresh_token": self.refresh_token,
+            "refresh_token": self.tokens.refresh_token,
             "grant_type": "refresh_token",
             "scope": "r_usr+w_usr+w_sub",
         }

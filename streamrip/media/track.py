@@ -138,8 +138,6 @@ class Track(Media):
                     ) as callback:
                         await self.downloadable.download(self.download_path, callback)
                     return
-                except asyncio.CancelledError:
-                    raise
                 except Exception as e:
                     error = f"{type(e).__name__}: {e}"
                     # A missing ffmpeg does not fix itself in 2-8 seconds.
@@ -399,7 +397,7 @@ async def fetch_downloadable(
     client: Client, config: Config, db: Database, track_id: str
 ) -> Downloadable | None:
     """Return a Downloadable for the track, or None and record the failure."""
-    quality = config.session.get_source(client.source).quality
+    quality = getattr(config.session, client.source).quality
     try:
         return await client.get_downloadable(track_id, quality)
     except Exception as e:

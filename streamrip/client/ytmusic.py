@@ -19,7 +19,7 @@ logger = logging.getLogger("streamrip")
 
 WATCH_URL = "https://music.youtube.com/watch?v={video_id}"
 
-# From this score on a result is the track (see audio_match.best_match).
+# From this score on a result is the track (see select).
 MIN_SCORE = 0.8
 # An ISRC hit this good is taken without a second search.
 SURE_SCORE = 0.9
@@ -107,9 +107,7 @@ def _length_fits(wanted: MatchTrack, candidate: MatchTrack) -> bool:
     return abs(wanted.duration_ms - candidate.duration_ms) <= limit
 
 
-def select(
-    wanted: MatchTrack, candidates: list[MatchTrack], min_score: float = MIN_SCORE
-) -> AudioMatch | None:
+def select(wanted: MatchTrack, candidates: list[MatchTrack]) -> AudioMatch | None:
     """The candidate that is `wanted`, if one is good enough.
 
     Of equally good ones the first wins, so list the best source first. A song
@@ -121,7 +119,7 @@ def select(
         key=lambda c: (*rank(wanted, c), c.explicit == wanted.explicit, c.is_song),
         default=None,
     )
-    if best is None or (found := score(wanted, best)) < min_score:
+    if best is None or (found := score(wanted, best)) < MIN_SCORE:
         return None
     return AudioMatch(best, found)
 

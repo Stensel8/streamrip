@@ -32,8 +32,5 @@ def ffmpeg_missing_message() -> str:
         "  Linux:    apt install ffmpeg\n"
         "  macOS:    brew install ffmpeg\n"
         "  Windows:  winget install ffmpeg\n"
-        "or proceed with the built-in ffmpeg (a Python package) by running, in "
-        "the environment streamrip is installed in:\n"
-        "  pip install imageio-ffmpeg\n"
-        "  (pipx: pipx inject streamrip imageio-ffmpeg)"
+        "or run streamrip's installer again: it brings an ffmpeg of its own."
     )

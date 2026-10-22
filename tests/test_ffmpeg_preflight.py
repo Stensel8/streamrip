@@ -68,7 +68,7 @@ def test_every_login_command_checks_ffmpeg_first(tmp_path, command):
     assert result.exit_code == 1
     printed = "".join(str(call.args[0]) for call in console.print.call_args_list)
     assert "No ffmpeg installation found" in printed
-    assert "pipx inject streamrip imageio-ffmpeg" in printed
+    assert "run streamrip's installer again" in printed
     login.assert_not_called()
 
 

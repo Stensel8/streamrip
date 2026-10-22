@@ -1,6 +1,8 @@
 import functools
 import re
 
+SOURCES = frozenset({"qobuz", "tidal", "deezer", "soundcloud", "spotify"})
+
 
 def get_album_track_ids(source: str, resp) -> list[str]:
     if source == "qobuz" and "tracks" not in resp:

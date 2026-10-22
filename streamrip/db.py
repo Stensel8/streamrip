@@ -95,23 +95,18 @@ class DatabaseBase:
         finally:
             conn.close()
 
-    def _create_command(self, name: str, *, if_not_exists: bool = False) -> str:
-        """The statement that creates this table as `name`."""
-        columns = [
-            f"{key} {' '.join(map(str.upper, props))} NOT NULL"
-            for key, props in self.structure.items()
-        ]
-        guard = "IF NOT EXISTS " if if_not_exists else ""
-        body = ", ".join([*columns, *self.constraints])
-        return f"CREATE TABLE {guard}{name} ({body})"
-
     def create(self):
         """Create the table, unless the database already has it.
 
         One statement, so two streamrips starting together cannot both decide
         the table is missing.
         """
-        command = self._create_command(self.name, if_not_exists=True)
+        columns = [
+            f"{key} {' '.join(map(str.upper, props))} NOT NULL"
+            for key, props in self.structure.items()
+        ]
+        body = ", ".join([*columns, *self.constraints])
+        command = f"CREATE TABLE IF NOT EXISTS {self.name} ({body})"
         logger.debug("executing %s", command)
         with self._connect() as conn:
             conn.execute(command)
