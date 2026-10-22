@@ -29,7 +29,15 @@
 
       # The packages and versions of uv.lock, installed from the same wheels pip
       # takes: nothing is compiled, and nixpkgs' Python libraries are not used.
-      workspace = uv2nix.lib.workspace.loadWorkspace { workspaceRoot = ./.; };
+      workspace = uv2nix.lib.workspace.loadWorkspace {
+        # Only what the package is built from: a .venv, caches or docs next to
+        # it neither go into the store nor change what is built.
+        workspaceRoot = lib.fileset.toSource {
+          root = ./.;
+          fileset = lib.fileset.unions
+            [ ./pyproject.toml ./uv.lock ./README.md ./LICENSE ./streamrip ];
+        };
+      };
       pythonSet =
         (pkgs.callPackage pyproject-nix.build.packages { python = pkgs.python315; })
         .overrideScope (lib.composeManyExtensions [
@@ -102,8 +110,11 @@
 
       # streamrip installed editable from the checkout, so the shell runs the
       # working tree.
+      # (The editable overlay needs the checkout as a path, not the filtered
+      # source above.)
       editableSet = pythonSet.overrideScope
-        (workspace.mkEditablePyprojectOverlay { root = "$REPO_ROOT"; });
+        ((uv2nix.lib.workspace.loadWorkspace { workspaceRoot = ./.; })
+          .mkEditablePyprojectOverlay { root = "$REPO_ROOT"; });
       devEnv = editableSet.mkVirtualEnv "streamrip-dev-env" workspace.deps.all;
     in {
       packages.${system} = { default = streamrip; inherit streamrip; };

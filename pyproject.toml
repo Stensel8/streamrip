@@ -87,6 +87,10 @@ log_cli = true
 requires = ["uv_build>=0.13.5,<0.14"]
 build-backend = "uv_build"
 
+[tool.uv]
+# The uv that wrote uv.lock's format; an older one fails with this, not on the lock.
+required-version = ">=0.13"
+
 [tool.uv.build-backend]
 # The package is streamrip/ at the top of the checkout, not under src/.
 module-root = ""

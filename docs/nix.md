@@ -5,10 +5,10 @@
 With flakes enabled, run these commands from this checkout:
 
 ```bash
-nix build "path:$PWD"                 # ./result/bin/streamrip
-nix run "path:$PWD" -- --help
-nix develop "path:$PWD"
-nix flake check "path:$PWD"            # package, non-browser tests, offline CLI checks
+nix build .           # ./result/bin/streamrip
+nix run . -- --help
+nix develop .
+nix flake check .     # package, non-browser tests, offline CLI checks
 ```
 
 The flake uses Python 3.15 and, through
