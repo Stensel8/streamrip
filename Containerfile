@@ -25,7 +25,7 @@ LABEL org.opencontainers.image.title="streamrip" \
       org.opencontainers.image.licenses="GPL-3.0-only"
 
 # Deno is the JavaScript runtime yt-dlp needs for Spotify.
-COPY --from=docker.io/denoland/deno:bin /deno /usr/local/bin/deno
+COPY --from=docker.io/denoland/deno:bin-2.9.8 /deno /usr/local/bin/deno
 COPY --from=build /opt/streamrip /opt/streamrip
 ENV PATH=/opt/streamrip/bin:$PATH
 
@@ -37,8 +37,9 @@ ENV HOME=/data
 # update notice would give, and the check costs about half a second of every run.
 ENV STREAMRIP_NO_UPDATE_CHECK=1
 # pip only installs, and the image is updated by pulling a newer one. It also
-# brings its own, older copies of certifi, urllib3 and msgpack.
-RUN /usr/local/bin/python -m pip uninstall --yes --root-user-action=ignore pip && mkdir /data
+# brings its own, older copies of certifi, urllib3 and msgpack. Removed rather
+# than uninstalled: running pip would leave a layer of bytecode behind.
+RUN rm -r /usr/local/lib/python3.15/site-packages/pip* /usr/local/bin/pip*
 WORKDIR /data
 VOLUME /data
 

@@ -11,6 +11,9 @@ on:
       - .github/workflows/container.yml
       - pyproject.toml
       - uv.lock
+      - README.md
+      - LICENSE
+      - streamrip/**
   release:
     types: [published]
 
@@ -70,3 +73,21 @@ jobs:
           for tag in "${tags[@]}"; do
             podman manifest push --all streamrip:release "docker://$IMAGE:$tag"
           done
+
+  # The arm64 image on arm64 hardware, so a dependency without an arm64 wheel
+  # shows up in the pull request that brings it, not on release day.
+  image-arm64:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build and smoke test
+        run: |
+          command -v podman >/dev/null || sudo apt-get install --yes podman
+          podman build --tag streamrip:ci .
+          podman run --rm streamrip:ci --version
