@@ -64,9 +64,11 @@ def test_a_dots_only_name_has_nothing_left_to_be_a_folder():
     assert clean_filepath("...") == Path("Unknown")
 
 
-def test_a_file_name_with_nothing_left_still_has_its_extension():
-    """A title of only characters a file name can't hold leaves no ".flac"."""
-    assert fit_filename("", "flac") == "Unknown.flac"
+@pytest.mark.parametrize("stem", ["", ".", ".."])
+def test_a_file_name_with_no_name_left_still_has_its_extension(stem):
+    """A title of only characters a file name can't hold, or of dots, leaves
+    no ".flac" or "..flac"."""
+    assert fit_filename(stem, "flac") == "Unknown.flac"
 
 
 @pytest.mark.parametrize(

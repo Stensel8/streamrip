@@ -64,16 +64,19 @@ def ensure_inside(root: Path, path: Path) -> Path:
     root_abs = Path(os.path.abspath(root))  # noqa: PTH100
     path_abs = Path(os.path.abspath(path))  # noqa: PTH100
     if path_abs == root_abs or not path_abs.is_relative_to(root_abs):
-        raise ValueError(f"{path!r} is not inside the download folder {root!r}")
+        raise ValueError(f"'{path}' is not inside the download folder '{root}'")
     return path
 
 
 def fit_filename(stem: str, extension: str) -> str:
     """Build ``stem.extension`` shortened so the whole name fits one component.
 
-    An empty stem (a title of only characters a file name can't hold) becomes
-    "Unknown", as an empty folder name does: ".flac" would be a hidden file
-    without an extension.
+    A stem that is no name (empty, as a title of only characters a file name
+    can't hold leaves it, or "." or "..") becomes "Unknown": ".flac" or
+    "..flac" would be a hidden file without an extension.
     """
     budget = MAX_COMPONENT_BYTES - len(extension.encode()) - 1
-    return f"{truncate_str(stem, budget) or 'Unknown'}.{extension}"
+    stem = truncate_str(stem, budget)
+    if stem in ("", ".", ".."):
+        stem = "Unknown"
+    return f"{stem}.{extension}"
