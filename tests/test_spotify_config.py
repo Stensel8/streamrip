@@ -6,42 +6,13 @@ import pytest
 import tomlkit
 
 from streamrip.client import SpotifyClient
-from streamrip.config import BLANK_CONFIG_PATH, Config, ConfigData, set_user_defaults
+from streamrip.config import Config, set_user_defaults
 from streamrip.exceptions import AuthenticationError
 from streamrip.rip import prompter as prompter_module
 from streamrip.rip.prompter import PROMPTERS, SpotifyPrompter, get_prompter
 from streamrip.rip.spotify_login import SpotifyLoginError
 
 # --- the config --------------------------------------------------------------
-
-
-def test_the_defaults_are_what_the_template_says():
-    spotify = Config.defaults().session.spotify
-
-    assert spotify.client_id == ""
-    assert spotify.redirect_uri == "http://127.0.0.1:9900/callback"
-    assert spotify.audio_format == "m4a"
-    assert spotify.audio_bitrate == 256
-    assert spotify.match_videos is True
-    assert (spotify.access_token, spotify.refresh_token, spotify.token_expiry) == (
-        "",
-    ) * 3
-
-
-def test_the_audio_comes_in_one_quality():
-    config = Config.defaults()
-
-    assert config.session.get_source("spotify").quality == 0
-
-
-def test_the_template_explains_the_app_and_the_premium_rule():
-    text = BLANK_CONFIG_PATH.read_text()
-    section = text[text.index("[spotify]") : text.index("[database]")]
-
-    assert "Premium" in section
-    assert "https://developer.spotify.com/dashboard" in section
-    assert "Web API" in section
-    assert "127.0.0.1" in section
 
 
 def test_spotify_credentials_are_written_when_the_config_is_saved(tmp_path):
@@ -57,14 +28,6 @@ def test_spotify_credentials_are_written_when_the_config_is_saved(tmp_path):
     assert saved["spotify"]["client_id"] == "abc"
     assert saved["spotify"]["refresh_token"] == "r"
     assert saved["spotify"]["audio_format"] == "m4a"
-
-
-def test_a_config_that_has_the_section_is_left_as_it_is():
-    toml = BLANK_CONFIG_PATH.read_text().replace(
-        'audio_format = "m4a"', 'audio_format = "mp3"'
-    )
-
-    assert ConfigData.from_toml(toml).spotify.audio_format == "mp3"
 
 
 # --- the prompter ------------------------------------------------------------

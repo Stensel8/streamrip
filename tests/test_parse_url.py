@@ -98,7 +98,7 @@ def test_deezer_loved_tracks_url():
     [
         "https://example.com",
         "not a url",
-        "https://spotify.com/track/123456",  # Unsupported source
+        "https://spotify.com/track/123456",  # not open.spotify.com
         "https://tidal.com/invalid/3083287",  # Invalid media type
     ],
 )

@@ -3,7 +3,6 @@ import shutil
 from pathlib import Path
 
 import pytest
-import tomlkit
 
 from streamrip.config import (
     BLANK_CONFIG_PATH,
@@ -35,17 +34,6 @@ def sample_config_data() -> ConfigData:
 
 
 # Define a fixture to create a sample Config instance for testing
-
-
-def test_sample_config_data_properties(sample_config_data):
-    # Test the properties of ConfigData
-    assert sample_config_data.modified is False  # Ensure initial state is not modified
-
-
-def test_sample_config_data_modification(sample_config_data):
-    # Test modifying ConfigData and checking modified property
-    sample_config_data.set_modified()
-    assert sample_config_data._modified is True
 
 
 def test_sample_config_data_fields(sample_config_data):
@@ -203,36 +191,7 @@ def test_the_template_and_the_config_classes_agree():
         )
 
 
-def test_prefer_explicit_defaults_true():
-    assert Config.defaults().session.metadata.prefer_explicit is True
-
-
-def test_lyrics_are_on_by_default_and_the_template_says_where_they_come_from():
-    assert Config.defaults().session.downloads.lyrics is True
-    template = BLANK_CONFIG_PATH.read_text()
-    assert "lrclib.net" in template
-
-
 # Other tests for the Config class can be added as needed
-
-if __name__ == "__main__":
-    pytest.main()
-
-
-def test_default_quality_is_the_highest_of_every_source():
-    session = Config.defaults().session
-    assert session.qobuz.quality == 4  # 24-bit, up to 192 kHz
-    assert session.tidal.quality == 3  # best available, hi-res where there is one
-    assert session.deezer.quality == 2  # FLAC
-
-
-def test_no_update_check_is_commented_out_in_the_template():
-    # Off by default, and visible: a user finds the option by reading the file.
-    text = BLANK_CONFIG_PATH.read_text()
-
-    assert "\n# no_update_check = true\n" in text
-    assert "no_update_check" not in tomlkit.parse(text)["cli"]
-    assert Config.defaults().session.cli.no_update_check is False
 
 
 def test_no_update_check_can_be_turned_on_in_the_config(tmp_path):

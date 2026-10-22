@@ -390,6 +390,3 @@ async def test_deezer_get_album_carries_its_stream_quality(mock_deezer_client):
     )
 
     assert (await mock_deezer_client.get_album("9"))["stream_quality"] == 1
-
-
-# ===== INTEGRATION TEST =====

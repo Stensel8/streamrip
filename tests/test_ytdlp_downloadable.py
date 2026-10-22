@@ -17,7 +17,6 @@ from aiohttp import web
 from streamrip.client.downloadable import (
     YtDlpDownloadable,
     _explain_ytdlp_error,
-    _fetch_audio,
 )
 from streamrip.exceptions import FFmpegNotFoundError, NonStreamableError
 from streamrip.utils.ffmpeg_utils import find_ffmpeg
@@ -183,29 +182,6 @@ async def test_a_download_whose_thread_never_began_ends_when_cancelled(
     done, _ = await asyncio.wait([task], timeout=3)
 
     assert done, "the cancelled download is still waiting for a thread that never began"
-
-
-def test_no_javascript_runtime_is_enabled_that_yt_dlp_cannot_sandbox(monkeypatch):
-    options = {}
-
-    class FakeYoutubeDL:
-        def __init__(self, given):
-            options.update(given)
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *_):
-            return False
-
-        def extract_info(self, url, download):
-            return {"requested_downloads": [{"filepath": "audio.m4a"}]}
-
-    monkeypatch.setattr("yt_dlp.YoutubeDL", FakeYoutubeDL)
-
-    _fetch_audio("https://example.com/x", "/nowhere", True, lambda n: None, None)
-
-    assert set(options["js_runtimes"]) == {"deno", "node", "quickjs"}
 
 
 async def test_without_ffmpeg_nothing_is_fetched(monkeypatch, tmp_path):

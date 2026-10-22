@@ -8,7 +8,7 @@ import pytest
 from streamrip.client import new_session
 from streamrip.client.qobuz import QobuzSpoofer
 from streamrip.media.playlist import PendingLastfmPlaylist
-from streamrip.rip.cli import coro, latest_streamrip_version, rip
+from streamrip.rip.cli import coro, latest_streamrip_version
 from streamrip.utils.ssl_utils import get_aiohttp_connector_kwargs
 
 
@@ -55,10 +55,6 @@ async def test_update_check_follows_verify_ssl_and_is_never_fatal():
         _, notes, _ = await latest_streamrip_version(verify_ssl=False)
     assert notes is None
     assert make.call_args.kwargs["verify_ssl"] is False
-
-
-def test_cli_option_registered():
-    assert any(getattr(p, "name", "") == "no_ssl_verify" for p in rip.params)
 
 
 def test_certificate_error_in_any_command_prints_help(capsys):

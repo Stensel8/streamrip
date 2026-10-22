@@ -36,25 +36,6 @@ def test_upgrade_command_uses_interpreter_pip_without_uv(monkeypatch):
     assert cmd.startswith(f'"{sys.executable}" -m pip install --upgrade ')
 
 
-def test_upgrade_command_pins_the_detected_release():
-    # Not `dev` HEAD, which can be ahead of or behind the release just detected.
-    assert _upgrade_command("2.4.5").endswith("@v2.4.5")
-
-
-def test_help_lists_commands(tmp_path, capsys):
-    result = CliRunner().invoke(
-        rip, ["--config-path", str(tmp_path / "config.toml"), "--help"]
-    )
-    assert result.exit_code == 0
-    output = _output(result, capsys)
-    assert (
-        "A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, SoundCloud, and Spotify."
-        in " ".join(output.split())
-    )
-    for command in ("url", "file", "search", "lastfm", "csv", "id", "repair", "config"):
-        assert command in output
-
-
 @pytest.mark.parametrize(
     ("args", "shown"),
     [

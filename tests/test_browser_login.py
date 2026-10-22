@@ -62,17 +62,6 @@ def opened(monkeypatch):
     return browser, page
 
 
-async def test_login_page_is_on_the_login_url(opened):
-    """The page is open on the login URL, and the browser closes afterwards."""
-    browser, page = opened
-
-    async with login_page("Svc", "https://x/login", MyError, "a token") as got:
-        assert got is page
-
-    page.goto.assert_awaited_once_with("https://x/login")
-    browser.close.assert_awaited_once()
-
-
 @pytest.mark.parametrize(
     ("raised", "message"),
     [

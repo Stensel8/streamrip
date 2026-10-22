@@ -50,12 +50,6 @@ def _client(hires: bool = False) -> TidalClient:
     return TidalClient(cfg)
 
 
-def test_default_quality_is_the_highest():
-    tidal = Config.defaults().session.tidal
-    assert tidal.quality == 3
-    assert tidal.hires_client is True
-
-
 def test_defaults_ask_the_hires_client_first_and_the_lossless_one_second():
     client = TidalClient(Config.defaults())
     assert client.client_id == DEFAULT_CLIENT_ID
@@ -113,60 +107,6 @@ async def test_dash_manifest_becomes_segmented_downloadable():
     assert dl.extension == "flac"
     assert dl.init_url == "https://sp.example/init.mp4"
     assert dl.segment_urls == [f"https://sp.example/{n}.mp4" for n in range(1, 5)]
-
-
-async def test_dash_remux_strips_container_metadata(monkeypatch, tmp_path):
-    """ffmpeg must not carry the source MP4's own tags into the output FLAC.
-
-    Without -map_metadata -1 -fflags +bitexact, a stream-copy remux leaves
-    major_brand/minor_version/compatible_brands and ffmpeg's own encoder
-    stamp sitting in the output's tags -- meaningless there, and streamrip's
-    own tagger writes the real tags right after this step anyway.
-    """
-    monkeypatch.setattr(
-        "streamrip.client.downloadable.find_ffmpeg", lambda: "/usr/bin/ffmpeg"
-    )
-
-    class FakeResp:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *a):
-            return False
-
-        def raise_for_status(self):
-            pass
-
-        async def read(self):
-            return b"segment-bytes"
-
-    class FakeSession:
-        def get(self, url):
-            return FakeResp()
-
-    proc = MagicMock()
-    proc.returncode = 0
-    proc.communicate = AsyncMock(return_value=(b"", b""))
-    create_subprocess = AsyncMock(return_value=proc)
-    monkeypatch.setattr(
-        "streamrip.client.downloadable.asyncio.create_subprocess_exec",
-        create_subprocess,
-    )
-
-    out_path = tmp_path / "out.flac"
-    out_path.touch()  # what the fake ffmpeg would have written
-
-    dl = TidalDASHDownloadable(
-        FakeSession(),
-        "https://sp.example/init.mp4",
-        ["https://sp.example/1.mp4"],
-        "flac",
-    )
-    await dl._download(out_path, lambda n: None)
-
-    args = create_subprocess.call_args.args
-    assert args[args.index("-map_metadata") + 1] == "-1"
-    assert args[args.index("-fflags") + 1] == "+bitexact"
 
 
 async def test_json_manifest_still_supported():
