@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from streamrip.config import Config
-from streamrip.filepath_utils import clean_filepath, ensure_inside
+from streamrip.filepath_utils import clean_filepath, ensure_inside, fit_filename
 from streamrip.media import track as track_module
 from streamrip.media.track import album_folder
 from streamrip.metadata import AlbumMetadata
@@ -62,6 +62,11 @@ def test_a_path_with_nothing_left_is_not_the_downloads_folder_itself():
 def test_a_dots_only_name_has_nothing_left_to_be_a_folder():
     # pathvalidate drops trailing dots, so "..." is empty, which is dropped.
     assert clean_filepath("...") == Path("Unknown")
+
+
+def test_a_file_name_with_nothing_left_still_has_its_extension():
+    """A title of only characters a file name can't hold leaves no ".flac"."""
+    assert fit_filename("", "flac") == "Unknown.flac"
 
 
 @pytest.mark.parametrize(

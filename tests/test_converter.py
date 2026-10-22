@@ -7,6 +7,7 @@ import pytest
 from streamrip import converter
 from streamrip.config import Config
 from streamrip.exceptions import ConversionError
+from streamrip.filepath_utils import fit_filename
 from streamrip.media.track import Track
 from streamrip.utils.ffmpeg_utils import find_ffmpeg
 
@@ -125,3 +126,15 @@ async def test_failed_conversion_says_why_and_cleans_up(tmp_path):
     assert str(err.value).split("): ", 1)[1].strip()
     assert source.exists()
     assert not engine.tempfile.exists()
+
+
+@needs_ffmpeg
+async def test_a_name_as_long_as_a_file_name_may_be_converts(tmp_path):
+    """The temp file ffmpeg writes doesn't add to the name: it would not fit."""
+    source = tmp_path / fit_filename("語" * 100, "flac")
+    shutil.copy("tests/silence.flac", source)
+    engine = converter.LAME(source, remove_source=True)
+
+    await engine.convert()
+
+    assert mutagen.File(engine.final_fn) is not None

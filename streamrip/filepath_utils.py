@@ -69,6 +69,11 @@ def ensure_inside(root: Path, path: Path) -> Path:
 
 
 def fit_filename(stem: str, extension: str) -> str:
-    """Build ``stem.extension`` shortened so the whole name fits one component."""
+    """Build ``stem.extension`` shortened so the whole name fits one component.
+
+    An empty stem (a title of only characters a file name can't hold) becomes
+    "Unknown", as an empty folder name does: ".flac" would be a hidden file
+    without an extension.
+    """
     budget = MAX_COMPONENT_BYTES - len(extension.encode()) - 1
-    return f"{truncate_str(stem, budget)}.{extension}"
+    return f"{truncate_str(stem, budget) or 'Unknown'}.{extension}"

@@ -53,9 +53,10 @@ class Converter:
         self.final_fn = filename.with_suffix(f".{self.container}")
         # Unique per conversion: tracks from different albums often share a
         # file name ("01. Intro"), and concurrent conversions used to
-        # overwrite each other's temp file.
+        # overwrite each other's temp file. Not the track's name: that can
+        # already be as long as a file name may be.
         self.tempfile = (
-            Path(gettempdir()) / f"__streamrip_{uuid.uuid4().hex}_{self.final_fn.name}"
+            Path(gettempdir()) / f"streamrip-{uuid.uuid4().hex}.{self.container}"
         )
         self.remove_source = remove_source
         self.sampling_rate = sampling_rate
