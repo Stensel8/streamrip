@@ -1,7 +1,7 @@
 # Fully qualified names, so Podman never has to ask which registry is meant.
-FROM docker.io/library/python:3.15-slim AS build
+FROM docker.io/library/python:3.15-slim@sha256:044d5bd747976e21f8bc4d746c3479b19a84bb8ae6261b802acdd26b29036c93 AS build
 
-COPY --from=ghcr.io/astral-sh/uv:0.13.5 /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.13.5@sha256:32a7bb39b496babbd997b0a39a4d66c126bdaf5661b302bf6f06abda8deca6ff /uv /usr/local/bin/uv
 # The versions of uv.lock, all from wheels: no compiler is needed. The ffmpeg
 # extra brings a static ffmpeg. streamrip itself is copied into the
 # environment (--no-editable), which is all the image takes from this stage.
@@ -17,7 +17,7 @@ COPY streamrip ./streamrip
 RUN uv sync --locked --no-dev --no-editable --extra ffmpeg
 
 
-FROM docker.io/library/python:3.15-slim
+FROM docker.io/library/python:3.15-slim@sha256:044d5bd747976e21f8bc4d746c3479b19a84bb8ae6261b802acdd26b29036c93
 
 LABEL org.opencontainers.image.title="streamrip" \
       org.opencontainers.image.description="A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, SoundCloud, and Spotify." \
@@ -25,7 +25,7 @@ LABEL org.opencontainers.image.title="streamrip" \
       org.opencontainers.image.licenses="GPL-3.0-only"
 
 # Deno is the JavaScript runtime yt-dlp needs for Spotify.
-COPY --from=docker.io/denoland/deno:bin-2.9.8 /deno /usr/local/bin/deno
+COPY --from=docker.io/denoland/deno:bin-2.9.8@sha256:b507583d3c68ba69f3ed2ce5969ae5b8b70f43421c781279c7aea06435263543 /deno /usr/local/bin/deno
 COPY --from=build /opt/streamrip /opt/streamrip
 ENV PATH=/opt/streamrip/bin:$PATH
 
