@@ -82,7 +82,9 @@ versions, older configs and older databases is gone. Read *Upgrading* first.
   track's stream is fetched as it downloads. Before, every track was fully
   resolved first, which on Tidal looked like minutes of nothing happening. An
   11-track Tidal album takes about 37 seconds of requests instead of 56.
-- A row counts the tracks being looked up, with the time left.
+- A row counts the tracks being looked up, with the time left. The bar of the
+  tracks finished is called `Done` instead of `Overall`, as tracks are looked
+  up while others download.
 - Lyrics are fetched after a track has downloaded, not before.
 - Deezer's lyrics are looked up on LRCLIB, like Qobuz's. Deezer's own lyrics
   request answered "no data" for nearly every track, and the notice about that

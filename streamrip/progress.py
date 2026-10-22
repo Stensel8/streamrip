@@ -45,10 +45,13 @@ class ProgressManager:
     def __init__(self):
         """Build the resolve and download progress bars, not started yet."""
         self.started = False
-        # One bar for the whole job, counting tracks: the per-track rows below
-        # only show what's downloading *right now*, not how far through the
-        # album, playlist or discography that is. An artist's total grows as
-        # each of its albums starts -- the tracks are only known then.
+        # One bar for the whole job, counting the tracks done (downloaded and
+        # tagged, or failed): the per-track rows below only show what's
+        # downloading *right now*, not how far through the album, playlist or
+        # discography that is. An artist's total grows as each of its albums
+        # starts -- the tracks are only known then. Called "Done", not
+        # "Overall": tracks are looked up while others download, and it counts
+        # neither.
         self.overall_progress = Progress(
             TextColumn("[bold white]{task.description}"),
             BarColumn(
@@ -143,7 +146,7 @@ class ProgressManager:
         self._overall_total += n
         if self._overall_task is None:
             self._overall_task = self.overall_progress.add_task(
-                "Overall", total=self._overall_total
+                "Done", total=self._overall_total
             )
             self.live.update(self._group())
         else:
