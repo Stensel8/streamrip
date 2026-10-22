@@ -285,12 +285,14 @@ class _StreamripGroup(_ColoredHelp, click.Group):
         command_line = args[0] if args else kwargs.get("args")
         if not _update_check_disabled(_config_path_from(command_line)):
             try:
-                with console.status(
-                    "streamrip: Checking for updates...", spinner="dots"
+                # Close the coroutine even if run() rejects an active event loop.
+                with (
+                    console.status(
+                        "streamrip: Checking for updates...", spinner="dots"
+                    ),
+                    closing(latest_streamrip_version()) as check,
                 ):
-                    # Close the coroutine even if run() rejects an active event loop.
-                    with closing(latest_streamrip_version()) as check:
-                        latest_version, notes, is_release = asyncio.run(check)
+                    latest_version, notes, is_release = asyncio.run(check)
                 if is_newer_version(latest_version):
                     notice = (latest_version, notes, is_release)
             except Exception as exc:
@@ -527,12 +529,11 @@ def config_open(ctx, vim):
 def config_reset(ctx, yes):
     """Reset the config file."""
     config_path = ctx.obj["config_path"]
-    if not yes:
-        if not Confirm.ask(
-            f"Are you sure you want to reset the config file at {config_path}?",
-        ):
-            console.print("[green]Reset aborted")
-            return
+    if not yes and not Confirm.ask(
+        f"Are you sure you want to reset the config file at {config_path}?",
+    ):
+        console.print("[green]Reset aborted")
+        return
 
     set_user_defaults(config_path)
     console.print(f"Reset the config file at [bold cyan]{config_path}!")
@@ -625,7 +626,8 @@ def database_clear(ctx, table, yes):
         return
 
     summary = " and ".join(
-        f"[yellow]{n}[/yellow] {label}" for n, (label, _) in zip(counts, tables)
+        f"[yellow]{n}[/yellow] {label}"
+        for n, (label, _) in zip(counts, tables, strict=True)
     )
     if not yes and not Confirm.ask(f"Forget {summary}? They will be downloaded again."):
         console.print("[green]Clear aborted")

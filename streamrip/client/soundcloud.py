@@ -193,7 +193,7 @@ class SoundcloudClient(Client):
         responses = await asyncio.gather(
             *(
                 self._api_request("tracks", params={"ids": ",".join(map(str, batch))})
-                for batch in itertools.batched(unresolved, MAX_BATCH_SIZE)
+                for batch in itertools.batched(unresolved, MAX_BATCH_SIZE, strict=False)
             )
         )
         assert all(status == 200 for _, status in responses)

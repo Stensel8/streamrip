@@ -117,18 +117,20 @@ class QobuzInterpreterURL(URL):
         """
         # Public pages must never inherit the API session's account credentials.
         url = url.replace("http://", "https://", 1)
-        async with new_session(verify_ssl=verify_ssl) as session:
-            # Do not let a redirect downgrade the request to plaintext HTTP.
-            async with session.get(url, allow_redirects=False) as resp:
-                if 300 <= resp.status < 400:
-                    raise ValueError(
-                        "Qobuz interpreter URL redirected. Use a URL that contains "
-                        "an artist id."
-                    )
-                resp.raise_for_status()
-                match = QobuzInterpreterURL.interpreter_artist_regex.search(
-                    await resp.text(),
+        # Do not let a redirect downgrade the request to plaintext HTTP.
+        async with (
+            new_session(verify_ssl=verify_ssl) as session,
+            session.get(url, allow_redirects=False) as resp,
+        ):
+            if 300 <= resp.status < 400:
+                raise ValueError(
+                    "Qobuz interpreter URL redirected. Use a URL that contains "
+                    "an artist id."
                 )
+            resp.raise_for_status()
+            match = QobuzInterpreterURL.interpreter_artist_regex.search(
+                await resp.text(),
+            )
 
         if match:
             return match.group(1)

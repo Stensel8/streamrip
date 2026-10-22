@@ -91,7 +91,7 @@ class DeezerClient(Client):
         try:
             item = await asyncio.to_thread(self.client.api.get_track, item_id)
         except Exception as e:
-            raise NonStreamableError(e)
+            raise NonStreamableError(e) from e
 
         album_id = str(item["album"]["id"])
         try:
@@ -203,7 +203,7 @@ class DeezerClient(Client):
             raise NonStreamableError(
                 f"Cannot access Deezer playlist {item_id}: {e}. Check that your "
                 "ARL is valid and that the playlist still exists."
-            )
+            ) from e
         data = page.get("DATA", {}) if isinstance(page, dict) else {}
         tracks = [{"id": str(t["SNG_ID"])} for t in songs if t.get("SNG_ID")]
         return {
@@ -272,12 +272,12 @@ class DeezerClient(Client):
                 else:
                     search_function = self.client.api.get_editorial_releases
             except AttributeError:
-                raise Exception(f'Invalid editorial selection "{query}"')
+                raise Exception(f'Invalid editorial selection "{query}"') from None
         else:
             try:
                 search_function = getattr(self.client.api, f"search_{media_type}")
             except AttributeError:
-                raise Exception(f"Invalid media type {media_type}")
+                raise Exception(f"Invalid media type {media_type}") from None
 
         response = await asyncio.to_thread(search_function, query, limit=limit)  # type: ignore
         if response.get("total", 0) > 0:
@@ -362,7 +362,7 @@ class DeezerClient(Client):
                         f"Your Deezer subscription does not allow {format_str} "
                         "downloads. FLAC (quality 2) needs Deezer HiFi/Premium, "
                         "MP3 320 (quality 1) needs a paid plan.",
-                    )
+                    ) from None
                 continue
             except deezer.WrongGeolocation:
                 if not is_retry and fallback_id:
@@ -371,7 +371,7 @@ class DeezerClient(Client):
                     )
                 raise NonStreamableError(
                     "The requested track is not available. This may be due to your country/location.",
-                )
+                ) from None
             if url:
                 if tier != quality:
                     logger.info(

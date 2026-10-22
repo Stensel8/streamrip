@@ -237,10 +237,9 @@ class SearchMenu(App[tuple[int, ...] | None]):
         if urls == self._cover_urls:
             await self.query_one(CoverPane).show_image(image)
 
-    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
-        if action == "toggle" and self.query_one(Input).has_focus:
-            return False  # A space belongs to the search query.
-        return True
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool:
+        # A space typed in the search query is not a toggle.
+        return not (action == "toggle" and self.query_one(Input).has_focus)
 
     def action_toggle(self):
         if self.current is None:

@@ -169,10 +169,9 @@ async def fast_async_download(path: Path, url, headers, callback, resume: bool =
     stop = threading.Event()
 
     def report(n: int):
-        try:
+        # RuntimeError: the loop is already closed (interpreter shutting down).
+        with contextlib.suppress(RuntimeError):
             loop.call_soon_threadsafe(callback, n)
-        except RuntimeError:
-            pass  # loop already closed (interpreter shutting down)
 
     try:
         await asyncio.to_thread(
@@ -346,7 +345,7 @@ class DeezerDownloadable(Downloadable):
         # good luck :)
         return "".join(
             chr(functools.reduce(operator.xor, map(ord, t)))
-            for t in zip(md5_hash[:16], md5_hash[16:], BLOWFISH_SECRET)
+            for t in zip(md5_hash[:16], md5_hash[16:], BLOWFISH_SECRET, strict=True)
         ).encode()
 
 
@@ -553,7 +552,7 @@ class SoundcloudDownloadable(Downloadable):
         segment_paths = [generate_temp_path(s.uri) for s in segments]
         tasks = [
             asyncio.create_task(self._download_segment(segment.uri, tmp, callback))
-            for segment, tmp in zip(segments, segment_paths)
+            for segment, tmp in zip(segments, segment_paths, strict=True)
         ]
         try:
             await asyncio.gather(*tasks)
@@ -708,10 +707,9 @@ class YtDlpDownloadable(Downloadable):
         stop = threading.Event()
 
         def report(n: int):
-            try:
+            # RuntimeError: the loop is already closed (interpreter shutting down).
+            with contextlib.suppress(RuntimeError):
                 loop.call_soon_threadsafe(callback, n)
-            except RuntimeError:
-                pass  # loop already closed (interpreter shutting down)
 
         directory = Path(tempfile.mkdtemp(prefix="__streamrip_ytdlp_"))
         # A thread of its own, not one of the shared pool: yt-dlp keeps it for the
@@ -793,7 +791,7 @@ async def concat_audio_files(
         paths[0].move(out)
         return
 
-    batches = list(itertools.batched(paths, max_files_open))
+    batches = list(itertools.batched(paths, max_files_open, strict=False))
     outpaths = [
         Path(tempfile.gettempdir()) / f"__streamrip_ffmpeg_{hash(b[0])}.{ext}"
         for b in batches
@@ -828,7 +826,7 @@ async def concat_audio_files(
 
     tasks = [
         asyncio.create_task(join(batch, outpath))
-        for batch, outpath in zip(batches, outpaths)
+        for batch, outpath in zip(batches, outpaths, strict=True)
     ]
     try:
         await asyncio.gather(*tasks)

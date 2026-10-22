@@ -48,7 +48,7 @@ class Covers:
         for entry in self._covers[i:]:
             if entry[1] is not None:
                 return entry
-        raise Exception(f"No cover of size {self.SIZES[i]} or smaller in {self}")
+        raise LookupError(f"No cover of size {self.SIZES[i]} or smaller in {self}")
 
     @classmethod
     def from_qobuz(cls, resp):
@@ -105,7 +105,7 @@ class Covers:
             return None
 
         c = cls()
-        for size, px in zip(cls.SIZES, (1280, 640, 320, 160)):
+        for size, px in zip(cls.SIZES, (1280, 640, 320, 160), strict=True):
             url = TIDAL_COVER_URL.format(
                 uuid=uuid.replace("-", "/"), width=px, height=px
             )

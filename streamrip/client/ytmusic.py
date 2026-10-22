@@ -181,9 +181,10 @@ class YouTubeMusicMatcher:
         if m := select(wanted, candidates):
             return self._found(wanted, m, "search")
 
-        if self.match_videos:
-            if m := select(wanted, await self._search(query, "videos")):
-                return self._found(wanted, m, "video search")
+        if self.match_videos and (
+            m := select(wanted, await self._search(query, "videos"))
+        ):
+            return self._found(wanted, m, "video search")
         logger.debug("No YouTube Music match for %s", wanted)
         return None
 

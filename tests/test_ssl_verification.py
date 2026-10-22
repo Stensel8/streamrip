@@ -40,11 +40,13 @@ async def test_lastfm_session_follows_verify_ssl():
     config = MagicMock()
     config.session.downloads.verify_ssl = False
     playlist = PendingLastfmPlaylist("url", MagicMock(), None, config, MagicMock())
-    with patch(
-        "streamrip.media.playlist.new_session", side_effect=RuntimeError("stop")
-    ) as make:
-        with pytest.raises(RuntimeError):
-            await playlist._parse_lastfm_playlist("https://www.last.fm/x")
+    with (
+        patch(
+            "streamrip.media.playlist.new_session", side_effect=RuntimeError("stop")
+        ) as make,
+        pytest.raises(RuntimeError),
+    ):
+        await playlist._parse_lastfm_playlist("https://www.last.fm/x")
     make.assert_called_once_with(verify_ssl=False)
 
 

@@ -133,44 +133,45 @@ class Container(Enum):
 
         A file with no tags yet gets empty ones.
         """
-        if self == Container.FLAC:
-            return FLAC(path)
-        if self == Container.AAC:
-            return MP4(path)
-        if self == Container.MP3:
-            try:
-                return ID3(path)
-            except ID3NoHeaderError:
-                return ID3()
-        elif self == Container.AIFF:
-            audio = AIFF(path)
-            if audio.tags is None:
-                audio.add_tags()
-            return audio.tags
+        match self:
+            case Container.FLAC:
+                return FLAC(path)
+            case Container.AAC:
+                return MP4(path)
+            case Container.MP3:
+                try:
+                    return ID3(path)
+                except ID3NoHeaderError:
+                    return ID3()
+            case Container.AIFF:
+                audio = AIFF(path)
+                if audio.tags is None:
+                    audio.add_tags()
+                return audio.tags
 
     def get_tag_pairs(self, meta, exclude=()) -> list[tuple]:
         """Return this container's (key, value) tag pairs for meta."""
         # [metadata] exclude lists streamrip's own tag names ("genre",
         # "albumartist", ...); it used to be ignored entirely (upstream #850).
         values = {k: v for k, v in _tag_values(meta).items() if k not in exclude}
-        if self == Container.FLAC:
-            return [(k.upper(), _flac_value(k, v)) for k, v in values.items()]
-        if self in (Container.MP3, Container.AIFF):
-            return [
-                (
-                    frame.__name__,
-                    frame(encoding=3, text=_mp3_value(k, values[k], values)),
-                )
-                for k, frame in MP3_KEY.items()
-                if k in values
-            ]
-        if self == Container.AAC:
-            return [
-                (key, _mp4_value(k, values[k], values))
-                for k, key in MP4_KEY.items()
-                if k in values
-            ]
-        return []
+        match self:
+            case Container.FLAC:
+                return [(k.upper(), _flac_value(k, v)) for k, v in values.items()]
+            case Container.MP3 | Container.AIFF:
+                return [
+                    (
+                        frame.__name__,
+                        frame(encoding=3, text=_mp3_value(k, values[k], values)),
+                    )
+                    for k, frame in MP3_KEY.items()
+                    if k in values
+                ]
+            case Container.AAC:
+                return [
+                    (key, _mp4_value(k, values[k], values))
+                    for k, key in MP4_KEY.items()
+                    if k in values
+                ]
 
     def tag_audio(self, audio, tags: list[tuple]):
         """Set each (key, value) tag on the mutagen object."""
@@ -183,29 +184,31 @@ class Container(Enum):
             raise Exception("Cover art too big for FLAC")
         async with aiofiles.open(cover_path, "rb") as img:
             data = await img.read()
-        if self == Container.FLAC:
-            cover = Picture()
-            cover.type, cover.mime, cover.data = 3, "image/jpeg", data
-            # add_picture appends, unlike ID3 and MP4 which replace: without
-            # this, re-tagging a converted FLAC embedded a second cover.
-            audio.clear_pictures()
-            audio.add_picture(cover)
-        elif self in (Container.MP3, Container.AIFF):
-            audio.add(APIC(type=3, mime="image/jpeg", data=data))
-        elif self == Container.AAC:
-            audio["covr"] = [MP4Cover(data, imageformat=MP4Cover.FORMAT_JPEG)]
+        match self:
+            case Container.FLAC:
+                cover = Picture()
+                cover.type, cover.mime, cover.data = 3, "image/jpeg", data
+                # add_picture appends, unlike ID3 and MP4 which replace: without
+                # this, re-tagging a converted FLAC embedded a second cover.
+                audio.clear_pictures()
+                audio.add_picture(cover)
+            case Container.MP3 | Container.AIFF:
+                audio.add(APIC(type=3, mime="image/jpeg", data=data))
+            case Container.AAC:
+                audio["covr"] = [MP4Cover(data, imageformat=MP4Cover.FORMAT_JPEG)]
 
     def save_audio(self, audio, path):
         """Write the tagged audio object back to path."""
-        if self in (Container.FLAC, Container.AAC):
-            audio.save()
-        elif self == Container.MP3:
-            # ID3v2.3 for the widest player support. This used to pass the
-            # string "v2_version=3" as the v1 argument, so it never applied.
-            audio.update_to_v23()
-            audio.save(path, v2_version=3)
-        elif self == Container.AIFF:
-            audio.save(path)
+        match self:
+            case Container.FLAC | Container.AAC:
+                audio.save()
+            case Container.MP3:
+                # ID3v2.3 for the widest player support. This used to pass the
+                # string "v2_version=3" as the v1 argument, so it never applied.
+                audio.update_to_v23()
+                audio.save(path, v2_version=3)
+            case Container.AIFF:
+                audio.save(path)
 
 
 EXTENSION_CONTAINERS = frozendict(

@@ -92,10 +92,17 @@ target-version = "py315"
 
 [tool.ruff.lint]
 # Enable Pyflakes (`F`) and a subset of the pycodestyle (`E`)  codes by default.
-select = ["E4", "E7", "E9", "F", "I", "UP", "ASYNC", "N", "RUF", "ERA001", "PTH"]
-# os.path.isfile/getsize in async code are cheap stat calls, not I/O worth a
-# thread hop.
-ignore = ["ASYNC240"]
+select = [
+  "E4", "E7", "E9", "F", "I", "UP", "ASYNC", "N", "RUF", "ERA001", "PTH",
+  "B", "C4", "FURB", "PERF", "PIE", "RET", "SIM",
+]
+ignore = [
+  # os.path.isfile/getsize in async code are cheap stat calls, not I/O worth a
+  # thread hop.
+  "ASYNC240",
+  # Media.preprocess and postprocess are hooks a subclass may leave out.
+  "B027",
+]
 
 # Allow fix for all enabled rules (when `--fix`) is provided.
 fixable = ["ALL"]

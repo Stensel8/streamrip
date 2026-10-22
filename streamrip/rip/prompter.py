@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import logging
 import time
 from abc import ABC, abstractmethod
@@ -36,11 +37,9 @@ logger = logging.getLogger("streamrip")
 
 def _open_login_link(url: str) -> None:
     """Ask the system default browser to open a link already printed to the user."""
-    try:
+    # No browser available (e.g. over SSH): the printed link is the way there.
+    with contextlib.suppress(Exception):
         launch(url)
-    except Exception:
-        # No browser available (e.g. over SSH); use the printed link manually.
-        pass
 
 
 def _show_login_link(url: str) -> None:

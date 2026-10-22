@@ -11,6 +11,7 @@ import http.server
 import threading
 
 import pytest
+import requests
 
 from streamrip.client.downloadable import _content_range, fast_async_download
 from streamrip.exceptions import IncompleteDownloadError
@@ -232,7 +233,7 @@ async def test_resume_at_the_wrong_offset_starts_over(tmp_path):
     url = f"http://127.0.0.1:{port}/track.flac"
     path = tmp_path / "track.flac"
 
-    with pytest.raises(Exception):  # the dropped first response
+    with pytest.raises(requests.RequestException):  # the dropped first response
         await fast_async_download(path, url, {}, lambda n: None)
     assert path.exists()
     with pytest.raises(IncompleteDownloadError, match="resume at byte"):
@@ -260,7 +261,7 @@ async def test_resume_that_does_not_add_up_to_the_total_starts_over(tmp_path):
     url = f"http://127.0.0.1:{port}/track.flac"
     path = tmp_path / "track.flac"
 
-    with pytest.raises(Exception):
+    with pytest.raises(requests.RequestException):
         await fast_async_download(path, url, {}, lambda n: None)
     with pytest.raises(IncompleteDownloadError, match="announced"):
         await fast_async_download(path, url, {}, lambda n: None, resume=True)
@@ -303,7 +304,7 @@ async def test_resume_with_unknown_total_that_stops_early_starts_over(tmp_path):
     url = f"http://127.0.0.1:{port}/track.flac"
     path = tmp_path / "track.flac"
 
-    with pytest.raises(Exception):
+    with pytest.raises(requests.RequestException):
         await fast_async_download(path, url, {}, lambda n: None)
     with pytest.raises(IncompleteDownloadError, match="announced"):
         await fast_async_download(path, url, {}, lambda n: None, resume=True)

@@ -163,6 +163,7 @@ def test_database_browse_failed_lines_up_with_its_headers(tmp_path, capsys):
         zip(
             [c.strip() for c in header.split("┃")[1:-1]],
             [c.strip() for c in row.split("│")[1:-1]],
+            strict=True,
         )
     )
     assert cells == {"Row": "00", "Source": "tidal", "Media Type": "track", "ID": "3"}

@@ -24,10 +24,12 @@ def _main():
 async def test_main_refuses_to_start_without_ffmpeg():
     """Reject context entry with installation guidance when ffmpeg is missing."""
     main = _main()
-    with patch("streamrip.rip.main.find_ffmpeg", return_value=None):
-        with pytest.raises(FFmpegNotFoundError, match="No ffmpeg installation"):
-            async with main:
-                pytest.fail("Main must not be entered without ffmpeg")
+    with (
+        patch("streamrip.rip.main.find_ffmpeg", return_value=None),
+        pytest.raises(FFmpegNotFoundError, match="No ffmpeg installation"),
+    ):
+        async with main:
+            pytest.fail("Main must not be entered without ffmpeg")
 
 
 async def test_main_starts_with_ffmpeg():
@@ -87,9 +89,9 @@ async def test_missing_ffmpeg_is_not_retried():
     with (
         patch("streamrip.media.track.format_quality", return_value="FLAC"),
         patch("streamrip.media.track.asyncio.sleep", AsyncMock()) as sleep,
+        pytest.raises(TrackDownloadFailedError),
     ):
-        with pytest.raises(TrackDownloadFailedError):
-            await Track.download(track)
+        await Track.download(track)
     assert track.downloadable.download.await_count == 1
     sleep.assert_not_called()
     assert MAX_DOWNLOAD_ATTEMPTS > 1

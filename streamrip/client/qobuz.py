@@ -203,9 +203,9 @@ class QobuzClient(Client):
                 "Invalid Qobuz user id or user_auth_token. The token may have "
                 "expired; log in again to get a fresh one."
             )
-        elif status == 400:
+        if status == 400:
             raise InvalidAppIdError(f"Qobuz rejected app id {c.app_id}")
-        elif status != 200:
+        if status != 200:
             raise APIError(
                 f"Qobuz login failed (HTTP {status}): "
                 f"{resp.get('message') or 'no message'}"
@@ -444,19 +444,13 @@ class QobuzClient(Client):
         # Qobuz may cap the requested page size. Keep that validated size,
         # but never use response offsets to control progress or allocate a
         # batch of requests from response metadata.
-        pages = [page]
-        for offset in range(page_size, total, page_size):
-            pages.append(
-                await self._request_ok(
-                    epoint,
-                    {
-                        **params,
-                        "offset": offset,
-                        "limit": min(page_size, total - offset),
-                    },
-                )
+        return [page] + [
+            await self._request_ok(
+                epoint,
+                {**params, "offset": offset, "limit": min(page_size, total - offset)},
             )
-        return pages
+            for offset in range(page_size, total, page_size)
+        ]
 
     async def _get_app_id_and_secrets(self) -> tuple[str, list[str]]:
         async with QobuzSpoofer(

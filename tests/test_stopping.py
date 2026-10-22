@@ -1,6 +1,7 @@
 """Ctrl-C and SIGTERM stop a running command, cleaning up first."""
 
 import asyncio
+import contextlib
 import os
 import signal
 
@@ -77,10 +78,8 @@ def test_sigterm_exits_143_even_when_the_command_swallows_the_cancellation():
         asyncio.get_running_loop().call_later(
             0.05, os.kill, os.getpid(), signal.SIGTERM
         )
-        try:
+        with contextlib.suppress(asyncio.CancelledError):
             await asyncio.sleep(30)
-        except asyncio.CancelledError:
-            pass
 
     with pytest.raises(SystemExit) as stopped:
         command()

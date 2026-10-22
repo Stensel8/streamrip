@@ -48,9 +48,9 @@ def test_covers_all(covers_all):
 
 def test_covers_none(covers_none):
     assert covers_none.empty()
-    with pytest.raises(Exception):
+    with pytest.raises(LookupError):
         covers_none.largest()
-    with pytest.raises(Exception):
+    with pytest.raises(LookupError):
         covers_none.get_size("original")
 
 
@@ -58,7 +58,7 @@ def test_covers_one(covers_one):
     assert not covers_one.empty()
     assert covers_one.largest() == ("small", "surl", None)
     assert covers_one.get_size("original") == ("small", "surl", None)
-    with pytest.raises(Exception):
+    with pytest.raises(LookupError):
         covers_one.get_size("thumbnail")
 
 
@@ -67,5 +67,5 @@ def test_covers_some(covers_some):
     assert covers_some.largest() == ("large", "lurl", None)
     assert covers_some.get_size("original") == ("large", "lurl", None)
     assert covers_some.get_size("small") == ("small", "surl", None)
-    with pytest.raises(Exception):
+    with pytest.raises(LookupError):
         covers_some.get_size("thumbnail")

@@ -187,7 +187,7 @@ def test_the_template_and_the_config_classes_agree():
         )
     with pytest.raises(TypeError, match="max_search_results"):
         ConfigData.from_toml(
-            re.sub(r"^max_search_results = .*\n", "", template, flags=re.M)
+            re.sub(r"^max_search_results = .*\n", "", template, flags=re.MULTILINE)
         )
 
 

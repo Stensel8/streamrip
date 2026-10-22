@@ -407,9 +407,9 @@ class TidalClient(Client):
             self.hires_lane is not None
             and quality >= HIRES_TIER
             and str(track_id) not in self._no_hires
+            and (downloadable := await self.hires_lane._try_hires(track_id)) is not None
         ):
-            if (downloadable := await self.hires_lane._try_hires(track_id)) is not None:
-                return downloadable
+            return downloadable
 
         resp = await self._playback_info(track_id, quality)
 
@@ -435,7 +435,9 @@ class TidalClient(Client):
             manifest = json.loads(base64.b64decode(resp["manifest"]).decode("utf-8"))
         except JSONDecodeError, UnicodeDecodeError, ValueError:
             if quality <= 0:
-                raise NonStreamableError(f"Could not read manifest for {track_id}")
+                raise NonStreamableError(
+                    f"Could not read manifest for {track_id}"
+                ) from None
             logger.warning(
                 f"Failed to get manifest for {track_id}. Retrying with lower quality."
             )
@@ -618,9 +620,11 @@ class TidalClient(Client):
         token endpoint). The status is not checked.
         """
         headers = self.auth_headers if auth else None
-        async with self.rate_limiter:
-            async with self.session.post(url, data=data, headers=headers) as resp:
-                return await resp.json()
+        async with (
+            self.rate_limiter,
+            self.session.post(url, data=data, headers=headers) as resp,
+        ):
+            return await resp.json()
 
     async def _api_request(self, path: str, params=None, base: str = BASE) -> dict:
         """GET a Tidal API path, with the retries of Client._get_with_retries."""
