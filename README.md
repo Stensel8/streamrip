@@ -94,9 +94,9 @@ alias streamrip='podman run --rm -it -v "$HOME/streamrip:/data" ghcr.io/stensel8
 Build the image yourself with `podman build -t streamrip .` (it reads the
 `Containerfile`; Docker: `docker build -f Containerfile -t streamrip .`).
 
-A container has no screen, so it leaves out the isolated browser window of the
-Qobuz and Deezer logins and offers the other ways. For Spotify, paste the
-address ([Logging in](docs/logging-in.md)).
+A container has no screen, and your browser can't reach it: Qobuz and Deezer
+ask for the login by hand, and for Spotify you paste the address
+([Logging in](docs/logging-in.md)).
 
 ### With Nix
 

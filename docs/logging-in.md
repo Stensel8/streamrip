@@ -7,7 +7,9 @@ in the config. A login that stops working is asked for again.
 
 The isolated browser window below is only offered where it can work: with the
 `browser` extra installed (the installers include it) and, on Linux, a screen to
-open it on. In a container or over SSH the other ways are offered.
+open it on. In a container or over SSH your browser runs elsewhere and can't
+reach streamrip, so Qobuz and Deezer ask for the login by hand and Spotify
+defaults to pasting the address.
 
 - **Qobuz** needs a subscription, or downloads the albums you bought. Qobuz's
   web login has no device-code flow to poll (unlike Tidal's), but it does save

@@ -59,8 +59,9 @@ versions, older configs and older databases is gone. Read *Upgrading* first.
 
 - The isolated browser window of the Qobuz and Deezer logins is only offered
   where it can work: with Playwright installed and, on Linux, a screen to open
-  it on. In a container or over SSH the menu lists the other ways, and Deezer
-  goes straight to entering the ARL by hand.
+  it on. In a container or over SSH, where the browser runs elsewhere and can't
+  reach streamrip, Qobuz and Deezer go straight to entering the login by hand,
+  and Spotify defaults to pasting the address.
 - Qobuz and Deezer print the address of the login page before opening it. Nothing
   showed it before, so without a browser to open it there was no telling where to
   go.

@@ -22,17 +22,21 @@ from .interactive import Confirm
 logger = logging.getLogger("streamrip")
 
 
-def browser_login_available() -> bool:
-    """Whether the isolated browser window can work here at all.
+def has_screen() -> bool:
+    """Whether the user's browser runs on this machine.
 
-    It needs Playwright (the `browser` extra) and, on Linux, a display to open
-    the window on: a container or an SSH session has none.
+    On Linux that takes a display: a container or an SSH session has none, and a
+    browser elsewhere cannot reach a server streamrip starts on 127.0.0.1.
     """
-    if importlib.util.find_spec("playwright") is None:
-        return False
     if sys.platform.startswith("linux"):
         return bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
     return True
+
+
+def browser_login_available() -> bool:
+    """Whether the isolated browser window can work here: it needs Playwright
+    (the `browser` extra) and a screen."""
+    return importlib.util.find_spec("playwright") is not None and has_screen()
 
 
 # Playwright's own channel names for already-installed browsers, tried

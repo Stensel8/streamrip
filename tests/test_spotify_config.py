@@ -183,6 +183,35 @@ async def test_the_browser_login_catches_the_code_itself(spotify_prompter, monke
     client.finish_login.assert_awaited_once_with("CAUGHT", "V")
 
 
+@pytest.mark.parametrize(("screen", "default"), [(True, "1"), (False, "2")])
+async def test_without_a_screen_the_other_device_is_the_default(
+    spotify_prompter, monkeypatch, screen, default
+):
+    """A browser elsewhere can't reach the 127.0.0.1 Spotify sends it back to."""
+    prompter, config, client = spotify_prompter
+    config.session.spotify.client_id = "saved"
+    monkeypatch.setattr(prompter_module.console, "print", lambda *a, **k: None)
+    monkeypatch.setattr(prompter_module, "has_screen", lambda: screen)
+    defaults = []
+
+    def ask(question, default=None, **_):
+        defaults.append(default)
+        return (
+            "2"
+            if question == "Choose"
+            else "http://127.0.0.1:9900/callback?code=C&state=S"
+        )
+
+    monkeypatch.setattr(prompter_module.Prompt, "ask", staticmethod(ask))
+    client.authorization_url = lambda: ("https://accounts.spotify.com/x", "S", "V")
+    client.finish_login = AsyncMock()
+
+    await prompter.prompt_and_login()
+
+    assert defaults[0] == default
+    client.finish_login.assert_awaited_once_with("C", "V")
+
+
 async def test_a_failed_login_can_be_tried_again(spotify_prompter, monkeypatch):
     prompter, config, client = spotify_prompter
     config.session.spotify.client_id = "saved"

@@ -17,7 +17,7 @@ from ..client.spotify import DEVELOPER_DASHBOARD
 from ..config import Config
 from ..console import console
 from ..exceptions import AuthenticationError, MissingCredentialsError
-from .browser_login import browser_login_available
+from .browser_login import browser_login_available, has_screen
 from .deezer_arl_capture import DeezerArlCaptureError, capture_deezer_arl_via_browser
 from .interactive import Confirm, Prompt
 from .qobuz_token_capture import (
@@ -136,15 +136,19 @@ class QobuzPrompter(CredentialPrompter):
                     "     the token automatically",
                 )
             )
-        options += [
-            (
-                "script",
-                "Log in in your own browser, then paste a short script into\n"
-                "     its console to send the token back",
-            ),
-            ("hand", "Copy the user id and token from your browser by hand"),
-        ]
-        choice = _choose_login("Qobuz", options, default="script")
+        # The script posts the token to 127.0.0.1, which only a browser on this
+        # machine can reach.
+        screen = has_screen()
+        if screen:
+            options.append(
+                (
+                    "script",
+                    "Log in in your own browser, then paste a short script into\n"
+                    "     its console to send the token back",
+                )
+            )
+        options.append(("hand", "Copy the user id and token from your browser by hand"))
+        choice = _choose_login("Qobuz", options, default="script" if screen else "hand")
 
         if choice == "window":
             try:
@@ -420,7 +424,10 @@ class SpotifyPrompter(CredentialPrompter):
             "  2. In a browser on another device (streamrip runs on a server, say):\n"
             "     open the link there and paste the address you end up on\n"
         )
-        choice = Prompt.ask("Choose", choices=["1", "2"], default="1")
+        # Spotify sends the browser back to 127.0.0.1, which only a browser on
+        # this machine can reach.
+        default = "1" if has_screen() else "2"
+        choice = Prompt.ask("Choose", choices=["1", "2"], default=default)
         if choice == "1":
             console.print(
                 f"\nOpening your browser. If nothing opens, go to:\n{url}\n"

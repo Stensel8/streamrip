@@ -21,6 +21,7 @@ def prompter():
 def a_screen(monkeypatch):
     """These tests describe a desktop, where the browser window is offered."""
     monkeypatch.setattr("streamrip.rip.prompter.browser_login_available", lambda: True)
+    monkeypatch.setattr("streamrip.rip.prompter.has_screen", lambda: True)
 
 
 @pytest.fixture(autouse=True)
@@ -139,34 +140,26 @@ def test_menu_offers_no_password_login(monkeypatch, prompter):
     assert "email" not in shown and "password" not in shown
 
 
-async def test_without_a_screen_the_menu_only_offers_what_can_work(
+async def test_without_a_screen_it_goes_straight_to_entering_it_by_hand(
     monkeypatch, prompter, no_snippet_capture, no_browser_capture
 ):
-    """A container has no browser window: the menu starts at the other ways."""
+    """In a container or over SSH the browser is elsewhere: it can't reach the
+    window or the script's 127.0.0.1, so there is nothing to choose."""
     monkeypatch.setattr("streamrip.rip.prompter.browser_login_available", lambda: False)
-    no_snippet_capture.side_effect = None
-    no_snippet_capture.return_value = ("456", "captured-token")
+    monkeypatch.setattr("streamrip.rip.prompter.has_screen", lambda: False)
     monkeypatch.setattr("streamrip.rip.prompter.launch", MagicMock())
-    prompt = MagicMock(side_effect=["1"])
+    prompt = MagicMock(side_effect=["123", "token"])
     monkeypatch.setattr("streamrip.rip.prompter.Prompt.ask", prompt)
-    printed = MagicMock()
-    monkeypatch.setattr("streamrip.rip.prompter.console.print", printed)
 
     await prompter.prompt_and_login()
     prompter.save()
 
-    menu = next(
-        call.args[0]
-        for call in printed.call_args_list
-        if "How do you want to log in" in str(call.args[0])
-    )
-    assert "isolated browser window" not in menu
-    assert "  1. Log in in your own browser" in menu
-    assert "  2. Copy the user id and token" in menu
-    assert prompt.call_args.kwargs["choices"] == ["1", "2"]
-    assert prompt.call_args.kwargs["default"] == "1"
+    assert prompt.call_count == 2
+    assert prompt.call_args.kwargs["password"] is True
+    no_snippet_capture.assert_not_awaited()
     no_browser_capture.assert_not_awaited()
-    assert prompter.config.file.qobuz.user_id == "456"
+    cfg = prompter.config.file.qobuz
+    assert (cfg.user_id, cfg.auth_token) == ("123", "token")
 
 
 async def test_the_login_address_is_shown_when_no_browser_can_open_it(
