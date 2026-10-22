@@ -97,8 +97,8 @@ versions, older configs and older databases is gone. Read *Upgrading* first.
   development tools to exact versions, and no longer merges major updates by
   itself (the rule said to wait for a human but merged them).
 - Pillow 13, a security update (#68); textual-image 0.14.2 (#66); certifi
-  2026.10.19 (#71); and a refresh of the lock file (#65). The Nix build accepts
-  nixpkgs' Pillow 12 and older certifi for now (#70).
+  2026.10.19 (#71); and a refresh of the lock file (#65). The Nix build has
+  Pillow 13 too, ahead of nixos-unstable, and accepts its older certifi for now.
 
 ### Documentation and tests
 

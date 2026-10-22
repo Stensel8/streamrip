@@ -25,6 +25,20 @@
                          pythonImportsCheck = [ ];
                        }
                        else pkg) pyPrev))
+              # Pillow 13, a security update, is in nixpkgs' staging but not
+              # yet in nixos-unstable. Drop this once it is (#69).
+              (pyFinal: pyPrev:
+                nixpkgs.lib.optionalAttrs (pyPrev.python.pythonVersion == "3.15") {
+                  pillow = pyPrev.pillow.overridePythonAttrs rec {
+                    version = "13.0.0";
+                    src = final.fetchFromGitHub {
+                      owner = "python-pillow";
+                      repo = "pillow";
+                      tag = version;
+                      hash = "sha256-7FHwvgfT40qiHmvcJFZN/FlOECE0YiqOLBEYCMugk+4=";
+                    };
+                  };
+                })
             ];
           })
         ];
@@ -55,11 +69,10 @@
         pyproject = true;
         build-system = buildDependencies;
         dependencies = runtimeDependencies;
-        # Temporary: nixpkgs still has Pillow 12, pyproject.toml wants 13. See #69.
-        # Likewise certifi: pyproject.toml wants a newer CA bundle than nixpkgs has.
-        # yt-dlp and yt-dlp-ejs are pinned exactly there, and nixpkgs has whichever
-        # pair it has: they only need to match each other.
-        pythonRelaxDeps = [ "pillow" "certifi" "yt-dlp" "yt-dlp-ejs" ];
+        # Temporary: pyproject.toml wants a newer certifi (CA bundle) than nixpkgs
+        # has. yt-dlp and yt-dlp-ejs are pinned exactly there, and nixpkgs has
+        # whichever pair it has: they only need to match each other.
+        pythonRelaxDeps = [ "certifi" "yt-dlp" "yt-dlp-ejs" ];
         nativeBuildInputs = [ pkgs.makeWrapper ];
         nativeCheckInputs = [ pythonPackages.pytestCheckHook ] ++ devDependencies ++ runtimeTools;
         doCheck = true;
