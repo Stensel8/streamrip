@@ -5,13 +5,8 @@ upstream issues and pull requests.
 
 ## 2.6.1
 
-### Logging in
-
-- On Linux, the browser that opens a login page no longer writes to the
-  terminal. A Chrome-family browser that was already running printed "Opening
-  in existing browser session." and a few zygote errors right under the login
-  link, twice for the two Tidal logins. `xdg-open` now sends its output to
-  `/dev/null`. (#81)
+- The browser's messages ("Opening in existing browser session.", zygote
+  errors) are no longer shown in the terminal when a login page opens. (#81)
 
 ## 2.6.0
 
