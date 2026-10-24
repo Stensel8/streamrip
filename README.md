@@ -14,6 +14,10 @@ A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, SoundCl
 > Python, and streaming services change their APIs without notice, so things can
 > break.
 
+> [!IMPORTANT]
+> `pip install streamrip`, the AUR package and `brew install streamrip` install
+> **upstream** streamrip, which doesn't work on Python 3.15.
+
 ![downloading an album](demo/download_album.svg)
 
 - Tracks, albums, playlists, discographies and labels, Spotify links
@@ -40,10 +44,6 @@ It installs streamrip and ffmpeg into a `.venv` there with
 [uv](https://docs.astral.sh/uv/), and Python 3.15 if you don't have it. Run
 `.venv/bin/streamrip` (Windows: `.venv\Scripts\streamrip.exe`), or activate the
 venv and type `streamrip`.
-
-> [!IMPORTANT]
-> `pip install streamrip`, the AUR package and `brew install streamrip` install
-> **upstream** streamrip, which doesn't work on Python 3.15.
 
 ### With Podman or Docker
 
