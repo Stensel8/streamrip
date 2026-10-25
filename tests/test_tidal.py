@@ -339,6 +339,49 @@ async def test_no_format_lookup_without_the_hires_client():
     assert "streamQuality" not in await c.get_metadata("1", "album")
 
 
+def _single(tags: list[str], in_album_folder: bool = True) -> TidalClient:
+    """A client with track 11, on album 1, which has the same tags."""
+    c = _client(hires=True)
+    c.global_config.session.filepaths.add_singles_to_folder = in_album_folder
+    tagged = {"mediaMetadata": {"tags": tags}}
+
+    async def reply(path, *_, **__):
+        if path.startswith("tracks/"):
+            return {"id": 11, "album": {"id": 1}, **tagged}
+        return {"id": 1, **tagged}
+
+    c._api_request = reply
+    return c
+
+
+async def test_hires_single_reports_its_real_format_for_the_folder_name():
+    c = _single(["HIRES_LOSSLESS"])
+    c.hires_lane._api_request = AsyncMock(return_value=_hires_stream(96000))
+    track = await c.get_metadata("11", "track")
+    assert track["album"]["streamQuality"] == {"bitDepth": 24, "sampleRate": 96000}
+    assert "streamQuality" not in c._albums["1"]  # shared with the album's tracks
+
+
+@pytest.mark.parametrize(
+    ("tags", "in_album_folder", "listed"),
+    [
+        (["LOSSLESS"], True, False),
+        (["HIRES_LOSSLESS"], False, False),
+        (["HIRES_LOSSLESS"], True, True),
+    ],
+    ids=["not hi-res", "no album folder", "from a listing"],
+)
+async def test_single_costs_no_format_lookup_when_its_name_has_no_use_for_it(
+    tags, in_album_folder, listed
+):
+    c = _single(tags, in_album_folder)
+    if listed:
+        c._listed["11"] = await c._api_request("tracks/11")
+    c.hires_lane._api_request = AsyncMock(side_effect=AssertionError("no need"))
+    track = await c.get_metadata("11", "track")
+    assert "streamQuality" not in track["album"]
+
+
 async def test_nothing_streamable_anywhere_still_raises():
     c = _two_lanes({"userMessage": "Asset is not ready"}, {"userMessage": "nope"})
     with pytest.raises(NonStreamableError, match="nope"):

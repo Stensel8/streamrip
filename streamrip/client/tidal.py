@@ -210,10 +210,18 @@ class TidalClient(Client):
         if media_type == "track":
             self._note_hires_tags([item])
             item["album"] = await self._album_of(item)
+            # A single in its album's folder is named by its own format, on a
+            # copy of the album, which its other tracks share.
+            if (
+                listed is None
+                and self.global_config.session.filepaths.add_singles_to_folder
+            ):
+                item["album"] = {**item["album"]}
+                await self._add_hires_format(item["album"], [item])
         if media_type in ("playlist", "album"):
             item["tracks"] = await self._get_tracks(url)
             if media_type == "album":
-                await self._add_hires_format(item)
+                await self._add_hires_format(item, item["tracks"])
                 # Its tracks' requests then need no album request of their own.
                 album = {k: v for k, v in item.items() if k != "tracks"}
                 self._albums[str(item["id"])] = album
@@ -300,7 +308,7 @@ class TidalClient(Client):
         self._listed.update((str(t["id"]), t) for t in tracks)
         return tracks
 
-    async def _add_hires_format(self, album: dict):
+    async def _add_hires_format(self, album: dict, tracks: list[dict]):
         """Say what a hi-res album really is, for its folder name.
 
         The album only reports LOSSLESS; the bit depth and sample rate are in a
@@ -308,9 +316,7 @@ class TidalClient(Client):
         label, so any failure just leaves the default.
         """
         tags = (album.get("mediaMetadata") or {}).get("tags") or []
-        first = next(
-            (t for t in album["tracks"] if str(t["id"]) not in self._no_hires), None
-        )
+        first = next((t for t in tracks if str(t["id"]) not in self._no_hires), None)
         if self.hires_lane is None or first is None or "HIRES_LOSSLESS" not in tags:
             return
         try:
