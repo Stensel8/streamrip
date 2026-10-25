@@ -3,6 +3,11 @@
 All notable changes in this fork of [nathom/streamrip](https://github.com/nathom/streamrip). Numbers can refer to
 upstream issues and pull requests.
 
+## 2.6.2
+
+- A hi-res track downloaded on its own into its album's folder
+  (`add_singles_to_folder`) is named `[24B-96kHz]` there, not `[16B-44.1kHz]`.
+
 ## 2.6.1
 
 - The browser's messages ("Opening in existing browser session.", zygote
