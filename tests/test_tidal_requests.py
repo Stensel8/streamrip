@@ -12,11 +12,15 @@ from streamrip.client import client as client_module
 from streamrip.client.client import (
     MAX_API_ATTEMPTS,
     MAX_RETRY_DELAY,
+    RATE_LIMIT_BUDGET,
     RATE_LIMIT_PAUSE,
+    SLOWDOWN_EASING,
+    SLOWDOWN_MAX,
+    SLOWDOWN_START,
 )
 from streamrip.client.tidal import TidalClient
 from streamrip.config import Config
-from streamrip.exceptions import ItemNotFoundError
+from streamrip.exceptions import ItemNotFoundError, RateLimitHalt
 
 
 class _Response:
@@ -120,7 +124,7 @@ async def test_rate_limit_waits_for_retry_after_and_pauses_later_requests(sleeps
     await c._api_request("tracks/2")
     assert c.session.calls == 3
     # +0-2s jitter, so concurrent requests don't all wake and re-trip it together.
-    assert all(7 <= s < 9 for s in sleeps)
+    assert 7 <= sleeps[0] < 9
 
 
 async def test_rate_limit_without_retry_after_uses_a_default_pause(sleeps):
@@ -135,6 +139,56 @@ async def test_absurd_retry_after_is_capped(sleeps):
     await c._api_request("tracks/1")
     assert len(sleeps) == 1
     assert MAX_RETRY_DELAY <= sleeps[0] < MAX_RETRY_DELAY + 2
+
+
+async def test_rate_limit_spreads_out_the_requests_that_follow(sleeps):
+    c = _client(_Response(429), _Response(), _Response())
+    await c._api_request("tracks/1")
+    sleeps.clear()
+    await c._api_request("tracks/2")
+    assert sleeps == [SLOWDOWN_START]
+
+
+async def test_every_new_rate_limit_doubles_the_spacing_up_to_a_cap(sleeps):
+    c = _client(*[_Response(429), _Response()] * 7)
+    spacings = []
+    for _ in range(7):
+        await c._api_request("tracks/1")
+        spacings.append(c._spacing)
+    assert spacings[:3] == pytest.approx(
+        [x * SLOWDOWN_EASING for x in (2, 4, 8)], rel=0.1
+    )
+    assert spacings[-1] == pytest.approx(SLOWDOWN_MAX * SLOWDOWN_EASING)
+
+
+async def test_the_spacing_eases_off_while_requests_go_through(sleeps):
+    c = _client(*[_Response() for _ in range(100)])
+    c._spacing = SLOWDOWN_START
+    for _ in range(100):
+        await c._api_request("tracks/1")
+    assert c._spacing == 0
+
+
+async def test_too_many_rate_limits_stop_the_run(sleeps):
+    c = _client(_Response(429), _Response())
+    c._limited_at = (0.0,) * (RATE_LIMIT_BUDGET - 1)
+    with pytest.raises(RateLimitHalt, match="Stopped to protect your account"):
+        await c._api_request("tracks/1")
+    # Every request after it stops too, without being sent.
+    with pytest.raises(RateLimitHalt):
+        await c._api_request("tracks/2")
+    assert c.session.calls == 1
+
+
+async def test_rate_limits_from_long_ago_do_not_count(sleeps):
+    c = _client(_Response(429), _Response())
+    c._limited_at = (-10_000.0,) * RATE_LIMIT_BUDGET
+    await c._api_request("tracks/1")
+    assert len(c._limited_at) == 1
+
+
+def test_the_stop_gets_past_the_handlers_that_log_and_go_on():
+    assert not issubclass(RateLimitHalt, Exception)
 
 
 async def test_not_found_is_not_retried(sleeps):

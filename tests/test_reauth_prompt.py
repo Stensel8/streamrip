@@ -14,6 +14,8 @@ import pytest
 from streamrip.exceptions import AuthenticationError
 from streamrip.rip.main import Main
 
+pytestmark = pytest.mark.login
+
 
 def _main_with_expired_token():
     main = Main.__new__(Main)

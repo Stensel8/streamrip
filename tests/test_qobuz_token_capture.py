@@ -9,6 +9,8 @@ from streamrip.rip.qobuz_token_capture import (
     capture_qobuz_auth_token,
 )
 
+pytestmark = pytest.mark.login
+
 CALLBACK_RE = re.compile(r"http://127\.0\.0\.1:\d+/callback/[\w-]+")
 
 

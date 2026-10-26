@@ -7,6 +7,15 @@ class AuthenticationError(Exception):
     """AuthenticationError."""
 
 
+class RateLimitHalt(BaseException):
+    """A service keeps rate limiting streamrip, so it stops to protect the account.
+
+    A BaseException on purpose: the handlers that log a failed item and move on
+    to the next would swallow an Exception, and the next item would walk
+    straight into the limit again.
+    """
+
+
 class MissingCredentialsError(Exception):
     """MissingCredentials."""
 

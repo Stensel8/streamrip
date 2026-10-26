@@ -67,6 +67,7 @@ async def _login(monkeypatch, parameters) -> QobuzClient:
     return client
 
 
+@pytest.mark.login
 @pytest.mark.parametrize(
     ("parameters", "download_only"),
     [

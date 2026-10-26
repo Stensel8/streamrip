@@ -15,6 +15,8 @@ from streamrip.rip.spotify_login import (
     code_from_redirect_url,
 )
 
+pytestmark = pytest.mark.login
+
 
 def free_port() -> int:
     with socket.socket() as s:

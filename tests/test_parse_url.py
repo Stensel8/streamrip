@@ -136,6 +136,7 @@ async def test_a_deezer_dynamic_link_becomes_the_album_it_leads_to():
     assert pending.id == "12345"
 
 
+@pytest.mark.login
 @pytest.mark.parametrize("scheme", ["http", "https"])
 @pytest.mark.parametrize("verify_ssl", [True, False])
 async def test_interpreter_fetch_isolated_from_authenticated_session(

@@ -15,6 +15,7 @@ from streamrip.rip.spotify_login import SpotifyLoginError
 # --- the config --------------------------------------------------------------
 
 
+@pytest.mark.login
 def test_spotify_credentials_are_written_when_the_config_is_saved(tmp_path):
     path = tmp_path / "config.toml"
     set_user_defaults(path)
@@ -40,6 +41,7 @@ def spotify_prompter():
     return SpotifyPrompter(config, client), config, client
 
 
+@pytest.mark.login
 def test_the_prompter_is_registered_for_spotify(spotify_prompter):
     _, config, client = spotify_prompter
 
@@ -47,6 +49,7 @@ def test_the_prompter_is_registered_for_spotify(spotify_prompter):
     assert isinstance(get_prompter(client, config), SpotifyPrompter)
 
 
+@pytest.mark.login
 @pytest.mark.parametrize(
     ("client_id", "refresh_token", "has"),
     [("", "", False), ("cid", "", False), ("", "r", False), ("cid", "r", True)],
@@ -123,6 +126,7 @@ async def test_a_saved_client_id_is_not_asked_again(spotify_prompter, monkeypatc
     assert all("Client ID" not in question for question in answers.questions)
 
 
+@pytest.mark.login
 async def test_the_browser_login_catches_the_code_itself(spotify_prompter, monkeypatch):
     prompter, config, client = spotify_prompter
     config.session.spotify.client_id = "saved"
@@ -146,6 +150,7 @@ async def test_the_browser_login_catches_the_code_itself(spotify_prompter, monke
     client.finish_login.assert_awaited_once_with("CAUGHT", "V")
 
 
+@pytest.mark.login
 @pytest.mark.parametrize(("screen", "default"), [(True, "1"), (False, "2")])
 async def test_without_a_screen_the_other_device_is_the_default(
     spotify_prompter, monkeypatch, screen, default
@@ -175,6 +180,7 @@ async def test_without_a_screen_the_other_device_is_the_default(
     client.finish_login.assert_awaited_once_with("C", "V")
 
 
+@pytest.mark.login
 async def test_a_failed_login_can_be_tried_again(spotify_prompter, monkeypatch):
     prompter, config, client = spotify_prompter
     config.session.spotify.client_id = "saved"
@@ -206,6 +212,7 @@ async def test_a_failed_login_can_be_tried_again(spotify_prompter, monkeypatch):
     client.finish_login.assert_awaited_once_with("GOOD-CODE", "V")
 
 
+@pytest.mark.login
 async def test_giving_up_on_the_login_is_an_authentication_error(
     spotify_prompter, monkeypatch
 ):
@@ -233,6 +240,7 @@ async def test_giving_up_on_the_login_is_an_authentication_error(
         await prompter.prompt_and_login()
 
 
+@pytest.mark.login
 def test_saving_copies_the_app_and_the_login_to_the_file(spotify_prompter, monkeypatch):
     prompter, config, _ = spotify_prompter
     monkeypatch.setattr(prompter_module.console, "print", lambda *a, **k: None)

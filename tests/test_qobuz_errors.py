@@ -81,6 +81,7 @@ async def test_html_error_page_is_reported_by_status_without_the_url():
     assert TOKEN not in str(page)
 
 
+@pytest.mark.login
 async def test_failed_login_does_not_quote_the_token():
     c = QobuzClient.__new__(QobuzClient)
     c.logged_in = False

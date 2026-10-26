@@ -158,6 +158,7 @@ def token_answer(**fields):
 # --- login -------------------------------------------------------------------
 
 
+@pytest.mark.login
 async def test_login_without_a_client_id_asks_for_one(make_client):
     client = make_client(client_id="")
 
@@ -165,6 +166,7 @@ async def test_login_without_a_client_id_asks_for_one(make_client):
         await client.login()
 
 
+@pytest.mark.login
 async def test_login_without_a_saved_login_asks_for_one(make_client):
     client = make_client(refresh_token="", access_token="", token_expiry="")
 
@@ -172,6 +174,7 @@ async def test_login_without_a_saved_login_asks_for_one(make_client):
         await client.login()
 
 
+@pytest.mark.login
 async def test_a_saved_token_that_still_lasts_is_used_as_it_is(make_client, spotify):
     client = make_client()
     client.logged_in = False
@@ -182,6 +185,7 @@ async def test_a_saved_token_that_still_lasts_is_used_as_it_is(make_client, spot
     assert spotify.calls == []
 
 
+@pytest.mark.login
 async def test_an_expired_token_is_refreshed_and_kept(make_client, spotify):
     spotify.on("POST", "/token", token_answer(refresh_token="ROTATED"))
     client = make_client(token_expiry=str(int(time.time()) - 5))
@@ -203,6 +207,7 @@ async def test_an_expired_token_is_refreshed_and_kept(make_client, spotify):
     assert client.global_config.file.modified
 
 
+@pytest.mark.login
 async def test_the_old_refresh_token_stays_when_spotify_sends_none(
     make_client, spotify
 ):
@@ -215,6 +220,7 @@ async def test_the_old_refresh_token_stays_when_spotify_sends_none(
     assert client.global_config.file.spotify.refresh_token == "REFRESH"
 
 
+@pytest.mark.login
 async def test_a_refresh_spotify_refuses_asks_for_a_new_login(make_client, spotify):
     spotify.on(
         "POST",
@@ -227,6 +233,7 @@ async def test_a_refresh_spotify_refuses_asks_for_a_new_login(make_client, spoti
         await client.login()
 
 
+@pytest.mark.login
 async def test_the_login_url_carries_a_pkce_challenge_for_its_verifier(make_client):
     client = make_client(redirect_uri="http://127.0.0.1:9900/callback")
 
@@ -253,6 +260,7 @@ async def test_the_login_url_carries_a_pkce_challenge_for_its_verifier(make_clie
     )
 
 
+@pytest.mark.login
 async def test_finishing_the_login_trades_the_code_for_tokens(make_client, spotify):
     spotify.on("POST", "/token", token_answer(refresh_token="FIRST"))
     client = make_client(access_token="", refresh_token="", token_expiry="")
@@ -276,6 +284,7 @@ async def test_finishing_the_login_trades_the_code_for_tokens(make_client, spoti
 # --- requests ----------------------------------------------------------------
 
 
+@pytest.mark.login
 async def test_requests_carry_the_token(make_client, spotify):
     spotify.on("GET", f"/v1/tracks/{TRACK}", track_obj())
     client = make_client()
@@ -285,6 +294,7 @@ async def test_requests_carry_the_token(make_client, spotify):
     assert spotify.requests(f"/v1/tracks/{TRACK}")[0]["auth"] == "Bearer TOKEN"
 
 
+@pytest.mark.login
 async def test_a_rejected_token_is_replaced_once_and_the_request_repeated(
     make_client, spotify
 ):
@@ -305,6 +315,7 @@ async def test_a_rejected_token_is_replaced_once_and_the_request_repeated(
     ]
 
 
+@pytest.mark.login
 async def test_a_token_that_is_rejected_again_asks_for_a_new_login(
     make_client, spotify
 ):

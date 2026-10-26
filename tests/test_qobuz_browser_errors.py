@@ -6,6 +6,8 @@ from playwright.async_api import Error as PlaywrightError
 from streamrip.rip import browser_login
 from streamrip.rip import qobuz_token_capture as capture
 
+pytestmark = pytest.mark.login
+
 
 @pytest.fixture
 def browser_flow(monkeypatch):

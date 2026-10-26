@@ -8,6 +8,8 @@ from streamrip.config import Config
 from streamrip.rip.prompter import QobuzPrompter
 from streamrip.rip.qobuz_token_capture import QobuzTokenCaptureError
 
+pytestmark = pytest.mark.login
+
 
 @pytest.fixture
 def prompter():

@@ -108,6 +108,7 @@ async def test_playlist_fetches_the_tracks_that_came_without_metadata():
     ]
 
 
+@pytest.mark.login
 async def test_refresh_tokens_scans_scripts_from_the_end():
     client = SoundcloudClient(Config.defaults())
     pages = {

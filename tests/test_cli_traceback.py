@@ -6,7 +6,8 @@ import pytest
 from click.testing import CliRunner
 
 from streamrip.console import console
-from streamrip.rip.cli import rip
+from streamrip.exceptions import AuthenticationError, RateLimitHalt
+from streamrip.rip.cli import coro, rip
 
 FAKE_ARL = "f00dfeedc0ffee" * 8
 
@@ -49,3 +50,23 @@ def test_traceback_does_not_print_local_variables(tmp_path, verbose):
 
     assert "Deezer login failed" in out  # the traceback itself is still shown
     assert FAKE_ARL[:16] not in out
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        AuthenticationError("Tidal needs authorising again"),
+        RateLimitHalt("Stopped to protect your account"),
+    ],
+)
+def test_a_login_or_rate_limit_stop_is_a_message_not_a_traceback(error, capsys):
+    @coro
+    async def command():
+        raise error
+
+    with pytest.raises(SystemExit) as stopped:
+        command()
+    assert stopped.value.code == 1
+    out = capsys.readouterr().out
+    assert str(error) in out
+    assert "Traceback" not in out

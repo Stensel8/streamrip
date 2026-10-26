@@ -125,6 +125,8 @@ Report problems in the [issue tracker](https://github.com/Stensel8/streamrip/iss
 For code, `uv sync --all-extras` sets things up, and `uv run pytest` and
 `uv run ruff check . && uv run ruff format .` should pass before you open a pull
 request to `dev`. Tests that drive a real browser are skipped when there is none.
+CI leaves the tests about logins and sessions out; [checks/](checks/README.md)
+runs those, the checks with real accounts and everything else CI does, by hand.
 
 ## Acknowledgements
 
