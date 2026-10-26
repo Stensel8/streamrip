@@ -382,6 +382,9 @@ async def fetch_track_meta(
         logger.info(f"Skipping track {track_id}. Marked as downloaded in the database.")
         db.skipped_now += 1
         return None
+    # Not in the database, so this track will make requests: pace its start
+    # like a person's. A skipped track costs no request, so it waits for none.
+    await client.before_track()
     try:
         resp = await client.get_metadata(track_id, "track")
         album = album or AlbumMetadata.from_track_resp(resp, source)

@@ -22,6 +22,7 @@ from aiohttp import web  # noqa: E402
 
 import streamrip.media.semaphore as semaphore_module  # noqa: E402
 from streamrip import __version__  # noqa: E402
+from streamrip.client import client as client_module  # noqa: E402
 from streamrip.console import console  # noqa: E402
 from streamrip.rip.interactive import Confirm  # noqa: E402
 
@@ -67,6 +68,20 @@ def _no_real_lyrics_lookup(monkeypatch):
     monkeypatch.setattr(
         "streamrip.media.track.lyrics.find_lyrics", AsyncMock(return_value=None)
     )
+
+
+@pytest.fixture(autouse=True)
+def _no_track_pacing(monkeypatch):
+    """Track starts are paced to look human (RequestClient.before_track):
+    tens of seconds between them, at most 80 an hour.
+
+    Left live, every test that resolves more than one track would spend most
+    of its runtime asleep. The pacing itself has its own tests
+    (test_track_pacing.py); here every gap is drawn at 0s, and the hour
+    can never fill.
+    """
+    monkeypatch.setattr(client_module, "TRACK_GAP_MAX", 0)
+    monkeypatch.setattr(client_module, "TRACKS_PER_HOUR", 10**6)
 
 
 @pytest.fixture(autouse=True)
