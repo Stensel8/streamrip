@@ -8,6 +8,8 @@ from streamrip.exceptions import AuthenticationError
 from streamrip.rip.deezer_arl_capture import DeezerArlCaptureError
 from streamrip.rip.prompter import DeezerPrompter
 
+pytestmark = pytest.mark.login
+
 LOGIN_URL = "https://www.deezer.com/login"
 
 

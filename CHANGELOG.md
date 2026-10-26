@@ -3,6 +3,20 @@
 All notable changes in this fork of [nathom/streamrip](https://github.com/nathom/streamrip). Numbers can refer to
 upstream issues and pull requests.
 
+## Unreleased
+
+- After a rate limit (HTTP 429), requests are spread out: one every 2 seconds,
+  doubled by every further 429 up to 30 seconds, and eased off again while
+  requests go through.
+- Many separate rate limits within an hour (40) stop streamrip, with a message
+  that going on risks the account. What is downloaded is skipped on the next run.
+- A Tidal login that fails says why Tidal refused it (a suspended account no
+  longer reads as an expired token), and a failed login or a stop ends in one
+  red line and exit code 1, not a traceback.
+- `checks/run.py` runs by hand everything CI does, the tests about logins and
+  sessions (marked `login`, no longer in CI), and checks with real accounts:
+  streamrip asks you to log in, then searches, downloads and checks one track.
+
 ## 2.6.2
 
 - A hi-res track downloaded on its own into its album's folder

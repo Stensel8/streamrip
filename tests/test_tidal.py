@@ -66,12 +66,14 @@ def test_no_hires_lane_without_hires_client():
     assert client.lanes() == [client]
 
 
+@pytest.mark.login
 def test_no_hires_login_when_hires_is_not_asked_for():
     cfg = Config.defaults()
     cfg.session.tidal.quality = 2  # e.g. `streamrip --quality 2`
     assert TidalClient(cfg).hires_lane is None
 
 
+@pytest.mark.login
 def test_each_lane_keeps_its_own_tokens():
     c = _client(hires=True)
     c.tokens.access_token = "lossless"
@@ -87,6 +89,7 @@ def test_explicit_client_override_wins():
     assert TidalClient(cfg).client_id == "abc"
 
 
+@pytest.mark.login
 async def test_token_from_other_client_requires_new_login(monkeypatch):
     c = _client()
     c.config.access_token = "token"
@@ -532,6 +535,7 @@ def _mock_login(lane: TidalClient) -> None:
     )
 
 
+@pytest.mark.login
 async def test_prompter_logs_both_lanes_in_and_saves_them(monkeypatch):
     monkeypatch.setattr("streamrip.rip.prompter.launch", lambda *_: None)
     monkeypatch.setattr("streamrip.rip.prompter.console", MagicMock())
@@ -560,6 +564,7 @@ async def test_prompter_logs_both_lanes_in_and_saves_them(monkeypatch):
     assert saved.user_id == 1
 
 
+@pytest.mark.login
 async def test_prompter_leaves_a_working_login_alone(monkeypatch):
     """A lane whose saved login still works isn't asked to log in again."""
     monkeypatch.setattr("streamrip.rip.prompter.launch", lambda *_: None)
@@ -578,6 +583,7 @@ async def test_prompter_leaves_a_working_login_alone(monkeypatch):
     assert cfg.session.tidal.access_token == f"at-{DEFAULT_CLIENT_ID}"
 
 
+@pytest.mark.login
 async def test_device_login_stops_when_tidal_lets_the_link_expire(monkeypatch):
     """The device login stops when the link expires.
 
@@ -596,6 +602,31 @@ async def test_device_login_stops_when_tidal_lets_the_link_expire(monkeypatch):
     client._get_auth_status.assert_not_called()
 
 
+@pytest.mark.login
+@pytest.mark.parametrize(
+    ("resp", "message"),
+    [
+        (
+            {
+                "status": 403,
+                "error": "abuse_detected",
+                "error_description": "User account is suspended due to abuse",
+            },
+            "suspended due to abuse",
+        ),
+        ({"status": 400}, "expired or been revoked"),
+    ],
+)
+async def test_a_refused_token_refresh_says_why(resp, message):
+    """A refresh Tidal refuses says what Tidal says, not always "revoked"."""
+    client = TidalClient(Config.defaults())
+    client._api_post = AsyncMock(return_value=resp)
+
+    with pytest.raises(AuthenticationError, match=message):
+        await client._refresh_access_token()
+
+
+@pytest.mark.login
 async def test_device_login_rejection_says_why(monkeypatch):
     """A rejected device login says why."""
     monkeypatch.setattr("streamrip.rip.prompter.launch", lambda *_: None)
@@ -609,6 +640,7 @@ async def test_device_login_rejection_says_why(monkeypatch):
         await TidalPrompter(cfg, client)._device_login(client)
 
 
+@pytest.mark.login
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="xdg-open is Linux's")
 def test_the_browser_does_not_print_over_the_login_prompt(monkeypatch, tmp_path, capfd):
     """A Chrome-family browser that is already running answers on the terminal."""

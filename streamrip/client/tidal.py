@@ -574,9 +574,13 @@ class TidalClient(Client):
             # The refresh token itself has lapsed or been revoked, so there is
             # nothing left to refresh from and only a fresh device login will
             # help. Typed so the caller can offer that instead of dying with a
-            # traceback.
+            # traceback. Tidal's own reason comes along when it gives one: a
+            # suspended account looks nothing like an expired token.
+            reason = resp.get("error_description") or resp.get("error")
             raise AuthenticationError(
-                "Tidal refresh token has expired or been revoked."
+                f"Tidal refused the token refresh: {reason}"
+                if reason
+                else "Tidal refresh token has expired or been revoked."
             )
 
         t = self.tokens

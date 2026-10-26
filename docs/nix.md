@@ -16,7 +16,7 @@ The flake uses Python 3.15 and, through
 `uv.lock`, installed from the same wheels pip takes: nothing is compiled, and
 nixpkgs' own Python libraries are not used. `flake.lock` pins nixpkgs and the
 uv2nix inputs. The development shell has streamrip installed editable from the
-checkout, every extra, the dev tools and uv: `pytest -m 'not real_browser'`
+checkout, every extra, the dev tools and uv: `pytest -m 'not real_browser and not login'`
 tests the working tree.
 
 The package and shell supply FFmpeg, Deno and Chromium on `PATH`, preserving

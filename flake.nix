@@ -85,7 +85,7 @@
       } ''
         cp -r "$src" source && chmod -R u+w source && cd source
         export HOME="$TMPDIR/home"
-        pytest -p no:cacheprovider -m "not real_browser"
+        pytest -p no:cacheprovider -m "not real_browser and not login"
         touch "$out"
       '';
       smoke = pkgs.runCommand "streamrip-${version}-smoke" { } ''

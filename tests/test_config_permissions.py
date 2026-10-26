@@ -40,6 +40,7 @@ def test_creation_and_reset_are_private(tmp_path, existing_mode):
     assert Config(path).file.deezer.arl == ""
 
 
+@pytest.mark.login
 def test_loading_existing_credentials_repairs_permissions(tmp_path):
     path = tmp_path / "config.toml"
     path.write_text(BLANK_CONFIG_PATH.read_text())
@@ -53,6 +54,7 @@ def test_loading_existing_credentials_repairs_permissions(tmp_path):
     assert path.read_bytes() == original
 
 
+@pytest.mark.login
 @pytest.mark.parametrize("remove_file", [False, True])
 def test_saving_credentials_secures_existing_or_recreated_file(tmp_path, remove_file):
     path = tmp_path / "config.toml"

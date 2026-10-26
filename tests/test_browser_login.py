@@ -10,6 +10,8 @@ from streamrip.rip.browser_login import (
     wait_for_login,
 )
 
+pytestmark = pytest.mark.login
+
 
 class MyError(BrowserLoginError):
     pass

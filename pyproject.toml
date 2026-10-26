@@ -80,6 +80,7 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 markers = [
   "real_browser: drives a real Chrome-family browser, skipped when none is installed",
+  "login: about logins, tokens and sessions; CI leaves them out, `checks/run.py login` runs them",
 ]
 log_cli = true
 

@@ -35,7 +35,8 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked --all-extras --python ${{ matrix.python-version }}
       - name: Run tests
-        run: uv run --locked pytest
+        # The tests about logins and sessions run by hand: checks/run.py login.
+        run: uv run --locked pytest -m "not login"
 
   # Installing the way users do: with the installer, on every platform.
   install:

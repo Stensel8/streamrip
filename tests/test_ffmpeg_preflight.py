@@ -40,6 +40,7 @@ async def test_main_starts_with_ffmpeg():
             assert entered is main
 
 
+@pytest.mark.login
 @pytest.mark.parametrize("command", ["url", "file", "id", "lastfm", "search", "csv"])
 def test_every_login_command_checks_ffmpeg_first(tmp_path, command):
     """No command that can log in to a source gets there without ffmpeg."""

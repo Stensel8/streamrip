@@ -31,7 +31,12 @@ lazy from .. import db
 lazy from ..client import new_session
 lazy from ..config import Config, set_user_defaults
 lazy from ..console import console
-lazy from ..exceptions import FFmpegNotFoundError
+lazy from ..exceptions import (
+    AuthenticationError,
+    FFmpegNotFoundError,
+    MissingCredentialsError,
+    RateLimitHalt,
+)
 lazy from ..media.csv_playlist import read_tracks
 lazy from ..utils.ssl_utils import print_ssl_error_help
 lazy from .interactive import Confirm, Prompt
@@ -64,7 +69,7 @@ def coro(f):
 
     @wraps(f)
     def wrapper(*args, **kwargs):
-        """Run the command, report handled errors, and exit 1 for missing ffmpeg."""
+        """Run the command, report handled errors, and exit 1 for the ones that end it."""
         stopped_by: list[int] = []
 
         async def run():
@@ -109,7 +114,12 @@ def coro(f):
         except aiohttp.ClientConnectorCertificateError as e:
             console.print(f"[red]SSL Certificate verification error: {e}[/red]")
             print_ssl_error_help()
-        except FFmpegNotFoundError as e:
+        except (
+            FFmpegNotFoundError,
+            AuthenticationError,
+            MissingCredentialsError,
+            RateLimitHalt,
+        ) as e:
             console.print(escape(str(e)), style="red")
             sys.exit(1)
 

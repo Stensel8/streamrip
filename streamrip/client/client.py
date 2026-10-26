@@ -11,6 +11,7 @@ lazy from collections.abc import Awaitable, Callable
 lazy import aiohttp
 lazy import aiolimiter
 
+from ..exceptions import RateLimitHalt
 from ..utils.ssl_utils import get_aiohttp_connector_kwargs
 lazy from .downloadable import Downloadable
 
@@ -29,6 +30,16 @@ RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
 MAX_API_ATTEMPTS = 4
 MAX_RETRY_DELAY = 60
 RATE_LIMIT_PAUSE = 10  # seconds per attempt when a 429 has no Retry-After
+# After a 429 the account's requests are spread out: one per SLOWDOWN_START
+# seconds, doubled by every further 429 up to SLOWDOWN_MAX, and eased off again
+# by each request that goes through.
+SLOWDOWN_START = 2
+SLOWDOWN_MAX = 30
+SLOWDOWN_EASING = 0.98
+# A few 429s are normal. This many separate ones within an hour are not, and
+# going on risks the account, so streamrip stops and says so.
+RATE_LIMIT_BUDGET = 40
+RATE_LIMIT_WINDOW = 3600
 
 
 def retry_after(resp, attempt: int) -> float:
@@ -48,6 +59,13 @@ class RequestClient:
     rate_limiter: aiolimiter.AsyncLimiter | contextlib.nullcontext
     # time.monotonic() before which no API request is sent (set by a 429)
     _retry_at: float = 0.0
+    # seconds between requests while the account is being rate limited, and
+    # the time.monotonic() at which the next request may go out
+    _spacing: float = 0.0
+    _next_slot: float = 0.0
+    # when the 429s of the last RATE_LIMIT_WINDOW began, and the stop they led to
+    _limited_at: tuple[float, ...] = ()
+    _halt: RateLimitHalt | None = None
 
     @staticmethod
     def get_rate_limiter(
@@ -72,9 +90,24 @@ class RequestClient:
         owner = self._pause_owner()
         now = time.monotonic()
         if owner._retry_at <= now:
+            owner._limited_at = (
+                *(t for t in owner._limited_at if now - t < RATE_LIMIT_WINDOW),
+                now,
+            )
+            if len(owner._limited_at) >= RATE_LIMIT_BUDGET:
+                owner._halt = RateLimitHalt(
+                    f"Stopped to protect your account: {self.source.capitalize()} "
+                    f"has rate limited streamrip {len(owner._limited_at)} times in "
+                    "the last hour, and going on risks a suspension. Wait a few "
+                    "hours, then run the same command again; what is already "
+                    "downloaded is skipped."
+                )
+                raise owner._halt
+            owner._spacing = min(max(owner._spacing * 2, SLOWDOWN_START), SLOWDOWN_MAX)
             logger.warning(
                 f"{self.source.capitalize()} is rate limiting us (HTTP 429); "
-                f"pausing for {seconds:.0f}s"
+                f"pausing for {seconds:.0f}s, then one request every "
+                f"{owner._spacing:.0f}s"
             )
         owner._retry_at = max(owner._retry_at, now + seconds)
 
@@ -96,11 +129,20 @@ class RequestClient:
         attempt = 0
         while True:
             owner = self._pause_owner()
+            if owner._halt is not None:
+                raise owner._halt
             if (pause := owner._retry_at - time.monotonic()) > 0:
                 # + jitter: every request blocked on the same 429 wakes at the
                 # same instant otherwise, and immediately re-trips it together.
                 await asyncio.sleep(pause + random.random() * 2)
                 continue
+
+            if owner._spacing:
+                now = time.monotonic()
+                wait = max(owner._next_slot - now, 0.0)
+                owner._next_slot = now + wait + owner._spacing
+                if wait:
+                    await asyncio.sleep(wait)
 
             delay = 0.0
             try:
@@ -116,6 +158,10 @@ class RequestClient:
                     ) as resp:
                         if resp.status == 429:
                             self._pause_requests(retry_after(resp, attempt))
+                        elif resp.status < 400 and owner._spacing:
+                            owner._spacing *= SLOWDOWN_EASING
+                            if owner._spacing < 0.5:
+                                owner._spacing = 0.0
                         if (
                             resp.status not in RETRY_STATUSES
                             or attempt == MAX_API_ATTEMPTS

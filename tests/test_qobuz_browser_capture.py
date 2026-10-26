@@ -6,7 +6,7 @@ from streamrip.rip.qobuz_token_capture import (
     capture_qobuz_auth_token_via_browser,
 )
 
-pytestmark = pytest.mark.real_browser
+pytestmark = [pytest.mark.real_browser, pytest.mark.login]
 
 
 def _page(html: str):
