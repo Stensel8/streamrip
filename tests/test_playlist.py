@@ -139,6 +139,7 @@ def _playlist_track(get_metadata):
     client = MagicMock()
     client.source = "tidal"
     client.get_metadata = get_metadata
+    client.before_track = AsyncMock()
     db = MagicMock()
     db.downloaded.return_value = False
     track = PendingPlaylistTrack("42", client, MagicMock(), "/x", "Mix", 1, db)
@@ -188,6 +189,7 @@ async def test_playlist_track_is_tagged_as_part_of_one_album(monkeypatch):
     client.source = "deezer"
     client.get_metadata = AsyncMock(return_value=_deezer_track(position=5, disc=2))
     client.get_downloadable = AsyncMock()
+    client.before_track = AsyncMock()
     db = MagicMock()
     db.downloaded.return_value = False
     pending = PendingPlaylistTrack(
@@ -311,6 +313,7 @@ def _served_from(requested, served):
     client.get_downloadable = AsyncMock(
         return_value=MagicMock(id=served, source="deezer")
     )
+    client.before_track = AsyncMock()
     db = MagicMock()
     db.downloaded.return_value = False
     config = Config.defaults()

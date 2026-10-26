@@ -3,6 +3,7 @@
 import asyncio
 import contextlib
 import logging
+import math
 import random
 import time
 from abc import ABC, abstractmethod
@@ -40,6 +41,23 @@ SLOWDOWN_EASING = 0.98
 # going on risks the account, so streamrip stops and says so.
 RATE_LIMIT_BUDGET = 40
 RATE_LIMIT_WINDOW = 3600
+# Between two track starts (not requests) is a person-shaped gap: a
+# log-normal one, mostly tens of seconds, now and then a few minutes.
+# Sigma 0.75 is the shape of a person's attention, and mu is what makes
+# the mean come out at TRACK_GAP_MEAN seconds (exp(mu + sigma²/2)).
+TRACK_GAP_MEAN = 30
+TRACK_GAP_SIGMA = 0.75
+TRACK_GAP_MU = math.log(TRACK_GAP_MEAN) - TRACK_GAP_SIGMA**2 / 2
+# Though nobody's coffee break lasts half an hour mid-album.
+TRACK_GAP_MAX = 300
+# Every 429 widens the track gaps by this much, up to a limit; every track
+# that starts without one narrows them back.
+TRACK_GAP_WIDENING = 1.5
+TRACK_GAP_WIDENING_MAX = 10
+TRACK_GAP_EASING = 0.99
+# However human the gaps, at most this many tracks start in any hour, under
+# what the service doles out per hour, so its budget never sets the pace.
+TRACKS_PER_HOUR = 80
 
 
 def retry_after(resp, attempt: int) -> float:
@@ -52,7 +70,8 @@ def retry_after(resp, attempt: int) -> float:
 
 
 class RequestClient:
-    """Shared request pacing and retries for API and bootstrap clients."""
+    """Shared request and track-start pacing, and retries, for API and
+    bootstrap clients."""
 
     source: str
     session: aiohttp.ClientSession
@@ -66,6 +85,14 @@ class RequestClient:
     # when the 429s of the last RATE_LIMIT_WINDOW began, and the stop they led to
     _limited_at: tuple[float, ...] = ()
     _halt: RateLimitHalt | None = None
+    # Track-start pacing (before_track): how much the 429s have widened the
+    # gaps between track starts, the earliest the next one may start, when
+    # the starts of the last RATE_LIMIT_WINDOW began, and whether that hour
+    # is full right now.
+    _track_gap_scale: float = 1.0
+    _next_track_start: float = 0.0
+    _track_starts: tuple[float, ...] = ()
+    _track_hour_full: bool = False
 
     @staticmethod
     def get_rate_limiter(
@@ -90,6 +117,11 @@ class RequestClient:
         owner = self._pause_owner()
         now = time.monotonic()
         if owner._retry_at <= now:
+            # A new 429 episode: the gaps between track starts widen too, on
+            # the account the pause belongs to.
+            owner._track_gap_scale = min(
+                owner._track_gap_scale * TRACK_GAP_WIDENING, TRACK_GAP_WIDENING_MAX
+            )
             owner._limited_at = (
                 *(t for t in owner._limited_at if now - t < RATE_LIMIT_WINDOW),
                 now,
@@ -107,9 +139,65 @@ class RequestClient:
             logger.warning(
                 f"{self.source.capitalize()} is rate limiting us (HTTP 429); "
                 f"pausing for {seconds:.0f}s, then one request every "
-                f"{owner._spacing:.0f}s"
+                f"{owner._spacing:.0f}s and track starts about "
+                f"{math.exp(TRACK_GAP_MU) * owner._track_gap_scale:.0f}s apart"
             )
         owner._retry_at = max(owner._retry_at, now + seconds)
+
+    async def before_track(self) -> None:
+        """Hold this track back until a person might have started it.
+
+        What gets an account suspended is not any one request but the
+        pattern: a track every few seconds, hour after hour, wearing out
+        the service's hourly request budget at the same point of every
+        hour. The first track of a session starts when the user does; after
+        that, log-normal gaps between starts (mean TRACK_GAP_MEAN, capped
+        at TRACK_GAP_MAX), widened by every 429 and eased back by every
+        track that starts without one. And however human the gaps, at most
+        TRACKS_PER_HOUR tracks start in any hour, so the budget never gets
+        to set the pace and trip the 429s in the first place.
+        """
+        wait = self._reserve_track_start()
+        if wait:
+            await asyncio.sleep(wait)
+
+    def _reserve_track_start(self) -> float:
+        """Plan the next track start; return how long to wait for it.
+
+        The wait is spent by the caller, not held here, so any number of
+        tracks can hold a reserved start without blocking each other.
+        """
+        owner = self._pause_owner()
+        now = time.monotonic()
+        if owner._track_starts:
+            gap = min(
+                random.lognormvariate(TRACK_GAP_MU, TRACK_GAP_SIGMA), TRACK_GAP_MAX
+            )
+            start = max(now, owner._next_track_start) + gap * owner._track_gap_scale
+        else:
+            # The first track of a session starts when the user does.
+            start = now
+        # Starts an hour old free up room again; the oldest one still in
+        # the hour says when the next slot opens.
+        owner._track_starts = tuple(
+            t for t in owner._track_starts if now - t < RATE_LIMIT_WINDOW
+        )
+        if len(owner._track_starts) >= TRACKS_PER_HOUR:
+            start = max(start, owner._track_starts[0] + RATE_LIMIT_WINDOW)
+            if not owner._track_hour_full:
+                owner._track_hour_full = True
+                logger.warning(
+                    f"{TRACKS_PER_HOUR} tracks started in the last hour, "
+                    f"holding the next one for {start - now:.0f}s"
+                )
+        else:
+            owner._track_hour_full = False
+        owner._track_starts = (*owner._track_starts, start)
+        owner._next_track_start = start
+        # This track starting without a 429 in between is evidence the
+        # pacing is enough again.
+        owner._track_gap_scale = max(owner._track_gap_scale * TRACK_GAP_EASING, 1.0)
+        return start - now
 
     async def _get_with_retries[T](
         self,

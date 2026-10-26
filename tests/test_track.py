@@ -186,6 +186,7 @@ async def test_single_without_download_info_is_kept_for_repair(tmp_path, monkeyp
         }
     )
     client.get_downloadable = AsyncMock(side_effect=NonStreamableError("geoblocked"))
+    client.before_track = AsyncMock()
     database = MagicMock()
     database.downloaded.return_value = False
 
@@ -227,6 +228,7 @@ def pending_disc_track(request, tmp_path, monkeypatch):
     client.source = "qobuz"
     client.get_metadata = AsyncMock(return_value=resp)
     client.get_downloadable = AsyncMock(return_value=FakeDownloadable("flac"))
+    client.before_track = AsyncMock()
     database = MagicMock()
     database.downloaded.return_value = False
     artwork = AsyncMock(return_value=((None, None), None))
@@ -366,3 +368,23 @@ async def test_a_downloaded_soundcloud_track_is_skipped_whatever_id_it_is_asked_
     assert meta is None
     assert database.skipped_now == 1
     client.get_metadata.assert_not_called()
+
+
+async def test_a_track_that_will_download_is_paced_like_a_person(tmp_path):
+    database = db.Database(db.Downloads(str(tmp_path / "downloads.db")), db.Dummy())
+    client = MagicMock()
+    client.source = "test"
+    client.get_metadata = AsyncMock(side_effect=RuntimeError("service down"))
+    client.before_track = AsyncMock()
+
+    await fetch_track_meta(client, database, "123")
+
+    client.before_track.assert_awaited_once()
+
+    # A track already in the database makes no request, so it waits for none.
+    database.set_downloaded("test", "456")
+    client.before_track.reset_mock()
+    await fetch_track_meta(client, database, "456")
+
+    client.before_track.assert_not_awaited()
+    assert database.skipped_now == 1
