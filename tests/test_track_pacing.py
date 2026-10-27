@@ -1,14 +1,18 @@
 """The pacing of track starts: the paces (auto, fast, slow), the gaps, the 429
-widening, the hour cap, and what of it outlives a run."""
+widening, the hour cap, what of it outlives a run, and how it is shown."""
 
 import asyncio
+from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 from click.testing import CliRunner
+from rich.console import Console
 
+from streamrip import progress
 from streamrip.client import client as client_module
+from streamrip.client.client import Load
 from streamrip.client.deezer import DeezerClient
 from streamrip.client.qobuz import QobuzClient
 from streamrip.client.soundcloud import SoundcloudClient
@@ -18,7 +22,7 @@ from streamrip.config import Config, set_user_defaults
 from streamrip.exceptions import AccountHalt
 from streamrip.media import Album, Artist, Playlist, Track
 from streamrip.rip.cli import rip
-from streamrip.rip.main import ALBUM_TRACKS, planned_tracks
+from streamrip.rip.main import ALBUM_TRACKS, load_table, planned_tracks
 
 # A draw far above TRACK_GAP_MAX, so the cap is what every gap comes out at.
 _HUGE = 10_000.0
@@ -229,6 +233,18 @@ def test_auto_turns_slow_once_its_budget_is_spent(paced, caplog, monkeypatch):
     )
 
 
+def test_tracks_of_earlier_runs_count_towards_autos_budget(runs, monkeypatch):
+    """A ripper starting streamrip for one small job after the other still
+    turns slow: the tracks of the last hours are in the pacing state."""
+    monkeypatch.setattr(client_module, "FAST_BUDGET", 3)
+    run, clock = runs
+    first = run("auto", 2)
+    _elapse(first, clock)
+    _elapse(first, clock)
+    assert not first.load().slow
+    assert run("auto", 2).load().slow  # 2 to come and 2 before: past 3
+
+
 def test_fast_never_waits_and_warns_once_an_hour_at_the_danger(
     paced, caplog, monkeypatch
 ):
@@ -239,6 +255,30 @@ def test_fast_never_waits_and_warns_once_an_hour_at_the_danger(
     assert [_elapse(client, clock) for _ in range(5)] == [0.0] * 5
     assert "full speed for 10 tracks, as asked (--pace fast)" in caplog.text
     assert caplog.text.count("tracks this hour at full speed") == 1
+
+
+def test_the_load_counts_the_clock_hour_and_says_the_risk(paced, monkeypatch):
+    """The service counts per clock hour, so that is the hour the load shows."""
+    monkeypatch.setattr(client_module, "HOURLY_DANGER", 4)
+    client, clock = paced
+    client.pace("fast", 0)
+    _elapse(client, clock)
+    _elapse(client, clock)
+    load = client.load()
+    assert (load.this_hour, load.recent, load.limited, load.slow) == (2, 2, 0, False)
+    assert load.risk == "medium"  # half of the line
+    clock.now = 2 * 3600  # the next clock hour but one
+    assert (client.load().this_hour, client.load().risk) == (0, "low")
+    assert Load("slow", True, 4, 4, 0).risk == "high"  # at the line
+    assert Load("slow", True, 8, 8, 0).risk == "very high"  # twice it
+    assert Load("slow", True, 0, 0, 1).risk == "medium"  # a first 429
+    assert Load("slow", True, 0, 0, 2).risk == "high"
+
+
+@pytest.mark.parametrize(("slow", "risk"), [(False, "medium"), (True, "low")])
+def test_a_big_job_at_full_speed_is_a_risk_from_its_first_track(slow, risk):
+    """Not only once the hour fills up: a job auto would pace."""
+    assert Load("fast", slow, 1, 1, 0, big=True).risk == risk
 
 
 def test_a_second_hour_over_the_line_is_said_in_red(paced, caplog, monkeypatch):
@@ -256,6 +296,7 @@ def test_a_second_hour_over_the_line_is_said_in_red(paced, caplog, monkeypatch):
     over = [r for r in caplog.records if "at full speed" in r.message]
     assert [r.levelname for r in over] == ["WARNING", "ERROR"]
     assert "in 2 of the last 6 hours" in over[-1].message
+    assert client.load().risk == "very high"
 
 
 def test_the_tracks_to_come_are_counted_per_account():
@@ -272,6 +313,119 @@ def test_the_tracks_to_come_are_counted_per_account():
     track.client = a
     planned = planned_tracks([album, playlist, artist, track, MagicMock()])
     assert planned == {a: 16, b: 2 + 15 * ALBUM_TRACKS}
+
+
+def test_the_load_line_says_the_pace_the_hour_and_the_risk():
+    client = SimpleNamespace(
+        source="tidal", load=lambda: Load("auto", True, 250, 300, 3)
+    )
+    out = Console(width=200, record=True, color_system=None)
+    out.print(load_table([client]))
+    text = out.export_text()
+    assert text.startswith("Tidal ")
+    assert text.rstrip().endswith(
+        "250 of 175 tracks this hour · steady pace (auto) · 3 rate limits "
+        "· ban risk high"
+    )
+    calm = SimpleNamespace(source="tidal", load=lambda: Load("fast", False, 1, 1, 0))
+    out.print(load_table([calm]))
+    assert (
+        out.export_text()
+        .rstrip()
+        .endswith("1 of 175 tracks this hour · full speed · ban risk low")
+    )
+
+
+@pytest.mark.parametrize(
+    ("load", "said"),
+    [
+        (
+            Load("fast", False, 29, 46, 0, big=True),
+            (
+                "29 of 175 tracks this hour · full speed · ban risk medium "
+                "· don't keep this up for long"
+            ),
+        ),
+        (
+            Load("fast", False, 180, 400, 0, hours_over=2),
+            (
+                "180 of 175 tracks this hour · full speed · ban risk very high "
+                "· stop now, and rerun with --pace slow"
+            ),
+        ),
+    ],
+)
+def test_the_load_line_says_what_to_do_at_full_speed(load, said):
+    out = Console(width=200, record=True, color_system=None)
+    out.print(load_table([SimpleNamespace(source="tidal", load=lambda: load)]))
+    assert out.export_text().rstrip().endswith(said)
+
+
+def test_a_track_waiting_for_its_turn_shows_when_it_comes(paced):
+    """Between paced tracks nothing downloads; the line says why."""
+    client, _ = paced
+    client._reserve_track_start()
+    client._reserve_track_start()  # its turn is a gap away
+    assert client.load().next_in == pytest.approx(30.0)
+    out = Console(width=200, record=True, color_system=None)
+    out.print(load_table([client]))
+    assert "steady pace · next track in 0:30 · ban risk low" in out.export_text()
+
+
+def test_the_time_left_is_the_pace_s(paced, monkeypatch):
+    """A gap per track while the hour has room, then TRACKS_PER_HOUR an hour;
+    at full speed the downloads set the time, so it has none."""
+    client, _ = paced
+    monkeypatch.setattr(client_module, "TRACKS_PER_HOUR", 80)
+    assert client.time_for(10) == pytest.approx(10 * 30)
+    assert client.time_for(100) == pytest.approx(80 * 30 + 20 * 3600 / 80)
+    client.pace("fast", 1)
+    assert client.time_for(10) is None
+
+
+def test_the_overall_bar_counts_down_at_the_pace():
+    """Rich's estimate goes by the tracks finished in the last half minute,
+    and paced ones finish further apart: it showed -:--:-- or a wild guess."""
+    bar = progress._p.overall_progress
+    task_id = bar.add_task("Done", total=10, completed=4)
+    task = next(t for t in bar.tasks if t.id == task_id)
+    column = progress._TimeLeft(progress._p)
+    try:
+        progress.show_load(lambda: "", time_for=lambda tracks: tracks * 30.0)
+        assert column.render(task).plain == "0:03:00"
+        progress.show_load(None)
+        assert column.render(task).plain == "-:--:--"  # Rich's own
+    finally:
+        progress.show_load(None)
+        bar.remove_task(task_id)
+
+
+def test_the_load_line_is_redrawn_under_the_progress_bars():
+    """Not only once the run is over: under the bars, as they go."""
+    try:
+        progress.show_load(lambda: "the load", enabled=True)
+        drawn = [
+            part for part in progress._p._group().renderables if hasattr(part, "render")
+        ]
+        assert [part.__rich__() for part in drawn] == ["the load"]
+    finally:
+        progress.show_load(None)
+    assert not any(hasattr(p, "render") for p in progress._p._group().renderables)
+
+
+def test_each_clock_hour_is_logged_once_it_is_over(paced, caplog):
+    """A long run without progress bars (a ripper's log) still shows how hard
+    it worked, in the unit the service counts in."""
+    client, clock = paced
+    _elapse(client, clock)  # 00:16 UTC on the fake clock
+    clock.now = 3600 + 60
+    _elapse(client, clock)
+    # In local time, as the log's own timestamps.
+    up_to = datetime.fromtimestamp(3600).strftime("%H:%M")
+    assert (
+        f"1 track and no rate limits in the hour up to {up_to} (steady pace)."
+        in caplog.text
+    )
 
 
 def test_the_pace_is_optional_in_the_config_and_checked(tmp_path):
