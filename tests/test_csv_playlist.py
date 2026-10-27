@@ -165,7 +165,7 @@ def test_blank_rows_and_rows_without_a_title_are_skipped(tmp_path, caplog):
         tracks = read_tracks(path)
 
     assert rows(tracks) == [("Song", ["Somebody"], "", None)]
-    assert "skipped 1 row(s) without a title" in caplog.text
+    assert "skipped 1 row without a title" in caplog.text
 
 
 @pytest.mark.parametrize(

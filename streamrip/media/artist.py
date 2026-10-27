@@ -5,7 +5,7 @@ import re
 from dataclasses import dataclass
 lazy from collections.abc import Callable
 
-from ..console import console
+from ..console import console, plural
 from ..metadata import ArtistMetadata, LabelMetadata
 from .album import Album, PendingAlbum
 from .media import Media, PendingItem
@@ -20,7 +20,7 @@ def announce(name: str, albums: list) -> None:
     first progress bar appears.
     """
     console.print(
-        f"[bold]{name}[/bold]: found {len(albums)} release(s), "
+        f"[bold]{name}[/bold]: found {plural(len(albums), 'release')}, "
         "resolving and downloading..."
     )
 

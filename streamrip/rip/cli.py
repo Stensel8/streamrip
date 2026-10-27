@@ -31,7 +31,7 @@ from .stopping import terminate
 lazy from .. import db
 lazy from ..client import new_session
 lazy from ..config import Config, set_user_defaults
-lazy from ..console import console, err_console
+lazy from ..console import console, err_console, plural
 lazy from ..exceptions import (
     AccountHalt,
     AuthenticationError,
@@ -624,12 +624,12 @@ def database_clear(ctx, table, yes):
     tables = []
     if table in {"downloads", "all"}:
         tables.append(
-            ("downloaded track(s)", db.Downloads(cfg.session.database.downloads_path))
+            ("downloaded track", db.Downloads(cfg.session.database.downloads_path))
         )
     if table in {"failed", "all"}:
         tables.append(
             (
-                "failed download(s)",
+                "failed download",
                 db.Failed(cfg.session.database.failed_downloads_path),
             )
         )
@@ -640,7 +640,7 @@ def database_clear(ctx, table, yes):
         return
 
     summary = " and ".join(
-        f"[yellow]{n}[/yellow] {label}"
+        f"[yellow]{plural(n, label)}[/yellow]"
         for n, (label, _) in zip(counts, tables, strict=True)
     )
     if not yes and not Confirm.ask(f"Forget {summary}? They will be downloaded again."):
@@ -723,7 +723,9 @@ async def repair(ctx, yes, flat):
             console.print("[green]No failed downloads to repair!")
             return
 
-        console.print(f"Found [yellow]{len(failed_items)}[/yellow] failed download(s).")
+        console.print(
+            f"Found [yellow]{plural(len(failed_items), 'failed download')}[/yellow]."
+        )
         if not yes and not Confirm.ask("Retry them now?"):
             console.print("[green]Repair aborted")
             return
@@ -750,7 +752,7 @@ async def repair(ctx, yes, flat):
             targets, unresolved = await _albums_for(main, failed_items)
             if unresolved:
                 console.print(
-                    f"[yellow]{len(unresolved)} item(s) had no album to retry "
+                    f"[yellow]{plural(len(unresolved), 'item')} had no album to retry "
                     "through; fetching them individually."
                 )
             await main.add_all_by_id(targets + unresolved)
@@ -770,12 +772,14 @@ async def repair(ctx, yes, flat):
             database.forget_failed(source, media_type, item_id)
 
         console.print(
-            f"[green]Repaired {len(repaired)}/{len(failed_items)} item(s).[/green]"
+            f"[green]Repaired {len(repaired)} of {plural(len(failed_items), 'item')}."
+            "[/green]"
         )
         if len(repaired) < len(failed_items):
             console.print(
-                f"[yellow]{len(failed_items) - len(repaired)} item(s) failed again "
-                "and are still logged. Run [bold]streamrip repair[/bold] to try again."
+                f"[yellow]{plural(len(failed_items) - len(repaired), 'item')} failed "
+                "again, and stay logged. Run [bold]streamrip repair[/bold] to try "
+                "again."
             )
 
 
@@ -878,7 +882,7 @@ def _ask_source(count: int) -> str:
             f"Say where to search the tracks with --source ({', '.join(SOURCES)})."
         )
     console.print(
-        f"\nFound [bold]{count}[/bold] track(s). "
+        f"\nFound [bold]{plural(count, 'track')}[/bold]. "
         "Where should I search and download them from?"
     )
     for name, what in SOURCES.items():

@@ -8,6 +8,7 @@ from json import JSONDecodeError
 
 lazy import aiohttp
 
+from ..console import plural
 from ..exceptions import (
     AccountHalt,
     AuthenticationError,
@@ -297,7 +298,9 @@ class TidalClient(Client):
         items = [*page["items"] for page in (first, *pages)]
         tracks = [i["item"] for i in items if i.get("type", "track") == "track"]
         if len(tracks) < len(items):
-            logger.info("Skipping %s video(s) in %s", len(items) - len(tracks), url)
+            logger.info(
+                "Skipping %s in %s", plural(len(items) - len(tracks), "video"), url
+            )
         self._note_hires_tags(tracks)
         self._listed.update((str(t["id"]), t) for t in tracks)
         return tracks

@@ -2,6 +2,7 @@ import logging
 from dataclasses import dataclass
 lazy from collections.abc import Callable, Hashable
 
+from ..console import plural
 from .util import tidal_quality_id
 
 logger = logging.getLogger("streamrip")
@@ -53,9 +54,9 @@ def _qobuz_albums(resp: dict, prefer_explicit: bool) -> list[dict]:
     me = resp.get("id")
     own = [a for a in albums if me in _artist_ids(a) or not _artist_ids(a)]
     logger.debug(
-        "%s: left out %d release(s) by other artists",
+        "%s: left out %s by other artists",
         resp["name"],
-        len(albums) - len(own),
+        plural(len(albums) - len(own), "release"),
     )
     if not prefer_explicit:
         return own

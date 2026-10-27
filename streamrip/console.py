@@ -10,3 +10,8 @@ console = Console(_environ=_environ)
 # Notices about streamrip itself (a config it created, a newer version), so
 # that what a command prints on stdout is its answer alone.
 err_console = Console(stderr=True, _environ=_environ)
+
+
+def plural(count: int, noun: str) -> str:
+    """ "1 track", "2 tracks": a count as the terminal says it."""
+    return f"{count} {noun}{'s' * (count != 1)}"

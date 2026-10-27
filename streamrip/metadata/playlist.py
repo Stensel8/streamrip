@@ -1,6 +1,7 @@
 import logging
 from dataclasses import dataclass
 
+from ..console import plural
 from .util import SOURCES, safe_get, typed
 
 logger = logging.getLogger("streamrip")
@@ -38,8 +39,8 @@ class PlaylistMetadata:
         ]
         if len(ids) < len(items):
             logger.error(
-                "%s track(s) in playlist %s not available for stream",
-                len(items) - len(ids),
+                "%s in playlist %s not available to stream",
+                plural(len(items) - len(ids), "track"),
                 name,
             )
         return cls(name, ids)
@@ -64,9 +65,9 @@ class PlaylistMetadata:
         tracks = [i for i in ids if not i.startswith("-")]
         if len(tracks) < len(ids):
             logger.info(
-                "%s: skipping %s track(s) you uploaded to Deezer yourself",
+                "%s: skipping %s you uploaded to Deezer yourself",
                 name,
-                len(ids) - len(tracks),
+                plural(len(ids) - len(tracks), "track"),
             )
         return cls(name, tracks)
 
