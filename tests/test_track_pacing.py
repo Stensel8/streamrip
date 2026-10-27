@@ -116,9 +116,10 @@ def test_a_429_episode_widens_the_gaps_and_clean_tracks_ease_them_back(paced):
 def test_the_widening_has_a_ceiling(paced):
     client, clock = paced
     _elapse(client, clock)
-    for _ in range(10):
+    # As many separate episodes as there can be before the stop.
+    for _ in range(client_module.RATE_LIMIT_BUDGET - 1):
         client._pause_requests(1.0)
-        clock.now += 2.0  # let each pause end: ten separate episodes
+        clock.now += 2.0  # let each pause end
 
     assert client._track_gap_scale == client_module.TRACK_GAP_WIDENING_MAX
     assert _elapse(client, clock) == pytest.approx(
@@ -233,6 +234,34 @@ def test_auto_turns_slow_once_its_budget_is_spent(paced, caplog, monkeypatch):
     )
 
 
+def test_each_rate_limit_is_said_louder_up_to_the_stop(paced, caplog):
+    """A first one is a wait, from half of the budget on they are red, and
+    the stop says how long to leave the account alone."""
+    client, clock = paced
+    for _ in range(client_module.RATE_LIMIT_BUDGET - 1):
+        client._pause_requests(10.0)
+        clock.now += 11  # the pause ends: the next one is a separate episode
+    said = [r for r in caplog.records if "rate limit" in r.message]
+    assert "first rate limit (HTTP 429) detected. Let's wait a bit" in said[0].message
+    assert "rate limit 2 of 10 in the last hour (at 10 streamrip stops)" in (
+        said[1].message
+    )
+    assert [r.levelname for r in said].index("ERROR") == 4
+    assert "not good, rate limit 5 of 10" in said[4].message
+    with pytest.raises(AccountHalt, match="Best to wait about 3 hours, until around"):
+        client._pause_requests(10.0)
+
+
+def test_auto_turns_slow_at_the_first_429(paced, caplog):
+    client, clock = paced
+    client.pace("auto", 1)
+    _elapse(client, clock)
+    client._pause_requests(10.0)
+    clock.now += 11
+    assert _elapse(client, clock) > 0
+    assert "it is refusing requests (HTTP 429)" in caplog.text
+
+
 def test_tracks_of_earlier_runs_count_towards_autos_budget(runs, monkeypatch):
     """A ripper starting streamrip for one small job after the other still
     turns slow: the tracks of the last hours are in the pacing state."""
@@ -273,6 +302,7 @@ def test_the_load_counts_the_clock_hour_and_says_the_risk(paced, monkeypatch):
     assert Load("slow", True, 8, 8, 0).risk == "very high"  # twice it
     assert Load("slow", True, 0, 0, 1).risk == "medium"  # a first 429
     assert Load("slow", True, 0, 0, 2).risk == "high"
+    assert Load("slow", True, 0, 0, 5).risk == "very high"  # half of what stops a rip
 
 
 @pytest.mark.parametrize(("slow", "risk"), [(False, "medium"), (True, "low")])

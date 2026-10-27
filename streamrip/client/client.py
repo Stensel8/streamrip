@@ -61,10 +61,15 @@ SLOWDOWN_EASING = 0.98
 #    endpoint answers 403 "abuse_detected" (sub_status 12001). The 429s had
 #    not grown more frequent before.
 #  - 80 track starts an hour, spread out, for 18 hours: not a single 429.
-# A few 429s are normal. This many separate ones within an hour are not, and
-# going on risks the account, so streamrip stops and says so.
-RATE_LIMIT_BUDGET = 40
+#
+# A first 429 is a sign to slow down: auto turns slow at it, and with auto or
+# slow 18 hours brought not one. The suspended account had about 55 an hour,
+# 16 hours long. So at this many separate ones within an hour streamrip
+# stops, says why, and advises COOLDOWN of rest. Advice, not enforced: only a
+# run while they are still within the hour stops at once.
+RATE_LIMIT_BUDGET = 10
 RATE_LIMIT_WINDOW = 3600
+COOLDOWN = 3 * 3600
 # Tracks in one clock hour after which Tidal's 429s began at the earliest
 # (208): from about here it refuses.
 REFUSED_FROM = 200
@@ -78,7 +83,7 @@ HOURLY_DANGER = 175
 # for a small job -- when the tracks it brings and those the account started
 # in the last FAST_WINDOW stay within FAST_BUDGET -- and slow from the first
 # track for anything bigger. On the way auto turns slow once the budget is
-# spent.
+# spent, or at the first 429.
 FAST_BUDGET = 100
 FAST_WINDOW = 6 * 3600
 # The slow pace. Between two track starts (not requests) is a person-shaped
@@ -442,13 +447,58 @@ class RequestClient:
         return first * gap + rest * max(gap, RATE_LIMIT_WINDOW / TRACKS_PER_HOUR)
 
     def _rate_limit_halt(self) -> AccountHalt:
+        """The stop at RATE_LIMIT_BUDGET, with the rest it advises."""
+        name = self.source.capitalize()
+        until = datetime.fromtimestamp(max(self._limited_at) + COOLDOWN)
         return AccountHalt(
-            f"Stopped to protect your account: {self.source.capitalize()} "
-            f"has rate limited streamrip {len(self._limited_at)} times in "
-            "the last hour, and going on risks a suspension. Wait a few "
-            "hours, then run the same command again; what is already "
-            "downloaded is skipped."
+            f"Paused to protect your account: {name} returned HTTP 429 (rate "
+            f"limited) {len(self._limited_at)} times in the last hour. Pushing "
+            "through risks a ban, so this run stops here. Best to wait about "
+            f"{COOLDOWN // 3600} hours, until around {until:%H:%M}: in the "
+            f"meantime, listen to music normally in {name}'s own app — that "
+            "generates realistic listening traffic and helps your account "
+            "recover. This advice isn't enforced: a new run only stops "
+            f"immediately while it still sees {RATE_LIMIT_BUDGET} rate limits "
+            "in the past hour; after that it rips again, even before "
+            f"{until:%H:%M}. When you do restart, anything already downloaded "
+            "is skipped."
         )
+
+    def _say_limited(self, count: int, seconds: float):
+        """Say the `count`th 429 of the last hour and the wait it brings,
+        louder as RATE_LIMIT_BUDGET comes near."""
+        owner = self._paced_owner()
+        name = self.source.capitalize()
+        wait = (
+            f"pausing {seconds:.0f}s, then one request every {owner._spacing:.0f}s "
+            f"and tracks about {TRACK_GAP_MEAN * owner._track_gap_scale:.0f}s apart"
+        )
+        if count == 1:
+            logger.warning(
+                "%s: first rate limit (HTTP 429) detected. Let's wait a bit: %s.",
+                name,
+                wait,
+            )
+        elif count < RATE_LIMIT_BUDGET // 2:
+            logger.warning(
+                "%s: rate limit %s of %s in the last hour (at %s streamrip stops): %s.",
+                name,
+                count,
+                RATE_LIMIT_BUDGET,
+                RATE_LIMIT_BUDGET,
+                wait,
+            )
+        else:
+            logger.error(
+                "%s: not good, rate limit %s of %s in the last hour. Too many rate "
+                "limits: going on like this gets an account banned, and at %s "
+                "streamrip stops. Now %s.",
+                name,
+                count,
+                RATE_LIMIT_BUDGET,
+                RATE_LIMIT_BUDGET,
+                wait,
+            )
 
     def _pause_requests(self, seconds: float):
         """Hold back every request of this account for seconds after a 429."""
@@ -459,13 +509,8 @@ class RequestClient:
             # both the requests and the track starts that follow.
             wall = time.time()
             owner._limited_at = (*_within(owner._limited_at, wall), wall)
-            if len(owner._limited_at) == RATE_LIMIT_BUDGET // 2:
-                logger.warning(
-                    "%s has rate limited streamrip %s times in the last hour; half of "
-                    "what stops a rip to protect the account",
-                    self.source.capitalize(),
-                    len(owner._limited_at),
-                )
+            if owner._pace == "auto" and not owner._slow:
+                owner._turn_slow("it is refusing requests (HTTP 429)")
             if len(owner._limited_at) >= RATE_LIMIT_BUDGET:
                 owner._halt = owner._rate_limit_halt()
                 # Saved before the raise, so the next run halts too.
@@ -475,14 +520,7 @@ class RequestClient:
             owner._track_gap_scale = min(
                 owner._track_gap_scale * TRACK_GAP_WIDENING, TRACK_GAP_WIDENING_MAX
             )
-            logger.warning(
-                "%s is rate limiting us (HTTP 429); pausing for %.0fs, then one request "
-                "every %.0fs and track starts about %.0fs apart",
-                self.source.capitalize(),
-                seconds,
-                owner._spacing,
-                TRACK_GAP_MEAN * owner._track_gap_scale,
-            )
+            self._say_limited(len(owner._limited_at), seconds)
         owner._retry_at = max(owner._retry_at, now + seconds)
         owner._save_pacing_state()
 
