@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 lazy from collections.abc import Callable
 
-from rich.console import Group
+from rich.console import Group, RenderableType
 from rich.live import Live
 from rich.progress import (
     BarColumn,
@@ -39,6 +39,36 @@ class Handle:
 NO_PROGRESS = Handle(lambda _: None, lambda: None)
 
 
+@dataclass(slots=True)
+class _Redrawn:
+    """A renderable made anew at every refresh of the Live display."""
+
+    render: Callable[[], RenderableType]
+
+    def __rich__(self) -> RenderableType:
+        return self.render()
+
+
+class _TimeLeft(TimeRemainingColumn):
+    """The time left on the overall bar. Rich's estimate goes by the speed of
+    the last half minute, and tracks paced tens of seconds apart have none
+    there: so while they are paced, it is the pace's estimate (time_for)."""
+
+    def __init__(self, manager: ProgressManager):
+        super().__init__()
+        self._manager = manager
+
+    def render(self, task) -> Text:
+        time_for, left = self._manager.time_for, None
+        if time_for is not None and task.total is not None:
+            left = time_for(int(task.total - task.completed))
+        if left is None:
+            return super().render(task)
+        minutes, seconds = divmod(int(left), 60)
+        hours, minutes = divmod(minutes, 60)
+        return Text(f"{hours}:{minutes:02d}:{seconds:02d}", "progress.remaining")
+
+
 class ProgressManager:
     """Owns the Rich Live display shared by every download/resolve progress bar."""
 
@@ -64,11 +94,15 @@ class ProgressManager:
             "•",
             TextColumn("{task.completed}/{task.total} tracks"),
             "•",
-            TimeRemainingColumn(),
+            _TimeLeft(self),
             console=console,
         )
         self._overall_task: int | None = None
         self._overall_total = 0
+        # The accounts' load under the bars, redrawn as it goes, and how long
+        # a number of tracks takes at their pace (show_load).
+        self.load: _Redrawn | None = None
+        self.time_for: Callable[[int], float | None] | None = None
         # Tracks whose metadata and stream are being looked up: on a source
         # with a tight rate limit that takes longer than the downloads, and
         # without it nothing on screen would move until the first one starts.
@@ -77,8 +111,6 @@ class ProgressManager:
             TextColumn("[cyan]{task.description}"),
             BarColumn(bar_width=None),
             TextColumn("{task.completed}/{task.total} tracks"),
-            "•",
-            TimeRemainingColumn(),
             console=console,
         )
         self.progress = Progress(
@@ -115,6 +147,8 @@ class ProgressManager:
         if self._overall_task is not None:
             parts.append(self.overall_progress)
         parts += [self.resolve_progress, self.progress]
+        if self.load is not None:
+            parts.append(self.load)
         return Group(*parts)
 
     def _ensure_started(self):
@@ -268,6 +302,21 @@ def clear_screen(enabled: bool = True):
     """Wipe the terminal, unless disabled."""
     if enabled:
         _p.clear_screen()
+
+
+def show_load(
+    render: Callable[[], RenderableType] | None,
+    enabled: bool = True,
+    time_for: Callable[[int], float | None] | None = None,
+):
+    """Show what render makes under the progress bars, redrawn as they are,
+    or (None) stop showing it; nothing when disabled. time_for, if given,
+    says how long a number of tracks takes at the pace, for the time left on
+    the overall bar (None: Rich's own estimate)."""
+    if enabled:
+        _p.load = None if render is None else _Redrawn(render)
+        _p.time_for = None if render is None else time_for
+        _p.live.update(_p._group())
 
 
 def clear_progress():

@@ -5,6 +5,9 @@ import sys
 lazy from pathlib import Path
 
 lazy import aiofiles
+lazy from rich.progress_bar import ProgressBar
+lazy from rich.table import Table
+lazy from rich.text import Text
 
 from .. import db, lyrics
 from ..client import (
@@ -15,6 +18,7 @@ from ..client import (
     SpotifyClient,
     TidalClient,
 )
+from ..client.client import HOURLY_DANGER, TRACKS_PER_HOUR
 from ..console import console, plural
 from ..exceptions import (
     APIError,
@@ -36,7 +40,7 @@ from ..media import (
 )
 from ..media.media import resolve_or_none
 from ..metadata import SearchResults
-from ..progress import clear_progress, clear_screen
+from ..progress import clear_progress, clear_screen, show_load
 from ..utils.ffmpeg_utils import require_ffmpeg
 from .interactive import Confirm
 from .notices import notice_for
@@ -74,6 +78,68 @@ def planned_tracks(media: list[Media]) -> dict[Client, int]:
             case Track():
                 add(item.client, 1)
     return planned
+
+
+def load_table(clients: list[Client]) -> Table:
+    """Each account's load as one line: under the progress bars while a run
+    goes, and once more at its end.
+
+    The bar is this clock hour's tracks out of HOURLY_DANGER, streamrip's
+    line a margin under where Tidal began refusing requests (see the notes on
+    Tidal in client.client): green within the steady pace's TRACKS_PER_HOUR,
+    yellow past it, red at the line. The text after it says so, then the
+    pace, how long until the next track's turn when one waits for it, the
+    rate limits of the last hour when there are any, the risk of a ban those
+    make, and from medium at full speed what to do about it.
+    """
+    table = Table.grid(padding=(0, 1))
+    table.add_column(no_wrap=True)
+    table.add_column(no_wrap=True)
+    table.add_column()
+    for client in clients:
+        load = client.load()
+        pace = "steady pace" if load.slow else "full speed"
+        if load.pace == "auto":
+            pace += " (auto)"
+        zone = (
+            "green"
+            if load.this_hour <= TRACKS_PER_HOUR
+            else "yellow"
+            if load.this_hour < HOURLY_DANGER
+            else "red"
+        )
+        risk = {
+            "low": "green",
+            "medium": "yellow",
+            "high": "red",
+            "very high": "bold red",
+        }[load.risk]
+        text = Text.assemble(
+            f"{load.this_hour} of {HOURLY_DANGER} tracks this hour",
+            (f" · {pace}", "dim"),
+        )
+        if load.next_in >= 1:
+            minutes, seconds = divmod(int(load.next_in), 60)
+            text.append(f" · next track in {minutes}:{seconds:02d}", "dim")
+        if load.limited:
+            text.append(f" · {plural(load.limited, 'rate limit')}", "red")
+        text.append(" · ", "dim").append(f"ban risk {load.risk}", risk)
+        if load.risk == "very high":
+            text.append(" · stop now, and rerun with --pace slow", risk)
+        elif load.risk != "low" and not load.slow:
+            text.append(" · don't keep this up for long", risk)
+        table.add_row(
+            Text(client.source.capitalize(), "bold"),
+            ProgressBar(
+                total=HOURLY_DANGER,
+                completed=min(load.this_hour, HOURLY_DANGER),
+                width=14,
+                complete_style=zone,
+                finished_style="red",
+            ),
+            text,
+        )
+    return table
 
 
 class Main:
@@ -231,6 +297,15 @@ class Main:
         planned = planned_tracks(self.media)
         for client, count in planned.items():
             client.pace(self.config.session.downloads.pacing, count)
+        clients = list(planned)
+        bars = self.config.session.cli.progress_bars
+
+        def time_for(tracks: int) -> float | None:
+            """The slowest paced account's time for `tracks`; None if none is."""
+            times = (c.time_for(tracks) for c in clients)
+            return max((t for t in times if t is not None), default=None)
+
+        show_load(lambda: load_table(clients), bars, time_for)
         failed_items = 0
         for i, item in enumerate(self.media):
             # An artist or label logs a whole discography's worth of lines;
@@ -244,6 +319,7 @@ class Main:
                 logger.error("Error processing media item: %s: %s", type(e).__name__, e)
                 failed_items += 1
 
+        show_load(None, bars)
         # In tracks, not items: an item can be a whole discography, so "1
         # item downloaded" said nothing about what actually happened.
         d = self.database
@@ -260,6 +336,8 @@ class Main:
         logger.info(summary)
         if d.failed_now and not isinstance(d.failed, db.Dummy):
             logger.info("Run `streamrip repair` to retry the failed tracks.")
+        if clients:
+            console.print(load_table(clients))
 
     async def _search(
         self, source: str, media_type: str, query: str, limit: int

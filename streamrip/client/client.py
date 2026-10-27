@@ -9,9 +9,11 @@ import os
 import random
 import time
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import Any
 lazy from collections import Counter
 lazy from collections.abc import Awaitable, Callable
+lazy from datetime import datetime
 lazy from pathlib import Path
 
 lazy import aiohttp
@@ -127,6 +129,50 @@ def _danger(name: str) -> str:
     )
 
 
+@dataclass(frozen=True, slots=True)
+class Load:
+    """How hard an account has been working its service: what a run's
+    summary shows, and what its risk is (see the notes on Tidal above)."""
+
+    pace: str
+    slow: bool
+    # tracks started this clock hour, the one the service counts in
+    this_hour: int
+    # tracks started in the last FAST_WINDOW
+    recent: int
+    # separate 429s in the last hour
+    limited: int
+    # seconds until the next track's turn, 0 when none is waiting for one
+    next_in: float = 0.0
+    # a job auto would pace: more than FAST_BUDGET tracks in FAST_WINDOW,
+    # those before it included
+    big: bool = False
+    # clock hours in FAST_WINDOW with HOURLY_DANGER tracks or more
+    hours_over: int = 0
+
+    @property
+    def risk(self) -> str:
+        """low, medium, high or very high. High past HOURLY_DANGER this hour
+        or from a second 429; very high twice that, a second hour over it, or
+        halfway to the RATE_LIMIT_BUDGET that stops a run; medium on the way,
+        after a 429, or at full speed on a big job."""
+        if (
+            self.hours_over >= 2
+            or self.this_hour >= 2 * HOURLY_DANGER
+            or self.limited >= RATE_LIMIT_BUDGET // 2
+        ):
+            return "very high"
+        if self.this_hour >= HOURLY_DANGER or self.limited >= 2:
+            return "high"
+        if (
+            self.limited
+            or self.this_hour >= HOURLY_DANGER // 2
+            or (self.big and not self.slow)
+        ):
+            return "medium"
+        return "low"
+
+
 class RequestClient:
     """Shared request and track-start pacing, and retries, for API and
     bootstrap clients."""
@@ -159,6 +205,8 @@ class RequestClient:
     _slow: bool = False
     _danger_warned: float | None = None
     _big: bool = False
+    # the clock hour whose tracks the log has yet to be told (_report_hour)
+    _hour_reported: float | None = None
     # whether this run has picked up the pacing the last one left
     _pacing_state_loaded: bool = False
 
@@ -340,6 +388,59 @@ class RequestClient:
                 FAST_WINDOW // 3600,
             )
 
+    def _report_hour(self, starts: tuple[float, ...], clock_hour: float):
+        """Log the last clock hour's tracks and rate limits once it is over:
+        the unit the service counts in, and a record of a long run without
+        progress bars."""
+        last = self._hour_reported
+        self._hour_reported = clock_hour
+        if last is None or last >= clock_hour:
+            return
+        started = sum(1 for t in starts if last <= t < clock_hour)
+        limited = sum(1 for t in self._limited_at if last <= t < clock_hour)
+        if started or limited:
+            logger.info(
+                "%s: %s and %s in the hour up to %s (%s).",
+                self.source.capitalize(),
+                plural(started, "track"),
+                plural(limited, "rate limit") if limited else "no rate limits",
+                # Local time, as the log's own timestamps: a whole hour in
+                # UTC is one here too, where the offset is whole hours.
+                datetime.fromtimestamp(clock_hour).strftime("%H:%M"),
+                "steady pace" if self._slow else "full speed",
+            )
+
+    def load(self) -> Load:
+        """How hard the account has been working its service (see Load)."""
+        owner = self._paced_owner()
+        now = time.time()
+        started = [t for t in owner._track_starts if t <= now]
+        waiting = [t for t in owner._track_starts if t > now]
+        recent = _within(started, now, FAST_WINDOW)
+        return Load(
+            pace=owner._pace,
+            slow=owner._slow,
+            this_hour=sum(1 for t in started if t >= now - now % 3600),
+            recent=len(recent),
+            limited=len(_within(owner._limited_at, now)),
+            next_in=min(waiting) - now if waiting else 0.0,
+            big=owner._big or len(recent) > FAST_BUDGET,
+            hours_over=_hours_over(recent),
+        )
+
+    def time_for(self, tracks: int) -> float | None:
+        """About how long `tracks` more tracks take to start at the steady
+        pace: TRACK_GAP_MEAN apart (wider after 429s) while the hour has room,
+        then TRACKS_PER_HOUR an hour. None at full speed, where the downloads
+        themselves set the time."""
+        owner = self._paced_owner()
+        if not owner._slow:
+            return None
+        gap = TRACK_GAP_MEAN * owner._track_gap_scale
+        room = max(TRACKS_PER_HOUR - len(_within(owner._track_starts, time.time())), 0)
+        first, rest = min(tracks, room), max(tracks - room, 0)
+        return first * gap + rest * max(gap, RATE_LIMIT_WINDOW / TRACKS_PER_HOUR)
+
     def _rate_limit_halt(self) -> AccountHalt:
         return AccountHalt(
             f"Stopped to protect your account: {self.source.capitalize()} "
@@ -410,6 +511,7 @@ class RequestClient:
         owner = self._paced_owner()
         now = time.time()
         starts = _within(owner._track_starts, now, FAST_WINDOW)
+        owner._report_hour(starts, now - now % 3600)
         if owner._pace == "auto" and not owner._slow and len(starts) >= FAST_BUDGET:
             owner._turn_slow(
                 f"{len(starts)} tracks in the last {FAST_WINDOW // 3600} hours"
