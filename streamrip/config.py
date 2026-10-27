@@ -19,6 +19,8 @@ APP_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
 if os.name == "posix":
     APP_DIR.chmod(0o700)
 DEFAULT_CONFIG_PATH = APP_DIR / "config.toml"
+# How fast to rip (see client.client): auto chooses, fast and slow insist.
+PACES = ("auto", "fast", "slow")
 
 
 # Every option is documented in config.toml, the template each user's config
@@ -165,6 +167,12 @@ class DownloadsConfig:
     requests_per_minute: int
     verify_ssl: bool
     lyrics: bool
+    # Not in the config unless the user adds it: see the template.
+    pacing: str = "auto"
+
+    def __post_init__(self):
+        if self.pacing not in PACES:
+            raise ValueError(f"pacing is {self.pacing!r}: it can be {', '.join(PACES)}")
 
 
 @dataclass(slots=True)

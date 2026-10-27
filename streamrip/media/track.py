@@ -397,9 +397,6 @@ async def fetch_track_meta(
         )
         db.skipped_now += 1
         return None
-    # Not in the database, so this track will make requests: pace its start
-    # like a person's. A skipped track costs no request, so it waits for none.
-    await client.before_track()
     try:
         resp = await client.get_metadata(track_id, "track")
         album = album or AlbumMetadata.from_track_resp(resp, source)
@@ -433,6 +430,10 @@ async def fetch_downloadable(
 ) -> Downloadable | None:
     """Return a Downloadable for the track, or None and record the failure."""
     quality = getattr(config.session, client.source).quality
+    # The stream is the request every track costs (its metadata can come with
+    # its album's listing), and its download follows at once: so a track waits
+    # its turn at the pace here. A skipped track never gets here.
+    await client.before_track()
     try:
         return await client.get_downloadable(track_id, quality)
     except Exception as e:
