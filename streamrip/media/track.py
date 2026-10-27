@@ -21,7 +21,7 @@ from ..metadata.tagger import TAGGABLE_EXTENSIONS
 from ..metadata.util import format_quality
 from ..progress import add_title, get_progress_callback, remove_title
 from .artwork import download_artwork
-from .media import Media, Pending
+from .media import Media, Pending, PendingItem
 from .semaphore import global_download_semaphore
 lazy from ..client import Client, Downloadable
 lazy from ..config import Config
@@ -98,8 +98,10 @@ class Track(Media):
         ):
             self._skip_lossy_duplicate = True
             logger.info(
-                f"Skipping '{self.meta.title}': a lossless copy already exists, "
-                f"not downloading the .{self.downloadable.extension} version."
+                "Skipping '%s': a lossless copy already exists, not downloading the "
+                ".%s version.",
+                self.meta.title,
+                self.downloadable.extension,
             )
             return
         if self.is_single:
@@ -139,7 +141,6 @@ class Track(Media):
                         label,
                     ) as callback:
                         await self.downloadable.download(self.download_path, callback)
-                    return
                 except Exception as e:
                     error = f"{type(e).__name__}: {e}"
                     # A missing ffmpeg does not fix itself in 2-8 seconds.
@@ -148,15 +149,18 @@ class Track(Media):
                     ):
                         delay = 2**attempt  # 2s, 4s, 8s
                         logger.warning(
-                            f"Error downloading track '{self.meta.title}', "
-                            f"retrying in {delay}s: {error}"
+                            "Error downloading track '%s', retrying in %ss: %s",
+                            self.meta.title,
+                            delay,
+                            error,
                         )
                         await asyncio.sleep(delay)
                         continue
 
                     logger.error(
-                        f"Persistent error downloading track '{self.meta.title}', "
-                        f"skipping: {error}"
+                        "Persistent error downloading track '%s', skipping: %s",
+                        self.meta.title,
+                        error,
                     )
                     if self.download_path.is_file():
                         self.download_path.unlink()
@@ -171,6 +175,8 @@ class Track(Media):
                     raise TrackDownloadFailedError(
                         f"{self.meta.title} ({self.meta.info.id})"
                     ) from e
+                else:
+                    return
 
     async def postprocess(self):
         """Tag, convert, and dedup the downloaded file, then mark it downloaded."""
@@ -195,8 +201,10 @@ class Track(Media):
                 # still record it, instead of re-downloading it on every run
                 # (upstream #1010, e.g. ffmpeg without libfdk_aac).
                 logger.error(
-                    f"Could not convert '{self.meta.title}', keeping the "
-                    f"original file: {type(e).__name__}: {e}"
+                    "Could not convert '%s', keeping the original file: %s: %s",
+                    self.meta.title,
+                    type(e).__name__,
+                    e,
                 )
 
         self._remove_lossy_copies()
@@ -226,8 +234,11 @@ class Track(Media):
                 # Lyrics that should have been there: worth knowing about, never
                 # worth the track (a 401 used to cost a whole album, #959).
                 logger.warning(
-                    f"Could not get the lyrics of '{self.meta.title}' from "
-                    f"{self.client.source}: {type(e).__name__}: {e}"
+                    "Could not get the lyrics of '%s' from %s: %s: %s",
+                    self.meta.title,
+                    self.client.source,
+                    type(e).__name__,
+                    e,
                 )
             if self.meta.lyrics:
                 return
@@ -246,18 +257,20 @@ class Track(Media):
         except lyrics.LyricsUnavailableError as e:
             # Not "no lyrics found": LRCLIB did not answer. It is said once, in
             # a warning, when it is left alone, and not for every track.
-            logger.debug(f"Lyrics of '{self.meta.title}' not looked up: {e}")
+            logger.debug("Lyrics of '%s' not looked up: %s", self.meta.title, e)
             return
         except Exception as e:
             logger.warning(
-                f"Could not look up lyrics for '{self.meta.title}': "
-                f"{type(e).__name__}: {e}"
+                "Could not look up lyrics for '%s': %s: %s",
+                self.meta.title,
+                type(e).__name__,
+                e,
             )
             return
         if found:
             self.meta.lyrics = found
         else:
-            logger.info(f"No lyrics found for '{self.meta.title}' on LRCLIB")
+            logger.info("No lyrics found for '%s' on LRCLIB", self.meta.title)
 
     async def _convert(self):
         c = self.config.session.conversion
@@ -340,7 +353,7 @@ class Track(Media):
         if final is None or not _is_lossless(final):
             return
         for path in self._copies_on_disk(lossless=False):
-            logger.info(f"Removing lower-quality copy: {path}")
+            logger.info("Removing lower-quality copy: %s", path)
             path.unlink()
 
 
@@ -379,7 +392,9 @@ async def fetch_track_meta(
     """
     source = client.source
     if db.downloaded(source, track_id):
-        logger.info(f"Skipping track {track_id}. Marked as downloaded in the database.")
+        logger.info(
+            "Skipping track %s. Marked as downloaded in the database.", track_id
+        )
         db.skipped_now += 1
         return None
     # Not in the database, so this track will make requests: pace its start
@@ -480,15 +495,10 @@ class PendingTrack(Pending):
 
 
 @dataclass(slots=True)
-class PendingSingle(Pending):
+class PendingSingle(PendingItem):
     """A track downloaded on its own, which brings its album's metadata and
     cover with it.
     """
-
-    id: str
-    client: Client
-    config: Config
-    db: Database
 
     async def resolve(self) -> Track | None:
         """Fetch this single's metadata, album info, and cover, into a Track."""

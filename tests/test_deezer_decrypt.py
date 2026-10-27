@@ -57,14 +57,14 @@ class _Session:
 @pytest.mark.parametrize("length", [5 * DEEZER_STRIPE + 3000, 5 * DEEZER_STRIPE + 100])
 async def test_encrypted_stream_decrypts_to_the_original(tmp_path, length):
     plain = os.urandom(length)
-    info = {
-        "url": "https://cdn.example/mobile/1/track",
-        "quality_to_size": [0, 0, length],
-        "quality": 2,
-        "id": "3135556",
-    }
-    key = DeezerDownloadable._generate_blowfish_key(info["id"])
-    downloadable = DeezerDownloadable(_Session(_encrypt(key, plain)), info)
+    key = DeezerDownloadable._generate_blowfish_key("3135556")
+    downloadable = DeezerDownloadable(
+        _Session(_encrypt(key, plain)),
+        url="https://cdn.example/mobile/1/track",
+        quality=2,
+        track_id="3135556",
+        sizes=[0, 0, length],
+    )
     received = []
 
     await downloadable._download(str(tmp_path / "t.flac"), received.append)
@@ -104,13 +104,13 @@ async def test_an_error_body_instead_of_audio_is_non_streamable(
 ):
     from streamrip.exceptions import NonStreamableError
 
-    info = {
-        "url": "https://cdn.example/mobile/1/track",
-        "quality_to_size": [0, 0, 5_000_000],
-        "quality": 2,
-        "id": "1",
-    }
-    downloadable = DeezerDownloadable(_SmallSession(body), info)
+    downloadable = DeezerDownloadable(
+        _SmallSession(body),
+        url="https://cdn.example/mobile/1/track",
+        quality=2,
+        track_id="1",
+        sizes=[0, 0, 5_000_000],
+    )
 
     with pytest.raises(NonStreamableError, match=message):
         await downloadable._download(str(tmp_path / "t.flac"), lambda _: None)

@@ -56,6 +56,7 @@ def qobuz_artists(resp: dict) -> list[str]:
 
 
 def safe_get(dictionary, *keys, default=None):
+    """dictionary[k1][k2]..., or default where a level is missing or no dict."""
     return functools.reduce(
         lambda d, key: d.get(key, default) if isinstance(d, dict) else default,
         keys,
@@ -64,7 +65,9 @@ def safe_get(dictionary, *keys, default=None):
 
 
 def typed[T](thing, expected_type: type[T]) -> T:
-    assert isinstance(thing, expected_type)
+    """thing, checked to be what a service's response promised."""
+    if not isinstance(thing, expected_type):
+        raise TypeError(f"Expected {expected_type}, got {type(thing).__name__}")
     return thing
 
 
@@ -117,4 +120,4 @@ def get_quality_id(
 
         return 4
 
-    raise Exception(f"Invalid {bit_depth = }")
+    raise ValueError(f"Invalid {bit_depth = }")

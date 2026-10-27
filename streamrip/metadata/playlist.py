@@ -38,8 +38,9 @@ class PlaylistMetadata:
         ]
         if len(ids) < len(items):
             logger.error(
-                f"{len(items) - len(ids)} track(s) in playlist {name} not "
-                "available for stream"
+                "%s track(s) in playlist %s not available for stream",
+                len(items) - len(ids),
+                name,
             )
         return cls(name, ids)
 
@@ -63,8 +64,9 @@ class PlaylistMetadata:
         tracks = [i for i in ids if not i.startswith("-")]
         if len(tracks) < len(ids):
             logger.info(
-                f"{name}: skipping {len(ids) - len(tracks)} track(s) you uploaded "
-                "to Deezer yourself"
+                "%s: skipping %s track(s) you uploaded to Deezer yourself",
+                name,
+                len(ids) - len(tracks),
             )
         return cls(name, tracks)
 

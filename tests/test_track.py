@@ -215,7 +215,7 @@ def test_album_folder_follows_restrict_characters(restrict):
 
 @pytest.fixture(params=["single", "album"])
 def pending_disc_track(request, tmp_path, monkeypatch):
-    resp = json.loads(Path("tests/qobuz_track_resp.json").read_text())
+    resp = json.loads(Path("tests/qobuz_track_resp.json").read_text(encoding="utf-8"))
     resp["album"]["media_count"] = 2
     config = Config.defaults()
     config.session.downloads.folder = str(tmp_path / "downloads")

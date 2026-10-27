@@ -1,4 +1,5 @@
-"""The human pacing of track starts: the gaps, the 429 widening, the hour cap."""
+"""The pacing of track starts: the gaps, the 429 widening, the hour cap, and
+what of it outlives a run."""
 
 import asyncio
 from types import SimpleNamespace
@@ -6,8 +7,13 @@ from types import SimpleNamespace
 import pytest
 
 from streamrip.client import client as client_module
+from streamrip.client.deezer import DeezerClient
 from streamrip.client.qobuz import QobuzClient
-from streamrip.config import Config
+from streamrip.client.soundcloud import SoundcloudClient
+from streamrip.client.spotify import SpotifyClient
+from streamrip.client.tidal import TidalClient
+from streamrip.config import Config, set_user_defaults
+from streamrip.exceptions import AccountHalt
 
 # A draw far above TRACK_GAP_MAX, so the cap is what every gap comes out at.
 _HUGE = 10_000.0
@@ -20,6 +26,9 @@ class _Clock:
         self.now = 1000.0
 
     def monotonic(self):
+        return self.now
+
+    def time(self):
         return self.now
 
 
@@ -36,6 +45,21 @@ def paced(monkeypatch):
     return QobuzClient(Config.defaults()), clock
 
 
+@pytest.fixture
+def runs(paced, tmp_path, monkeypatch):
+    """A new client for every call, all of one account and one state file:
+    one run after another, as a ripper starts them."""
+    _, clock = paced
+    state = tmp_path / "pacing.json"
+
+    def run():
+        client = QobuzClient(Config.defaults())
+        monkeypatch.setattr(client, "_pacing_state_path", lambda: state)
+        return client
+
+    return run, clock
+
+
 def _elapse(client, clock) -> float:
     """Reserve a track start and let its wait pass."""
     wait = client._reserve_track_start()
@@ -43,14 +67,9 @@ def _elapse(client, clock) -> float:
     return wait
 
 
-def test_the_first_track_of_a_session_starts_right_away(paced):
-    client, _ = paced
-    assert client._reserve_track_start() == 0.0
-
-
 def test_the_gap_between_track_starts_is_human_sized(paced):
     client, clock = paced
-    assert _elapse(client, clock) == 0.0
+    assert _elapse(client, clock) == 0.0  # the first track starts at once
     assert _elapse(client, clock) == pytest.approx(30.0)
 
 
@@ -96,18 +115,17 @@ def test_the_widening_has_a_ceiling(paced):
 
 
 def test_the_hour_cap_holds_back_the_next_track(monkeypatch, paced, caplog):
+    """Counting the starts reserved ahead too: rip_tracks resolves a few
+    tracks side by side, and each reserves its start before the last one's
+    has come."""
     client, clock = paced
     monkeypatch.setattr(client_module, "TRACK_GAP_MAX", 0)  # all starts at once
     monkeypatch.setattr(client_module, "TRACKS_PER_HOUR", 3)
-    for _ in range(3):
-        assert _elapse(client, clock) == 0.0
+    now, hour = clock.now, client_module.RATE_LIMIT_WINDOW
 
-    assert _elapse(client, clock) == pytest.approx(client_module.RATE_LIMIT_WINDOW)
-    assert "in the last hour" in caplog.text
-
-    # Once the oldest start is an hour old, tracks flow again right away.
-    clock.now += client_module.RATE_LIMIT_WINDOW
-    assert _elapse(client, clock) == 0.0
+    starts = [now + client._reserve_track_start() for _ in range(7)]
+    assert starts == [now] * 3 + [now + hour] * 3 + [now + 2 * hour]
+    assert "3 tracks started in the last hour" in caplog.text
 
 
 def test_track_pacing_is_shared_with_the_pause_owner(monkeypatch, paced):
@@ -118,3 +136,79 @@ def test_track_pacing_is_shared_with_the_pause_owner(monkeypatch, paced):
 
     # A client sharing the account's pause shares its track pacing.
     assert bootstrap._reserve_track_start() == pytest.approx(30.0)
+
+
+def test_pacing_outlives_a_run(runs):
+    """A ripper that starts streamrip once per job still shares one pacing."""
+    run, clock = runs
+    first = run()
+    _elapse(first, clock)
+    _elapse(first, clock)
+    assert _elapse(run(), clock) == pytest.approx(30.0)
+
+
+def test_an_hour_of_quiet_is_a_fresh_start_widened_gaps_and_all(runs):
+    """The wait a halt asks for is the cooldown: the run after it starts at
+    the usual gaps, not at the widest."""
+    run, clock = runs
+    first = run()
+    _elapse(first, clock)
+    for _ in range(3):
+        first._pause_requests(1.0)
+        clock.now += 2.0  # let each pause end: three separate episodes
+    assert first._track_gap_scale > 1.0
+
+    clock.now += client_module.RATE_LIMIT_WINDOW
+    later = run()
+    assert _elapse(later, clock) == 0.0
+    assert _elapse(later, clock) == pytest.approx(30.0)
+
+
+async def test_a_run_started_while_the_budget_is_spent_stops_at_its_first_request(
+    runs, monkeypatch
+):
+    """Artist and album requests go out before any track: a halt the last run
+    left has to stop this one at its very first request."""
+    run, clock = runs
+    monkeypatch.setattr(client_module, "RATE_LIMIT_BUDGET", 2)
+    first = run()
+    first._pause_requests(1.0)
+    clock.now += 2.0  # the pause ends: a separate episode
+    with pytest.raises(AccountHalt):
+        first._pause_requests(1.0)
+
+    successor = run()
+    successor.session = SimpleNamespace(
+        get=lambda *a, **k: pytest.fail("a halted run sends no request")
+    )
+    with pytest.raises(AccountHalt):
+        await successor._get_with_retries("https://example.com", lambda resp: None)
+
+
+def test_an_unreadable_state_file_is_a_fresh_start(runs, tmp_path):
+    run, _ = runs
+    (tmp_path / "pacing.json").write_text("}{ not json")
+    assert run()._reserve_track_start() == 0.0
+
+
+# The real method, captured at import: conftest.py's autouse fixture silences
+# it for every test, this file's own included.
+_real_pacing_state_path = client_module.RequestClient._pacing_state_path
+
+
+def test_every_client_finds_its_pacing_state(tmp_path):
+    """Every source builds its client with a real Config, so every one of
+    them finds the file its pacing outlives a run in."""
+    config = tmp_path / "config.toml"
+    set_user_defaults(config)
+    loaded = Config(config)
+    for client in (
+        QobuzClient(loaded),
+        TidalClient(loaded),
+        DeezerClient(loaded),
+        SoundcloudClient(loaded),
+        SpotifyClient(loaded),
+    ):
+        assert _real_pacing_state_path(client) == (
+            tmp_path / f"pacing-{client.source}.json"
+        )

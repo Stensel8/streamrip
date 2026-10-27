@@ -1,8 +1,7 @@
 from .album import Album, PendingAlbum
-from .artist import Artist, PendingArtist
+from .artist import Artist, Label, PendingArtist, PendingLabel
 from .artwork import remove_artwork_tempdirs
 from .csv_playlist import PendingCsvPlaylist
-from .label import Label, PendingLabel
 from .media import Media, Pending
 from .playlist import (
     PendingLastfmPlaylist,

@@ -6,7 +6,7 @@ import pytest
 from click.testing import CliRunner
 
 from streamrip.console import console
-from streamrip.exceptions import AuthenticationError, RateLimitHalt
+from streamrip.exceptions import AccountHalt, AuthenticationError
 from streamrip.rip.cli import coro, rip
 
 FAKE_ARL = "f00dfeedc0ffee" * 8
@@ -56,7 +56,7 @@ def test_traceback_does_not_print_local_variables(tmp_path, verbose):
     "error",
     [
         AuthenticationError("Tidal needs authorising again"),
-        RateLimitHalt("Stopped to protect your account"),
+        AccountHalt("Stopped to protect your account"),
     ],
 )
 def test_a_login_or_rate_limit_stop_is_a_message_not_a_traceback(error, capsys):

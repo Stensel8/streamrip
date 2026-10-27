@@ -107,32 +107,24 @@ async def test_lastfm_page_failure_stops_pagination_and_closes_session(monkeypat
     session.__aexit__.assert_awaited_once()
 
 
-def _search_client(source, search):
-    client = MagicMock()
-    client.source = source
-    client.search = AsyncMock(side_effect=search)
-    return client
+async def test_lastfm_tracks_are_searched_like_a_csv_lists(monkeypatch):
+    """A Last.fm page names a title and an artist per track; they are found the
+    way a CSV list's are (test_csv_playlist.py), not by the first search hit."""
+    searched = AsyncMock(return_value=None)
+    monkeypatch.setattr("streamrip.media.playlist.searched_playlist", searched)
+    playlist = PendingLastfmPlaylist("url", "client", "fallback", "config", "db")
+    playlist._parse_lastfm_playlist = AsyncMock(
+        return_value=("Mix", [("Song", "Band"), ("Other", "Act")])
+    )
 
+    await playlist.resolve()
 
-async def test_lastfm_search_error_falls_back_instead_of_failing():
-    main = _search_client("tidal", ConnectionError("boom"))
-    fallback = _search_client("deezer", [[{"data": [{"id": 7, "title": "Song"}]}]])
-    playlist = PendingLastfmPlaylist("url", main, fallback, MagicMock(), MagicMock())
-    status = PendingLastfmPlaylist.Status(0, 0, 1)
-    callback = MagicMock()
-
-    assert await playlist._make_query("Song Artist", status, callback) == ("7", True)
-    assert (status.found, status.failed) == (1, 0)
-    callback.assert_called_once()
-
-
-async def test_lastfm_query_with_an_empty_page_counts_as_not_found():
-    main = _search_client("deezer", [[{"data": []}]])
-    playlist = PendingLastfmPlaylist("url", main, None, MagicMock(), MagicMock())
-    status = PendingLastfmPlaylist.Status(0, 0, 1)
-
-    assert await playlist._make_query("x", status, MagicMock()) == (None, False)
-    assert status.failed == 1
+    name, tracks, *rest = searched.await_args.args
+    assert (name, rest) == ("Mix", ["client", "fallback", "config", "db"])
+    assert [(t.title, t.artists) for t in tracks] == [
+        ("Song", ["Band"]),
+        ("Other", ["Act"]),
+    ]
 
 
 def _playlist_track(get_metadata):
@@ -273,8 +265,8 @@ async def test_remote_playlist_title_is_checked_before_tracks_are_created(
         "streamrip.media.playlist.new_session",
         MagicMock(return_value=AsyncMock(__aenter__=AsyncMock(return_value=session))),
     )
-    query = AsyncMock(return_value=("1", False))
-    monkeypatch.setattr(PendingLastfmPlaylist, "_make_query", query)
+    query = AsyncMock(return_value=(client, MagicMock(id="1")))
+    monkeypatch.setattr("streamrip.media.playlist.find_track", query)
     lastfm_playlist = await PendingLastfmPlaylist(
         "https://example.test/playlist", client, None, config, MagicMock()
     ).resolve()

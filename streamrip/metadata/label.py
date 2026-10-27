@@ -16,6 +16,6 @@ class LabelMetadata:
         logger.debug(resp)
         if source == "qobuz":
             return cls(resp["name"], [a["id"] for a in resp["albums"]["items"]])
-        if source in ("tidal", "deezer"):
+        if source in {"tidal", "deezer"}:
             return cls(resp["name"], [a["id"] for a in resp["albums"]])
         raise NotImplementedError

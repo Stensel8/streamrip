@@ -103,7 +103,7 @@ def _year(date) -> str | None:
 def _duration(item: dict) -> str | None:
     """A length as m:ss or h:mm:ss, or None if there is none."""
     seconds = item.get("duration") or 0
-    if item.get("kind") in ("track", "playlist"):  # SoundCloud counts in ms
+    if item.get("kind") in {"track", "playlist"}:  # SoundCloud counts in ms
         seconds //= 1000
     hours, rest = divmod(int(seconds), 3600)
     if not rest and not hours:
@@ -386,7 +386,7 @@ def _page_items(source: str, media_type: str, page: dict) -> list[dict]:
         return page[f"{media_type}s"]["items"]
     if source == "deezer":
         return page["data"]
-    if source in ("tidal", "spotify"):
+    if source in {"tidal", "spotify"}:
         return page["items"]
     raise NotImplementedError(source)
 
@@ -400,7 +400,7 @@ class SearchResults:
         """A summary of every item on a source's search pages, for `media_type`."""
         summarize = SUMMARIES.get(media_type)
         if summarize is None:
-            raise Exception(f"invalid media type {media_type}")
+            raise ValueError(f"Invalid media type {media_type}")
         return cls(
             [
                 summarize(item)

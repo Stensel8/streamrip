@@ -1,14 +1,15 @@
 """Everything CI checks, and everything it cannot, run by hand. You need no CI to test streamrip completely.
 
-    uv run python checks/run.py offline    CI's job: lint, then the tests that need no login
-    uv run python checks/run.py login      the tests about logins, tokens and sessions (CI leaves these out)
-    uv run python checks/run.py live [SOURCE ...] [--config FILE] [--query TEXT]
-                                           real accounts: streamrip asks you to log in, then tests itself
-    uv run python checks/run.py install    CI's installer job, on a copy of this checkout
-    uv run python checks/run.py container  CI's image build and smoke test (podman or docker)
-    uv run python checks/run.py nix        CI's `nix flake check` (it only sees files git tracks)
-    uv run python checks/run.py all        all of it
+    python checks/run.py offline    CI's job: lint, then the tests that need no login
+    python checks/run.py login      the tests about logins, tokens and sessions (CI leaves these out)
+    python checks/run.py live [SOURCE ...] [--config FILE] [--query TEXT]
+                                    real accounts: streamrip asks you to log in, then tests itself
+    python checks/run.py install    CI's installer job, on a copy of this checkout
+    python checks/run.py container  CI's image build and smoke test (podman or docker)
+    python checks/run.py nix        CI's `nix flake check` (it only sees files git tracks)
+    python checks/run.py all        all of it
 
+Any python and any folder will do: the script runs itself in the project's environment with uv.
 `live` logs in to a real account of each SOURCE (qobuz, tidal, deezer, spotify, soundcloud; default
 all) in a scratch config, so your own config and downloads are never touched. With `--config FILE`
 it starts from the logins in that file instead of asking. `--query` is what is searched for (a
@@ -26,10 +27,10 @@ import time
 import tomllib
 from pathlib import Path
 
-import mutagen
-
 ROOT = Path(__file__).resolve().parent.parent
 UV = ["uv", "run", "--locked", "--all-extras"]
+# Without the live log of every passing test: a failing one still shows its log.
+PYTEST = [*UV, "pytest", "-o", "log_cli=false"]
 SOURCES = ("tidal", "qobuz", "deezer", "spotify", "soundcloud")
 # SoundCloud only lets streamrip download what the artists themselves upload, so it is searched for that.
 QUERIES = {"soundcloud": "lofi"}
@@ -51,8 +52,8 @@ def record(name: str, problem: str | None = None, skipped: str | None = None) ->
 
 def command(name: str, args: list, cwd: Path = ROOT) -> bool:
     """A check whose exit code is the verdict."""
-    print(f"\n$ {' '.join(map(str, args))}")
-    code = subprocess.run(args, cwd=cwd).returncode
+    print(f"\n$ {' '.join(map(str, args))}", flush=True)
+    code = subprocess.run(args, cwd=cwd, check=False).returncode
     return record(name, f"exit code {code}" if code else None)
 
 
@@ -60,11 +61,11 @@ def offline():
     lint = ["uv", "run", "--locked", "--only-group", "dev", "ruff"]
     command("lint", [*lint, "check", "."])
     command("format", [*lint, "format", "--check", "."])
-    command("tests without logins", [*UV, "pytest", "-m", "not login"])
+    command("tests without logins", [*PYTEST, "-m", "not login"])
 
 
 def login():
-    command("tests about logins and sessions", [*UV, "pytest", "-m", "login"])
+    command("tests about logins and sessions", [*PYTEST, "-m", "login"])
 
 
 def install():
@@ -140,12 +141,11 @@ def live(source: str, config: Path | None, query_override: str | None):
                 env=env,
                 text=True,
                 **kwargs,
+                check=False,
             )
 
         config_path = Path(
-            streamrip("config", "path", capture_output=True)
-            .stdout.strip()
-            .splitlines()[-1]
+            streamrip("config", "path", capture_output=True).stdout.strip()
         )
         if config:
             shutil.copy(config, config_path)
@@ -182,6 +182,8 @@ def live(source: str, config: Path | None, query_override: str | None):
             return
         record(f"{source}: download")
 
+        import mutagen  # not at the top: the script starts outside its environment
+
         problems = []
         audio = mutagen.File(files[0], easy=True)
         if audio is None:
@@ -199,6 +201,7 @@ def live(source: str, config: Path | None, query_override: str | None):
                 [ffmpeg, "-v", "error", "-i", str(files[0]), "-f", "null", "-"],
                 capture_output=True,
                 text=True,
+                check=False,
             )
             if decoded.returncode or decoded.stderr.strip():
                 problems.append(
@@ -220,12 +223,12 @@ def live(source: str, config: Path | None, query_override: str | None):
         if (
             source == "tidal"
         ):  # an expired access token is refreshed, not a reason to log in again
-            text = config_path.read_text()
+            text = config_path.read_text(encoding="utf-8")
             section = re.search(r"(?ms)^\[tidal\]\n.*?(?=^\[|\Z)", text)
             expired = re.sub(
                 r"(?m)^((?:hires_)?token_expiry) = .*$", r"\1 = 0", section[0]
             )
-            config_path.write_text(text.replace(section[0], expired))
+            config_path.write_text(text.replace(section[0], expired), encoding="utf-8")
             out = streamrip(
                 "search",
                 "tidal",
@@ -235,7 +238,9 @@ def live(source: str, config: Path | None, query_override: str | None):
                 str(Path(tmp) / "results.txt"),
                 capture_output=True,
             )
-            expiry = tomllib.loads(config_path.read_text())["tidal"]["token_expiry"]
+            expiry = tomllib.loads(config_path.read_text(encoding="utf-8"))["tidal"][
+                "token_expiry"
+            ]
             record(
                 "tidal: an expired token is refreshed",
                 None
@@ -244,17 +249,26 @@ def live(source: str, config: Path | None, query_override: str | None):
             )
 
 
+def _flag_value(argv: list[str], flag: str) -> str | None:
+    """The value after flag, removed from argv along with the flag.
+
+    A flag with nothing after it is a typo: show how to run this, like any
+    other bad invocation, instead of crashing on argv[i + 1].
+    """
+    if flag not in argv:
+        return None
+    i = argv.index(flag)
+    if i + 1 == len(argv):
+        sys.exit(__doc__)
+    value = argv[i + 1]
+    del argv[i : i + 2]
+    return value
+
+
 def main(argv: list[str]):
-    config = None
-    if "--config" in argv:
-        i = argv.index("--config")
-        config = Path(argv[i + 1]).expanduser()
-        del argv[i : i + 2]
-    query = None
-    if "--query" in argv:
-        i = argv.index("--query")
-        query = argv[i + 1]
-        del argv[i : i + 2]
+    config_arg = _flag_value(argv, "--config")
+    config = Path(config_arg).expanduser() if config_arg else None
+    query = _flag_value(argv, "--query")
     what, extra = (argv[0], argv[1:]) if argv else ("", [])
     steps = {
         "offline": offline,
@@ -264,7 +278,7 @@ def main(argv: list[str]):
         "nix": nix,
     }
     if (
-        what not in (*steps, "live", "all")
+        what not in {*steps, "live", "all"}
         or (extra and what != "live")
         or set(extra) - set(SOURCES)
     ):
@@ -275,9 +289,12 @@ def main(argv: list[str]):
             steps.values() if what == "all" else [steps[what]] if what in steps else []
         ):
             step()
-        if what in ("live", "all"):
+        if what in {"live", "all"}:
             for source in extra or SOURCES:
-                live(source, config, query)
+                try:
+                    live(source, config, query)
+                except Exception as e:  # one service's crash must not skip the next
+                    record(f"{source}, real account", f"{type(e).__name__}: {e}")
     except KeyboardInterrupt:
         print("\nStopped.")
     print("\n== Summary")
@@ -287,4 +304,11 @@ def main(argv: list[str]):
 
 
 if __name__ == "__main__":
+    # Started by any python: run again in the project's environment, where
+    # streamrip and mutagen are installed.
+    if "STREAMRIP_CHECKS" not in os.environ:
+        os.environ["STREAMRIP_CHECKS"] = "1"
+        os.execvp(
+            UV[0], [*UV, "--project", str(ROOT), "python", __file__, *sys.argv[1:]]
+        )
     main(sys.argv[1:])

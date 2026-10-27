@@ -30,7 +30,7 @@ SAMPLE_CONFIG = Path("tests/test_config.toml")
 
 @pytest.fixture()
 def sample_config_data() -> ConfigData:
-    return ConfigData.from_toml(SAMPLE_CONFIG.read_text())
+    return ConfigData.from_toml(SAMPLE_CONFIG.read_text(encoding="utf-8"))
 
 
 # Define a fixture to create a sample Config instance for testing

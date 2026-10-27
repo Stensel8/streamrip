@@ -13,7 +13,7 @@ _SEPARATORS = re.compile(r"[\\/]")
 
 # Most filesystems (ext4, APFS, NTFS) cap a single file or folder name at 255
 # bytes. Stay a little below it so suffixes streamrip adds while working
-# (".dash.mp4", a converted extension) still fit.
+# (".part.mp4", a converted extension) still fit.
 MAX_COMPONENT_BYTES = 240
 
 
@@ -42,11 +42,11 @@ def clean_filepath(fn: str, restrict: bool = False) -> Path:
     "{albumartist}/{title}" into "../Title".
     """
     parts = []
-    for part in _SEPARATORS.split(fn):
-        part = clean_filename(part, restrict)
+    for raw in _SEPARATORS.split(fn):
+        part = clean_filename(raw, restrict)
         if not part:
             continue
-        if part in (".", ".."):
+        if part in {".", ".."}:
             part = part.replace(".", "_")
         parts.append(part)
     return Path(*parts) if parts else Path("Unknown")
@@ -77,6 +77,6 @@ def fit_filename(stem: str, extension: str) -> str:
     """
     budget = MAX_COMPONENT_BYTES - len(extension.encode()) - 1
     stem = truncate_str(stem, budget)
-    if stem in ("", ".", ".."):
+    if stem in {"", ".", ".."}:
         stem = "Unknown"
     return f"{stem}.{extension}"

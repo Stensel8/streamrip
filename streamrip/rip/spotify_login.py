@@ -57,7 +57,7 @@ class _CallbackHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(_DONE_PAGE)
 
-    def log_message(self, format: str, *args: Any):
+    def log_message(self, fmt: str, *args: Any):
         """Stay quiet: the terminal belongs to streamrip."""
 
 

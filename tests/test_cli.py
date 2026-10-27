@@ -402,6 +402,15 @@ def test_a_config_that_does_not_load_can_still_be_reset(tmp_path):
     Config(Path(cfg))  # loads now
 
 
+def test_config_path_prints_only_the_path_even_for_a_new_config(tmp_path):
+    """Scripts read it; the notice that a config was created goes to stderr."""
+    cfg = tmp_path / "config.toml"
+    result = CliRunner().invoke(rip, ["--config-path", str(cfg), "config", "path"])
+    assert result.exit_code == 0, result.output
+    assert result.stdout == f"{cfg}\n"
+    assert "creating default config" in result.stderr
+
+
 class _RepairMain:
     """A Main whose retry downloads `downloaded`, marking them as the real one does."""
 

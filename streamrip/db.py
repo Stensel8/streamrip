@@ -1,10 +1,9 @@
-"""Wrapper over a database that stores item IDs."""
+"""The two tables streamrip keeps: what it downloaded, and what failed."""
 
 import logging
 import sqlite3
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Final
 lazy from collections.abc import Generator
 
 logger = logging.getLogger("streamrip")
@@ -38,46 +37,35 @@ def split_download_key(key: str) -> tuple[str, str]:
 
 
 class Dummy:
-    """Stands in for a database that's disabled in the config."""
+    """Stands in for a table that's disabled in the config: it keeps nothing."""
 
     def contains(self, **_) -> bool:
-        """Always return False: nothing is ever stored."""
         return False
 
-    def add(self, *_):
+    def add(self, _):
         pass
 
     def remove(self, **_):
-        """No-op: there is nothing to remove."""
+        pass
 
     def clear(self) -> int:
-        """No-op: there is nothing to clear."""
         return 0
 
     def all(self) -> list:
-        """Return an empty list: there is nothing stored."""
         return []
 
 
 class DatabaseBase:
-    """A wrapper for an sqlite database."""
+    """One table of an sqlite database: its name, and its columns' types."""
 
-    structure: dict
     name: str
+    structure: frozendict[str, tuple[str, ...]]
     # Constraints over several columns, which `structure` cannot say.
     constraints: tuple[str, ...] = ()
 
     def __init__(self, path: str):
-        """Create a Database instance.
-
-        :param path: Path to the database file.
-        """
-        assert self.structure != {}
-        assert self.name
-        assert path
-
+        """The table in the database file at path, made if it isn't there."""
         self.path = path
-
         self.create()
 
     @contextmanager
@@ -94,6 +82,15 @@ class DatabaseBase:
                 yield conn
         finally:
             conn.close()
+
+    def _where(self, items: dict) -> tuple[str, tuple[str, ...]]:
+        """The WHERE condition matching every column=value of items, and its
+        values. Column names go into the SQL itself, so only the table's own
+        are taken."""
+        if unknown := set(items) - set(self.structure):
+            raise ValueError(f"No column {sorted(unknown)} in {self.name}")
+        condition = " AND ".join(f"{key}=?" for key in items)
+        return condition, tuple(str(value) for value in items.values())
 
     def create(self):
         """Create the table, unless the database already has it.
@@ -112,56 +109,34 @@ class DatabaseBase:
             conn.execute(command)
 
     def contains(self, **items) -> bool:
-        """Check whether items matches an entry in the table.
-
-        :param items: a dict of column-name + expected value
-        :rtype: bool
-        """
-        allowed_keys = set(self.structure.keys())
-        assert all(key in allowed_keys for key in items), (
-            f"Invalid key. Valid keys: {allowed_keys}"
-        )
-
-        items = {k: str(v) for k, v in items.items()}
-
-        with self._connect() as conn:
-            conditions = " AND ".join(f"{key}=?" for key in items)
-            command = f"SELECT EXISTS(SELECT 1 FROM {self.name} WHERE {conditions})"
-
-            logger.debug("Executing %s", command)
-
-            return bool(conn.execute(command, tuple(items.values())).fetchone()[0])
-
-    def add(self, items: tuple[str]):
-        """Add a row to the table.
-
-        :param items: Column-name + value. Values must be provided for all cols.
-        :type items: Tuple[str]
-        """
-        assert len(items) == len(self.structure)
-
-        params = ", ".join(self.structure.keys())
-        question_marks = ", ".join("?" for _ in items)
-        command = f"INSERT INTO {self.name} ({params}) VALUES ({question_marks})"
-
+        """Whether a row has every column=value given."""
+        condition, values = self._where(items)
+        command = f"SELECT EXISTS(SELECT 1 FROM {self.name} WHERE {condition})"
         logger.debug("Executing %s", command)
-        logger.debug("Items to add: %s", items)
-
         with self._connect() as conn:
-            try:
-                conn.execute(command, tuple(items))
-            except sqlite3.IntegrityError as e:
-                # tried to insert an item that was already there
-                logger.debug(e)
+            return bool(conn.execute(command, values).fetchone()[0])
+
+    def add(self, items: tuple[str, ...]):
+        """Add a row: a value for every column, in order. A row that is there
+        already is left as it is."""
+        if len(items) != len(self.structure):
+            raise ValueError(
+                f"{self.name} has {len(self.structure)} columns, not {len(items)}"
+            )
+        columns = ", ".join(self.structure)
+        marks = ", ".join("?" * len(items))
+        command = f"INSERT OR IGNORE INTO {self.name} ({columns}) VALUES ({marks})"
+        logger.debug("Executing %s with %s", command, items)
+        with self._connect() as conn:
+            conn.execute(command, items)
 
     def remove(self, **items):
-        """Delete the rows that match every column-name=value given."""
-        conditions = " AND ".join(f"{key}=?" for key in items)
-        command = f"DELETE FROM {self.name} WHERE {conditions}"
-
+        """Delete the rows that have every column=value given."""
+        condition, values = self._where(items)
+        command = f"DELETE FROM {self.name} WHERE {condition}"
+        logger.debug("Executing %s", command)
         with self._connect() as conn:
-            logger.debug(command)
-            conn.execute(command, tuple(items.values()))
+            conn.execute(command, values)
 
     def clear(self) -> int:
         """Delete every row of the table. Returns how many there were."""
@@ -170,30 +145,26 @@ class DatabaseBase:
             conn.execute(f"DELETE FROM {self.name}")
         return count
 
-    def all(self):
-        """Iterate through the rows of the table."""
+    def all(self) -> list[tuple]:
+        """Every row of the table."""
         with self._connect() as conn:
-            return list(conn.execute(f"SELECT * FROM {self.name}"))
+            return conn.execute(f"SELECT * FROM {self.name}").fetchall()
 
 
 class Downloads(DatabaseBase):
     """A table that stores the downloaded IDs, as `download_key`s."""
 
     name = "downloads"
-    structure: Final[dict] = {
-        "id": ["text", "unique"],
-    }
+    structure = frozendict({"id": ("text", "unique")})
 
 
 class Failed(DatabaseBase):
     """A table that stores information about failed downloads."""
 
     name = "failed_downloads"
-    structure: Final[dict] = {
-        "source": ["text"],
-        "media_type": ["text"],
-        "id": ["text"],
-    }
+    structure = frozendict(
+        {"source": ("text",), "media_type": ("text",), "id": ("text",)}
+    )
     # An id is only unique within a source. Unique on its own, one source's
     # failure kept another's, of the same id, out of the table and so out of
     # `streamrip repair`.
@@ -202,6 +173,8 @@ class Failed(DatabaseBase):
 
 @dataclass(slots=True)
 class Database:
+    """The downloads and failed-downloads tables, and this run's counts."""
+
     downloads: DatabaseBase | Dummy
     failed: DatabaseBase | Dummy
     # Tracks this run downloaded, failed on, and skipped as already downloaded,
@@ -223,10 +196,11 @@ class Database:
         """Drop a track from the library record."""
         self.downloads.remove(id=download_key(source, item_id))
 
-    def set_failed(self, source: str, media_type: str, id: str):
-        self.failed.add((source, media_type, id))
+    def set_failed(self, source: str, media_type: str, item_id: str):
+        """Record an item that failed, for `streamrip repair`."""
+        self.failed.add((source, media_type, item_id))
         self.failed_now += 1
 
-    def forget_failed(self, source: str, media_type: str, id: str):
+    def forget_failed(self, source: str, media_type: str, item_id: str):
         """Drop one failure, and no other source's of the same id."""
-        self.failed.remove(source=source, media_type=media_type, id=id)
+        self.failed.remove(source=source, media_type=media_type, id=item_id)

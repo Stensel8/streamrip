@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from streamrip.client.downloadable import TidalDASHDownloadable, TidalDownloadable
+from streamrip.client.downloadable import SegmentedMP4Downloadable, TidalDownloadable
 from streamrip.client.tidal import (
     DEFAULT_CLIENT_ID,
     HIRES_CLIENT_ID,
@@ -94,7 +94,7 @@ async def test_token_from_other_client_requires_new_login(monkeypatch):
     c = _client()
     c.config.access_token = "token"
     c.config.token_client_id = HIRES_CLIENT_ID
-    monkeypatch.setattr("streamrip.client.tidal.new_session", lambda **_: MagicMock())
+    monkeypatch.setattr("streamrip.client.client.new_session", lambda **_: MagicMock())
     with pytest.raises(MissingCredentialsError):
         await c.login()
 
@@ -109,8 +109,8 @@ async def test_dash_manifest_becomes_segmented_downloadable():
         }
     )
     dl = await c.get_downloadable("1", 3)
-    assert isinstance(dl, TidalDASHDownloadable)
-    assert dl.extension == "flac"
+    assert isinstance(dl, SegmentedMP4Downloadable)
+    assert (dl.source, dl.extension) == ("tidal", "flac")
     assert dl.init_url == "https://sp.example/init.mp4"
     assert dl.segment_urls == [f"https://sp.example/{n}.mp4" for n in range(1, 5)]
 
@@ -224,7 +224,7 @@ async def test_hires_is_taken_when_tidal_has_it():
         "manifest": base64.b64encode(MPD.encode()).decode(),
     }
     c = _two_lanes(hires, AssertionError("the lossless client must not be asked"))
-    assert isinstance(await c.get_downloadable("1", 3), TidalDASHDownloadable)
+    assert isinstance(await c.get_downloadable("1", 3), SegmentedMP4Downloadable)
 
 
 async def test_no_hires_master_steps_down_to_the_lossless_client():

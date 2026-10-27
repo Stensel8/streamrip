@@ -10,8 +10,13 @@ from pathlib import Path
 from tempfile import gettempdir
 from typing import Final
 
+lazy from mutagen import flac
+lazy from mutagen.id3 import ID3
+lazy from mutagen.oggopus import OggOpus
+lazy from mutagen.oggvorbis import OggVorbis
+
 from .exceptions import ConversionError
-from .utils.ffmpeg_utils import find_ffmpeg
+from .utils.ffmpeg_utils import find_ffmpeg, run_ffmpeg
 
 logger = logging.getLogger("streamrip")
 
@@ -42,13 +47,6 @@ class Converter:
         `ffmpeg_arg` sets a lossy codec's quality (see get_quality_arg);
         `sampling_rate` and `bit_depth` cap a lossless conversion's.
         """
-        self.ffmpeg_path = find_ffmpeg()
-        if self.ffmpeg_path is None:
-            raise Exception(
-                "Could not find FFmpeg. Install it, or install streamrip's "
-                "ffmpeg extra, to convert audio files.",
-            )
-
         self.filename = filename
         self.final_fn = filename.with_suffix(f".{self.container}")
         # Unique per conversion: tracks from different albums often share a
@@ -72,20 +70,11 @@ class Converter:
         if not self._ffmpeg_supports_art:
             cover_data = await asyncio.to_thread(self._read_source_cover)
 
-        command = self._gen_command()
-        logger.debug("Converting: %s", command)
-        process = await asyncio.create_subprocess_exec(
-            *command,
-            stdin=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.PIPE,
+        args = self._ffmpeg_args()
+        logger.debug("Converting: %s", args)
+        await run_ffmpeg(
+            *args, output=self.tempfile, failure="ffmpeg failed", error=ConversionError
         )
-        _, err = await process.communicate()
-        if process.returncode != 0 or not self.tempfile.is_file():
-            self.tempfile.unlink(missing_ok=True)
-            raise ConversionError(
-                f"ffmpeg failed (exit {process.returncode}): "
-                f"{err.decode(errors='replace')[-300:]}"
-            )
 
         if self.remove_source:
             self.filename.unlink()
@@ -95,13 +84,10 @@ class Converter:
 
     def _read_source_cover(self) -> tuple[bytes, str] | None:
         """Read cover art from the source file. Returns (data, mime) or None."""
-        from mutagen.flac import FLAC
-        from mutagen.id3 import ID3
-
         src_ext = self.filename.suffix.lower()
         try:
             if src_ext == ".flac":
-                src = FLAC(self.filename)
+                src = flac.FLAC(self.filename)
                 if src.pictures:
                     p = src.pictures[0]
                     return p.data, p.mime
@@ -116,9 +102,7 @@ class Converter:
 
     def _embed_cover_art(self, cover_data: bytes, mime: str) -> None:
         """Embed cover art into the converted OGG/OPUS file via METADATA_BLOCK_PICTURE."""
-        from mutagen.flac import Picture
-
-        pic = Picture()
+        pic = flac.Picture()
         pic.type = 3  # front cover
         pic.mime = mime
         pic.data = cover_data
@@ -127,12 +111,8 @@ class Converter:
         out_ext = self.final_fn.suffix.lower()
         try:
             if out_ext == ".ogg":
-                from mutagen.oggvorbis import OggVorbis
-
                 audio = OggVorbis(self.final_fn)
             elif out_ext == ".opus":
-                from mutagen.oggopus import OggOpus
-
                 audio = OggOpus(self.final_fn)
             else:
                 return
@@ -142,12 +122,9 @@ class Converter:
         except Exception as e:
             logger.warning("Could not embed cover art into %s: %s", self.final_fn, e)
 
-    def _gen_command(self) -> list[str]:
-        """Build the ffmpeg command line that performs the conversion."""
-        # Only errors: they're captured for ConversionError, and anything more
-        # ffmpeg prints would garble the progress bars.
-        command = [self.ffmpeg_path, "-i", str(self.filename), "-loglevel", "error"]
-        command += ["-c:a", self.get_codec_lib()]
+    def _ffmpeg_args(self) -> list[str]:
+        """ffmpeg's arguments for the conversion, up to its output."""
+        command = ["-i", str(self.filename), "-c:a", self.get_codec_lib()]
         # The cover art is a video stream, copied where the container takes one.
         command += ["-c:v", "copy"] if self._ffmpeg_supports_art else ["-vn"]
         command += self.ffmpeg_arg.split()
@@ -157,14 +134,14 @@ class Converter:
             rates = (str(r) for r in sorted(SAMPLING_RATES) if r <= self.sampling_rate)
             aformat.append(f"sample_rates={'|'.join(rates)}")
         if self.lossless and self.bit_depth is not None:
-            if self.bit_depth not in (16, 24, 32):
+            if self.bit_depth not in {16, 24, 32}:
                 raise ValueError("Bit depth must be 16, 24, or 32")
             formats = ["s16p", "s16"] + (["s32p", "s32"] if self.bit_depth > 16 else [])
             aformat.append(f"sample_fmts={'|'.join(formats)}")
         if aformat:
             command += ["-af", f"aformat={':'.join(aformat)}"]
 
-        return [*command, "-y", str(self.tempfile)]
+        return command
 
     def get_codec_lib(self) -> str:
         return self.codec_lib
@@ -321,6 +298,7 @@ def _ffmpeg_has_encoder(name: str) -> bool:
             text=True,
             timeout=10,
             stdin=subprocess.DEVNULL,
+            check=False,
         )
     except OSError, subprocess.SubprocessError:
         return False

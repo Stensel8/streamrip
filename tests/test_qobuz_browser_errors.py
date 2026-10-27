@@ -41,7 +41,7 @@ async def test_browser_setup_errors_allow_manual_fallback(browser_flow, stage):
     with pytest.raises(capture.QobuzTokenCaptureError) as raised:
         await capture.capture_qobuz_auth_token_via_browser()
     assert raised.value.__cause__ is error
-    if stage in ("context", "page", "navigation"):
+    if stage in {"context", "page", "navigation"}:
         browser.close.assert_awaited_once()
 
 

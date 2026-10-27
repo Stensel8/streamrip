@@ -24,15 +24,16 @@ lazy import m3u8
 lazy import requests
 lazy from Cryptodome.Cipher import AES, Blowfish
 lazy from Cryptodome.Util import Counter
+lazy from yt_dlp import YoutubeDL
+lazy from yt_dlp.utils import DownloadCancelled, DownloadError
 
 from .. import converter
 from ..exceptions import (
-    FFmpegNotFoundError,
     IncompleteDownloadError,
     NonStreamableError,
     restriction_message,
 )
-from ..utils.ffmpeg_utils import ffmpeg_missing_message, find_ffmpeg
+from ..utils.ffmpeg_utils import require_ffmpeg, run_ffmpeg
 
 logger = logging.getLogger("streamrip")
 
@@ -76,7 +77,7 @@ def _content_range(
         return None, None, None
 
     def num(group: str | None) -> int | None:
-        return None if group in (None, "*") else int(group)
+        return None if group in {None, "*"} else int(group)
 
     return num(m.group(1)), num(m.group(2)), num(m.group(3))
 
@@ -242,38 +243,43 @@ class BasicDownloadable(Downloadable):
 
 
 class DeezerDownloadable(Downloadable):
-    is_encrypted = re.compile("/m(?:obile|edia)/")
+    is_encrypted = re.compile(r"/m(?:obile|edia)/")
 
-    def __init__(self, session: aiohttp.ClientSession, info: dict):
-        """Take the quality, URL and size (if listed) from DeezerClient's info."""
-        logger.debug("Deezer info for downloadable: %s", info)
+    def __init__(
+        self,
+        session: aiohttp.ClientSession,
+        url: str,
+        quality: int,
+        track_id: str,
+        sizes: list[int] | None = None,
+    ):
+        """A track at the quality DeezerClient got its URL for; sizes, one per
+        quality (FILESIZE_*), only size the progress bar."""
         self.session = session
-        self.url = info["url"]
+        self.url = url
         self.source = "deezer"
 
         # The quality DeezerClient got a URL for is what the URL serves.
         # FILESIZE_* must not override it: those values are often 0 for a
         # format that is available, and clipping on them would label a FLAC
         # stream as .mp3 -- an unplayable file once tagged as ID3.
-        self.quality = info["quality"]
+        self.quality = quality
 
         # The CDN URL carries the container (.../<md5>.flac?hdnea=...); the
         # quality only decides for a URL that doesn't.
         url_name = self.url.split("?", 1)[0].rsplit("/", 1)[-1]
         url_ext = url_name.rsplit(".", 1)[-1].lower() if "." in url_name else ""
-        if url_ext in ("flac", "mp3"):
+        if url_ext in {"flac", "mp3"}:
             self.extension = url_ext
         else:
             self.extension = "flac" if self.quality >= 2 else "mp3"
 
         # Only sizes the progress bar until _download reads Content-Length.
-        sizes = info.get("quality_to_size") or []
+        sizes = sizes or []
         self._size = (
-            sizes[self.quality]
-            if 0 <= self.quality < len(sizes) and sizes[self.quality] > 0
-            else None
+            sizes[quality] if 0 <= quality < len(sizes) and sizes[quality] > 0 else None
         )
-        self.id = str(info["id"])
+        self.id = str(track_id)
 
     async def size(self) -> int:
         """The FILESIZE_* of the served quality, or 0 when Deezer gave none.
@@ -298,7 +304,7 @@ class DeezerDownloadable(Downloadable):
                 raise NonStreamableError(message)
 
             if self.is_encrypted.search(self.url) is None:
-                logger.debug(f"Deezer file at {self.url} not encrypted.")
+                logger.debug("Deezer file at %s not encrypted.", self.url)
                 await fast_async_download(
                     path, self.url, self.session.headers, callback, resume=self.resume
                 )
@@ -368,7 +374,7 @@ class TidalDownloadable(Downloadable):
         """A single-file Tidal download; no URL means NonStreamableError."""
         self.session = session
         self.source = "tidal"
-        self.extension = "flac" if codec.lower() in ("flac", "mqa") else "m4a"
+        self.extension = "flac" if codec.lower() in {"flac", "mqa"} else "m4a"
         if url is None:
             if restrictions:
                 raise NonStreamableError(restriction_message(restrictions[0]["code"]))
@@ -405,8 +411,9 @@ class TidalDownloadable(Downloadable):
         return AES.new(key, AES.MODE_CTR, counter=counter).decrypt(encrypted)
 
 
-class TidalDASHDownloadable(Downloadable):
-    """Tidal hi-res tracks served as an MPEG-DASH manifest (upstream PR #998).
+class SegmentedMP4Downloadable(Downloadable):
+    """Audio served as fragmented MP4: Tidal hi-res over MPEG-DASH (upstream
+    PR #998), SoundCloud AAC over HLS.
 
     The init segment and every media segment are fetched into a fragmented
     MP4, which ffmpeg then remuxes (stream copy, bit-identical audio) into the
@@ -419,14 +426,15 @@ class TidalDASHDownloadable(Downloadable):
         init_url: str,
         segment_urls: list[str],
         codec: str,
+        source: str,
     ):
-        """A hi-res DASH download: the init segment and the media segments."""
+        """A segmented download: the init segment and the media segments."""
         self.session = session
-        self.source = "tidal"
+        self.source = source
         self.url = init_url
         self.init_url = init_url
         self.segment_urls = segment_urls
-        self.extension = "flac" if codec.lower() in ("flac", "mqa") else "m4a"
+        self.extension = "flac" if codec.lower() in {"flac", "mqa"} else "m4a"
 
     async def size(self) -> int:
         """Total size of the init segment plus every media segment.
@@ -462,17 +470,13 @@ class TidalDASHDownloadable(Downloadable):
         return self._size
 
     async def _download(self, path: Path, callback):
-        """Fetch DASH segments and remux them to path, reporting bytes received.
+        """Fetch the segments and remux them to path, reporting bytes received.
 
         Raise FFmpegNotFoundError before fetching if ffmpeg is unavailable.
         Remove the temporary MP4 even if downloading or remuxing fails.
         """
-        ffmpeg_path = find_ffmpeg()
-        if ffmpeg_path is None:
-            raise FFmpegNotFoundError(
-                "ffmpeg not found, which Tidal hi-res (DASH) tracks need"
-            )
-        tmp_path = path.with_name(path.name + ".dash.mp4")
+        require_ffmpeg()
+        tmp_path = path.with_name(path.name + ".part.mp4")
         try:
             async with aiofiles.open(tmp_path, "wb") as f:
                 for url in (self.init_url, *self.segment_urls):
@@ -487,8 +491,7 @@ class TidalDASHDownloadable(Downloadable):
             # and ffmpeg's version stamp sitting in the output's tags,
             # meaningless outside that MP4. streamrip's own tagger writes
             # the real tags right after this step anyway.
-            proc = await asyncio.create_subprocess_exec(
-                ffmpeg_path,
+            await run_ffmpeg(
                 "-i",
                 tmp_path,
                 "-map_metadata",
@@ -497,58 +500,43 @@ class TidalDASHDownloadable(Downloadable):
                 "+bitexact",
                 "-c",
                 "copy",
-                "-y",
-                path,
-                stdin=asyncio.subprocess.DEVNULL,
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.PIPE,
+                output=path,
+                failure=f"ffmpeg failed to remux the {self.source.capitalize()} stream",
             )
-            _, stderr = await proc.communicate()
-            if proc.returncode != 0 or not path.is_file():
-                # Without this a failed remux is silent and the track would be
-                # recorded as downloaded with nothing on disk.
-                raise NonStreamableError(
-                    f"ffmpeg failed to remux Tidal DASH stream (exit "
-                    f"{proc.returncode}): {stderr.decode(errors='replace')[-300:]}"
-                )
         finally:
             tmp_path.unlink(missing_ok=True)
 
 
 class SoundcloudDownloadable(Downloadable):
-    def __init__(self, session, info: dict):
-        """A SoundCloud file: an MP3, a progressive download or an original upload."""
+    def __init__(self, session, url: str, file_type: str, extension: str = "mp3"):
+        """A SoundCloud file: MP3 segments ("hls"), one file ("progressive", an
+        MP3 or AAC as extension says) or an original upload ("original"), made
+        FLAC. AAC segments are a SegmentedMP4Downloadable."""
+        if file_type not in {"hls", "progressive", "original"}:
+            raise ValueError(f"Invalid SoundCloud file type: {file_type}")
         self.session = session
-        self.file_type = info["type"]
+        self.url = url
+        self.file_type = file_type
         self.source = "soundcloud"
-        if self.file_type in ("mp3", "progressive"):
-            self.extension = "mp3"
-        elif self.file_type == "original":
-            self.extension = "flac"
-        else:
-            raise Exception(f"Invalid file type: {self.file_type}")
-        self.url = info["url"]
+        self.extension = "flac" if file_type == "original" else extension
 
     async def _download(self, path: Path, callback):
-        """Download by file type.
-
-        An MP3 comes as HLS segments, anything else in one piece; an original upload is
-        then converted to FLAC.
-        """
-        if self.file_type == "mp3":
-            await self._download_mp3(path, callback)
+        """Download by file type: segments joined, or one piece; an original
+        upload is then converted to FLAC."""
+        if self.file_type == "hls":
+            await self._download_hls(path, callback)
             return
         await fast_async_download(path, self.url, self.session.headers, callback)
         if self.file_type == "original":
             await converter.FLAC(path).convert()
 
     async def _segments(self) -> list:
-        """The HLS playlist's segments, for an "mp3" stream."""
+        """The HLS playlist's segments."""
         async with self.session.get(self.url) as resp:
             return m3u8.loads(await resp.text("utf-8")).segments
 
-    async def _download_mp3(self, path: Path, callback):
-        """Download every HLS segment concurrently, then concatenate them."""
+    async def _download_hls(self, path: Path, callback):
+        """Download every MP3 segment concurrently, then concatenate them."""
         segments = await self._segments()
         self._size = len(segments)  # progress counts segments, not bytes
         # Segments finish in any order; each has its own path, so they're
@@ -580,11 +568,8 @@ class SoundcloudDownloadable(Downloadable):
         callback(1)
 
     async def size(self) -> int:
-        """The size, or the segment count for an MP3.
-
-        Progress counts HLS segments for an MP3, so that is its size.
-        """
-        if self.file_type == "mp3":
+        """The size, or for segments their count: what progress counts."""
+        if self.file_type == "hls":
             self._size = len(await self._segments())
         return await super().size()
 
@@ -612,8 +597,6 @@ def _fetch_audio(url: str, directory: Path, verify_ssl: bool, report, stop) -> P
     Runs in a worker thread. The best AAC stream is taken (it is used as it is),
     else the best audio there is. Returns the path of the file.
     """
-    from yt_dlp import YoutubeDL
-    from yt_dlp.utils import DownloadCancelled, DownloadError
 
     class Quiet:
         """Keep yt-dlp's chatter out of the terminal; -v shows it."""
@@ -637,7 +620,7 @@ def _fetch_audio(url: str, directory: Path, verify_ssl: bool, report, stop) -> P
             raise DownloadCancelled
         got = status.get("downloaded_bytes") or 0
         # A small file may report nothing but "finished".
-        if status.get("status") in ("downloading", "finished") and got > sent:
+        if status.get("status") in {"downloading", "finished"} and got > sent:
             report(got - sent)
             sent = got
 
@@ -703,11 +686,7 @@ class YtDlpDownloadable(Downloadable):
 
     async def _download(self, path: Path, callback):
         """Fetch the audio with yt-dlp, then put it at path in the wanted format."""
-        ffmpeg_path = find_ffmpeg()
-        if ffmpeg_path is None:
-            raise FFmpegNotFoundError(
-                "ffmpeg not found, which the audio from YouTube needs"
-            )
+        require_ffmpeg()  # before a long fetch, not after it
         stop = threading.Event()
         report = _threadsafe(callback)
         directory = Path(tempfile.mkdtemp(prefix="__streamrip_ytdlp_"))
@@ -734,39 +713,23 @@ class YtDlpDownloadable(Downloadable):
             if fetched.suffix.lower() == ".m4a" and self.extension == "m4a":
                 fetched.move(path)
             else:
-                await self._encode(ffmpeg_path, fetched, path)
+                # Re-encoded to the wanted format, without its old tags.
+                await run_ffmpeg(
+                    "-i",
+                    fetched,
+                    "-vn",
+                    "-map_metadata",
+                    "-1",
+                    "-c:a",
+                    "aac" if self.extension == "m4a" else "libmp3lame",
+                    "-b:a",
+                    f"{self.bitrate}k",
+                    output=path,
+                    failure=f"ffmpeg failed to encode the audio as {self.extension}",
+                )
         finally:
             executor.shutdown(wait=False)
             shutil.rmtree(directory, ignore_errors=True)
-
-    async def _encode(self, ffmpeg_path: str, source: Path, path: Path):
-        """Re-encode the fetched audio to the wanted format, without its old tags."""
-        codec = "aac" if self.extension == "m4a" else "libmp3lame"
-        proc = await asyncio.create_subprocess_exec(
-            ffmpeg_path,
-            "-y",
-            "-loglevel",
-            "error",
-            "-i",
-            source,
-            "-vn",
-            "-map_metadata",
-            "-1",
-            "-c:a",
-            codec,
-            "-b:a",
-            f"{self.bitrate}k",
-            path,
-            stdin=asyncio.subprocess.DEVNULL,
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        _, stderr = await proc.communicate()
-        if proc.returncode != 0 or not path.is_file():
-            raise NonStreamableError(
-                f"ffmpeg failed to encode the audio as {self.extension} (exit "
-                f"{proc.returncode}): {stderr.decode(errors='replace')[-300:]}"
-            )
 
 
 async def concat_audio_files(
@@ -779,10 +742,7 @@ async def concat_audio_files(
     file is left. If a process fails or the call is cancelled, the others are
     killed and the intermediate files removed.
     """
-    ffmpeg_path = find_ffmpeg()
-    if ffmpeg_path is None:
-        raise FFmpegNotFoundError(ffmpeg_missing_message())
-
+    require_ffmpeg()
     if len(paths) == 1:
         paths[0].move(out)
         return
@@ -796,28 +756,16 @@ async def concat_audio_files(
         p.unlink(missing_ok=True)  # left behind by a run that failed
 
     limit = asyncio.Semaphore(max_processes)
-    started = []
 
     async def join(batch, outpath):
         async with limit:
-            proc = await asyncio.create_subprocess_exec(
-                ffmpeg_path,
+            await run_ffmpeg(
                 "-i",
                 f"concat:{'|'.join(map(str, batch))}",
                 "-acodec",
                 "copy",
-                "-loglevel",
-                "warning",
-                outpath,
-                stdin=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            started.append(proc)
-            _, stderr = await proc.communicate()
-        if proc.returncode != 0:
-            raise Exception(
-                f"FFMPEG returned with status code {proc.returncode}: "
-                f"{stderr.decode(errors='replace')[-300:]}"
+                output=outpath,
+                failure="ffmpeg failed to join the audio",
             )
 
     tasks = [
@@ -830,15 +778,11 @@ async def concat_audio_files(
         # Recurse on remaining batches
         await concat_audio_files(outpaths, out, ext)
     finally:
-        # When one batch fails, gather leaves the others running. Stop them and
-        # kill their processes before deleting the files those are writing.
+        # When one batch fails, gather leaves the others running. Stopping
+        # them makes run_ffmpeg kill their processes before their files go.
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
-        for proc in started:
-            if proc.returncode is None:
-                proc.kill()
-            await proc.wait()
         # The last one was moved into place; the rest are intermediates.
         for p in outpaths:
             p.unlink(missing_ok=True)

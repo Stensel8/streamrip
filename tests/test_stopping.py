@@ -23,7 +23,7 @@ def _waiting_command(signum, seen):
     @coro
     async def command():
         # A signal without a handler would end the whole test run: look first.
-        assert signal.getsignal(signum) not in (signal.SIG_DFL, signal.SIG_IGN)
+        assert signal.getsignal(signum) not in {signal.SIG_DFL, signal.SIG_IGN}
         asyncio.get_running_loop().call_later(0.05, os.kill, os.getpid(), signum)
         try:
             await asyncio.sleep(30)

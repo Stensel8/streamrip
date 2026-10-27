@@ -1,8 +1,7 @@
 import asyncio
 
 from streamrip.config import ArtistFilterConfig
-from streamrip.media.artist import Artist
-from streamrip.media.label import Label
+from streamrip.media.artist import Artist, Label
 
 
 class _FakeAlbum:

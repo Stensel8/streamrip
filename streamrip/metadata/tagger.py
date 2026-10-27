@@ -94,7 +94,7 @@ def _tag_values(meta: TrackMetadata) -> dict:
 
 def _flac_value(name: str, value):
     """Format a tag value for a FLAC Vorbis comment."""
-    if name in ("tracknumber", "discnumber", "tracktotal", "disctotal"):
+    if name in {"tracknumber", "discnumber", "tracktotal", "disctotal"}:
         return f"{int(value):02}"
     return value if isinstance(value, list) else str(value)
 
@@ -181,7 +181,7 @@ class Container(Enum):
     async def embed_cover(self, audio, cover_path: Path):
         """Embed the JPEG at cover_path as the front cover (picture type 3)."""
         if self == Container.FLAC and cover_path.stat().st_size > FLAC_MAX_BLOCKSIZE:
-            raise Exception("Cover art too big for FLAC")
+            raise ValueError("Cover art too big for FLAC")
         async with aiofiles.open(cover_path, "rb") as img:
             data = await img.read()
         match self:
@@ -233,7 +233,7 @@ async def tag_file(
     ext = path.suffix.lower().removeprefix(".")
     container = EXTENSION_CONTAINERS.get(ext)
     if container is None:
-        raise Exception(f"Invalid extension {ext}")
+        raise ValueError(f"Cannot tag .{ext} files")
 
     audio = container.get_mutagen_class(path)
     tags = container.get_tag_pairs(meta, exclude)

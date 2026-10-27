@@ -8,9 +8,9 @@ from rich.color import Color
 from rich.control import Control
 from rich.style import Style
 from rich.text import Text
+from textual.containers import Container
+from textual.widgets import Static
 lazy from PIL import Image, ImageOps
-lazy from textual.containers import Container
-lazy from textual.widgets import Static
 
 logger = logging.getLogger("streamrip")
 
