@@ -479,6 +479,37 @@ def test_the_pace_flag_takes_only_a_pace(tmp_path, pace, code):
     assert result.exit_code == code, result.output
 
 
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["--pace", "fast", "config", "path"],
+        ["config", "path", "--pace", "fast"],
+        ["config", "path", "--pace=FAST"],
+    ],
+)
+def test_the_pace_flag_goes_before_or_after_the_command(tmp_path, args):
+    """`streamrip search ... --pace fast` said "No such option": Click reads a
+    group's options only before its command."""
+    cfg = tmp_path / "config.toml"
+    set_user_defaults(cfg)
+    obj = {}
+    result = CliRunner().invoke(rip, ["--config-path", str(cfg), *args], obj=obj)
+    assert result.exit_code == 0, result.output
+    assert obj["config"].session.downloads.pacing == "fast"
+
+
+def test_a_command_keeps_its_own_short_options(tmp_path):
+    """Short options are not moved: -f is the group's --folder before a command,
+    and search's own --first after it."""
+    cfg = tmp_path / "config.toml"
+    set_user_defaults(cfg)
+    result = CliRunner().invoke(
+        rip, ["--config-path", str(cfg), "config", "path", "-f", "x"]
+    )
+    assert result.exit_code == 2
+    assert "No such option '-f'" in result.output
+
+
 # The real method, captured at import: conftest.py's autouse fixture silences
 # it for every test, this file's own included.
 _real_pacing_state_path = client_module.RequestClient._pacing_state_path
