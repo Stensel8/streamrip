@@ -174,7 +174,7 @@ async def test_the_spacing_eases_off_while_requests_go_through(sleeps):
 async def test_too_many_rate_limits_stop_the_run(sleeps):
     c = _client(_Response(429), _Response())
     c._limited_at = (0.0,) * (RATE_LIMIT_BUDGET - 1)
-    with pytest.raises(AccountHalt, match="Stopped to protect your account"):
+    with pytest.raises(AccountHalt, match="Paused to protect your account"):
         await c._api_request("tracks/1")
     # Every request after it stops too, without being sent.
     with pytest.raises(AccountHalt):
