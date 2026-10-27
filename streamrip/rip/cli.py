@@ -291,6 +291,38 @@ class _StreamripGroup(_ColoredHelp, click.Group):
             if previous_sigterm is not None:
                 signal.signal(signal.SIGTERM, previous_sigterm)
 
+    def parse_args(self, ctx, args):
+        """Take this group's long options after the command too, as in
+        `streamrip search tidal artist NAME --pace fast`: Click only reads them
+        before it, and said "No such option" after. Not the short ones, nor a
+        long one a command has itself: those stay the command's."""
+        theirs = set()
+        commands = list(self.commands.values())
+        while commands:
+            command = commands.pop()
+            theirs.update(name for param in command.params for name in param.opts)
+            commands += getattr(command, "commands", {}).values()
+        own = {
+            name: param
+            for param in self.params
+            for name in param.opts
+            if name.startswith("--") and name not in theirs
+        }
+        front, rest = [], []
+        args = iter(args)
+        for arg in args:
+            if arg == "--":
+                rest += [arg, *args]
+                break
+            name, eq, _ = arg.partition("=")
+            if (param := own.get(name)) is None:
+                rest.append(arg)
+                continue
+            front.append(arg)
+            if not (eq or param.is_flag) and (value := next(args, None)) is not None:
+                front.append(value)
+        return super().parse_args(ctx, front + rest)
+
     def _check_and_run(self, *args, **kwargs):
         notice = None
         command_line = args[0] if args else kwargs.get("args")
