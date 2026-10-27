@@ -9,6 +9,7 @@ import sys
 import tomllib
 from contextlib import asynccontextmanager, closing
 from functools import wraps
+from itertools import starmap
 from pathlib import Path
 from typing import Any
 lazy import asyncio
@@ -30,12 +31,12 @@ from .stopping import terminate
 lazy from .. import db
 lazy from ..client import new_session
 lazy from ..config import Config, set_user_defaults
-lazy from ..console import console
+lazy from ..console import console, err_console
 lazy from ..exceptions import (
+    AccountHalt,
     AuthenticationError,
     FFmpegNotFoundError,
     MissingCredentialsError,
-    RateLimitHalt,
 )
 lazy from ..media.csv_playlist import read_tracks
 lazy from ..utils.ssl_utils import print_ssl_error_help
@@ -118,7 +119,7 @@ def coro(f):
             FFmpegNotFoundError,
             AuthenticationError,
             MissingCredentialsError,
-            RateLimitHalt,
+            AccountHalt,
         ) as e:
             console.print(escape(str(e)), style="red")
             sys.exit(1)
@@ -174,7 +175,7 @@ def _print_update_notice(
     latest_version: str, notes: str | None, is_release: bool
 ) -> None:
     """Print the available-update message and its release notes, if any."""
-    console.print(
+    err_console.print(
         f"[green]A new version of streamrip [cyan]v{latest_version}"
         f"[/cyan] is available.[/green]\n"
         f"This installation is in [cyan]{escape(sys.prefix)}[/cyan]. Update it with:\n"
@@ -184,7 +185,7 @@ def _print_update_notice(
         f"{_git_note()}\n"
     )
     if notes:
-        console.print(Markdown(notes))
+        err_console.print(Markdown(notes))
 
 
 def _config_path_from(command_line: list[str] | None) -> Path:
@@ -211,12 +212,12 @@ def _update_check_disabled(config_path: Path) -> bool:
     that cannot be read leaves the check on: `rip()` is what reports a broken
     config.
     """
-    if os.environ.get("STREAMRIP_NO_UPDATE_CHECK", "").lower() not in (
+    if os.environ.get("STREAMRIP_NO_UPDATE_CHECK", "").lower() not in {
         "",
         "0",
         "false",
         "no",
-    ):
+    }:
         return True
     try:
         with config_path.open("rb") as f:
@@ -400,7 +401,7 @@ def rip(
         logger.setLevel(logging.INFO)
 
     if not config_path.is_file():
-        console.print(
+        err_console.print(
             f"No file found at [bold cyan]{config_path}[/bold cyan], creating default config.",
         )
         set_user_defaults(config_path)
@@ -523,9 +524,9 @@ def config_open(ctx, vim):
     console.print(f"Opening file at [bold cyan]{config_path}")
     if vim:
         if shutil.which("nvim") is not None:
-            subprocess.run(["nvim", config_path])
+            subprocess.run(["nvim", config_path], check=False)
         elif shutil.which("vim") is not None:
-            subprocess.run(["vim", config_path])
+            subprocess.run(["vim", config_path], check=False)
         else:
             logger.error("Could not find nvim or vim. Using default launcher.")
             click.launch(str(config_path))
@@ -552,9 +553,10 @@ def config_reset(ctx, yes):
 @config.command("path")
 @click.pass_context
 def config_path(ctx):
-    """Display the path of the config file."""
+    """Print the path of the config file: the path and nothing else, so a
+    script can use it."""
     config_path = ctx.obj["config_path"]
-    console.print(f"Config path: [bold cyan]'{config_path}'")
+    click.echo(config_path)
 
 
 @rip.group()
@@ -580,10 +582,12 @@ def database_browse(ctx, table):
 
     if table.lower() == "downloads":
         t = Table("Row", "Source", "ID", title="Downloads database")
-        rows = [
-            db.split_download_key(key)
-            for (key,) in db.Downloads(cfg.session.database.downloads_path).all()
-        ]
+        rows = list(
+            starmap(
+                db.split_download_key,
+                db.Downloads(cfg.session.database.downloads_path).all(),
+            )
+        )
     else:
         t = Table(
             "Row", "Source", "Media Type", "ID", title="Failed downloads database"
@@ -618,11 +622,11 @@ def database_clear(ctx, table, yes):
     cfg = _require_config(ctx)
 
     tables = []
-    if table in ("downloads", "all"):
+    if table in {"downloads", "all"}:
         tables.append(
             ("downloaded track(s)", db.Downloads(cfg.session.database.downloads_path))
         )
-    if table in ("failed", "all"):
+    if table in {"failed", "all"}:
         tables.append(
             (
                 "failed download(s)",
@@ -942,14 +946,14 @@ async def csv_list(ctx, source, fallback_source, path):
         ["track", "album", "artist", "playlist", "label"], case_sensitive=False
     ),
 )
-@click.argument("id")
+@click.argument("item_id", metavar="ID")
 @click.pass_context
 @coro
-async def id(ctx, source, media_type, id):
+async def id(ctx, source, media_type, item_id):
     """Download an item by ID."""
     _require_config(ctx)
     async with main_session(ctx) as main:
-        await main.add_by_id(source, media_type, id)
+        await main.add_by_id(source, media_type, item_id)
         await main.resolve()
         await main.rip()
 

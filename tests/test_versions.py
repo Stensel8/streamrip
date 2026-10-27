@@ -10,7 +10,7 @@ toml_version_re = re.compile(r'version\s*\=\s*"([\d\.]+)"')
 
 @pytest.fixture
 def pyproject_version() -> str:
-    m = toml_version_re.search(Path("pyproject.toml").read_text())
+    m = toml_version_re.search(Path("pyproject.toml").read_text(encoding="utf-8"))
     assert m is not None
     return m.group(1)
 

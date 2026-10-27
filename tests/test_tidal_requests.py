@@ -3,7 +3,7 @@
 import asyncio
 import contextlib
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import aiohttp
 import pytest
@@ -20,7 +20,7 @@ from streamrip.client.client import (
 )
 from streamrip.client.tidal import TidalClient
 from streamrip.config import Config
-from streamrip.exceptions import ItemNotFoundError, RateLimitHalt
+from streamrip.exceptions import AccountHalt, AuthenticationError, ItemNotFoundError
 
 
 class _Response:
@@ -71,7 +71,9 @@ def sleeps(monkeypatch):
         slept.append(delay)
         now += delay
 
-    monkeypatch.setattr(client_module, "time", SimpleNamespace(monotonic=lambda: now))
+    monkeypatch.setattr(
+        client_module, "time", SimpleNamespace(monotonic=lambda: now, time=lambda: now)
+    )
     monkeypatch.setattr(asyncio, "sleep", fake_sleep)
     return slept
 
@@ -172,10 +174,10 @@ async def test_the_spacing_eases_off_while_requests_go_through(sleeps):
 async def test_too_many_rate_limits_stop_the_run(sleeps):
     c = _client(_Response(429), _Response())
     c._limited_at = (0.0,) * (RATE_LIMIT_BUDGET - 1)
-    with pytest.raises(RateLimitHalt, match="Stopped to protect your account"):
+    with pytest.raises(AccountHalt, match="Stopped to protect your account"):
         await c._api_request("tracks/1")
     # Every request after it stops too, without being sent.
-    with pytest.raises(RateLimitHalt):
+    with pytest.raises(AccountHalt):
         await c._api_request("tracks/2")
     assert c.session.calls == 1
 
@@ -188,7 +190,7 @@ async def test_rate_limits_from_long_ago_do_not_count(sleeps):
 
 
 def test_the_stop_gets_past_the_handlers_that_log_and_go_on():
-    assert not issubclass(RateLimitHalt, Exception)
+    assert not issubclass(AccountHalt, Exception)
 
 
 async def test_not_found_is_not_retried(sleeps):
@@ -199,8 +201,75 @@ async def test_not_found_is_not_retried(sleeps):
     assert sleeps == []
 
 
+async def test_a_lapsed_login_is_renewed_and_the_request_retried(sleeps):
+    c = _client(_Response(401), _Response(body={"id": 1}))
+    c._renew_login = AsyncMock(return_value=True)
+    assert await c._api_request("tracks/1") == {"id": 1}
+    assert c.session.calls == 2
+    c._renew_login.assert_awaited_once()
+
+
+async def test_a_401_without_a_renewal_reaches_the_caller(sleeps):
+    c = _client(_Response(401))
+    c._renew_login = AsyncMock(return_value=False)
+    with pytest.raises(aiohttp.ClientResponseError):
+        await c._api_request("tracks/1")
+    assert c.session.calls == 1
+
+
+async def test_a_request_is_renewed_only_once(sleeps):
+    c = _client(_Response(401), _Response(401))
+    c._renew_login = AsyncMock(return_value=True)
+    with pytest.raises(aiohttp.ClientResponseError):
+        await c._api_request("tracks/1")
+    assert c.session.calls == 2
+    c._renew_login.assert_awaited_once()
+
+
+async def test_renew_login_refreshes_at_most_once_a_minute(monkeypatch):
+    """Requests in flight together all hit the expiry at once; they retry on
+    the one refresh, so the refresh token rotates only once."""
+    c = _client()
+    refreshed = 0
+
+    async def refresh():
+        nonlocal refreshed
+        refreshed += 1
+
+    monkeypatch.setattr(c, "_refresh_access_token", refresh)
+    assert await c._renew_login()
+    assert await c._renew_login()  # a sibling, in the same minute
+    assert refreshed == 1
+
+
+async def test_a_refused_renewal_stops_the_run(monkeypatch):
+    """A suspended account refuses the refresh: every track after it would
+    ask again and be refused too."""
+    c = _client()
+    refreshed = 0
+
+    async def refused():
+        nonlocal refreshed
+        refreshed += 1
+        raise AuthenticationError("Tidal refused the token refresh: suspended")
+
+    monkeypatch.setattr(c, "_refresh_access_token", refused)
+    with pytest.raises(AccountHalt, match=r"login failed mid-run: .*suspended"):
+        await c._renew_login()
+    # A sibling that was waiting for the renewal does not ask again, and no
+    # request after it is sent.
+    with pytest.raises(AccountHalt):
+        await c._renew_login()
+    with pytest.raises(AccountHalt):
+        await c._api_request("tracks/1")
+    assert refreshed == 1
+    assert c.session.calls == 0
+
+
 async def test_other_client_errors_are_not_retried(sleeps):
     c = _client(_Response(401))
+    # Without a renewal behind it, a 401 is just another client error.
+    c._renew_login = AsyncMock(return_value=False)
     with pytest.raises(aiohttp.ClientResponseError):
         await c._api_request("tracks/1")
     assert c.session.calls == 1

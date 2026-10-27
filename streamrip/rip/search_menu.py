@@ -6,12 +6,16 @@ from collections import OrderedDict
 from typing import ClassVar
 
 from rich.text import Text
+
+# Not lazy: the class below is made of them. This module is lazy itself, in
+# main.py, so Textual still loads only for the search menu.
+from textual import on
+from textual.app import App
+from textual.binding import Binding
+from textual.widgets import Input, OptionList, Static
 lazy import aiohttp
-lazy from textual import on
-lazy from textual.app import App, ComposeResult
-lazy from textual.binding import Binding
+lazy from textual.app import ComposeResult
 lazy from textual.containers import Horizontal, VerticalScroll
-lazy from textual.widgets import Input, OptionList, Static
 lazy from textual.widgets.option_list import Option
 
 from ..client import new_session

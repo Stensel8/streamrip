@@ -128,7 +128,7 @@ async def test_a_cancelled_download_waits_for_its_thread_before_the_folder_goes(
 
     monkeypatch.setattr("streamrip.client.downloadable._fetch_audio", fetch)
     monkeypatch.setattr(
-        "streamrip.client.downloadable.find_ffmpeg", lambda: "/usr/bin/ffmpeg"
+        "streamrip.utils.ffmpeg_utils.find_ffmpeg", lambda: "/usr/bin/ffmpeg"
     )
     downloadable = YtDlpDownloadable(None, "https://example.com/x", "m4a")
     task = asyncio.create_task(
@@ -168,7 +168,7 @@ async def test_a_download_whose_thread_never_began_ends_when_cancelled(
 
     monkeypatch.setattr("streamrip.client.downloadable.ThreadPoolExecutor", NeverRuns)
     monkeypatch.setattr(
-        "streamrip.client.downloadable.find_ffmpeg", lambda: "/usr/bin/ffmpeg"
+        "streamrip.utils.ffmpeg_utils.find_ffmpeg", lambda: "/usr/bin/ffmpeg"
     )
     downloadable = YtDlpDownloadable(None, "https://example.com/x", "m4a")
     task = asyncio.create_task(
@@ -185,7 +185,7 @@ async def test_a_download_whose_thread_never_began_ends_when_cancelled(
 
 
 async def test_without_ffmpeg_nothing_is_fetched(monkeypatch, tmp_path):
-    monkeypatch.setattr("streamrip.client.downloadable.find_ffmpeg", lambda: None)
+    monkeypatch.setattr("streamrip.utils.ffmpeg_utils.find_ffmpeg", lambda: None)
     downloadable = YtDlpDownloadable(None, "http://127.0.0.1:1/unused.m4a", "m4a")
 
     with pytest.raises(FFmpegNotFoundError):

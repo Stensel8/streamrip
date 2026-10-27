@@ -25,7 +25,7 @@ async def test_main_refuses_to_start_without_ffmpeg():
     """Reject context entry with installation guidance when ffmpeg is missing."""
     main = _main()
     with (
-        patch("streamrip.rip.main.find_ffmpeg", return_value=None),
+        patch("streamrip.utils.ffmpeg_utils.find_ffmpeg", return_value=None),
         pytest.raises(FFmpegNotFoundError, match="No ffmpeg installation"),
     ):
         async with main:
@@ -35,7 +35,9 @@ async def test_main_refuses_to_start_without_ffmpeg():
 async def test_main_starts_with_ffmpeg():
     """Allow context entry and return the session when ffmpeg is available."""
     main = _main()
-    with patch("streamrip.rip.main.find_ffmpeg", return_value="/usr/bin/ffmpeg"):
+    with patch(
+        "streamrip.utils.ffmpeg_utils.find_ffmpeg", return_value="/usr/bin/ffmpeg"
+    ):
         async with main as entered:
             assert entered is main
 
@@ -59,7 +61,7 @@ def test_every_login_command_checks_ffmpeg_first(tmp_path, command):
         "csv": ["csv", str(tracks), "--source", "tidal"],
     }[command]
     with (
-        patch("streamrip.rip.main.find_ffmpeg", return_value=None),
+        patch("streamrip.utils.ffmpeg_utils.find_ffmpeg", return_value=None),
         patch.object(Main, "get_logged_in_client", AsyncMock()) as login,
         # The console may hold on to the stdout it was created with, so check
         # what is printed instead of what CliRunner captures.

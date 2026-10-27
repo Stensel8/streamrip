@@ -11,12 +11,18 @@ lazy import aiohttp
 
 from .. import progress
 from ..client import Client, new_session
+from ..client.audio_match import MatchTrack, rank, score, simplify_title
 from ..console import console
-from ..exceptions import NonStreamableError
 from ..filepath_utils import clean_filename
-from ..metadata import AlbumMetadata, PlaylistMetadata, SearchResults, TrackMetadata
+from ..metadata import (
+    AlbumMetadata,
+    PlaylistMetadata,
+    SearchResults,
+    Summary,
+    TrackMetadata,
+)
 from .artwork import download_artwork
-from .media import Media, Pending, rip_tracks
+from .media import Media, Pending, PendingItem, rip_tracks
 from .track import Track, fetch_downloadable, fetch_track_meta
 lazy from ..config import Config
 lazy from ..db import Database
@@ -31,6 +37,11 @@ RESOLVE_CONCURRENCY = 20
 # Local work budget for untrusted Last.fm counts: at most 200 pages of 50.
 LASTFM_MAX_TRACKS = 10_000
 
+# A list's track is searched for: from this score on a search result is the
+# track (the threshold of Music-Sync), and this many results are looked at.
+MIN_SCORE = 0.8
+SEARCH_LIMIT = 5
+
 
 def _playlist_folder(config: Config, name: str) -> Path:
     """Return the sanitized download folder for a playlist named name.
@@ -40,13 +51,174 @@ def _playlist_folder(config: Config, name: str) -> Path:
     """
     c = config.session
     folder = clean_filename(name, c.filepaths.restrict_characters)
-    if folder in ("", ".", ".."):
+    if folder in {"", ".", ".."}:
         raise ValueError(f"Invalid playlist folder: {name!r}")
     root = Path(c.downloads.folder).resolve()
     path = (root / folder).resolve()
     if path == root or not path.is_relative_to(root):
         raise ValueError(f"Invalid playlist folder outside download root: {name!r}")
     return path
+
+
+def clock_ms(text: str | None) -> int | None:
+    """ "3:45" or "1:02:03" in milliseconds, or None for anything else.
+
+    A bare number could be seconds or milliseconds, so it says nothing.
+    """
+    if not text or not re.fullmatch(r"\d+(?::\d{1,2}){1,2}", text):
+        return None
+    seconds = 0
+    for part in text.split(":"):
+        seconds = seconds * 60 + int(part)
+    return seconds * 1000
+
+
+def _as_track(result: Summary) -> MatchTrack:
+    """A search result as a track to compare the wanted one with."""
+    details = dict(result.details)
+    return MatchTrack(
+        result.name,
+        [result.artist] if result.artist else [],
+        details.get("Album", ""),
+        clock_ms(details.get("Length")),
+    )
+
+
+def best_result(
+    wanted: MatchTrack, results: list[Summary]
+) -> tuple[Summary, float] | None:
+    """The search result that is `wanted` and its score, if one is good enough."""
+    candidates = [(result, _as_track(result)) for result in results]
+    best = max(candidates, key=lambda c: rank(wanted, c[1]), default=None)
+    if best is None or (found := score(wanted, best[1])) < MIN_SCORE:
+        return None
+    return best[0], found
+
+
+def queries(wanted: MatchTrack) -> list[str]:
+    """What to search for: the title without brackets and "feat." first, which is
+    how a catalogue most often has it, then the title as the list has it, then
+    the title before the artist: some catalogues rank that better (Qobuz has the
+    original of "Get Lucky" in the first results of "Get Lucky Daft Punk" only).
+    """
+    title = simplify_title(wanted.title)
+    return list(
+        dict.fromkeys(
+            f"{first} {second}".strip()
+            for first, second in [
+                (wanted.artist, title),
+                (wanted.artist, wanted.title),
+                (title, wanted.artist),
+            ]
+        )
+    )
+
+
+async def find_track(
+    wanted: MatchTrack, clients: list[Client]
+) -> tuple[Client, Summary] | None:
+    """Search each client in turn for a track: the first that has it, and its
+    result there."""
+    for client in clients:
+        for query in queries(wanted):
+            try:
+                pages = await client.search("track", query, limit=SEARCH_LIMIT)
+                results = SearchResults.from_pages(client.source, "track", pages)
+            except Exception as e:
+                # One failed search is no reason to give up the list.
+                logger.warning(
+                    "Searching %s for %r failed: %s", client.source, query, e
+                )
+                continue
+            if (hit := best_result(wanted, results.results)) is not None:
+                logger.debug(
+                    "%s is %r on %s (score %.2f, searched for %r)",
+                    wanted,
+                    hit[0].name,
+                    client.source,
+                    hit[1],
+                    query,
+                )
+                return client, hit[0]
+    return None
+
+
+async def searched_playlist(
+    name: str,
+    tracks: list[MatchTrack],
+    client: Client,
+    fallback_client: Client | None,
+    config: Config,
+    db: Database,
+) -> Playlist | None:
+    """A playlist of the tracks found by searching client (and fallback_client
+    for what it lacks), in a folder named name; None if none was found."""
+    try:
+        folder = _playlist_folder(config, name)
+    except ValueError as e:
+        logger.error("Error creating playlist: %s", e)
+        return None
+
+    clients = [c for c in (client, fallback_client) if c is not None]
+    found = failed = 0
+
+    def status() -> Text:
+        return Text.assemble(
+            f"Searching {client.source.title()} for the tracks (",
+            (f"{found} found", "bold green"),
+            ", ",
+            (f"{failed} not found", "bold red"),
+            ", ",
+            (f"{len(tracks)} total", "bold"),
+            ")",
+        )
+
+    show = config.session.cli.progress_bars
+    with console.status(status(), spinner="moon") if show else nullcontext() as spin:
+
+        async def find(wanted: MatchTrack):
+            """The (client, result) for one track, or None; keeps the count."""
+            nonlocal found, failed
+            hit = await find_track(wanted, clients)
+            if hit is None:
+                failed += 1
+                logger.warning("Not found: %s", wanted)
+            else:
+                found += 1
+            if spin is not None:
+                spin.update(status())
+            return hit
+
+        hits = await asyncio.gather(*map(find, tracks))
+
+    pending: list[PendingPlaylistTrack] = []
+    seen: set[tuple[str, str]] = set()
+    for position, hit in enumerate(hits, start=1):
+        if hit is None:
+            continue
+        source_client, result = hit
+        # A track listed twice must not be downloaded twice at the same time.
+        if (source_client.source, result.id) in seen:
+            logger.info("Listed twice, downloaded once: %s", tracks[position - 1])
+            continue
+        seen.add((source_client.source, result.id))
+        pending.append(
+            PendingPlaylistTrack(
+                result.id,
+                source_client,
+                config,
+                folder,
+                name,
+                position,
+                db,
+                total=len(tracks),
+            )
+        )
+    logger.info("%s: found %s of %s tracks", name, found, len(tracks))
+    if not pending:
+        logger.error("None of the tracks of %s was found", name)
+        return None
+    return Playlist(name, config, client, pending)
 
 
 @dataclass(slots=True)
@@ -182,156 +354,54 @@ class Playlist(Media):
 
 
 @dataclass(slots=True)
-class PendingPlaylist(Pending):
-    id: str
-    client: Client
-    config: Config
-    db: Database
-
+class PendingPlaylist(PendingItem):
     async def resolve(self) -> Playlist | None:
         """Fetch the playlist's metadata and resolve into a Playlist of tracks."""
-        try:
-            resp = await self.client.get_metadata(self.id, "playlist")
-        except NonStreamableError as e:
-            logger.error(
-                f"Playlist {self.id} not available to stream on {self.client.source} ({e})",
-            )
+        if (resp := await self._fetch("playlist")) is None:
             return None
-
         try:
             meta = PlaylistMetadata.from_resp(resp, self.client.source)
             folder = _playlist_folder(self.config, meta.name)
         except Exception as e:
-            logger.error(f"Error creating playlist: {e}")
+            logger.error("Error creating playlist: %s", e)
             return None
-        name = meta.name
-        ids = meta.ids
         tracks = [
             PendingPlaylistTrack(
-                id,
+                track_id,
                 self.client,
                 self.config,
                 folder,
-                name,
+                meta.name,
                 position,
                 self.db,
-                total=len(ids),
+                total=len(meta.ids),
             )
-            for position, id in enumerate(ids, start=1)
+            for position, track_id in enumerate(meta.ids, start=1)
         ]
-        return Playlist(name, self.config, self.client, tracks)
+        return Playlist(meta.name, self.config, self.client, tracks)
 
 
 @dataclass(slots=True)
 class PendingLastfmPlaylist(Pending):
+    """A Last.fm playlist, its tracks searched on a source (see searched_playlist)."""
+
     lastfm_url: str
     client: Client
     fallback_client: Client | None
     config: Config
     db: Database
 
-    @dataclass(slots=True)
-    class Status:
-        found: int
-        failed: int
-        total: int
-
-        def text(self) -> Text:
-            """Render the current found/failed/total counts as status text."""
-            return Text.assemble(
-                "Searching for last.fm tracks (",
-                (f"{self.found} found", "bold green"),
-                ", ",
-                (f"{self.failed} failed", "bold red"),
-                ", ",
-                (f"{self.total} total", "bold"),
-                ")",
-            )
-
     async def resolve(self) -> Playlist | None:
-        """Search each Last.fm entry on the streaming source and build a Playlist."""
+        """Read the playlist from Last.fm, then find its tracks."""
         try:
-            playlist_title, titles_artists = await self._parse_lastfm_playlist(
-                self.lastfm_url,
-            )
-            folder = _playlist_folder(self.config, playlist_title)
+            title, titles_artists = await self._parse_lastfm_playlist(self.lastfm_url)
         except Exception as e:
             logger.error("Error occurred while parsing last.fm page: %s", e)
             return None
-
-        s = self.Status(0, 0, len(titles_artists))
-        show = self.config.session.cli.progress_bars
-        with (
-            console.status(s.text(), spinner="moon") if show else nullcontext() as spin
-        ):
-
-            def callback():
-                """Refresh the spinner's status text after a query completes."""
-                if spin is not None:
-                    spin.update(s.text())
-
-            results = await asyncio.gather(
-                *(self._make_query(f"{t} {a}", s, callback) for t, a in titles_artists)
-            )
-
-        pending_tracks = []
-        for pos, (id, from_fallback) in enumerate(results, start=1):
-            if id is None:
-                logger.warning(f"No results found for {titles_artists[pos - 1]}")
-                continue
-
-            if from_fallback:
-                assert self.fallback_client is not None
-                client = self.fallback_client
-            else:
-                client = self.client
-
-            pending_tracks.append(
-                PendingPlaylistTrack(
-                    id,
-                    client,
-                    self.config,
-                    folder,
-                    playlist_title,
-                    pos,
-                    self.db,
-                    total=len(results),
-                ),
-            )
-
-        return Playlist(playlist_title, self.config, self.client, pending_tracks)
-
-    async def _make_query(
-        self, query: str, status: Status, callback
-    ) -> tuple[str | None, bool]:
-        """Search the main source, then the fallback, for one track.
-
-        Returns the first hit's ID (None if nothing matched) and whether it
-        came from the fallback source. A search that errors counts as no hit,
-        so one bad query doesn't sink the whole playlist.
-        """
-        hit: tuple[str | None, bool] = (None, False)
-        for client, is_fallback in ((self.client, False), (self.fallback_client, True)):
-            if client is None:
-                continue
-            try:
-                pages = await client.search("track", query, limit=1)
-                found = SearchResults.from_pages(client.source, "track", pages)
-            except Exception as e:
-                logger.warning(f"Searching {client.source} for {query!r} failed: {e}")
-                continue
-            if found.results:
-                logger.debug(f"Found result for {query} on {client.source}")
-                hit = (found.results[0].id, is_fallback)
-                break
-
-        if hit[0] is None:
-            logger.debug(f"No result found for {query}")
-            status.failed += 1
-        else:
-            status.found += 1
-        callback()
-        return hit
+        tracks = [MatchTrack(t, [a]) for t, a in titles_artists]
+        return await searched_playlist(
+            title, tracks, self.client, self.fallback_client, self.config, self.db
+        )
 
     async def _parse_lastfm_playlist(
         self,
@@ -368,13 +438,13 @@ class PendingLastfmPlaylist(Pending):
             page = await fetch(session, playlist_url)
             playlist_title_match = re_playlist_title_match.search(page)
             if playlist_title_match is None:
-                raise Exception("Error finding title from response")
+                raise ValueError("no playlist title on the last.fm page")
 
             playlist_title: str = html.unescape(playlist_title_match.group(1))
 
             total_tracks_match = re_total_tracks.search(page)
             if total_tracks_match is None:
-                raise Exception("Error finding the track count on the last.fm page")
+                raise ValueError("no track count on the last.fm page")
             total_tracks = int(total_tracks_match.group(1))
             if total_tracks > LASTFM_MAX_TRACKS:
                 raise ValueError(

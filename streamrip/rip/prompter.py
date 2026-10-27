@@ -145,8 +145,10 @@ class QobuzPrompter(CredentialPrompter):
             options.append(
                 (
                     "window",
-                    "Open an isolated browser window that logs in and captures\n"
-                    "     the token automatically",
+                    (
+                        "Open an isolated browser window that logs in and captures\n"
+                        "     the token automatically"
+                    ),
                 )
             )
         # The script posts the token to 127.0.0.1, which only a browser on this
@@ -156,8 +158,10 @@ class QobuzPrompter(CredentialPrompter):
             options.append(
                 (
                     "script",
-                    "Log in in your own browser, then paste a short script into\n"
-                    "     its console to send the token back",
+                    (
+                        "Log in in your own browser, then paste a short script into\n"
+                        "     its console to send the token back"
+                    ),
                 )
             )
         options.append(("hand", "Copy the user id and token from your browser by hand"))
@@ -323,8 +327,10 @@ class DeezerPrompter(CredentialPrompter):
             options.append(
                 (
                     "window",
-                    "Open an isolated browser window that logs in and captures\n"
-                    "     the ARL cookie automatically",
+                    (
+                        "Open an isolated browser window that logs in and captures\n"
+                        "     the ARL cookie automatically"
+                    ),
                 )
             )
         options.append(("hand", "Copy the ARL cookie from your browser by hand"))
@@ -397,11 +403,12 @@ class SpotifyPrompter(CredentialPrompter):
         while True:
             try:
                 await self._log_in()
-                return
             except (SpotifyLoginError, AuthenticationError) as e:
                 console.print(f"[yellow]{e}")
                 if not Confirm.ask("Try again?", default=True):
                     raise AuthenticationError("Spotify login cancelled.") from e
+            else:
+                return
 
     def _explain_app(self):
         """Say what the user has to make, and where, before streamrip can log in."""

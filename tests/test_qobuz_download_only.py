@@ -18,7 +18,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from streamrip.client.qobuz import QobuzClient, file_url_signature
+from streamrip.client.qobuz import FORMAT_IDS, QobuzClient, file_url_signature
 from streamrip.config import Config
 
 
@@ -53,7 +53,7 @@ def _login_resp(parameters):
 async def _login(monkeypatch, parameters) -> QobuzClient:
     client = _make_client()
     monkeypatch.setattr(
-        "streamrip.client.qobuz.new_session", lambda **_: _FakeSession()
+        "streamrip.client.client.new_session", lambda **_: _FakeSession()
     )
     monkeypatch.setattr(
         client,
@@ -111,7 +111,7 @@ async def test_the_file_url_request_uses_the_matching_intent(
     params = captured["params"]
     assert params["intent"] == intent
     assert params["request_sig"] == file_url_signature(
-        QobuzClient.get_quality(quality), intent, track_id, params["request_ts"], secret
+        FORMAT_IDS[quality - 1], intent, track_id, params["request_ts"], secret
     )
 
 

@@ -2,18 +2,23 @@
 
 import asyncio
 import contextlib
+import json
 import logging
 import math
+import os
 import random
 import time
 from abc import ABC, abstractmethod
+from typing import Any
 lazy from collections.abc import Awaitable, Callable
+lazy from pathlib import Path
 
 lazy import aiohttp
 lazy import aiolimiter
 
-from ..exceptions import RateLimitHalt
+from ..exceptions import AccountHalt
 from ..utils.ssl_utils import get_aiohttp_connector_kwargs
+lazy from ..config import Config
 lazy from .downloadable import Downloadable
 
 logger = logging.getLogger("streamrip")
@@ -69,6 +74,11 @@ def retry_after(resp, attempt: int) -> float:
     return min(seconds, MAX_RETRY_DELAY)
 
 
+def _last_hour(times, now: float) -> tuple[float, ...]:
+    """The times less than RATE_LIMIT_WINDOW before now, later ones included."""
+    return tuple(t for t in times if now - t < RATE_LIMIT_WINDOW)
+
+
 class RequestClient:
     """Shared request and track-start pacing, and retries, for API and
     bootstrap clients."""
@@ -82,17 +92,21 @@ class RequestClient:
     # the time.monotonic() at which the next request may go out
     _spacing: float = 0.0
     _next_slot: float = 0.0
-    # when the 429s of the last RATE_LIMIT_WINDOW began, and the stop they led to
+    # When the 429s of the last RATE_LIMIT_WINDOW began, and the halt that
+    # stops this run, if any. Wall clock (time.time()), not monotonic like
+    # _retry_at: the times outlive a run, in a file next to the config, so
+    # every run of the account shares one count.
     _limited_at: tuple[float, ...] = ()
-    _halt: RateLimitHalt | None = None
+    _halt: AccountHalt | None = None
     # Track-start pacing (before_track): how much the 429s have widened the
-    # gaps between track starts, the earliest the next one may start, when
-    # the starts of the last RATE_LIMIT_WINDOW began, and whether that hour
-    # is full right now.
+    # gaps, the starts of the last RATE_LIMIT_WINDOW (reserved ones included,
+    # so the last is the latest), and whether that hour is full. The first
+    # two outlive a run, wall clock too.
     _track_gap_scale: float = 1.0
-    _next_track_start: float = 0.0
     _track_starts: tuple[float, ...] = ()
     _track_hour_full: bool = False
+    # whether this run has picked up the pacing the last one left
+    _pacing_state_loaded: bool = False
 
     @staticmethod
     def get_rate_limiter(
@@ -112,91 +126,177 @@ class RequestClient:
         """The client whose 429 pause this one shares (itself, by default)."""
         return self
 
+    async def _renew_login(self) -> bool:
+        """Renew a login that lapsed mid-run; True if there is a fresh one.
+
+        Only Tidal's access token expires while a rip runs; every other
+        source returns False and the 401 reaches the caller as before.
+        """
+        return False
+
+    def _pacing_state_path(self) -> Path | None:
+        """The file this account's pacing outlives a run in: next to the
+        config, so a config of one's own (a ripper's, say) paces its own
+        account.
+
+        None for a client without a config, like Qobuz's bootstrap scraper:
+        it shares its owner's pacing.
+        """
+        config = getattr(self, "global_config", None)
+        if config is None:
+            return None
+        return config.path.parent / f"pacing-{self.source}.json"
+
+    def _load_pacing_state(self):
+        """Pick up this account's pacing where the last run left it.
+
+        Only the last hour of it counts, and an hour without a track start
+        or a 429 is a fresh start, widened gaps and all: the wait was the
+        cooldown. A run that finds the rate-limit budget spent stops before
+        its first request.
+        """
+        path = self._pacing_state_path()
+        if path is None or not path.is_file():
+            return
+        now = time.time()
+        try:
+            state = json.loads(path.read_text())
+            self._track_starts = _last_hour(state["track_starts"], now)
+            self._limited_at = _last_hour(state["limited_at"], now)
+            if self._track_starts or self._limited_at:
+                self._track_gap_scale = state["track_gap_scale"]
+        except OSError, TypeError, ValueError, KeyError:
+            # Unreadable is a fresh start, not a failed rip.
+            # (json.JSONDecodeError is a ValueError.)
+            logger.debug("Could not read the pacing state at %s", path)
+            return
+        if len(self._limited_at) >= RATE_LIMIT_BUDGET:
+            self._halt = self._rate_limit_halt()
+
+    def _save_pacing_state(self):
+        """Leave this account's pacing for the next run.
+
+        Replaced in one step, like the config: a write cut short must not
+        read as a fresh start, least of all when what it would forget is a
+        halt.
+        """
+        path = self._pacing_state_path()
+        if path is None:
+            return
+        now = time.time()
+        state = {
+            "track_starts": _last_hour(self._track_starts, now),
+            "track_gap_scale": self._track_gap_scale,
+            "limited_at": _last_hour(self._limited_at, now),
+        }
+        tmp = path.with_name(f".{path.name}-{os.getpid()}.tmp")
+        try:
+            tmp.write_text(json.dumps(state))
+            tmp.replace(path)
+        except OSError:
+            # A rip must not fail over its state file.
+            logger.debug("Could not save the pacing state to %s", path)
+
+    def _paced_owner(self) -> RequestClient:
+        """The pause owner, with the pacing the last run left picked up."""
+        owner = self._pause_owner()
+        if not owner._pacing_state_loaded:
+            owner._pacing_state_loaded = True
+            owner._load_pacing_state()
+        return owner
+
+    def _rate_limit_halt(self) -> AccountHalt:
+        return AccountHalt(
+            f"Stopped to protect your account: {self.source.capitalize()} "
+            f"has rate limited streamrip {len(self._limited_at)} times in "
+            "the last hour, and going on risks a suspension. Wait a few "
+            "hours, then run the same command again; what is already "
+            "downloaded is skipped."
+        )
+
     def _pause_requests(self, seconds: float):
         """Hold back every request of this account for seconds after a 429."""
-        owner = self._pause_owner()
+        owner = self._paced_owner()
         now = time.monotonic()
         if owner._retry_at <= now:
-            # A new 429 episode: the gaps between track starts widen too, on
-            # the account the pause belongs to.
+            # A new 429 episode: it counts towards the budget, and spreads out
+            # both the requests and the track starts that follow.
+            wall = time.time()
+            owner._limited_at = (*_last_hour(owner._limited_at, wall), wall)
+            if len(owner._limited_at) == RATE_LIMIT_BUDGET // 2:
+                logger.warning(
+                    "%s has rate limited streamrip %s times in the last hour; half of "
+                    "what stops a rip to protect the account",
+                    self.source.capitalize(),
+                    len(owner._limited_at),
+                )
+            if len(owner._limited_at) >= RATE_LIMIT_BUDGET:
+                owner._halt = owner._rate_limit_halt()
+                # Saved before the raise, so the next run halts too.
+                owner._save_pacing_state()
+                raise owner._halt
+            owner._spacing = min(max(owner._spacing * 2, SLOWDOWN_START), SLOWDOWN_MAX)
             owner._track_gap_scale = min(
                 owner._track_gap_scale * TRACK_GAP_WIDENING, TRACK_GAP_WIDENING_MAX
             )
-            owner._limited_at = (
-                *(t for t in owner._limited_at if now - t < RATE_LIMIT_WINDOW),
-                now,
-            )
-            if len(owner._limited_at) >= RATE_LIMIT_BUDGET:
-                owner._halt = RateLimitHalt(
-                    f"Stopped to protect your account: {self.source.capitalize()} "
-                    f"has rate limited streamrip {len(owner._limited_at)} times in "
-                    "the last hour, and going on risks a suspension. Wait a few "
-                    "hours, then run the same command again; what is already "
-                    "downloaded is skipped."
-                )
-                raise owner._halt
-            owner._spacing = min(max(owner._spacing * 2, SLOWDOWN_START), SLOWDOWN_MAX)
             logger.warning(
-                f"{self.source.capitalize()} is rate limiting us (HTTP 429); "
-                f"pausing for {seconds:.0f}s, then one request every "
-                f"{owner._spacing:.0f}s and track starts about "
-                f"{math.exp(TRACK_GAP_MU) * owner._track_gap_scale:.0f}s apart"
+                "%s is rate limiting us (HTTP 429); pausing for %.0fs, then one request "
+                "every %.0fs and track starts about %.0fs apart",
+                self.source.capitalize(),
+                seconds,
+                owner._spacing,
+                TRACK_GAP_MEAN * owner._track_gap_scale,
             )
         owner._retry_at = max(owner._retry_at, now + seconds)
+        owner._save_pacing_state()
 
     async def before_track(self) -> None:
-        """Hold this track back until a person might have started it.
+        """Wait until this track may start.
 
-        What gets an account suspended is not any one request but the
-        pattern: a track every few seconds, hour after hour, wearing out
-        the service's hourly request budget at the same point of every
-        hour. The first track of a session starts when the user does; after
-        that, log-normal gaps between starts (mean TRACK_GAP_MEAN, capped
-        at TRACK_GAP_MAX), widened by every 429 and eased back by every
-        track that starts without one. And however human the gaps, at most
-        TRACKS_PER_HOUR tracks start in any hour, so the budget never gets
-        to set the pace and trip the 429s in the first place.
+        Back to back, tracks wore out the service's hourly budget at the
+        same point of every hour, hour after hour, until the account was
+        suspended. So starts are TRACK_GAP_MEAN seconds apart on average
+        (log-normal, capped at TRACK_GAP_MAX), wider after every 429, and
+        at most TRACKS_PER_HOUR in any hour. The first track of a session
+        starts at once, and the pacing outlives a run: every run of the
+        account shares it.
         """
         wait = self._reserve_track_start()
         if wait:
             await asyncio.sleep(wait)
 
     def _reserve_track_start(self) -> float:
-        """Plan the next track start; return how long to wait for it.
+        """Reserve the next track start; return how long until it.
 
-        The wait is spent by the caller, not held here, so any number of
-        tracks can hold a reserved start without blocking each other.
+        The caller does the waiting, so tracks holding a reserved start
+        don't block each other.
         """
-        owner = self._pause_owner()
-        now = time.monotonic()
-        if owner._track_starts:
+        owner = self._paced_owner()
+        now = time.time()
+        starts = _last_hour(owner._track_starts, now)
+        start = now
+        if starts:
             gap = min(
                 random.lognormvariate(TRACK_GAP_MU, TRACK_GAP_SIGMA), TRACK_GAP_MAX
             )
-            start = max(now, owner._next_track_start) + gap * owner._track_gap_scale
-        else:
-            # The first track of a session starts when the user does.
-            start = now
-        # Starts an hour old free up room again; the oldest one still in
-        # the hour says when the next slot opens.
-        owner._track_starts = tuple(
-            t for t in owner._track_starts if now - t < RATE_LIMIT_WINDOW
-        )
-        if len(owner._track_starts) >= TRACKS_PER_HOUR:
-            start = max(start, owner._track_starts[0] + RATE_LIMIT_WINDOW)
+            start = max(now, starts[-1]) + gap * owner._track_gap_scale
+        full = len(starts) >= TRACKS_PER_HOUR
+        if full:
+            # An hour after the TRACKS_PER_HOUR-th latest start, not the
+            # oldest: reserved starts count too, or tracks resolving side by
+            # side slip past the cap.
+            start = max(start, starts[-TRACKS_PER_HOUR] + RATE_LIMIT_WINDOW)
             if not owner._track_hour_full:
-                owner._track_hour_full = True
                 logger.warning(
-                    f"{TRACKS_PER_HOUR} tracks started in the last hour, "
-                    f"holding the next one for {start - now:.0f}s"
+                    "%s tracks started in the last hour, holding the next one for %.0fs",
+                    TRACKS_PER_HOUR,
+                    start - now,
                 )
-        else:
-            owner._track_hour_full = False
-        owner._track_starts = (*owner._track_starts, start)
-        owner._next_track_start = start
-        # This track starting without a 429 in between is evidence the
-        # pacing is enough again.
+        owner._track_hour_full = full
+        owner._track_starts = (*starts, start)
+        # A track that starts with no 429 since the last one eases the gaps.
         owner._track_gap_scale = max(owner._track_gap_scale * TRACK_GAP_EASING, 1.0)
+        owner._save_pacing_state()
         return start - now
 
     async def _get_with_retries[T](
@@ -210,13 +310,18 @@ class RequestClient:
 
         Connection errors, timeouts, 5xx and 429 are retried with backoff, up to
         MAX_API_ATTEMPTS. A 429 holds back every request, not just this one,
-        since the rate limit belongs to the account. `read` turns the response
-        into the result; it gets every response that isn't retried, including
-        the last attempt's, whatever its status.
+        since the rate limit belongs to the account. A 401 renews the login
+        once (_renew_login) and sends this request again. `read` turns the
+        response into the result; it gets every response that isn't retried,
+        including the last attempt's, whatever its status.
         """
         attempt = 0
+        renewed = False
         while True:
-            owner = self._pause_owner()
+            # Paced before the halt check: artist and album requests go out
+            # before any track, and a halt the last run left has to stop this
+            # one at its very first request.
+            owner = self._paced_owner()
             if owner._halt is not None:
                 raise owner._halt
             if (pause := owner._retry_at - time.monotonic()) > 0:
@@ -251,6 +356,16 @@ class RequestClient:
                             if owner._spacing < 0.5:
                                 owner._spacing = 0.0
                         if (
+                            resp.status == 401
+                            and not renewed
+                            and await self._renew_login()
+                        ):
+                            # A login that lapsed mid-run (Tidal's token lives
+                            # hours) is renewed once, and this request is sent
+                            # again with the fresh one.
+                            renewed = True
+                            continue
+                        if (
                             resp.status not in RETRY_STATUSES
                             or attempt == MAX_API_ATTEMPTS
                         ):
@@ -273,8 +388,10 @@ class RequestClient:
             if delay:
                 # The reason only: the url can carry credentials (Qobuz).
                 logger.warning(
-                    f"{self.source.capitalize()} request failed ({reason}), "
-                    f"retrying in {delay:.0f}s"
+                    "%s request failed (%s), retrying in %.0fs",
+                    self.source.capitalize(),
+                    reason,
+                    delay,
                 )
                 await asyncio.sleep(delay)
 
@@ -287,27 +404,72 @@ class RequestClient:
 
         return await self._get_with_retries(url, read)
 
+    async def _get_json(
+        self, url: str, params: dict | None = None, headers: dict | None = None
+    ) -> tuple[int, Any]:
+        """GET an API url with retries: (status, JSON body), whatever the status.
+
+        A body without JSON -- an HTML error page, the empty body of a 401 --
+        comes back as {"message": ...}, so the caller can report the status.
+        Never aiohttp's ContentTypeError: it quotes the whole url, which can
+        carry credentials (Qobuz's user_auth_token).
+        """
+
+        async def read(resp) -> tuple[int, Any]:
+            try:
+                body = await resp.json(content_type=None)
+            except ValueError:  # json.JSONDecodeError is one
+                body = None
+            if body is None:
+                body = {"message": f"non-JSON response ({resp.content_type})"}
+            return resp.status, body
+
+        return await self._get_with_retries(url, read, params, headers)
+
 
 class Client(RequestClient, ABC):
-    """Provider interface backed by shared HTTP request handling."""
+    """A streaming service: logging in, metadata, search and downloads.
+
+    Every client keeps the whole Config as global_config and its own section
+    of it ([tidal], [qobuz], ...) as config.
+    """
 
     max_quality: int
-    logged_in: bool
+
+    def __init__(self, config: Config):
+        self.global_config = config
+        self.config = getattr(config.session, self.source)
+        self.logged_in = False
+        self.rate_limiter = self.get_rate_limiter(
+            config.session.downloads.requests_per_minute
+        )
+
+    def _ensure_session(self):
+        """Open the HTTP session, unless there is an open one."""
+        if getattr(self, "session", None) is None or self.session.closed:
+            self.session = new_session(
+                verify_ssl=self.global_config.session.downloads.verify_ssl
+            )
+
+    async def close(self):
+        """Close the HTTP session, if there is one."""
+        if getattr(self, "session", None) is not None:
+            await self.session.close()
 
     @abstractmethod
     async def login(self):
         raise NotImplementedError
 
     @abstractmethod
-    async def get_metadata(self, item: str, media_type):
+    async def get_metadata(self, item_id: str, media_type: str) -> dict:
         raise NotImplementedError
 
     @abstractmethod
-    async def search(self, media_type: str, query: str, limit: int = 500) -> list[dict]:
+    async def search(self, media_type: str, query: str, limit: int) -> list[dict]:
         raise NotImplementedError
 
     @abstractmethod
-    async def get_downloadable(self, item: str, quality: int) -> Downloadable:
+    async def get_downloadable(self, item_id: str, quality: int) -> Downloadable:
         raise NotImplementedError
 
     async def get_lyrics(self, track_id: str, plain: bool) -> str:

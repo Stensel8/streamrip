@@ -30,7 +30,7 @@ class _Response:
         if self.status >= 400:
             raise aiohttp.ClientResponseError(None, (), status=self.status)
 
-    async def json(self):
+    async def json(self, content_type=None):
         return self._body
 
     async def __aenter__(self):
@@ -117,8 +117,8 @@ async def test_soundcloud_requests_go_through_its_rate_limiter_and_retry():
     c.rate_limiter = _CountingLimiter()
     c.session = _Session(_Response(503), _Response(body={"id": 7}))
     assert await c._request("https://api-v2.soundcloud.com/tracks/7") == (
-        {"id": 7},
         200,
+        {"id": 7},
     )
     assert c.rate_limiter.entered == 2
 
@@ -173,7 +173,9 @@ async def test_pause_extensions_require_fresh_admission(monkeypatch, pause_durin
 
     c.rate_limiter = Limiter()
     monkeypatch.setattr(c.session, "get", checked_get)
-    monkeypatch.setattr(client_module, "time", SimpleNamespace(monotonic=lambda: now))
+    monkeypatch.setattr(
+        client_module, "time", SimpleNamespace(monotonic=lambda: now, time=lambda: now)
+    )
     monkeypatch.setattr(asyncio, "sleep", sleep)
 
     assert await c._api_request("track/get", {}) == (200, {"ok": True})

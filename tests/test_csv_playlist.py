@@ -9,12 +9,8 @@ import pytest
 
 from streamrip.client.audio_match import MatchTrack
 from streamrip.config import Config
-from streamrip.media.csv_playlist import (
-    PendingCsvPlaylist,
-    best_result,
-    queries,
-    read_tracks,
-)
+from streamrip.media.csv_playlist import PendingCsvPlaylist, read_tracks
+from streamrip.media.playlist import best_result, queries
 from streamrip.metadata import Summary
 
 
@@ -35,10 +31,12 @@ def rows(tracks):
     ("text", "expected"),
     [
         (
-            "title,artists,album,duration_ms,isrc,spotify_uri,tidal_id\n"
-            "Get Lucky,Daft Punk; Pharrell Williams,Random Access Memories,369000,"
-            "GBDUW1300136,spotify:track:x,\n"
-            "Billie Jean,Michael Jackson,Thriller,293000.0,,,\n",
+            (
+                "title,artists,album,duration_ms,isrc,spotify_uri,tidal_id\n"
+                "Get Lucky,Daft Punk; Pharrell Williams,Random Access Memories,369000,"
+                "GBDUW1300136,spotify:track:x,\n"
+                "Billie Jean,Michael Jackson,Thriller,293000.0,,,\n"
+            ),
             [
                 (
                     "Get Lucky",
@@ -51,9 +49,11 @@ def rows(tracks):
         ),
         # A semicolon between artists and a short row leave a file of commas alone.
         (
-            "title,artists,album\n"
-            "Get Lucky,Daft Punk; Pharrell Williams,Random Access Memories\n"
-            "Song,Band\n",
+            (
+                "title,artists,album\n"
+                "Get Lucky,Daft Punk; Pharrell Williams,Random Access Memories\n"
+                "Song,Band\n"
+            ),
             [
                 (
                     "Get Lucky",
@@ -76,14 +76,18 @@ def test_the_columns_of_a_csv_are_read(tmp_path, text, expected):
     [
         # Exportify: a comma inside a quoted title, and Duration (ms).
         (
-            "Track URI,Track Name,Album Name,Artist Name(s),Duration (ms)\n"
-            'spotify:track:a,"Hello, Goodbye",Magical Mystery Tour,The Beatles,208000\n',
+            (
+                "Track URI,Track Name,Album Name,Artist Name(s),Duration (ms)\n"
+                'spotify:track:a,"Hello, Goodbye",Magical Mystery Tour,The Beatles,208000\n'
+            ),
             [("Hello, Goodbye", ["The Beatles"], "Magical Mystery Tour", 208000)],
         ),
         # TuneMyMusic.
         (
-            "Track name,Artist name,Album,Playlist name,Type,ISRC\n"
-            "Imagine,John Lennon,Imagine,Mix,Playlist,GBAYE7000001\n",
+            (
+                "Track name,Artist name,Album,Playlist name,Type,ISRC\n"
+                "Imagine,John Lennon,Imagine,Mix,Playlist,GBAYE7000001\n"
+            ),
             [("Imagine", ["John Lennon"], "Imagine", None)],
         ),
         # Excel in many countries: semicolons, and a length as m:ss.
@@ -423,7 +427,7 @@ async def test_the_progress_shows_what_is_found(tmp_path, monkeypatch):
     def status(text, **_):
         yield spinner
 
-    monkeypatch.setattr("streamrip.media.csv_playlist.console.status", status)
+    monkeypatch.setattr("streamrip.media.playlist.console.status", status)
     tidal = Catalogue("tidal", {"Band Song One": [item(11, "Song One", "Band")]})
     config = Config.defaults()
     config.session.downloads.folder = str(tmp_path)

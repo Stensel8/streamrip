@@ -22,6 +22,8 @@ lazy from ..config import Config
 logger = logging.getLogger("streamrip")
 
 QOBUZ_BASE_URL = "https://www.qobuz.com/api.json/0.2"
+# Qobuz's format_id for quality 1 to 4: MP3 320, FLAC 16/44.1, 24/96, 24/192.
+FORMAT_IDS = (5, 6, 7, 27)
 
 
 def file_url_signature(
@@ -67,23 +69,22 @@ class QobuzSpoofer(RequestClient):
 
     async def get_app_id_and_secrets(self) -> tuple[str, list[str]]:
         """Scrape Qobuz's web player bundle for its app id and secrets."""
-        assert self.session is not None
         login_page = await self._get_text_with_retries("https://play.qobuz.com/login")
-        bundle_url = BUNDLE_URL_RE.search(login_page)
-        assert bundle_url is not None
+        if (bundle_url := BUNDLE_URL_RE.search(login_page)) is None:
+            raise InvalidAppIdError("Could not find Qobuz's web player bundle.")
         bundle = await self._get_text_with_retries(
             "https://play.qobuz.com" + bundle_url.group(1)
         )
 
         app_id = APP_ID_RE.search(bundle)
         if app_id is None:
-            raise Exception("Could not find app id.")
+            raise InvalidAppIdError("Could not find Qobuz's app id.")
 
         secrets = OrderedDict(
             (m.group("timezone"), [m.group("seed")]) for m in SEED_RE.finditer(bundle)
         )
         if not secrets:
-            raise Exception("Could not find app secrets.")
+            raise InvalidAppSecretError("Could not find Qobuz's app secrets.")
         # The bundle picks between the first two seeds with ternaries that are
         # always false, so the second one is the one in use: try it first.
         if len(secrets) > 1:
@@ -121,15 +122,13 @@ class QobuzSpoofer(RequestClient):
 
 
 class QobuzClient(Client):
+    """Qobuz: a user id and token, and the app id and secret of its web player."""
+
     source = "qobuz"
     max_quality = 4
 
     def __init__(self, config: Config):
-        self.logged_in = False
-        self.config = config
-        self.rate_limiter = self.get_rate_limiter(
-            config.session.downloads.requests_per_minute,
-        )
+        super().__init__(config)
         self.secret: str | None = None
         # True for a free account (no streaming subscription) that can still
         # download content it has *purchased* from the Qobuz download store.
@@ -138,7 +137,7 @@ class QobuzClient(Client):
 
     async def login(self):
         """Log in with the user id and user_auth_token saved in the config."""
-        self.session = new_session(verify_ssl=self.config.session.downloads.verify_ssl)
+        self._ensure_session()
         try:
             await self._login()
         except BaseException:
@@ -149,11 +148,9 @@ class QobuzClient(Client):
 
     async def _login(self):
         """Log in, fetching Qobuz's app id/secret first if not cached yet."""
-        c = self.config.session.qobuz
+        c = self.config
         if not c.user_id or not c.auth_token:
             raise MissingCredentialsError
-
-        assert not self.logged_in, "Already logged in"
 
         if not c.app_id or not c.secrets:
             logger.info(
@@ -177,16 +174,16 @@ class QobuzClient(Client):
         self.logged_in = True
 
     async def _refresh_app_id_and_secrets(self):
-        c = self.config.session.qobuz
+        c = self.config
         c.app_id, c.secrets = await self._get_app_id_and_secrets()
-        # write to file
-        f = self.config.file
+        # In this session, and in the config file written on exit.
+        f = self.global_config.file
         f.qobuz.app_id = c.app_id
         f.qobuz.secrets = c.secrets
         f.set_modified()
 
     async def _attempt_login(self):
-        c = self.config.session.qobuz
+        c = self.config
         self.session.headers.update({"X-App-Id": str(c.app_id)})
 
         params = {
@@ -229,14 +226,13 @@ class QobuzClient(Client):
 
         self.secret = await self._get_valid_secret(c.secrets)
 
-    async def get_metadata(self, item: str, media_type: str):
+    async def get_metadata(self, item_id: str, media_type: str) -> dict:
         if media_type == "label":
-            return await self.get_label(item)
+            return await self._get_label(item_id)
 
-        c = self.config.session.qobuz
         params = {
-            "app_id": str(c.app_id),
-            f"{media_type}_id": item,
+            "app_id": str(self.config.app_id),
+            f"{media_type}_id": item_id,
             # Do these matter?
             "limit": 500,
             "offset": 0,
@@ -298,10 +294,10 @@ class QobuzClient(Client):
             items.extend((page.get("tracks") or {}).get("items") or [])
         logger.debug("Fetched %d/%d playlist tracks", len(items), total)
 
-    async def get_label(self, label_id: str) -> dict:
+    async def _get_label(self, label_id: str) -> dict:
         """A label with its whole catalog, fetched 500 albums at a time."""
         params = {
-            "app_id": str(self.config.session.qobuz.app_id),
+            "app_id": str(self.config.app_id),
             "label_id": label_id,
             "limit": 500,
             "offset": 0,
@@ -319,8 +315,8 @@ class QobuzClient(Client):
         return label
 
     async def search(self, media_type: str, query: str, limit: int = 500) -> list[dict]:
-        if media_type not in ("artist", "album", "track", "playlist"):
-            raise Exception(f"{media_type} not available for search on qobuz")
+        if media_type not in {"artist", "album", "track", "playlist"}:
+            raise ValueError(f"Cannot search Qobuz for {media_type}s")
 
         params = {
             "query": query,
@@ -329,13 +325,13 @@ class QobuzClient(Client):
 
         return await self._paginate(epoint, params, limit=limit)
 
-    async def get_downloadable(self, item: str, quality: int) -> Downloadable:
+    async def get_downloadable(self, item_id: str, quality: int) -> Downloadable:
         """Ask Qobuz for a track's file URL at `quality` (1 to 4)."""
         assert self.secret is not None and self.logged_in
         # Qobuz has no quality 0 (128 kbps); clamp instead of asserting so
         # `streamrip --quality 0` still works for mixed-source downloads.
         quality = max(1, min(quality, self.max_quality))
-        status, resp_json = await self._request_file_url(item, quality, self.secret)
+        status, resp_json = await self._request_file_url(item_id, quality, self.secret)
         if status != 200:
             raise NonStreamableError(
                 f"Could not get a download URL (HTTP {status}): "
@@ -360,10 +356,10 @@ class QobuzClient(Client):
                         "Quality %d unavailable for purchased track %s; "
                         "retrying at quality %d.",
                         quality,
-                        item,
+                        item_id,
                         quality - 1,
                     )
-                    return await self.get_downloadable(item, quality - 1)
+                    return await self.get_downloadable(item_id, quality - 1)
                 raise NonStreamableError(restriction_message(code) + ".")
             raise NonStreamableError
 
@@ -453,7 +449,7 @@ class QobuzClient(Client):
 
     async def _get_app_id_and_secrets(self) -> tuple[str, list[str]]:
         async with QobuzSpoofer(
-            verify_ssl=self.config.session.downloads.verify_ssl, client=self
+            verify_ssl=self.global_config.session.downloads.verify_ssl, client=self
         ) as spoofer:
             return await spoofer.get_app_id_and_secrets()
 
@@ -482,7 +478,8 @@ class QobuzClient(Client):
         quality: int,
         secret: str,
     ) -> tuple[int, dict]:
-        quality = self.get_quality(quality)
+        """Ask for a track's file URL at quality 1 to 4: (status, JSON body)."""
+        format_id = FORMAT_IDS[quality - 1]
         unix_ts = time.time()
         # Owned-only (free) accounts must request intent=download; streaming
         # accounts use intent=stream. The signed preimage and the params dict
@@ -491,38 +488,17 @@ class QobuzClient(Client):
         params = {
             "request_ts": unix_ts,
             "request_sig": file_url_signature(
-                quality, intent, track_id, unix_ts, secret
+                format_id, intent, track_id, unix_ts, secret
             ),
             "track_id": track_id,
-            "format_id": quality,
+            "format_id": format_id,
             "intent": intent,
         }
         return await self._api_request("track/getFileUrl", params)
 
     async def _api_request(self, epoint: str, params: dict) -> tuple[int, dict]:
-        """Make a request to the API.
-        returns: status code, json parsed response
-        """
+        """GET a Qobuz API endpoint: (status, JSON body), whatever the status."""
         # Only the endpoint: params carry credentials (user_auth_token)
         # and the request signature.
         logger.debug("api_request: endpoint=%s", epoint)
-
-        async def read(response) -> tuple[int, dict]:
-            if "json" not in (response.content_type or ""):
-                # An HTML error page, such as a 502 from Qobuz's edge.
-                # aiohttp's ContentTypeError would quote the full request
-                # URL, which carries user_auth_token -- so report the
-                # status instead of letting that propagate.
-                return response.status, {
-                    "message": f"non-JSON response ({response.content_type})"
-                }
-            return response.status, await response.json()
-
-        return await self._get_with_retries(
-            f"{QOBUZ_BASE_URL}/{epoint}", read, params=params
-        )
-
-    @staticmethod
-    def get_quality(quality: int):
-        quality_map = (5, 6, 7, 27)
-        return quality_map[quality - 1]
+        return await self._get_json(f"{QOBUZ_BASE_URL}/{epoint}", params)

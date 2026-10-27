@@ -150,7 +150,9 @@ class Lrclib:
                 )
         except (aiohttp.ClientError, TimeoutError, ValueError) as e:
             self._failures += 1
-            logger.debug(f"LRCLIB lookup for {wanted} failed: {type(e).__name__}: {e}")
+            logger.debug(
+                "LRCLIB lookup for %s failed: %s: %s", wanted, type(e).__name__, e
+            )
             if self._failures == MAX_FAILURES:
                 logger.warning(
                     "LRCLIB does not answer; no more lyrics are looked up this run"
@@ -184,11 +186,11 @@ async def find_lyrics(
         _lrclib = Lrclib(verify_ssl)
     record = await _lrclib.record(wanted, seconds)
     if record is None:
-        logger.debug(f"No lyrics for {wanted} on LRCLIB")
+        logger.debug("No lyrics for %s on LRCLIB", wanted)
         return None
     lyrics = lyrics_of(record, plain)
     if lyrics is not None:
-        logger.debug(f"Found lyrics for {wanted} on LRCLIB")
+        logger.debug("Found lyrics for %s on LRCLIB", wanted)
     return lyrics
 
 

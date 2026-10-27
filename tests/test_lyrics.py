@@ -317,7 +317,9 @@ async def test_closing_is_safe_twice_and_a_new_session_follows(lrclib):
 async def test_main_closes_the_session_with_the_others(monkeypatch):
     close = AsyncMock()
     monkeypatch.setattr("streamrip.rip.main.lyrics.close", close)
-    monkeypatch.setattr("streamrip.rip.main.find_ffmpeg", lambda: "/usr/bin/ffmpeg")
+    monkeypatch.setattr(
+        "streamrip.utils.ffmpeg_utils.find_ffmpeg", lambda: "/usr/bin/ffmpeg"
+    )
     config = Config.defaults()
     config.session.database.downloads_enabled = False
     config.session.database.failed_downloads_enabled = False

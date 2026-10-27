@@ -32,7 +32,7 @@ from ..exceptions import (
     NonStreamableError,
 )
 from .audio_match import MatchTrack
-from .client import Client, new_session
+from .client import Client
 from .downloadable import YtDlpDownloadable
 from .ytmusic import YouTubeMusicMatcher
 lazy from ..config import Config
@@ -163,16 +163,12 @@ def summary_item(media_type: str, item: dict) -> dict:
 
 
 class SpotifyClient(Client):
+    """Spotify: the user's own Spotify app, with the audio from YouTube Music."""
+
     source = "spotify"
-    logged_in = False
 
     def __init__(self, config: Config):
-        """A client for the user's Spotify app, finding audio on YouTube Music."""
-        self.global_config = config
-        self.config = config.session.spotify
-        self.rate_limiter = self.get_rate_limiter(
-            config.session.downloads.requests_per_minute,
-        )
+        super().__init__(config)
         self.matcher = YouTubeMusicMatcher(match_videos=self.config.match_videos)
         # Track responses by id: a playlist already carries its tracks in full,
         # and a track is fetched once for its tags and once for its audio.
@@ -185,13 +181,6 @@ class SpotifyClient(Client):
         return "MP3" if self.config.audio_format.lower() == "mp3" else "AAC"
 
     # --- login -------------------------------------------------------------
-
-    def ensure_session(self):
-        """Open the HTTP session, if this client has none yet."""
-        if getattr(self, "session", None) is None:
-            self.session = new_session(
-                verify_ssl=self.global_config.session.downloads.verify_ssl
-            )
 
     async def login(self):
         """Use the saved login, refreshing its token if needed.
@@ -207,7 +196,7 @@ class SpotifyClient(Client):
             )
         if not c.refresh_token:
             raise MissingCredentialsError("Not logged in to Spotify.")
-        self.ensure_session()
+        self._ensure_session()
         if not self._token_valid():
             await self._refresh()
         self.logged_in = True
@@ -231,7 +220,7 @@ class SpotifyClient(Client):
 
     async def finish_login(self, code: str, verifier: str):
         """Trade the code from the login redirect for tokens, and log in."""
-        self.ensure_session()
+        self._ensure_session()
         await self._token_request(
             {
                 "grant_type": "authorization_code",
@@ -298,22 +287,13 @@ class SpotifyClient(Client):
 
     # --- API ---------------------------------------------------------------
 
-    @staticmethod
-    async def _read(resp: aiohttp.ClientResponse) -> tuple[int, dict]:
-        """(status, JSON) of a response; the JSON is {} for a body with none."""
-        try:
-            body = await resp.json(content_type=None)
-        except ValueError, aiohttp.ClientError:
-            body = {}
-        return resp.status, body if isinstance(body, dict) else {}
-
     async def _api(self, path: str, params: dict | None = None) -> dict:
         """GET from Spotify's API. `path` may be a "next page" url as it came."""
         url = path if path.startswith("http") else f"{API_URL}/{path}"
         token = await self._fresh_token()
         for attempt in (1, 2):
-            status, body = await self._get_with_retries(
-                url, self._read, params, {"Authorization": f"Bearer {token}"}
+            status, body = await self._get_json(
+                url, params, {"Authorization": f"Bearer {token}"}
             )
             if status == 401 and attempt == 1:
                 # The token may have just expired: one new one, then a retry.
@@ -365,15 +345,16 @@ class SpotifyClient(Client):
         an artist, albums) as a list under "tracks" ("albums").
         """
         item_id = plain_id(item_id)
-        if media_type == "track":
-            return await self._get_track(item_id)
-        if media_type == "album":
-            return await self._get_album(item_id)
-        if media_type == "playlist":
-            return await self._get_playlist(item_id)
-        if media_type == "artist":
-            return await self._get_artist(item_id)
-        raise NotImplementedError(f"Spotify has no {media_type}s to download")
+        match media_type:
+            case "track":
+                return await self._get_track(item_id)
+            case "album":
+                return await self._get_album(item_id)
+            case "playlist":
+                return await self._get_playlist(item_id)
+            case "artist":
+                return await self._get_artist(item_id)
+        raise ValueError(f"Spotify has no {media_type}s")
 
     def _remember(self, track: dict) -> dict:
         """Keep a track response for reuse, with the container of its audio."""
@@ -430,8 +411,10 @@ class SpotifyClient(Client):
         playlist["tracks"] = tracks
         if skipped:
             logger.info(
-                f"Skipped {skipped} item(s) of {playlist['name']}: local files, "
-                "podcast episodes and tracks Spotify no longer shows cannot be downloaded"
+                "Skipped %s item(s) of %s: local files, podcast episodes and tracks "
+                "Spotify no longer shows cannot be downloaded",
+                skipped,
+                playlist["name"],
             )
         return playlist
 
@@ -458,7 +441,7 @@ class SpotifyClient(Client):
     ) -> list[dict]:
         """Search results as pages of {"items": [...]}, in the shape of the menu."""
         if media_type not in MEDIA_TYPES:
-            raise APIError(f"Cannot search Spotify for {media_type}s")
+            raise ValueError(f"Cannot search Spotify for {media_type}s")
         wanted = min(limit, SEARCH_MAX_RESULTS)
         pages = []
         while wanted > 0:
@@ -478,7 +461,7 @@ class SpotifyClient(Client):
 
     # --- audio -------------------------------------------------------------
 
-    async def get_downloadable(self, item_id: str, quality: int = 0):
+    async def get_downloadable(self, item_id: str, quality: int):
         """The audio of a track: its best match on YouTube Music, for yt-dlp."""
         track = await self._get_track(plain_id(item_id))
         album = track.get("album") or {}

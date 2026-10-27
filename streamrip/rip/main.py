@@ -19,7 +19,6 @@ from ..console import console
 from ..exceptions import (
     APIError,
     AuthenticationError,
-    FFmpegNotFoundError,
     MissingCredentialsError,
 )
 from ..media import (
@@ -35,7 +34,7 @@ from ..media import (
 from ..media.media import resolve_or_none
 from ..metadata import SearchResults
 from ..progress import clear_progress, clear_screen
-from ..utils.ffmpeg_utils import ffmpeg_missing_message, find_ffmpeg
+from ..utils.ffmpeg_utils import require_ffmpeg
 from .interactive import Confirm
 from .notices import notice_for
 from .parse_url import parse_url
@@ -82,9 +81,9 @@ class Main:
             else db.Dummy(),
         )
 
-    async def add_by_id(self, source: str, media_type: str, id: str):
+    async def add_by_id(self, source: str, media_type: str, item_id: str):
         """Queue one item by its id."""
-        await self.add_all_by_id([(source, media_type, id)])
+        await self.add_all_by_id([(source, media_type, item_id)])
 
     async def add_all_by_id(self, info: list[tuple[str, str, str]]):
         """Queue items given as (source, media type, id).
@@ -124,7 +123,7 @@ class Main:
         """Return a functioning client instance for `source`."""
         client = self.clients.get(source)
         if client is None:
-            raise Exception(
+            raise ValueError(
                 f"No client named {source} available. Only have {self.clients.keys()}",
             )
         if not client.logged_in:
@@ -207,7 +206,7 @@ class Main:
             try:
                 await item.rip()
             except Exception as e:
-                logger.error(f"Error processing media item: {type(e).__name__}: {e}")
+                logger.error("Error processing media item: %s: %s", type(e).__name__, e)
                 failed_items += 1
 
         # In tracks, not items: an item can be a whole discography, so "1
@@ -342,18 +341,13 @@ class Main:
         """Return this session, raising FFmpegNotFoundError if ffmpeg is missing."""
         # ffmpeg is required whatever is downloaded (Tidal hi-res, SoundCloud,
         # conversion), so check before logging in to anything.
-        if find_ffmpeg() is None:
-            raise FFmpegNotFoundError(ffmpeg_missing_message())
+        require_ffmpeg()
         return self
 
     async def __aexit__(self, *_):
         """Close every client session and clean up progress bars and artwork."""
-        # Ensure all client sessions are closed
         for client in self.clients.values():
-            if isinstance(client, TidalClient):
-                await client.close()  # both of its logins have a session
-            elif getattr(client, "session", None) is not None:
-                await client.session.close()
+            await client.close()
 
         await lyrics.close()
 

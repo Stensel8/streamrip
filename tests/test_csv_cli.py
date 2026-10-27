@@ -20,7 +20,10 @@ def run(tmp_path):
 
     def invoke(*args):
         with (
-            patch("streamrip.rip.main.find_ffmpeg", return_value="/usr/bin/ffmpeg"),
+            patch(
+                "streamrip.utils.ffmpeg_utils.find_ffmpeg",
+                return_value="/usr/bin/ffmpeg",
+            ),
             patch.object(Main, "resolve_csv", AsyncMock()) as resolve,
             patch.object(Main, "rip", AsyncMock()) as download,
         ):

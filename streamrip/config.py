@@ -190,7 +190,6 @@ DEFAULT_DOWNLOADS_FOLDER = HOME / "StreamripDownloads"
 DEFAULT_DOWNLOADS_DB_PATH = APP_DIR / "downloads.db"
 DEFAULT_FAILED_DOWNLOADS_DB_PATH = APP_DIR / "failed_downloads.db"
 BLANK_CONFIG_PATH = Path(__file__).parent / "config.toml"
-assert BLANK_CONFIG_PATH.is_file(), "Template config not found"
 
 
 @dataclass(slots=True)
@@ -217,7 +216,6 @@ class ConfigData:
     @classmethod
     def from_toml(cls, toml_str: str):
         """Parse a config file. Raises if its schema doesn't match this version."""
-        # TODO: handle the mistake where Windows people forget to escape backslash
         toml = parse(toml_str)
         sections = {f.name: f.type(**toml[f.name]) for f in _section_fields()}  # type: ignore
         return cls(toml=toml, **sections)
@@ -262,7 +260,7 @@ class Config:
         """Load the config at path, securing it first if it holds secrets."""
         self.path = path
 
-        with path.open() as toml_file:
+        with path.open(encoding="utf-8") as toml_file:
             # The packaged template is shared, but user configs contain secrets.
             if os.name == "posix" and not path.samefile(BLANK_CONFIG_PATH):
                 os.fchmod(toml_file.fileno(), 0o600)

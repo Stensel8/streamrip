@@ -128,8 +128,10 @@ def test_app_directory_is_private(tmp_path, already_exists):
         [
             sys.executable,
             "-c",
-            "import click, sys; click.get_app_dir = lambda _: sys.argv[1]; "
-            "import streamrip.config",
+            (
+                "import click, sys; click.get_app_dir = lambda _: sys.argv[1]; "
+                "import streamrip.config"
+            ),
             str(app_dir),
         ],
         check=True,

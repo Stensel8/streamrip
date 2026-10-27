@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock
 from streamrip.client.qobuz import QobuzClient
 from streamrip.metadata import PlaylistMetadata
 
-TRACK = json.loads(Path("tests/qobuz_track_resp.json").read_text())
+TRACK = json.loads(Path("tests/qobuz_track_resp.json").read_text(encoding="utf-8"))
 
 
 def test_track_ids_preferred_over_truncated_inline_list():

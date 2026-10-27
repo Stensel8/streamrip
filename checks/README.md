@@ -4,14 +4,17 @@ CI runs what needs no account. Everything else is run by you, with the scripts
 here. You need no CI to test streamrip completely: `run.py all` does all of it.
 
 ```bash
-uv run python checks/run.py offline     # CI's lint and the tests that need no login
-uv run python checks/run.py login       # the tests about logins, tokens and sessions
-uv run python checks/run.py live        # real accounts; or: live tidal qobuz
-uv run python checks/run.py install     # CI's installer job, on a copy of this checkout
-uv run python checks/run.py container   # CI's image build and smoke test (podman or docker)
-uv run python checks/run.py nix         # CI's `nix flake check`
-uv run python checks/run.py all
+python checks/run.py offline     # CI's lint and the tests that need no login
+python checks/run.py login       # the tests about logins, tokens and sessions
+python checks/run.py live        # real accounts; or: live tidal qobuz
+python checks/run.py install     # CI's installer job, on a copy of this checkout
+python checks/run.py container   # CI's image build and smoke test (podman or docker)
+python checks/run.py nix         # CI's `nix flake check`
+python checks/run.py all
 ```
+
+Any python and any folder will do: the script runs itself in the project's
+environment with uv.
 
 | | CI | by hand |
 | --- | --- | --- |

@@ -141,7 +141,7 @@ async def make_client(spotify, monkeypatch):
         for name, value in (defaults | options).items():
             setattr(config.session.spotify, name, value)
         client = SpotifyClient(config)
-        client.ensure_session()
+        client._ensure_session()
         client.logged_in = True
         clients.append(client)
         return client
@@ -533,7 +533,7 @@ async def test_an_artist_comes_with_its_own_releases(make_client, spotify):
 async def test_labels_are_not_a_thing_on_spotify(make_client):
     client = make_client()
 
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(ValueError, match="labels"):
         await client.get_metadata("x", "label")
 
 
@@ -645,7 +645,7 @@ def _by_type(request, release):
 async def test_only_the_four_kinds_can_be_searched(make_client):
     client = make_client()
 
-    with pytest.raises(APIError, match="labels"):
+    with pytest.raises(ValueError, match="labels"):
         await client.search("label", "x")
 
 

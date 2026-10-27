@@ -66,7 +66,7 @@ async def test_playlist_falls_back_to_gw_api():
         {"SNG_ID": "11"},
         {"SNG_ID": "12"},
     ]
-    resp = await client.get_playlist("42")
+    resp = await client._get_playlist("42")
     assert resp["title"] == "Mine"
     assert [t["id"] for t in resp["tracks"]] == ["11", "12"]
 
@@ -82,5 +82,5 @@ async def test_redirected_album_id_is_followed():
         return {"data": [{"id": 1, "disk_number": 1}]}
 
     client.client.api.get_album_tracks.side_effect = tracks
-    resp = await client.get_album("997825")
+    resp = await client._get_album("997825")
     assert resp["track_total"] == 1

@@ -39,7 +39,7 @@ class TrackMetadata:
     @classmethod
     def from_qobuz(cls, album: AlbumMetadata, resp: dict) -> TrackMetadata | None:
         """Build track metadata from a Qobuz API track response."""
-        if not resp.get("streamable", False):
+        if not resp.get("streamable"):
             return None
         title = resp["title"].strip()
         version, work = resp.get("version"), resp.get("work")
@@ -138,7 +138,7 @@ class TrackMetadata:
     def from_resp(cls, album: AlbumMetadata, source, resp) -> TrackMetadata | None:
         """Dispatch to the from_* builder matching source."""
         if source not in SOURCES:
-            raise Exception(f"Invalid source {source}")
+            raise ValueError(f"Invalid source {source}")
         return getattr(cls, f"from_{source}")(album, resp)
 
     def format_track_path(self, format_string: str) -> str:

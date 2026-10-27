@@ -132,7 +132,7 @@ class QobuzInterpreterURL(URL):
         if match:
             return match.group(1)
 
-        raise Exception(
+        raise ValueError(
             "Unable to extract artist id from interpreter url. Use a "
             "url that contains an artist id.",
         )
@@ -178,7 +178,7 @@ class DeezerDynamicURL(URL):
         if match:
             return match.group(1), match.group(2)
 
-        raise Exception(f"Unable to extract the Deezer item from {url}.")
+        raise ValueError(f"Unable to extract the Deezer item from {url}.")
 
 
 class DeezerFavoriteURL(URL):
@@ -216,7 +216,7 @@ class SoundcloudURL(URL):
     ) -> Pending:
         """Resolve the URL on SoundCloud: a track or a playlist, nothing else."""
         resolved = await client.resolve_url(self.url)
-        if resolved["kind"] not in ("track", "playlist"):
+        if resolved["kind"] not in {"track", "playlist"}:
             raise NotImplementedError(resolved["kind"])
         return pending_item(resolved["kind"], str(resolved["id"]), client, config, db)
 

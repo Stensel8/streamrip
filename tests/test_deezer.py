@@ -307,8 +307,8 @@ async def test_deezer_album_cache(mock_deezer_client):
     mock_deezer_client.client.api.get_album_tracks.return_value = {"data": []}
 
     # Call get_album twice
-    res1 = await mock_deezer_client.get_album("album_123")
-    res2 = await mock_deezer_client.get_album("album_123")
+    res1 = await mock_deezer_client._get_album("album_123")
+    res2 = await mock_deezer_client._get_album("album_123")
 
     # Assert return values are identical
     assert res1 == res2
@@ -389,4 +389,4 @@ async def test_deezer_get_album_carries_its_stream_quality(mock_deezer_client):
         (1, 1, 1), (1, 1, 0)
     )
 
-    assert (await mock_deezer_client.get_album("9"))["stream_quality"] == 1
+    assert (await mock_deezer_client._get_album("9"))["stream_quality"] == 1

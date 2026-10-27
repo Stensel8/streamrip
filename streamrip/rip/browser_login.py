@@ -76,18 +76,18 @@ async def launch_installed_chromium(pw, headless: bool):
     for channel in _CHROME_CHANNELS:
         try:
             browser = await pw.chromium.launch(channel=channel, headless=headless)
-            return browser, channel
         except Exception:
             continue
+        return browser, channel
     for name in _CHROME_BINARY_NAMES:
         path = shutil.which(name)
         if not path:
             continue
         try:
             browser = await pw.chromium.launch(executable_path=path, headless=headless)
-            return browser, name
         except Exception:
             continue
+        return browser, name
     return None, None
 
 

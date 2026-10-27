@@ -26,9 +26,11 @@ def _page(html: str):
             ("123", "abc-token"),
         ),
         (
-            "setTimeout(() => {"
-            'localStorage.setItem("localuser", JSON.stringify({id: 456, token: "delayed-token"}));'
-            "}, 1500);",
+            (
+                "setTimeout(() => {"
+                'localStorage.setItem("localuser", JSON.stringify({id: 456, token: "delayed-token"}));'
+                "}, 1500);"
+            ),
             ("456", "delayed-token"),
         ),
     ],

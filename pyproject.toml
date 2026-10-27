@@ -1,6 +1,6 @@
 [project]
 name = "streamrip"
-version = "2.6.2"
+version = "2.6.3"
 description = "A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, SoundCloud, and Spotify."
 authors = [{ name = "nathom", email = "nathanthomas707@gmail.com" }]
 maintainers = [{ name = "Stensel8" }]
@@ -100,13 +100,28 @@ module-root = ""
 target-version = "py315"
 
 [tool.ruff.lint]
-# Enable Pyflakes (`F`) and a subset of the pycodestyle (`E`)  codes by default.
+# Preview rules only where they are named below, not every rule's preview.
+preview = true
+explicit-preview-rules = true
 select = [
   "E4", "E7", "E9", "F", "I", "UP", "ASYNC", "N", "RUF", "ERA001", "PTH",
   "B", "C4", "FURB", "PERF", "PIE", "RET", "SIM",
   # Imports only annotations need are lazy (PEP 810): with deferred
   # annotations (PEP 649) they are never loaded at run time.
   "TC",
+  # A lazy import used at import time anyway, or an import hidden in a
+  # function: either is a top-level `lazy import`.
+  "TID255", "PLC0415",
+  # Log arguments, not f-strings: formatted only when the line is shown.
+  "G004",
+  # Mistakes waiting to happen.
+  "A002", "PLW1510", "PLW1514", "PLW2901", "RUF052", "RUF056", "TRY300",
+  # Simpler code.
+  "FURB140", "ISC004", "PLR6201", "RUF039",
+  # Not: ARG002 and PLR6301 (they take interface methods and hooks, such as
+  # Client.get_lyrics or Textual's, for mistakes), RUF029 (callbacks that must
+  # be async), TRY301 (run_ffmpeg raises inside its try to clean up), PGH003
+  # (no type checker runs here to name codes for).
 ]
 ignore = [
   # os.path.isfile/getsize in async code are cheap stat calls, not I/O worth a
@@ -127,7 +142,14 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 
 [tool.ruff.lint.per-file-ignores]
 # Tests read small fixture files synchronously and keep explanatory comments.
-"tests/**" = ["ASYNC230", "ERA001", "RUF012"]
+# Their fakes mirror real signatures (A002), and some import where they patch.
+"tests/**" = ["ASYNC230", "ERA001", "RUF012", "A002", "PLC0415"]
+# Starts under any python and imports mutagen only once it runs in the
+# project's environment (where `lazy import` is not yet valid syntax).
+"checks/run.py" = ["PLC0415"]
+# An optional dependency is imported where it is probed, inside the try that
+# handles its absence (a lazy import would fail outside it, at first use).
+"streamrip/{rip/browser_login,rip/cover_preview,utils/ffmpeg_utils}.py" = ["PLC0415"]
 
 [tool.ruff.format]
 # Like Black, use double quotes for strings.

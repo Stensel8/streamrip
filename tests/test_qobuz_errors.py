@@ -8,6 +8,7 @@ HTML error page and a failed login used to put them into error output.
 """
 
 import contextlib
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -64,8 +65,9 @@ class _HtmlErrorPage:
     async def __aexit__(self, *exc):
         return False
 
-    async def json(self):
-        raise AssertionError("must not parse an HTML page as JSON")
+    async def json(self, content_type=None):
+        # What aiohttp does with an HTML body when it does not check the type.
+        raise json.JSONDecodeError("Expecting value", "<html>", 0)
 
 
 async def test_html_error_page_is_reported_by_status_without_the_url():
@@ -85,8 +87,8 @@ async def test_html_error_page_is_reported_by_status_without_the_url():
 async def test_failed_login_does_not_quote_the_token():
     c = QobuzClient.__new__(QobuzClient)
     c.logged_in = False
-    c.config = MagicMock()
-    q = c.config.session.qobuz
+    c.config, c.global_config = MagicMock(), MagicMock()
+    q = c.config
     q.user_id = "123456789"
     q.auth_token = TOKEN
     q.app_id = "987654321"
@@ -95,7 +97,7 @@ async def test_failed_login_does_not_quote_the_token():
     session = MagicMock()
     session.close = AsyncMock()
     with (
-        patch("streamrip.client.qobuz.new_session", return_value=session),
+        patch("streamrip.client.client.new_session", return_value=session),
         pytest.raises(AuthenticationError) as err,
     ):
         await c.login()

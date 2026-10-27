@@ -42,15 +42,18 @@ async def _download_cover(session: aiohttp.ClientSession, url: str, path: Path):
     for attempt in range(1, ARTWORK_ATTEMPTS + 1):
         try:
             await BasicDownloadable(session, url, "jpg").download(path, lambda _: None)
-            return
         except Exception as e:
             if attempt == ARTWORK_ATTEMPTS or not _worth_retrying(e):
                 raise
             delay = 2**attempt
             logger.warning(
-                f"Error downloading artwork, retrying in {delay}s: {type(e).__name__}"
+                "Error downloading artwork, retrying in %ss: %s",
+                delay,
+                type(e).__name__,
             )
             await asyncio.sleep(delay)
+        else:
+            return
 
 
 def remove_artwork_tempdirs():
@@ -109,7 +112,7 @@ async def download_artwork(
     try:
         await asyncio.gather(*downloadables)
     except Exception as e:
-        logger.error(f"Error downloading artwork: {e}")
+        logger.error("Error downloading artwork: %s", e)
         return None, None
 
     # Update `covers` to reflect the current download state

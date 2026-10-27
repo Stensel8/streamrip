@@ -100,9 +100,9 @@ class AlbumMetadata:
     def get_copyright(self) -> str | None:
         if self.copyright is None:
             return None
-        # Add special chars
-        _copyright = re.sub(r"(?i)\(P\)", PHON_COPYRIGHT, self.copyright)
-        return re.sub(r"(?i)\(C\)", COPYRIGHT, _copyright)
+        # (P) and (C) as the symbols they stand for
+        phonographic = re.sub(r"(?i)\(P\)", PHON_COPYRIGHT, self.copyright)
+        return re.sub(r"(?i)\(C\)", COPYRIGHT, phonographic)
 
     def format_folder_path(self, formatter: str) -> Path:
         """Render `formatter` into this album's folder name."""
@@ -249,14 +249,17 @@ class AlbumMetadata:
 
     @classmethod
     def from_soundcloud(cls, resp: dict) -> AlbumMetadata:
-        """Build album metadata standing in for a SoundCloud track's own."""
+        """Build album metadata standing in for a SoundCloud track's own.
+
+        SoundcloudClient says which container the download makes.
+        """
         # SoundCloud has no albums: a track stands in for its own.
         publisher = resp.get("publisher_metadata") or {}
         date = resp.get("created_at")
         info = AlbumInfo(
             id=str(resp["id"]),
             quality=0,
-            container="MP3",
+            container=resp.get("container") or "MP3",
             label=resp.get("label_name"),
             explicit=bool(publisher.get("explicit")),
         )
@@ -309,7 +312,7 @@ class AlbumMetadata:
     @classmethod
     def from_tidal(cls, resp: dict) -> AlbumMetadata | None:
         """None if the album can't be streamed."""
-        if not resp.get("allowStreaming", False):
+        if not resp.get("allowStreaming"):
             return None
         quality = tidal_quality_id(resp.get("audioQuality", "LOW"))
         lossless = quality >= 2
@@ -390,10 +393,10 @@ class AlbumMetadata:
             return cls.from_spotify(
                 resp["album"] | {"_disc_number": resp.get("disc_number")}
             )
-        raise Exception("Invalid source")
+        raise ValueError(f"Invalid source {source}")
 
     @classmethod
     def from_album_resp(cls, resp: dict, source: str) -> AlbumMetadata | None:
         if source not in SOURCES:
-            raise Exception("Invalid source")
+            raise ValueError(f"Invalid source {source}")
         return getattr(cls, f"from_{source}")(resp)

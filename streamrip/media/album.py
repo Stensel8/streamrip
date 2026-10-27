@@ -5,12 +5,11 @@ lazy from pathlib import Path
 from .. import progress
 from ..client import BasicDownloadable, Client
 from ..console import console
-from ..exceptions import NonStreamableError
 from ..filepath_utils import clean_filename
 from ..metadata import AlbumMetadata
 from ..metadata.util import format_quality, get_album_track_ids
 from .artwork import download_artwork
-from .media import Media, Pending, rip_tracks
+from .media import Media, PendingItem, rip_tracks
 from .track import PendingTrack, album_folder
 lazy from ..config import Config
 lazy from ..db import Database
@@ -29,10 +28,9 @@ async def download_booklets(session, booklets: list[dict], folder: Path):
         for b in booklets
         if (url := b.get("url") or b.get("original_url") or "").lower().endswith(".pdf")
     ]
-    names = [name for _, name in pdfs]
-    for n, (url, name) in enumerate(pdfs, 1):
-        if names.count(name) > 1:
-            name = f"{name} {n}"
+    titles = [title for _, title in pdfs]
+    for n, (url, title) in enumerate(pdfs, 1):
+        name = f"{title} {n}" if titles.count(title) > 1 else title
         path = folder / f"{name}.pdf"
         if path.is_file():
             continue
@@ -40,7 +38,9 @@ async def download_booklets(session, booklets: list[dict], folder: Path):
             await BasicDownloadable(session, url, "pdf").download(path, lambda _: None)
         except Exception as e:
             # A missing booklet is never worth the album.
-            logger.warning(f"Could not download booklet {url}: {type(e).__name__}: {e}")
+            logger.warning(
+                "Could not download booklet %s: %s: %s", url, type(e).__name__, e
+            )
 
 
 @dataclass(slots=True)
@@ -69,12 +69,14 @@ class Album(Media):
         total = self.skipped_tracks + len(self.tracks)
         if self.skipped_tracks and not self.tracks:
             logger.info(
-                f"{self.meta.album}: all {total} tracks already downloaded, skipping"
+                "%s: all %s tracks already downloaded, skipping", self.meta.album, total
             )
         elif self.skipped_tracks:
             logger.info(
-                f"{self.meta.album}: skipping {self.skipped_tracks} of {total} tracks "
-                "already downloaded"
+                "%s: skipping %s of %s tracks already downloaded",
+                self.meta.album,
+                self.skipped_tracks,
+                total,
             )
         progress.add_title(
             id(self), self._title(), self.config.session.cli.progress_bars
@@ -111,30 +113,20 @@ class Album(Media):
 
 
 @dataclass(slots=True)
-class PendingAlbum(Pending):
-    id: str
-    client: Client
-    config: Config
-    db: Database
-
+class PendingAlbum(PendingItem):
     async def resolve(self) -> Album | None:
-        try:
-            resp = await self.client.get_metadata(self.id, "album")
-        except NonStreamableError as e:
-            logger.error(
-                f"Album {self.id} not available to stream on {self.client.source} ({e})",
-            )
+        """Fetch the album and cover; an Album of the tracks still to download."""
+        if (resp := await self._fetch("album")) is None:
             return None
-
         try:
             meta = AlbumMetadata.from_album_resp(resp, self.client.source)
         except Exception as e:
-            logger.error(f"Error building album metadata for {self.id}: {e}")
+            logger.error("Error building album metadata for %s: %s", self.id, e)
             return None
 
         if meta is None:
             logger.error(
-                f"Album {self.id} not available to stream on {self.client.source}",
+                "Album %s not available to stream on %s", self.id, self.client.source
             )
             return None
 

@@ -5,9 +5,13 @@ import pytest
 
 from streamrip.metadata import AlbumMetadata, TrackMetadata
 
-qobuz_album_resp = json.loads(Path("tests/qobuz_album_resp.json").read_text())
+qobuz_album_resp = json.loads(
+    Path("tests/qobuz_album_resp.json").read_text(encoding="utf-8")
+)
 
-qobuz_track_resp = json.loads(Path("tests/qobuz_track_resp.json").read_text())
+qobuz_track_resp = json.loads(
+    Path("tests/qobuz_track_resp.json").read_text(encoding="utf-8")
+)
 
 
 def test_album_metadata_qobuz():

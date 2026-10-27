@@ -1,16 +1,16 @@
+"""The albums of an artist or a record label, downloaded one at a time."""
+
 import logging
 import re
 from dataclasses import dataclass
 lazy from collections.abc import Callable
 
 from ..console import console
-from ..exceptions import NonStreamableError
-from ..metadata import ArtistMetadata
+from ..metadata import ArtistMetadata, LabelMetadata
 from .album import Album, PendingAlbum
-from .media import Media, Pending
+from .media import Media, PendingItem
 lazy from ..client import Client
 lazy from ..config import ArtistFilterConfig, Config
-lazy from ..db import Database
 
 logger = logging.getLogger("streamrip")
 
@@ -43,7 +43,7 @@ async def rip_albums(
             if album is not None and wanted(album):
                 await album.rip()
         except Exception as e:
-            logger.error(f"Error downloading album: {type(e).__name__}: {e}")
+            logger.error("Error downloading album: %s: %s", type(e).__name__, e)
 
 
 @dataclass(slots=True)
@@ -80,7 +80,7 @@ class Artist(Media):
                 if (album := await item.resolve()) is not None:
                     albums.append(album)
             except Exception as e:
-                logger.error(f"Error resolving album: {type(e).__name__}: {e}")
+                logger.error("Error resolving album: %s: %s", type(e).__name__, e)
         if filters.repeats:
             albums = self._filter_repeats(albums)
         albums = [a for a in albums if self._wanted(a, filters)]
@@ -89,7 +89,7 @@ class Artist(Media):
             try:
                 await album.rip()
             except Exception as e:
-                logger.error(f"Error downloading album: {type(e).__name__}: {e}")
+                logger.error("Error downloading album: %s: %s", type(e).__name__, e)
 
     async def _download_async(self, filters: ArtistFilterConfig):
         """Resolve and download albums one at a time, without repeats filtering."""
@@ -162,22 +162,33 @@ class Artist(Media):
 
 
 @dataclass(slots=True)
-class PendingArtist(Pending):
-    id: str
+class Label(Media):
+    """A record label's catalog: a list of albums."""
+
+    name: str
+    albums: list[PendingAlbum]
     client: Client
     config: Config
-    db: Database
 
+    async def download(self):
+        """Resolve and download every album in the label's catalog."""
+        announce(self.name, self.albums)
+        await rip_albums(self.albums)
+
+
+def _pending_albums(item: PendingItem, ids: list[str]) -> list[PendingAlbum]:
+    """The albums of an artist or label, each to be resolved in its turn."""
+    return [
+        PendingAlbum(album_id, item.client, item.config, item.db) for album_id in ids
+    ]
+
+
+@dataclass(slots=True)
+class PendingArtist(PendingItem):
     async def resolve(self) -> Artist | None:
-        """Fetch the artist and its filtered releases; None if that fails."""
-        try:
-            resp = await self.client.get_metadata(self.id, "artist")
-        except NonStreamableError as e:
-            logger.error(
-                f"Artist {self.id} not available to stream on {self.client.source} ({e})",
-            )
+        """Fetch the artist and its releases; None if that fails."""
+        if (resp := await self._fetch("artist")) is None:
             return None
-
         try:
             meta = ArtistMetadata.from_resp(
                 resp,
@@ -185,13 +196,24 @@ class PendingArtist(Pending):
                 self.config.session.metadata.prefer_explicit,
             )
         except Exception as e:
-            logger.error(
-                f"Error building artist metadata: {e}",
-            )
+            logger.error("Error building artist metadata: %s", e)
             return None
+        return Artist(
+            meta.name, _pending_albums(self, meta.ids), self.client, self.config
+        )
 
-        albums = [
-            PendingAlbum(album_id, self.client, self.config, self.db)
-            for album_id in meta.ids
-        ]
-        return Artist(meta.name, albums, self.client, self.config)
+
+@dataclass(slots=True)
+class PendingLabel(PendingItem):
+    async def resolve(self) -> Label | None:
+        """Fetch the label and its whole catalog; None if that fails."""
+        if (resp := await self._fetch("label")) is None:
+            return None
+        try:
+            meta = LabelMetadata.from_resp(resp, self.client.source)
+        except Exception as e:
+            logger.error("Error building label metadata: %s", e)
+            return None
+        return Label(
+            meta.name, _pending_albums(self, meta.ids), self.client, self.config
+        )
