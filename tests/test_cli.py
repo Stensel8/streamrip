@@ -122,7 +122,7 @@ def test_database_clear_downloads_leaves_failed_alone(tmp_path, capsys):
     assert result.exit_code == 0, result.output
     assert downloads.all() == []
     assert len(failed.all()) == 1
-    assert "Cleared 2 downloaded track(s)" in _output(result, capsys)
+    assert "Cleared 2 downloaded tracks" in _output(result, capsys)
 
 
 def test_database_clear_all(tmp_path):
@@ -460,7 +460,7 @@ def test_repair_matches_failures_by_source_and_id(tmp_path, monkeypatch, capsys)
     assert ("tidal_3",) not in _RepairMain.downloads_at_rip
     # Tidal 3 was repaired and Qobuz 3 was not: it stays for the next run.
     assert failed.all() == [("qobuz", "track", "3")]
-    assert "Repaired1/2item(s)" in _printed(result, capsys)
+    assert "Repaired1of2items." in _printed(result, capsys)
 
 
 def test_repair_with_nothing_downloaded_keeps_every_failure(tmp_path, monkeypatch):

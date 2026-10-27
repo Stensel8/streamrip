@@ -35,10 +35,10 @@ class TestErrorHandling:
             await main.rip()
 
             assert (
-                "Download completed: 40 track(s) downloaded, 3 already downloaded, "
+                "Download completed: 40 tracks downloaded, 3 already downloaded, "
                 "1 failed" in caplog.text
             )
-            assert "item(s) downloaded" not in caplog.text
+            assert "items downloaded" not in caplog.text
 
     async def test_main_resolve_handles_a_failing_item(self, caplog):
         """One URL that fails to resolve must not stop the others."""

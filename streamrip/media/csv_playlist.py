@@ -14,6 +14,7 @@ from itertools import islice
 lazy from pathlib import Path
 
 from ..client.audio_match import MatchTrack
+from ..console import plural
 from .media import Pending
 from .playlist import Playlist, clock_ms, searched_playlist
 lazy from ..client import Client
@@ -130,7 +131,7 @@ def read_tracks(path: Path) -> list[MatchTrack]:
         if (track := _track(record)) is not None:
             tracks.append(track)
     if skipped := len(body) - len(tracks):
-        logger.warning("%s: skipped %s row(s) without a title", path, skipped)
+        logger.warning("%s: skipped %s without a title", path, plural(skipped, "row"))
     return tracks
 
 

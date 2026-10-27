@@ -450,7 +450,7 @@ async def test_a_playlist_gives_its_tracks_from_items(make_client, spotify, capl
         spotify.requests(f"/v1/playlists/{PLAYLIST}/items")[0]["query"]["limit"] == "50"
     )
     # What is skipped is said, with the reason: a gone track, a local file, an episode.
-    assert "Skipped 3 item(s) of CC Mix: local files, podcast episodes" in caplog.text
+    assert "Skipped 3 items of CC Mix: local files, podcast episodes" in caplog.text
 
 
 async def test_the_tracks_of_a_playlist_need_no_second_request(make_client, spotify):

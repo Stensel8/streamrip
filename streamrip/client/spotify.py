@@ -24,6 +24,7 @@ from urllib.parse import urlencode
 
 lazy import aiohttp
 
+from ..console import plural
 from ..exceptions import (
     APIError,
     AuthenticationError,
@@ -411,9 +412,9 @@ class SpotifyClient(Client):
         playlist["tracks"] = tracks
         if skipped:
             logger.info(
-                "Skipped %s item(s) of %s: local files, podcast episodes and tracks "
+                "Skipped %s of %s: local files, podcast episodes and tracks "
                 "Spotify no longer shows cannot be downloaded",
-                skipped,
+                plural(skipped, "item"),
                 playlist["name"],
             )
         return playlist
