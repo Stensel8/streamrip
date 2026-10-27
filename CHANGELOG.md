@@ -3,6 +3,50 @@
 All notable changes in this fork of [nathom/streamrip](https://github.com/nathom/streamrip). Numbers can refer to
 upstream issues and pull requests.
 
+## 2.6.4
+
+- How fast to rip, for the sake of your account: `--pace auto` (the default)
+  rips a small job at full speed and anything bigger, or a lot within 6 hours,
+  at a steady pace of about 80 tracks an hour; `--pace fast` and `--pace slow`
+  insist on one. auto turns steady on the way when the job grows or the service
+  answers a rate limit, and says so. `pacing` in `[downloads]` sets it for good.
+- streamrip's own long options, such as `--pace`, `--quality` or `--no-db`, work
+  after the command too: `streamrip search tidal artist NAME --pace fast`. Click
+  used to answer "No such option" there.
+- Under the progress bars, one line per account shows its load as the run goes:
+  this hour's tracks out of 175, streamrip's line a margin under the ~200 where
+  Tidal starts refusing (and, kept up, bans the account), the pace, how long
+  until the next track's turn, any rate limits and a ban risk of low, medium,
+  high or very high. At full speed a big job is medium from its first track,
+  and the line says not to keep it up; very high says to stop. Each hour full
+  speed crosses 175 is warned of, in red from the second within 6 hours. Each
+  finished hour is logged with its tracks and rate limits, in local time.
+- 10 rate limits (HTTP 429) within an hour stop streamrip, not 40. Each one is
+  said as it comes, louder towards the stop: a first one is a short wait, from
+  the fifth on they are red. The stop advises leaving streamrip alone for 3
+  hours, until a time it names; only a run within the hour stops at once.
+- A paced track waits its turn right before its stream is asked for and then
+  downloads at once. It used to wait before its metadata, which on Tidal costs
+  no request: an album's tracks waited one by one under "Fetching track info"
+  and then all asked for their streams together.
+- While tracks are paced, the time left on the Done bar is the pace's
+  estimate; Rich's own showed -:--:-- or jumped about between tracks.
+- Counts read "1 track", "2 tracks" throughout, and a search that finds
+  nothing no longer reports "0 tracks downloaded".
+- What Tidal's limits look like, read from a run that got an account suspended
+  and one that did not, is written down where streamrip paces its requests.
+- streamrip no longer claims one fixed user agent forever. Requests present a
+  current desktop Chrome, complete with the low-entropy Client Hints a real
+  one sends beside it (Sec-CH-UA, -Mobile, -Platform, Accept-Language) and,
+  on API calls, the fetch headers of a web player; media downloads stick to
+  the identity itself. Every 45 to 110 minutes it becomes a slightly
+  different Chrome (another version, platform or language), so a long run
+  shows a service no single fingerprint to flag as a bot. The brand list is
+  computed the way Chromium computes it from the version number, so the hints
+  can never contradict the user agent. Deezer's API calls follow along, each
+  keeping the language of the account it belongs to. LRCLIB is still told the
+  truth: it asks for a user agent that says what is asking.
+
 ## 2.6.3
 
 - Tracks start about 30 seconds apart and at most 80 an hour, so a long rip no

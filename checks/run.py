@@ -176,11 +176,11 @@ def live(source: str, config: Path | None, query_override: str | None):
                 break
         else:
             record(
-                f"{source}: download",
+                f"{source}: download a track",
                 f"none of {len(candidates)} results could be downloaded; try another --query",
             )
             return
-        record(f"{source}: download")
+        record(f"{source}: download a track")
 
         import mutagen  # not at the top: the script starts outside its environment
 
@@ -207,17 +207,17 @@ def live(source: str, config: Path | None, query_override: str | None):
                 problems.append(
                     f"does not decode cleanly: {decoded.stderr.strip()[:200]}"
                 )
-        record(f"{source}: the file", "; ".join(problems))
+        record(f"{source}: the track is whole and tagged", "; ".join(problems))
 
         again = streamrip(*download, capture_output=True)
         said = again.stdout + again.stderr
         record(
-            f"{source}: a second run skips what it has",
+            f"{source}: the same track again is skipped",
             None
             if again.returncode == 0
             and "already downloaded" in said
             and len(downloaded()) == 1
-            else "it downloaded again, or failed",
+            else "it was downloaded again, or the run failed",
         )
 
         if (
@@ -242,7 +242,7 @@ def live(source: str, config: Path | None, query_override: str | None):
                 "token_expiry"
             ]
             record(
-                "tidal: an expired token is refreshed",
+                "tidal: an expired login is renewed",
                 None
                 if out.returncode == 0 and float(expiry or 0) > time.time()
                 else f"exit code {out.returncode}, token_expiry {expiry!r}",
