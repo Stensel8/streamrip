@@ -33,7 +33,7 @@ from ..exceptions import (
     NonStreamableError,
 )
 from .audio_match import MatchTrack
-from .client import Client
+from .client import Client, api_headers
 from .downloadable import YtDlpDownloadable
 from .ytmusic import YouTubeMusicMatcher
 lazy from ..config import Config
@@ -252,7 +252,9 @@ class SpotifyClient(Client):
 
     async def _token_request(self, data: dict):
         """Ask the token endpoint for tokens and keep them, here and in the file."""
-        async with self.session.post(TOKEN_URL, data=data) as resp:
+        async with self.session.post(
+            TOKEN_URL, data=data, headers=api_headers()
+        ) as resp:
             try:
                 payload = await resp.json(content_type=None)
             except ValueError, aiohttp.ClientError:
