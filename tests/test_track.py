@@ -15,6 +15,7 @@ from streamrip.media.track import (
     PendingTrack,
     Track,
     album_folder,
+    fetch_downloadable,
     fetch_track_meta,
 )
 from streamrip.metadata import (
@@ -370,21 +371,29 @@ async def test_a_downloaded_soundcloud_track_is_skipped_whatever_id_it_is_asked_
     client.get_metadata.assert_not_called()
 
 
-async def test_a_track_that_will_download_is_paced_like_a_person(tmp_path):
+async def test_a_track_waits_its_turn_right_before_its_stream(tmp_path):
+    """The stream is the request every track costs, and its download follows
+    at once. Waiting before the metadata instead, which on Tidal comes with
+    the album's listing, made an album's tracks wait one by one and then ask
+    for every stream together."""
     database = db.Database(db.Downloads(str(tmp_path / "downloads.db")), db.Dummy())
+    asked = []
+
+    def ask(what):
+        async def asking(*_):
+            asked.append(what)
+            if what == "metadata":
+                raise RuntimeError("service down")
+
+        return asking
+
     client = MagicMock()
-    client.source = "test"
-    client.get_metadata = AsyncMock(side_effect=RuntimeError("service down"))
-    client.before_track = AsyncMock()
+    client.source = "tidal"
+    client.get_metadata = ask("metadata")
+    client.before_track = ask("turn")
+    client.get_downloadable = ask("stream")
 
     await fetch_track_meta(client, database, "123")
+    await fetch_downloadable(client, Config.defaults(), database, "123")
 
-    client.before_track.assert_awaited_once()
-
-    # A track already in the database makes no request, so it waits for none.
-    database.set_downloaded("test", "456")
-    client.before_track.reset_mock()
-    await fetch_track_meta(client, database, "456")
-
-    client.before_track.assert_not_awaited()
-    assert database.skipped_now == 1
+    assert asked == ["metadata", "turn", "stream"]

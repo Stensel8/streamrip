@@ -40,6 +40,26 @@ class TestErrorHandling:
             )
             assert "items downloaded" not in caplog.text
 
+    async def test_main_rip_with_nothing_resolved_says_nothing(self, caplog):
+        """A search written to a file resolves nothing: no "Download completed:
+        0 tracks downloaded" after it."""
+        from streamrip.rip.main import Main
+
+        with (
+            patch("streamrip.rip.main.QobuzClient"),
+            patch("streamrip.rip.main.TidalClient"),
+            patch("streamrip.rip.main.DeezerClient"),
+            patch("streamrip.rip.main.SoundcloudClient"),
+            patch("streamrip.rip.main.SpotifyClient"),
+        ):
+            mock_config = MagicMock()
+            mock_config.session.database.downloads_enabled = False
+            mock_config.session.database.failed_downloads_enabled = False
+            main = Main(mock_config)
+            await main.rip()
+
+        assert "Download completed" not in caplog.text
+
     async def test_main_resolve_handles_a_failing_item(self, caplog):
         """One URL that fails to resolve must not stop the others."""
         from streamrip.rip.main import Main

@@ -24,7 +24,7 @@ lazy from rich.table import Table
 lazy from rich.traceback import install
 
 from .. import __version__
-from ..config import DEFAULT_CONFIG_PATH
+from ..config import DEFAULT_CONFIG_PATH, PACES
 from .stopping import terminate
 
 # Only the commands that run need these: --help and --version do not.
@@ -360,6 +360,15 @@ class _StreamripGroup(_ColoredHelp, click.Group):
     ),
 )
 @click.option(
+    "--pace",
+    help="How fast to rip. auto (the default): full speed for a small job, a "
+    "steady pace of about 80 tracks an hour for a big one. fast: always full "
+    "speed, no waiting between tracks. slow: always the steady pace. At about "
+    "200 tracks an hour Tidal starts refusing requests, and keeping that up gets "
+    "an account banned.",
+    type=click.Choice(PACES, case_sensitive=False),
+)
+@click.option(
     "--no-progress",
     help="Do not show progress bars",
     is_flag=True,
@@ -379,7 +388,16 @@ class _StreamripGroup(_ColoredHelp, click.Group):
 )
 @click.pass_context
 def rip(
-    ctx, config_path, folder, no_db, quality, codec, no_progress, no_ssl_verify, verbose
+    ctx,
+    config_path,
+    folder,
+    no_db,
+    quality,
+    codec,
+    pace,
+    no_progress,
+    no_ssl_verify,
+    verbose,
 ):
     """A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, SoundCloud, and Spotify."""
     logging.basicConfig(
@@ -434,6 +452,9 @@ def rip(
     if codec is not None:
         c.session.conversion.enabled = True
         c.session.conversion.codec = codec.upper()
+
+    if pace is not None:
+        c.session.downloads.pacing = pace.lower()
 
     if no_progress:
         c.session.cli.progress_bars = False

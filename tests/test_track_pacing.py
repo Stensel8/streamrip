@@ -1,10 +1,12 @@
-"""The pacing of track starts: the gaps, the 429 widening, the hour cap, and
-what of it outlives a run."""
+"""The pacing of track starts: the paces (auto, fast, slow), the gaps, the 429
+widening, the hour cap, and what of it outlives a run."""
 
 import asyncio
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
+from click.testing import CliRunner
 
 from streamrip.client import client as client_module
 from streamrip.client.deezer import DeezerClient
@@ -14,6 +16,9 @@ from streamrip.client.spotify import SpotifyClient
 from streamrip.client.tidal import TidalClient
 from streamrip.config import Config, set_user_defaults
 from streamrip.exceptions import AccountHalt
+from streamrip.media import Album, Artist, Playlist, Track
+from streamrip.rip.cli import rip
+from streamrip.rip.main import ALBUM_TRACKS, planned_tracks
 
 # A draw far above TRACK_GAP_MAX, so the cap is what every gap comes out at.
 _HUGE = 10_000.0
@@ -34,15 +39,17 @@ class _Clock:
 
 @pytest.fixture
 def paced(monkeypatch):
-    """A client whose gaps between track starts all come out at 30s, on a
-    fake clock."""
+    """A client at the slow pace whose gaps between track starts all come
+    out at 30s, on a fake clock."""
     clock = _Clock()
     monkeypatch.setattr(client_module, "time", clock)
     monkeypatch.setattr(client_module, "TRACK_GAP_MAX", 30)
     monkeypatch.setattr(
         client_module, "random", SimpleNamespace(lognormvariate=lambda mu, sigma: _HUGE)
     )
-    return QobuzClient(Config.defaults()), clock
+    client = QobuzClient(Config.defaults())
+    client.pace("slow", 0)
+    return client, clock
 
 
 @pytest.fixture
@@ -52,9 +59,10 @@ def runs(paced, tmp_path, monkeypatch):
     _, clock = paced
     state = tmp_path / "pacing.json"
 
-    def run():
+    def run(pace="slow", planned=0):
         client = QobuzClient(Config.defaults())
         monkeypatch.setattr(client, "_pacing_state_path", lambda: state)
+        client.pace(pace, planned)
         return client
 
     return run, clock
@@ -189,6 +197,102 @@ def test_an_unreadable_state_file_is_a_fresh_start(runs, tmp_path):
     run, _ = runs
     (tmp_path / "pacing.json").write_text("}{ not json")
     assert run()._reserve_track_start() == 0.0
+
+
+def test_auto_rips_a_small_job_at_full_speed(paced, caplog):
+    client, clock = paced
+    client.pace("auto", 2)
+    assert [_elapse(client, clock) for _ in range(2)] == [0.0, 0.0]
+    assert "2 tracks to download, a small job, so at full speed" in caplog.text
+
+
+def test_auto_goes_slow_from_the_first_track_for_a_big_job(paced, caplog, monkeypatch):
+    """15 albums are never ripped at full speed: the pace is chosen before the
+    first track, for the job as a whole."""
+    monkeypatch.setattr(client_module, "FAST_BUDGET", 3)
+    client, clock = paced
+    client.pace("auto", 4)
+    assert _elapse(client, clock) == 0.0
+    assert _elapse(client, clock) == pytest.approx(30.0)
+    assert "4 tracks to download, so at a steady pace" in caplog.text
+    assert "Add --pace fast to rip without waiting between tracks." in caplog.text
+
+
+def test_auto_turns_slow_once_its_budget_is_spent(paced, caplog, monkeypatch):
+    monkeypatch.setattr(client_module, "FAST_BUDGET", 3)
+    client, clock = paced
+    client.pace("auto", 1)  # said to be small, and turns out bigger
+    assert [_elapse(client, clock) for _ in range(3)] == [0.0, 0.0, 0.0]
+    assert _elapse(client, clock) == pytest.approx(30.0)
+    assert (
+        "3 tracks in the last 6 hours, so from here on at a steady pace" in caplog.text
+    )
+
+
+def test_fast_never_waits_and_warns_once_an_hour_at_the_danger(
+    paced, caplog, monkeypatch
+):
+    monkeypatch.setattr(client_module, "HOURLY_DANGER", 3)
+    monkeypatch.setattr(client_module, "FAST_BUDGET", 1)
+    client, clock = paced
+    client.pace("fast", 10)
+    assert [_elapse(client, clock) for _ in range(5)] == [0.0] * 5
+    assert "full speed for 10 tracks, as asked (--pace fast)" in caplog.text
+    assert caplog.text.count("tracks this hour at full speed") == 1
+
+
+def test_a_second_hour_over_the_line_is_said_in_red(paced, caplog, monkeypatch):
+    """Hour after hour over the limit is how the account was suspended."""
+    monkeypatch.setattr(client_module, "HOURLY_DANGER", 3)
+    client, clock = paced
+    client.pace("fast", 0)
+    for _ in range(3):
+        _elapse(client, clock)
+    over = [r for r in caplog.records if "at full speed" in r.message]
+    assert [r.levelname for r in over] == ["WARNING"]
+    clock.now += 3600
+    for _ in range(3):
+        _elapse(client, clock)
+    over = [r for r in caplog.records if "at full speed" in r.message]
+    assert [r.levelname for r in over] == ["WARNING", "ERROR"]
+    assert "in 2 of the last 6 hours" in over[-1].message
+
+
+def test_the_tracks_to_come_are_counted_per_account():
+    """An album's and a playlist's tracks by the account each comes from, an
+    artist's albums as ALBUM_TRACKS each, and nothing that is no media."""
+    a, b = object(), object()
+    album = object.__new__(Album)
+    album.tracks = [SimpleNamespace(client=a)] * 12
+    playlist = object.__new__(Playlist)
+    playlist.tracks = [SimpleNamespace(client=a)] * 3 + [SimpleNamespace(client=b)] * 2
+    artist = object.__new__(Artist)
+    artist.client, artist.albums = b, [None] * 15
+    track = object.__new__(Track)
+    track.client = a
+    planned = planned_tracks([album, playlist, artist, track, MagicMock()])
+    assert planned == {a: 16, b: 2 + 15 * ALBUM_TRACKS}
+
+
+def test_the_pace_is_optional_in_the_config_and_checked(tmp_path):
+    path = tmp_path / "config.toml"
+    set_user_defaults(path)
+    assert Config(path).session.downloads.pacing == "auto"
+    path.write_text(path.read_text().replace('# pacing = "auto"', 'pacing = "slow"'))
+    assert Config(path).session.downloads.pacing == "slow"
+    path.write_text(path.read_text().replace('pacing = "slow"', 'pacing = "turbo"'))
+    with pytest.raises(ValueError, match="turbo"):
+        Config(path)
+
+
+@pytest.mark.parametrize(("pace", "code"), [("SLOW", 0), ("turbo", 2)])
+def test_the_pace_flag_takes_only_a_pace(tmp_path, pace, code):
+    cfg = tmp_path / "config.toml"
+    set_user_defaults(cfg)
+    result = CliRunner().invoke(
+        rip, ["--config-path", str(cfg), "--pace", pace, "config", "path"]
+    )
+    assert result.exit_code == code, result.output
 
 
 # The real method, captured at import: conftest.py's autouse fixture silences

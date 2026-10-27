@@ -22,12 +22,15 @@ from ..exceptions import (
     MissingCredentialsError,
 )
 from ..media import (
+    Album,
     Artist,
     Label,
     Media,
     Pending,
     PendingCsvPlaylist,
     PendingLastfmPlaylist,
+    Playlist,
+    Track,
     pending_item,
     remove_artwork_tempdirs,
 )
@@ -44,6 +47,33 @@ lazy from ..config import Config
 lazy from .search_menu import choose_results
 
 logger = logging.getLogger("streamrip")
+
+# What an album counts as until it is resolved, in an artist's or a label's
+# tracks to come.
+ALBUM_TRACKS = 10
+
+
+def planned_tracks(media: list[Media]) -> dict[Client, int]:
+    """How many tracks each account is about to download, for its pace
+    (Client.pace). An artist's or a label's albums are not resolved yet, so
+    each counts as ALBUM_TRACKS."""
+    planned: dict[Client, int] = {}
+
+    def add(client: Client | None, count: int):
+        if client is not None:
+            planned[client] = planned.get(client, 0) + count
+
+    for item in media:
+        match item:
+            case Artist() | Label():
+                add(item.client, len(item.albums) * ALBUM_TRACKS)
+            case Album() | Playlist():
+                # A playlist's tracks can come from a fallback source.
+                for track in item.tracks:
+                    add(track.client, 1)
+            case Track():
+                add(item.client, 1)
+    return planned
 
 
 class Main:
@@ -196,6 +226,11 @@ class Main:
         starting the next keeps both predictable, in exchange for not
         overlapping items that could otherwise run independently.
         """
+        if not self.media:
+            return  # nothing resolved, such as a search written to a file
+        planned = planned_tracks(self.media)
+        for client, count in planned.items():
+            client.pace(self.config.session.downloads.pacing, count)
         failed_items = 0
         for i, item in enumerate(self.media):
             # An artist or label logs a whole discography's worth of lines;

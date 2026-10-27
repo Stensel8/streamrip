@@ -27,6 +27,13 @@ verify_ssl = true
 # stay the property of their owners: this is for your own library. Set this to
 # false to download no lyrics and look none up.
 lyrics = true
+# How fast to rip. Services limit how much an account may download in an hour,
+# and going over that hour after hour gets an account suspended. "auto" rips a
+# small job (up to about 100 tracks in 6 hours) at full speed and anything
+# bigger at a steady pace of about 80 tracks an hour, well within those limits.
+# "fast" always goes at full speed, "slow" always steadily. --pace overrides
+# this for one run.
+# pacing = "auto"
 
 [qobuz]
 # 1: 320kbps MP3, 2: 16/44.1, 3: 24/<=96, 4: 24/>=96

@@ -10,12 +10,14 @@ import random
 import time
 from abc import ABC, abstractmethod
 from typing import Any
+lazy from collections import Counter
 lazy from collections.abc import Awaitable, Callable
 lazy from pathlib import Path
 
 lazy import aiohttp
 lazy import aiolimiter
 
+from ..console import plural
 from ..exceptions import AccountHalt
 from ..utils.ssl_utils import get_aiohttp_connector_kwargs
 lazy from ..config import Config
@@ -42,12 +44,43 @@ RATE_LIMIT_PAUSE = 10  # seconds per attempt when a 429 has no Retry-After
 SLOWDOWN_START = 2
 SLOWDOWN_MAX = 30
 SLOWDOWN_EASING = 0.98
+# What Tidal does, read from two long runs of one account (2026-10-26/27:
+# 9,868 tracks at about 550 an hour, then 1,087 at 80 an hour at most). The
+# other services' limits are unknown, so these numbers serve them too.
+#  - It counts an account's API requests per clock hour (UTC) and starts over
+#    on the hour: in 16 rate-limited hours, not one HTTP 429 came in :00-:09.
+#  - Past roughly 450 tracks' worth of requests in an hour it refuses some
+#    with HTTP 429, more and more towards the end of the hour. It counts
+#    requests, not tracks: the first 429 came after 208 to 633 tracks, as a
+#    hi-res release takes more requests than a CD one. A 429 carries no
+#    Retry-After; 10 to 40 s later the request mostly gets through.
+#  - An account that went over that limit 16 hours out of 18 (875 429s,
+#    about 10,000 tracks) was suspended with no further warning: its token
+#    endpoint answers 403 "abuse_detected" (sub_status 12001). The 429s had
+#    not grown more frequent before.
+#  - 80 track starts an hour, spread out, for 18 hours: not a single 429.
 # A few 429s are normal. This many separate ones within an hour are not, and
 # going on risks the account, so streamrip stops and says so.
 RATE_LIMIT_BUDGET = 40
 RATE_LIMIT_WINDOW = 3600
-# Between two track starts (not requests) is a person-shaped gap: a
-# log-normal one, mostly tens of seconds, now and then a few minutes.
+# Tracks in one clock hour after which Tidal's 429s began at the earliest
+# (208): from about here it refuses.
+REFUSED_FROM = 200
+# streamrip's line, a margin under REFUSED_FROM. The load shows the hour's
+# tracks against it, and at full speed each hour that crosses it is warned
+# of, louder from the second within FAST_WINDOW: hours on end over it are
+# what got the account suspended.
+HOURLY_DANGER = 175
+# The paces (config.PACES). fast: tracks start one after the other. slow: the
+# gaps and the hourly cap below, which ran 18 hours without a 429. auto: fast
+# for a small job -- when the tracks it brings and those the account started
+# in the last FAST_WINDOW stay within FAST_BUDGET -- and slow from the first
+# track for anything bigger. On the way auto turns slow once the budget is
+# spent.
+FAST_BUDGET = 100
+FAST_WINDOW = 6 * 3600
+# The slow pace. Between two track starts (not requests) is a person-shaped
+# gap: a log-normal one, mostly tens of seconds, now and then a few minutes.
 # Sigma 0.75 is the shape of a person's attention, and mu is what makes
 # the mean come out at TRACK_GAP_MEAN seconds (exp(mu + sigma²/2)).
 TRACK_GAP_MEAN = 30
@@ -74,9 +107,24 @@ def retry_after(resp, attempt: int) -> float:
     return min(seconds, MAX_RETRY_DELAY)
 
 
-def _last_hour(times, now: float) -> tuple[float, ...]:
-    """The times less than RATE_LIMIT_WINDOW before now, later ones included."""
-    return tuple(t for t in times if now - t < RATE_LIMIT_WINDOW)
+def _within(times, now: float, window: float = RATE_LIMIT_WINDOW) -> tuple[float, ...]:
+    """The times less than window before now, later ones included."""
+    return tuple(t for t in times if now - t < window)
+
+
+def _hours_over(times) -> int:
+    """How many clock hours among times have HOURLY_DANGER track starts or more."""
+    per_hour = Counter(int(t // 3600) for t in times)
+    return sum(n >= HOURLY_DANGER for n in per_hour.values())
+
+
+def _danger(name: str) -> str:
+    """What HOURLY_DANGER means, the same in every message that warns of it."""
+    return (
+        f"From about {REFUSED_FROM} tracks an hour {name} starts refusing "
+        "requests, and keeping that up gets an account banned: streamrip draws "
+        f"the line at {HOURLY_DANGER}."
+    )
 
 
 class RequestClient:
@@ -99,12 +147,18 @@ class RequestClient:
     _limited_at: tuple[float, ...] = ()
     _halt: AccountHalt | None = None
     # Track-start pacing (before_track): how much the 429s have widened the
-    # gaps, the starts of the last RATE_LIMIT_WINDOW (reserved ones included,
-    # so the last is the latest), and whether that hour is full. The first
+    # gaps, the starts of the last FAST_WINDOW (reserved ones included, so
+    # the last is the latest), and whether the last hour is full. The first
     # two outlive a run, wall clock too.
     _track_gap_scale: float = 1.0
     _track_starts: tuple[float, ...] = ()
     _track_hour_full: bool = False
+    # The pace asked for (config.PACES), whether the account goes at the
+    # slow one now, and the clock hour fast was last warned about.
+    _pace: str = "auto"
+    _slow: bool = False
+    _danger_warned: float | None = None
+    _big: bool = False
     # whether this run has picked up the pacing the last one left
     _pacing_state_loaded: bool = False
 
@@ -161,9 +215,9 @@ class RequestClient:
         now = time.time()
         try:
             state = json.loads(path.read_text())
-            self._track_starts = _last_hour(state["track_starts"], now)
-            self._limited_at = _last_hour(state["limited_at"], now)
-            if self._track_starts or self._limited_at:
+            self._track_starts = _within(state["track_starts"], now, FAST_WINDOW)
+            self._limited_at = _within(state["limited_at"], now)
+            if _within(self._track_starts, now) or self._limited_at:
                 self._track_gap_scale = state["track_gap_scale"]
         except OSError, TypeError, ValueError, KeyError:
             # Unreadable is a fresh start, not a failed rip.
@@ -185,9 +239,9 @@ class RequestClient:
             return
         now = time.time()
         state = {
-            "track_starts": _last_hour(self._track_starts, now),
+            "track_starts": _within(self._track_starts, now, FAST_WINDOW),
             "track_gap_scale": self._track_gap_scale,
-            "limited_at": _last_hour(self._limited_at, now),
+            "limited_at": _within(self._limited_at, now),
         }
         tmp = path.with_name(f".{path.name}-{os.getpid()}.tmp")
         try:
@@ -204,6 +258,87 @@ class RequestClient:
             owner._pacing_state_loaded = True
             owner._load_pacing_state()
         return owner
+
+    def pace(self, pace: str, planned: int):
+        """Set the account's pace (config.PACES) for a run that brings
+        `planned` tracks, and say what it is and why."""
+        owner = self._paced_owner()
+        name = self.source.capitalize()
+        recent = len(_within(owner._track_starts, time.time(), FAST_WINDOW))
+        big = planned + recent > FAST_BUDGET
+        owner._pace, owner._big = pace, big
+        owner._slow = pace == "slow" or (pace == "auto" and big)
+        steady = f"a steady pace of about {TRACKS_PER_HOUR} tracks an hour"
+        if pace == "fast":
+            # Asked for, so said either way, and loudly when it is a lot.
+            (logger.warning if big else logger.info)(
+                "%s: full speed for %s, as asked (--pace fast): no waiting "
+                "between tracks%s",
+                name,
+                plural(planned, "track"),
+                f", so don't keep it up for long. {_danger(name)}" if big else ".",
+            )
+        elif pace == "slow":
+            logger.info(
+                "%s: %s at %s, as asked (--pace slow).",
+                name,
+                plural(planned, "track"),
+                steady,
+            )
+        elif owner._slow:
+            logger.info(
+                "%s: %s to download%s, so at %s. %s Add --pace fast to rip "
+                "without waiting between tracks.",
+                name,
+                plural(planned, "track"),
+                f" and {recent} in the last {FAST_WINDOW // 3600} hours"
+                if recent
+                else "",
+                steady,
+                _danger(name),
+            )
+        else:
+            logger.info(
+                "%s: %s to download, a small job, so at full speed.",
+                name,
+                plural(planned, "track"),
+            )
+
+    def _turn_slow(self, why: str):
+        """Turn an auto pace slow for the rest of the run, saying why."""
+        name = self.source.capitalize()
+        self._slow = True
+        logger.warning(
+            "%s: %s, so from here on at a steady pace of about %s tracks an hour. %s",
+            name,
+            why,
+            TRACKS_PER_HOUR,
+            _danger(name),
+        )
+
+    def _warn_over(self, hours: int):
+        """Say that full speed crossed HOURLY_DANGER this hour, the `hours`th
+        time within FAST_WINDOW: in red from the second, which is how the
+        suspended account went."""
+        name = self.source.capitalize()
+        if hours < 2:
+            logger.warning(
+                "%s: %s tracks this hour at full speed, where streamrip draws the "
+                "line. Don't keep this up: hours over it are what got an account "
+                "banned. Stop and rerun with --pace slow to go on safely.",
+                name,
+                HOURLY_DANGER,
+            )
+        else:
+            logger.error(
+                "%s: over %s tracks an hour at full speed in %s of the last %s "
+                "hours. Hour after hour over the line is how an account got "
+                "banned. Stop now, and rerun with --pace slow to go on safely.",
+                name,
+                HOURLY_DANGER,
+                hours,
+                FAST_WINDOW // 3600,
+            )
 
     def _rate_limit_halt(self) -> AccountHalt:
         return AccountHalt(
@@ -222,7 +357,7 @@ class RequestClient:
             # A new 429 episode: it counts towards the budget, and spreads out
             # both the requests and the track starts that follow.
             wall = time.time()
-            owner._limited_at = (*_last_hour(owner._limited_at, wall), wall)
+            owner._limited_at = (*_within(owner._limited_at, wall), wall)
             if len(owner._limited_at) == RATE_LIMIT_BUDGET // 2:
                 logger.warning(
                     "%s has rate limited streamrip %s times in the last hour; half of "
@@ -251,15 +386,16 @@ class RequestClient:
         owner._save_pacing_state()
 
     async def before_track(self) -> None:
-        """Wait until this track may start.
+        """Wait until this track may start, at the account's pace.
 
         Back to back, tracks wore out the service's hourly budget at the
         same point of every hour, hour after hour, until the account was
-        suspended. So starts are TRACK_GAP_MEAN seconds apart on average
-        (log-normal, capped at TRACK_GAP_MAX), wider after every 429, and
-        at most TRACKS_PER_HOUR in any hour. The first track of a session
-        starts at once, and the pacing outlives a run: every run of the
-        account shares it.
+        suspended. So at the slow pace starts are TRACK_GAP_MEAN seconds
+        apart on average (log-normal, capped at TRACK_GAP_MAX), wider after
+        every 429, and at most TRACKS_PER_HOUR in any hour; at the fast pace
+        they follow each other. The first track after a quiet hour starts at
+        once, and the pacing outlives a run: every run of the account shares
+        it, so a ripper starting streamrip job after job counts as one run.
         """
         wait = self._reserve_track_start()
         if wait:
@@ -273,26 +409,38 @@ class RequestClient:
         """
         owner = self._paced_owner()
         now = time.time()
-        starts = _last_hour(owner._track_starts, now)
-        start = now
-        if starts:
-            gap = min(
-                random.lognormvariate(TRACK_GAP_MU, TRACK_GAP_SIGMA), TRACK_GAP_MAX
+        starts = _within(owner._track_starts, now, FAST_WINDOW)
+        if owner._pace == "auto" and not owner._slow and len(starts) >= FAST_BUDGET:
+            owner._turn_slow(
+                f"{len(starts)} tracks in the last {FAST_WINDOW // 3600} hours"
             )
-            start = max(now, starts[-1]) + gap * owner._track_gap_scale
-        full = len(starts) >= TRACKS_PER_HOUR
-        if full:
-            # An hour after the TRACKS_PER_HOUR-th latest start, not the
-            # oldest: reserved starts count too, or tracks resolving side by
-            # side slip past the cap.
-            start = max(start, starts[-TRACKS_PER_HOUR] + RATE_LIMIT_WINDOW)
-            if not owner._track_hour_full:
-                logger.warning(
-                    "%s tracks started in the last hour, holding the next one for %.0fs",
-                    TRACKS_PER_HOUR,
-                    start - now,
+        start = now
+        if owner._slow:
+            hour = _within(starts, now)
+            if hour:
+                gap = min(
+                    random.lognormvariate(TRACK_GAP_MU, TRACK_GAP_SIGMA), TRACK_GAP_MAX
                 )
-        owner._track_hour_full = full
+                start = max(now, hour[-1]) + gap * owner._track_gap_scale
+            full = len(hour) >= TRACKS_PER_HOUR
+            if full:
+                # An hour after the TRACKS_PER_HOUR-th latest start, not the
+                # oldest: reserved starts count too, or tracks resolving side
+                # by side slip past the cap.
+                start = max(start, hour[-TRACKS_PER_HOUR] + RATE_LIMIT_WINDOW)
+                if not owner._track_hour_full:
+                    logger.warning(
+                        "%s tracks started in the last hour, holding the next one "
+                        "for %.0fs",
+                        TRACKS_PER_HOUR,
+                        start - now,
+                    )
+            owner._track_hour_full = full
+        elif (clock_hour := now - now % 3600) != owner._danger_warned:
+            # fast: said once an hour when it crosses the line
+            if sum(1 for t in starts if t >= clock_hour) + 1 >= HOURLY_DANGER:
+                owner._danger_warned = clock_hour
+                self._warn_over(1 + _hours_over(starts))
         owner._track_starts = (*starts, start)
         # A track that starts with no 429 since the last one eases the gaps.
         owner._track_gap_scale = max(owner._track_gap_scale * TRACK_GAP_EASING, 1.0)
