@@ -97,12 +97,16 @@ class Lrclib:
     """A session to LRCLIB, what it has said, and whether it is worth asking."""
 
     def __init__(self, verify_ssl: bool = True):
-        """Open a session of its own: never a source's, which holds its login."""
+        """Open a session of its own: never a source's, which holds its login.
+
+        LRCLIB asks for a user agent that says what is asking, so this
+        session presents streamrip itself instead of the browser identity.
+        """
         self._session = new_session(
             verify_ssl=verify_ssl,
             timeout=aiohttp.ClientTimeout(total=15, sock_connect=10),
+            user_agent=_user_agent(),
         )
-        self._headers = {"User-Agent": _user_agent()}
         self._slots = asyncio.Semaphore(CONCURRENCY)
         self._records: dict[tuple, dict | None] = {}
         self._failures = 0
@@ -115,7 +119,7 @@ class Lrclib:
             if self._failures >= MAX_FAILURES:
                 raise LyricsUnavailableError(LEFT_ALONE)
             async with self._session.get(
-                f"{API}/{path}", params=params, headers=self._headers
+                f"{API}/{path}", params=params
             ) as resp:
                 if resp.status == 404:
                     return None

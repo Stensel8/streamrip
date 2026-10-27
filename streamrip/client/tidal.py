@@ -17,7 +17,7 @@ from ..exceptions import (
     NonStreamableError,
 )
 from ..metadata.util import TIDAL_QUALITY_IDS
-from .client import Client
+from .client import Client, api_headers
 from .downloadable import SegmentedMP4Downloadable, TidalDownloadable
 lazy from ..config import Config
 
@@ -645,7 +645,7 @@ class TidalClient(Client):
         """POST to the Tidal API, with the client credentials if auth (the
         token endpoint). The status is not checked.
         """
-        headers = self.auth_headers if auth else None
+        headers = api_headers(self.auth_headers if auth else None)
         async with (
             self.rate_limiter,
             self.session.post(url, data=data, headers=headers) as resp,

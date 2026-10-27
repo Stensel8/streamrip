@@ -9,7 +9,7 @@ from ..exceptions import (
     MissingCredentialsError,
     NonStreamableError,
 )
-from .client import DEFAULT_USER_AGENT, Client
+from .client import Client, register_header_dict
 from .downloadable import DeezerDownloadable
 lazy from ..config import Config
 
@@ -33,7 +33,8 @@ class DeezerClient(Client):
         super().__init__(config)
         self.client = deezer.Deezer()
         # deezer-py's API and GW calls share this dict; its own is Chrome 79.
-        self.client.http_headers["User-Agent"] = DEFAULT_USER_AGENT
+        # Registered to follow the browser identity as it rotates.
+        register_header_dict(self.client.http_headers)
         self._album_cache = {}
         self._quality_warned = False
 
