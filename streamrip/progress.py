@@ -12,6 +12,7 @@ from rich.progress import (
     TransferSpeedColumn,
 )
 from rich.rule import Rule
+from rich.segment import Segment
 from rich.text import Text
 
 from .console import console
@@ -33,6 +34,31 @@ class Handle:
     def __exit__(self, *_):
         """End the block: hide the task."""
         self.done()
+
+
+class _LeaveLastColumn:
+    """Render one column narrower than the terminal.
+
+    The title rule and the bars fill the whole width. A terminal that wraps
+    as soon as the last column is written, or that is narrower than it
+    reports, turns each of those lines into two. Live only knows the lines it
+    wrote, so every redraw starts one line lower and leaves the top line, the
+    "Downloading" rule, behind: hundreds of copies in one album.
+    """
+
+    def __init__(self, renderable):
+        self.renderable = renderable
+
+    def __rich_console__(self, console, options):
+        width = max(1, options.max_width - 1)
+        # Cropped as well: a bar row with a long track name can come out a
+        # column wider than it was given.
+        lines = console.render_lines(
+            self.renderable, options.update_width(width), pad=False
+        )
+        for line in lines:
+            yield from Segment.adjust_line_length(line, width, pad=False)
+            yield Segment.line()
 
 
 # What every progress function hands out when progress bars are disabled.
@@ -109,13 +135,13 @@ class ProgressManager:
             self._group(), console=console, refresh_per_second=10, transient=True
         )
 
-    def _group(self) -> Group:
+    def _group(self) -> _LeaveLastColumn:
         """Return the renderable group the Live display shows."""
         parts: list = [self._title]
         if self._overall_task is not None:
             parts.append(self.overall_progress)
         parts += [self.resolve_progress, self.progress]
-        return Group(*parts)
+        return _LeaveLastColumn(Group(*parts))
 
     def _ensure_started(self):
         """Start the Live display on its first use."""
