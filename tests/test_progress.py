@@ -111,3 +111,22 @@ def test_overall_total_survives_a_task_removed_in_an_earlier_run(manager):
     progress.overall_add(2)
     progress.overall_add(2)  # the update path, where the index was used
     assert manager.overall_progress.tasks[-1].total == 4
+
+
+@pytest.mark.parametrize("width", [40, 80, 160])
+def test_the_display_leaves_the_last_column_free(manager, width):
+    """No line of the display fills the terminal's width.
+
+    A terminal that wraps as soon as the last column is written turns a full-width
+    line into two, which Live does not count: each redraw then leaves the previous
+    "Downloading" rule behind.
+    """
+    from rich.console import Console
+
+    progress.add_title(1, "An album with a title long enough to fill any width " * 4)
+    progress.overall_add(3)
+    progress.get_progress_callback(True, 1000, "a track " * 30)
+    console = Console(width=width, file=None, force_terminal=True)
+    lines = console.render_lines(manager._group(), console.options, pad=False)
+    assert lines
+    assert max(sum(seg.cell_length for seg in line) for line in lines) == width - 1

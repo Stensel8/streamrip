@@ -13,6 +13,10 @@ upstream issues and pull requests.
 - streamrip's own long options, such as `--pace`, `--quality` or `--no-db`, work
   after the command too: `streamrip search tidal artist NAME --pace fast`. Click
   used to answer "No such option" there.
+- The progress display no longer leaves its title line behind at every redraw
+  on a terminal that wraps at its last column
+  ([PR #89](https://github.com/Stensel8/streamrip/pull/89), by
+  [@statelycurmudgeon](https://github.com/statelycurmudgeon)).
 - Under the progress bars, one line per account shows its load as the run goes:
   this hour's tracks out of 175, streamrip's line a margin under the ~200 where
   Tidal starts refusing (and, kept up, bans the account), the pace, how long

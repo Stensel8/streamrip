@@ -12,6 +12,7 @@ from rich.progress import (
     TransferSpeedColumn,
 )
 from rich.rule import Rule
+from rich.segment import Segment
 from rich.text import Text
 
 from .console import console
@@ -67,6 +68,24 @@ class _TimeLeft(TimeRemainingColumn):
         minutes, seconds = divmod(int(left), 60)
         hours, minutes = divmod(minutes, 60)
         return Text(f"{hours}:{minutes:02d}:{seconds:02d}", "progress.remaining")
+
+
+class _Display(Group):
+    """The parts the Live display shows, one column narrower than the
+    terminal. A terminal that wraps as soon as its last column is written,
+    or is narrower than it says, turns a full-width line into two; Live
+    counts only the lines it wrote, so each redraw would leave the
+    "Downloading" rule behind. Cropped too: a bar with a long track name
+    can come out a column wider than it was given."""
+
+    def __rich_console__(self, console, options):
+        width = options.max_width - 1
+        lines = console.render_lines(
+            Group(*self.renderables), options.update_width(width), pad=False
+        )
+        for line in lines:
+            yield from Segment.adjust_line_length(line, width, pad=False)
+            yield Segment.line()
 
 
 class ProgressManager:
@@ -141,7 +160,7 @@ class ProgressManager:
             self._group(), console=console, refresh_per_second=10, transient=True
         )
 
-    def _group(self) -> Group:
+    def _group(self) -> _Display:
         """Return the renderable group the Live display shows."""
         parts: list = [self._title]
         if self._overall_task is not None:
@@ -149,7 +168,7 @@ class ProgressManager:
         parts += [self.resolve_progress, self.progress]
         if self.load is not None:
             parts.append(self.load)
-        return Group(*parts)
+        return _Display(*parts)
 
     def _ensure_started(self):
         """Start the Live display on its first use."""
