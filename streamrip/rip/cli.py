@@ -300,7 +300,7 @@ class _StreamripGroup(_ColoredHelp, click.Group):
         commands = list(self.commands.values())
         while commands:
             command = commands.pop()
-            theirs.update(name for param in command.params for name in param.opts)
+            theirs.update(*param.opts for param in command.params)
             commands += getattr(command, "commands", {}).values()
         own = {
             name: param
@@ -995,7 +995,7 @@ async def csv_list(ctx, source, fallback_source, path):
         await main.rip()
 
 
-@rip.command()
+@rip.command("id")
 @click.argument("source", type=click.Choice(list(SOURCES), case_sensitive=False))
 @click.argument(
     "media-type",
@@ -1006,7 +1006,7 @@ async def csv_list(ctx, source, fallback_source, path):
 @click.argument("item_id", metavar="ID")
 @click.pass_context
 @coro
-async def id(ctx, source, media_type, item_id):
+async def by_id(ctx, source, media_type, item_id):
     """Download an item by ID."""
     _require_config(ctx)
     async with main_session(ctx) as main:
@@ -1017,7 +1017,7 @@ async def id(ctx, source, media_type, item_id):
 
 def _version_tuple(version: str) -> tuple[int, ...]:
     """Numeric version for comparisons: "2.10.0" > "2.9.1", "v2.3" == "2.3"."""
-    return tuple(int(n) for n in re.findall(r"\d+", version.split("+")[0])[:3])
+    return tuple(int(n) for n in re.findall(r"\d+", version.partition("+")[0])[:3])
 
 
 def is_newer_version(latest: str | None, current: str = __version__) -> bool:

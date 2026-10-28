@@ -188,10 +188,10 @@ class Main:
         """
         sources = {s for s, _, _ in info}
         clients = {s: await self.get_logged_in_client(s) for s in sources}
-        for source, media_type, id in info:
+        for source, media_type, item_id in info:
             self.pending.append(
                 pending_item(
-                    media_type, id, clients[source], self.config, self.database
+                    media_type, item_id, clients[source], self.config, self.database
                 )
             )
 

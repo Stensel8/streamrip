@@ -28,7 +28,7 @@ from streamrip.config import (
 SAMPLE_CONFIG = Path("tests/test_config.toml")
 
 
-@pytest.fixture()
+@pytest.fixture
 def sample_config_data() -> ConfigData:
     return ConfigData.from_toml(SAMPLE_CONFIG.read_text(encoding="utf-8"))
 

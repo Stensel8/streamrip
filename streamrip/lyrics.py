@@ -118,9 +118,7 @@ class Lrclib:
             # before the failures that closed the door.
             if self._failures >= MAX_FAILURES:
                 raise LyricsUnavailableError(LEFT_ALONE)
-            async with self._session.get(
-                f"{API}/{path}", params=params
-            ) as resp:
+            async with self._session.get(f"{API}/{path}", params=params) as resp:
                 if resp.status == 404:
                     return None
                 resp.raise_for_status()

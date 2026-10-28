@@ -8,6 +8,7 @@ import math
 import os
 import random
 import time
+import weakref
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any
@@ -18,7 +19,6 @@ lazy from pathlib import Path
 
 lazy import aiohttp
 lazy import aiolimiter
-lazy import weakref
 
 from ..console import plural
 from ..exceptions import AccountHalt
@@ -67,9 +67,7 @@ _UA_PLATFORMS = {
 
 def _sec_ch_ua(major: int, brand: str = "Google Chrome") -> str:
     """The Sec-CH-UA header for a Chrome `major` version."""
-    grease = (
-        f"Not{_GREASE_CHARS[major % 11]}A{_GREASE_CHARS[(major + 1) % 11]}Brand"
-    )
+    grease = f"Not{_GREASE_CHARS[major % 11]}A{_GREASE_CHARS[(major + 1) % 11]}Brand"
     brands = (
         f'"{grease}";v="{_GREASE_VERSIONS[major % 3]}"',
         f'"Chromium";v="{major}"',
@@ -141,9 +139,7 @@ def _apply_identity():
         # API calls only, so the fetch headers come along. The account's
         # own language, set at login, is the truer Accept-Language, so
         # the identity's is left out rather than written over it.
-        headers.update(
-            {k: v for k, v in _identity.items() if k != "Accept-Language"}
-        )
+        headers.update({k: v for k, v in _identity.items() if k != "Accept-Language"})
         headers.update(_FETCH_HEADERS)
 
 
@@ -175,6 +171,7 @@ def register_header_dict(headers: dict[str, str]):
     _header_dicts.append(headers)
     _current_identity()
     _apply_identity()
+
 
 # Rate limiting and server errors are worth another attempt; other 4xx are not.
 RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
@@ -778,7 +775,9 @@ class RequestClient:
                     async with self.session.get(
                         # api_headers also swaps in the next identity when
                         # the current one's time is up.
-                        url, params=params, headers=api_headers(headers)
+                        url,
+                        params=params,
+                        headers=api_headers(headers),
                     ) as resp:
                         if resp.status == 429:
                             self._pause_requests(retry_after(resp, attempt))

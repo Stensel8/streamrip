@@ -98,7 +98,7 @@ async def test_empty_search_needs_no_pagination_metadata():
     assert client._request_ok.call_count == 1
 
 
-@pytest.mark.parametrize("total, expected_pages", [(1, 1), (2, 1), (4, 2), (5, 3)])
+@pytest.mark.parametrize(("total", "expected_pages"), [(1, 1), (2, 1), (4, 2), (5, 3)])
 async def test_search_stops_at_total(total, expected_pages):
     client = _client(_page(total=total))
     pages = await client.search("album", "query", limit=10)

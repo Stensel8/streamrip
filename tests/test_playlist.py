@@ -301,7 +301,9 @@ def _served_from(requested, served):
     }
     client = MagicMock()
     client.source = "deezer"
-    client.get_metadata = AsyncMock(side_effect=lambda id, _type: responses[id])
+    client.get_metadata = AsyncMock(
+        side_effect=lambda item_id, _type: responses[item_id]
+    )
     client.get_downloadable = AsyncMock(
         return_value=MagicMock(id=served, source="deezer")
     )

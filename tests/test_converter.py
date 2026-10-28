@@ -87,7 +87,7 @@ needs_ffmpeg = pytest.mark.skipif(find_ffmpeg() is None, reason="needs ffmpeg")
 
 @needs_ffmpeg
 @pytest.mark.parametrize(
-    "codec, extension",
+    ("codec", "extension"),
     [
         ("FLAC", "flac"),
         ("ALAC", "m4a"),

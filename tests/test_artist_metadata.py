@@ -88,14 +88,14 @@ def test_deezer_albums_are_left_as_listed():
 def test_tidal_keeps_different_versions_but_deduplicates_normalized_versions():
     albums = [
         {
-            "id": id,
+            "id": item_id,
             "title": "Seasons",
             "artist": {"id": ME},
             "numberOfTracks": 2,
             "version": version,
             "explicit": explicit,
         }
-        for id, version, explicit in [
+        for item_id, version, explicit in [
             ("original", None, False),
             ("remix", "Remix", False),
             ("acoustic-clean", " [Acoustic] ", False),

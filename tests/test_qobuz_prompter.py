@@ -139,7 +139,8 @@ def test_menu_offers_no_password_login(monkeypatch, prompter):
     )
     asyncio.run(prompter._prompt_creds_and_set_session_config())
     shown = " ".join(str(c.args[0]) for c in output.call_args_list).lower()
-    assert "email" not in shown and "password" not in shown
+    assert "email" not in shown
+    assert "password" not in shown
 
 
 async def test_without_a_screen_it_goes_straight_to_entering_it_by_hand(
