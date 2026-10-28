@@ -82,7 +82,6 @@ markers = [
   "real_browser: drives a real Chrome-family browser, skipped when none is installed",
   "login: about logins, tokens and sessions; CI leaves them out, `checks/run.py login` runs them",
 ]
-log_cli = true
 
 [build-system]
 requires = ["uv_build>=0.13.5,<0.14"]
