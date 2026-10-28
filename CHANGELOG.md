@@ -3,42 +3,35 @@
 All notable changes in this fork of [nathom/streamrip](https://github.com/nathom/streamrip). Numbers can refer to
 upstream issues and pull requests.
 
-## 2.6.4
+## 2.6.5
 
-- How fast to rip, for the sake of your account: `--pace auto` (the default)
-  rips a small job at full speed and anything bigger, or a lot within 6 hours,
-  at a steady pace of about 80 tracks an hour; `--pace fast` and `--pace slow`
-  insist on one. auto turns steady on the way when the job grows or the service
-  answers a rate limit, and says so. `pacing` in `[downloads]` sets it for good.
-- streamrip's own long options, such as `--pace`, `--quality` or `--no-db`, work
-  after the command too: `streamrip search tidal artist NAME --pace fast`. Click
-  used to answer "No such option" there.
+- Tracks are paced to protect your account. `--pace auto` (the default) rips a
+  small job at full speed and a big one at a steady pace of about 80 tracks an
+  hour; `--pace fast` and `--pace slow` choose one. `pacing` in `[downloads]`
+  sets it for good.
+- Under the progress bars, each account shows its load: tracks this hour out of
+  175, the pace, the next track's turn and a ban risk. Tidal starts refusing
+  from about 200 tracks an hour; at full speed streamrip warns past 175.
+- After a rate limit (HTTP 429), requests are spread out further and each one is
+  reported. At 10 within an hour, counted across runs, streamrip stops and
+  advises a break of 3 hours.
+- While tracks are paced, the time left on the Done bar follows the pace.
+- Options such as `--pace` and `--quality` also work after the command.
 - The progress display no longer leaves its title line behind at every redraw
   on a terminal that wraps at its last column
   ([PR #89](https://github.com/Stensel8/streamrip/pull/89), by
   [@statelycurmudgeon](https://github.com/statelycurmudgeon)).
-- Under the progress bars, one line per account shows its load as the run goes:
-  this hour's tracks out of 175, streamrip's line a margin under the ~200 where
-  Tidal starts refusing (and, kept up, bans the account), the pace, how long
-  until the next track's turn, any rate limits and a ban risk of low, medium,
-  high or very high. At full speed a big job is medium from its first track,
-  and the line says not to keep it up; very high says to stop. Each hour full
-  speed crosses 175 is warned of, in red from the second within 6 hours. Each
-  finished hour is logged with its tracks and rate limits, in local time.
-- 10 rate limits (HTTP 429) within an hour stop streamrip, not 40. Each one is
-  said as it comes, louder towards the stop: a first one is a short wait, from
-  the fifth on they are red. The stop advises leaving streamrip alone for 3
-  hours, until a time it names; only a run within the hour stops at once.
-- A paced track waits its turn right before its stream is asked for and then
-  downloads at once. It used to wait before its metadata, which on Tidal costs
-  no request: an album's tracks waited one by one under "Fetching track info"
-  and then all asked for their streams together.
-- While tracks are paced, the time left on the Done bar is the pace's
-  estimate; Rich's own showed -:--:-- or jumped about between tracks.
-- Counts read "1 track", "2 tracks" throughout, and a search that finds
-  nothing no longer reports "0 tracks downloaded".
-- What Tidal's limits look like, read from a run that got an account suspended
-  and one that did not, is written down where streamrip paces its requests.
+- A Tidal login that lapses mid-run is renewed. One that Tidal refuses, such as
+  a suspended account, stops the run with the reason.
+- SoundCloud downloads work again, as 160 kbps AAC (`.m4a`, labelled `[AAC]`).
+- A last.fm playlist's tracks are matched on title and artist, like a CSV list's.
+- A failed login or a stop ends in one red line and exit code 1, not a traceback.
+- Stopping streamrip also stops its ffmpeg and leaves no half-written file.
+- Counts read "1 track", "2 tracks", and a search that finds nothing no longer
+  reports "0 tracks downloaded".
+- `streamrip config path` prints only the path.
+- `checks/run.py` runs every test by hand, including the login tests CI skips,
+  and checks real accounts.
 - streamrip no longer claims one fixed user agent forever. Requests present a
   current desktop Chrome, complete with the low-entropy Client Hints a real
   one sends beside it (Sec-CH-UA, -Mobile, -Platform, Accept-Language) and,
@@ -50,26 +43,6 @@ upstream issues and pull requests.
   can never contradict the user agent. Deezer's API calls follow along, each
   keeping the language of the account it belongs to. LRCLIB is still told the
   truth: it asks for a user agent that says what is asking.
-
-## 2.6.3
-
-- Tracks start about 30 seconds apart and at most 80 an hour, so a long rip no
-  longer wears out a service's hourly limit. Large libraries take far longer.
-- After a rate limit (HTTP 429) requests and tracks are spread out further, and
-  40 rate limits within an hour stop streamrip before the account is at risk.
-  Runs one after another share this count, kept next to the config.
-- A Tidal login that lapses mid-run is renewed. One Tidal refuses, such as a
-  suspended account, says why and stops the run.
-- SoundCloud downloads work again. Most tracks now only have AAC, which streamrip
-  saves as a 160 kbps `.m4a` (their MP3 was 128 kbps), labelled `[AAC]`.
-- A last.fm playlist's tracks are found the way a CSV list's are: the result that
-  matches title and artist, not just the first search hit.
-- A failed login or a stop ends in one red line and exit code 1, not a traceback.
-- Stopping streamrip also stops the ffmpeg it started, and leaves no half-written
-  file behind.
-- `checks/run.py` runs every test by hand, including the login and session
-  tests CI no longer runs, and checks real accounts. It runs with any python.
-- `streamrip config path` prints only the path; notices go to stderr.
 
 ## 2.6.2
 
