@@ -106,6 +106,8 @@ explicit-preview-rules = true
 select = [
   "E4", "E7", "E9", "F", "I", "UP", "ASYNC", "N", "RUF", "ERA001", "PTH",
   "B", "C4", "FURB", "PERF", "PIE", "RET", "SIM",
+  # Names that shadow a builtin, and pytest's own style.
+  "A", "PT",
   # Imports only annotations need are lazy (PEP 810): with deferred
   # annotations (PEP 649) they are never loaded at run time.
   "TC",
@@ -115,9 +117,9 @@ select = [
   # Log arguments, not f-strings: formatted only when the line is shown.
   "G004",
   # Mistakes waiting to happen.
-  "A002", "PLW1510", "PLW1514", "PLW2901", "RUF052", "RUF056", "TRY300",
+  "PLW1510", "PLW1514", "PLW2901", "RUF052", "RUF056", "TRY300",
   # Simpler code.
-  "FURB140", "ISC004", "PLR6201", "RUF039",
+  "FURB140", "ISC004", "PLC0207", "PLR0402", "PLR6201", "RUF039",
   # Not: ARG002 and PLR6301 (they take interface methods and hooks, such as
   # Client.get_lyrics or Textual's, for mistakes), RUF029 (callbacks that must
   # be async), TRY301 (run_ffmpeg raises inside its try to clean up), PGH003

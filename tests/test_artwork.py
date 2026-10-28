@@ -16,8 +16,8 @@ async def test_artwork_cleanup_preserves_existing_files(
     folder = tmp_path / "Mix"
     legacy = folder / "__artwork"
     legacy.mkdir(parents=True)
-    sentinel = legacy / "keep.txt"
-    sentinel.write_text("existing artwork")
+    kept = legacy / "keep.txt"
+    kept.write_text("existing artwork")
     monkeypatch.setattr(artwork, "_artwork_tempdirs", set())
     downloaded = []
 
@@ -42,7 +42,7 @@ async def test_artwork_cleanup_preserves_existing_files(
 
     owned = set(artwork._artwork_tempdirs)
     artwork.remove_artwork_tempdirs()
-    assert sentinel.read_text() == "existing artwork"
+    assert kept.read_text() == "existing artwork"
     assert len(owned) == 2
     assert all(not path.exists() for path in owned)
     assert not artwork._artwork_tempdirs

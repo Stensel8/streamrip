@@ -96,16 +96,14 @@ def test_permission_failure_aborts_before_changing_contents(
         raise PermissionError("Cannot restrict permissions")
 
     monkeypatch.setattr(os, "fchmod", deny_chmod)
-    with pytest.raises(PermissionError):
-        if operation == "save":
-            config.save_file()
-        else:
-            set_user_defaults(path)
+    save = config.save_file if operation == "save" else lambda: set_user_defaults(path)
+    with pytest.raises(PermissionError, match="Cannot restrict permissions"):
+        save()
 
     assert path.read_bytes() == original
     assert descriptors
     for fd in descriptors:
-        with pytest.raises(OSError):
+        with pytest.raises(OSError, match="Bad file descriptor"):
             os.fstat(fd)  # Failed saves must also close their file descriptor.
 
 

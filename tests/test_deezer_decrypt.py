@@ -93,7 +93,7 @@ class _SmallSession:
 
 
 @pytest.mark.parametrize(
-    "body, message",
+    ("body", "message"),
     [
         (b'{"error": "RIGHTS", "message": "Not available"}', "RIGHTS - Not available"),
         (b"<html>gone</html>", "File not found."),

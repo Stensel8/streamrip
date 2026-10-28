@@ -119,7 +119,8 @@ async def test_search_command_reports_failure_instead_of_crashing():
     with patch("streamrip.rip.main.console") as console:
         await m.search_interactive("qobuz", "artist", "Radioaktivists")
     printed = " ".join(str(c.args[0]) for c in console.print.call_args_list)
-    assert "Search failed" in printed and "Algolia" in printed
+    assert "Search failed" in printed
+    assert "Algolia" in printed
 
 
 @pytest.mark.parametrize("status", [501, 505])

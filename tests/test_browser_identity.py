@@ -50,7 +50,7 @@ def clock(monkeypatch, identity_state):
     return clock
 
 
-@pytest.mark.parametrize("major,expected", sorted(KNOWN_SEC_CH_UA.items()))
+@pytest.mark.parametrize(("major", "expected"), sorted(KNOWN_SEC_CH_UA.items()))
 def test_sec_ch_ua_is_chromiums_for_that_version(major, expected):
     assert _sec_ch_ua(major) == expected
 
@@ -75,13 +75,12 @@ def test_every_identity_agrees_with_itself(identity):
     os_token, major = match.group(1), int(match.group(2))
 
     token_to_platform = {
-        token: platform
-        for platform, token in client_module._UA_PLATFORMS.items()
+        token: platform for platform, token in client_module._UA_PLATFORMS.items()
     }
     platform = token_to_platform[os_token]
     assert identity["Sec-CH-UA-Platform"] == f'"{platform}"'
     # Brave's user agent is Chrome's; only its brand in the list differs.
-    assert identity["Sec-CH-UA"] in (_sec_ch_ua(major), _sec_ch_ua(major, "Brave"))
+    assert identity["Sec-CH-UA"] in {_sec_ch_ua(major), _sec_ch_ua(major, "Brave")}
     assert identity["Sec-CH-UA-Mobile"] == "?0"
     assert re.fullmatch(
         r"[a-z]{2,3}(-[A-Z]{2})?(,[a-z]{2,3}(-[A-Z]{2})?(;q=[0-9.]+)?)*",
@@ -141,9 +140,7 @@ def test_a_registered_header_dict_follows_but_keeps_its_own_language(clock):
     clock.now += 3 * 60 * 60
 
     assert headers.pop("Accept-Language") == "fr_FR"
-    assert headers == {
-        k: v for k, v in api_headers().items() if k != "Accept-Language"
-    }
+    assert headers == {k: v for k, v in api_headers().items() if k != "Accept-Language"}
 
 
 def test_a_rotation_picks_another_identity_from_the_pool(clock):

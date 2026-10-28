@@ -151,7 +151,8 @@ def test_deezer_track_without_album_tracklist():
     }
     m = AlbumMetadata.from_track_resp(track, "deezer")
     assert (m.info.id, m.info.container, m.albumartist) == ("5", "FLAC", "A")
-    assert m.info.explicit and m.year == "Unknown"
+    assert m.info.explicit
+    assert m.year == "Unknown"
 
 
 def test_tidal_track_metadata():

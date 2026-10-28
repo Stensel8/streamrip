@@ -21,7 +21,7 @@ TEST_M4A = TESTS / "silence.m4a"
 TEST_COVER = TESTS / "1x1_pixel.jpg"
 
 
-@pytest.fixture()
+@pytest.fixture
 def flac_path(tmp_path) -> Path:
     """A copy of the silent FLAC with every tag removed."""
     path = tmp_path / "track.flac"
@@ -32,7 +32,7 @@ def flac_path(tmp_path) -> Path:
     return path
 
 
-@pytest.fixture()
+@pytest.fixture
 def sample_metadata() -> TrackMetadata:
     return TrackMetadata(
         TrackInfo(id="12345", explicit=True),

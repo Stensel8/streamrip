@@ -281,7 +281,7 @@ async def test_pixel_renderer_failure_uses_blocks(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "image_fields,expected",
+    ("image_fields", "expected"),
     [
         (
             {"image": {"large": "600", "small": "300", "thumbnail": "50"}},

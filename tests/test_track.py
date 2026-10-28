@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 import mutagen
 import pytest
 
-import streamrip.db as db
+from streamrip import db
 from streamrip.client.downloadable import Downloadable
 from streamrip.config import Config
 from streamrip.exceptions import NonStreamableError

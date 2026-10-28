@@ -153,7 +153,8 @@ async def test_menu_offers_no_password_login(monkeypatch, prompter, launch):
     await prompter.prompt_and_login()
 
     shown = " ".join(str(c.args[0]) for c in output.call_args_list if c.args).lower()
-    assert "email" not in shown and "password" not in shown
+    assert "email" not in shown
+    assert "password" not in shown
 
 
 async def test_manual_entry_is_the_default_choice(monkeypatch, prompter, launch):
