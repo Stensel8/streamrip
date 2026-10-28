@@ -29,8 +29,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 UV = ["uv", "run", "--locked", "--all-extras"]
-# Without the live log of every passing test: a failing one still shows its log.
-PYTEST = [*UV, "pytest", "-o", "log_cli=false"]
+PYTEST = [*UV, "pytest"]
 SOURCES = ("tidal", "qobuz", "deezer", "spotify", "soundcloud")
 # SoundCloud only lets streamrip download what the artists themselves upload, so it is searched for that.
 QUERIES = {"soundcloud": "lofi"}
