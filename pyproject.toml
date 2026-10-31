@@ -38,7 +38,7 @@ dependencies = [
   # brotli, which has no wheel for Python 3.15, only to unpack the odd
   # brotli-compressed page.
   "ytmusicapi>=1.12,<2",
-  "yt-dlp==2026.10.21",
+  "yt-dlp==2026.10.26",
   "yt-dlp-ejs==0.8.0",
   "websockets>=17",
   # The CA bundle every connection is checked against, on every system alike.
@@ -65,8 +65,8 @@ Upstream = "https://github.com/nathom/streamrip"
 
 [dependency-groups]
 dev = [
-  "ruff==0.17.2",
-  "pytest==9.1.1",
+  "ruff==0.17.3",
+  "pytest==9.2.0",
   "pytest-mock==3.17.0",
   "pytest-asyncio==1.4.1",
 ]
