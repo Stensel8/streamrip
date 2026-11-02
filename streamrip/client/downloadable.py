@@ -203,6 +203,9 @@ class Downloadable(ABC):
     _size: int | None = None
     # Set by Track for retries: continue a partial file instead of restarting.
     resume: bool = False
+    # When this was resolved: some sources sign the url with a short-lived
+    # token, so Track.download() re-resolves it once this gets old.
+    resolved_at: float = 0.0
 
     async def download(self, path: Path, callback: Callable[[int], Any]):
         await self._download(path, callback)

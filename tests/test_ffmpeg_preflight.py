@@ -1,5 +1,6 @@
 """streamrip needs ffmpeg: say so before logging in, not per track."""
 
+import time
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -83,6 +84,7 @@ async def test_missing_ffmpeg_is_not_retried():
     track.downloadable.size = AsyncMock(return_value=0)
     track.downloadable.download = AsyncMock(side_effect=FFmpegNotFoundError("no"))
     track.downloadable.source = "tidal"
+    track.downloadable.resolved_at = time.time()
     track.config.session.cli.progress_bars = False
     track.is_single = False
     track.download_path = Path("/nonexistent/track.flac")
