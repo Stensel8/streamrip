@@ -5,6 +5,7 @@
 [![Python 3.15](https://img.shields.io/badge/python-3.15-blue)](https://github.com/Stensel8/streamrip/blob/dev/pyproject.toml)
 [![Image size](https://ghcr-badge.egpl.dev/stensel8/streamrip/size)](https://github.com/Stensel8/streamrip/pkgs/container/streamrip)
 [![Image vulnerabilities](https://img.shields.io/github/actions/workflow/status/Stensel8/streamrip/container-scan.yml?branch=dev&label=image%20vulnerabilities)](https://github.com/Stensel8/streamrip/actions/workflows/container-scan.yml)
+[![Also on opencommit.eu](https://img.shields.io/badge/mirror-opencommit.eu-blue)](https://opencommit.eu/Stensel8/streamrip)
 
 A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, SoundCloud and Spotify.
 
@@ -12,7 +13,9 @@ A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, SoundCl
 > A fork of [nathom/streamrip](https://github.com/nathom/streamrip) that I keep
 > working and up to date ([changes](CHANGELOG.md)). It needs the latest stable
 > Python, and streaming services change their APIs without notice, so things can
-> break.
+> break. Developed on both [GitHub](https://github.com/Stensel8/streamrip) and
+> [opencommit.eu](https://opencommit.eu/Stensel8/streamrip); either is fine for
+> issues and pull requests.
 
 > [!IMPORTANT]
 > `pip install streamrip`, the AUR package and `brew install streamrip` install
