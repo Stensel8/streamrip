@@ -30,9 +30,12 @@ lyrics = true
 # How fast to rip. Services limit how much an account may download in an hour,
 # and going over that hour after hour gets an account suspended. "auto" rips a
 # small job (up to about 100 tracks in 6 hours) at full speed and anything
-# bigger at a steady pace of about 80 tracks an hour, well within those limits.
-# "fast" always goes at full speed, "slow" always steadily. --pace overrides
-# this for one run.
+# bigger at a steady pace of about 80 tracks an hour, the pace a real account
+# ran 18 hours on without a single rate limit. "fast" always goes at full
+# speed -- fine for one album, not for hours on end. "medium" always goes at
+# a faster, unproven ~150 tracks an hour: a middle ground for a session, not
+# a day-long run. "slow" always goes at the proven ~80. --pace overrides this
+# for one run.
 # pacing = "auto"
 
 [qobuz]

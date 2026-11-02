@@ -83,7 +83,9 @@ def _no_track_pacing(monkeypatch):
     file, inside the package. The tests of the persistence give their own.
     """
     monkeypatch.setattr(client_module, "TRACK_GAP_MAX", 0)
-    monkeypatch.setattr(client_module, "TRACKS_PER_HOUR", 10**6)
+    monkeypatch.setattr(
+        client_module, "PACE_TRACKS_PER_HOUR", {"medium": 10**6, "slow": 10**6}
+    )
     monkeypatch.setattr(
         client_module.RequestClient, "_pacing_state_path", lambda self: None
     )

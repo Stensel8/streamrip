@@ -1,5 +1,6 @@
-"""The pacing of track starts: the paces (auto, fast, slow), the gaps, the 429
-widening, the hour cap, what of it outlives a run, and how it is shown."""
+"""The pacing of track starts: the paces (auto, fast, medium, slow), the
+gaps, the 429 widening, the hour cap, what of it outlives a run, and how it
+is shown."""
 
 import asyncio
 from datetime import datetime
@@ -26,6 +27,10 @@ from streamrip.rip.main import ALBUM_TRACKS, load_table, planned_tracks
 
 # A draw far above TRACK_GAP_MAX, so the cap is what every gap comes out at.
 _HUGE = 10_000.0
+
+# The real caps, captured before conftest.py's autouse fixture patches them
+# away for every other test in this file.
+_REAL_PACE_TRACKS_PER_HOUR = dict(client_module.PACE_TRACKS_PER_HOUR)
 
 
 class _Clock:
@@ -133,7 +138,7 @@ def test_the_hour_cap_holds_back_the_next_track(monkeypatch, paced, caplog):
     has come."""
     client, clock = paced
     monkeypatch.setattr(client_module, "TRACK_GAP_MAX", 0)  # all starts at once
-    monkeypatch.setattr(client_module, "TRACKS_PER_HOUR", 3)
+    monkeypatch.setitem(client_module.PACE_TRACKS_PER_HOUR, "slow", 3)
     now, hour = clock.now, client_module.RATE_LIMIT_WINDOW
 
     starts = [now + client._reserve_track_start() for _ in range(7)]
@@ -298,17 +303,17 @@ def test_the_load_counts_the_clock_hour_and_says_the_risk(paced, monkeypatch):
     assert load.risk == "medium"  # half of the line
     clock.now = 2 * 3600  # the next clock hour but one
     assert (client.load().this_hour, client.load().risk) == (0, "low")
-    assert Load("slow", True, 4, 4, 0).risk == "high"  # at the line
-    assert Load("slow", True, 8, 8, 0).risk == "very high"  # twice it
-    assert Load("slow", True, 0, 0, 1).risk == "medium"  # a first 429
-    assert Load("slow", True, 0, 0, 2).risk == "high"
-    assert Load("slow", True, 0, 0, 5).risk == "very high"  # half of what stops a rip
+    assert Load("slow", "slow", 4, 4, 0).risk == "high"  # at the line
+    assert Load("slow", "slow", 8, 8, 0).risk == "very high"  # twice it
+    assert Load("slow", "slow", 0, 0, 1).risk == "medium"  # a first 429
+    assert Load("slow", "slow", 0, 0, 2).risk == "high"
+    assert Load("slow", "slow", 0, 0, 5).risk == "very high"  # half of what stops a rip
 
 
-@pytest.mark.parametrize(("slow", "risk"), [(False, "medium"), (True, "low")])
-def test_a_big_job_at_full_speed_is_a_risk_from_its_first_track(slow, risk):
+@pytest.mark.parametrize(("tier", "risk"), [("fast", "medium"), ("slow", "low")])
+def test_a_big_job_at_full_speed_is_a_risk_from_its_first_track(tier, risk):
     """Not only once the hour fills up: a job auto would pace."""
-    assert Load("fast", slow, 1, 1, 0, big=True).risk == risk
+    assert Load("fast", tier, 1, 1, 0, big=True).risk == risk
 
 
 def test_a_second_hour_over_the_line_is_said_in_red(paced, caplog, monkeypatch):
@@ -347,17 +352,17 @@ def test_the_tracks_to_come_are_counted_per_account():
 
 def test_the_load_line_says_the_pace_the_hour_and_the_risk():
     client = SimpleNamespace(
-        source="tidal", load=lambda: Load("auto", True, 250, 300, 3)
+        source="tidal", load=lambda: Load("auto", "slow", 250, 300, 3)
     )
     out = Console(width=200, record=True, color_system=None)
     out.print(load_table([client]))
     text = out.export_text()
     assert text.startswith("Tidal ")
     assert text.rstrip().endswith(
-        "250 of 175 tracks this hour · steady pace (auto) · 3 rate limits "
+        "250 of 175 tracks this hour · slow pace (auto) · 3 rate limits "
         "· ban risk high"
     )
-    calm = SimpleNamespace(source="tidal", load=lambda: Load("fast", False, 1, 1, 0))
+    calm = SimpleNamespace(source="tidal", load=lambda: Load("fast", "fast", 1, 1, 0))
     out.print(load_table([calm]))
     assert (
         out.export_text()
@@ -370,14 +375,14 @@ def test_the_load_line_says_the_pace_the_hour_and_the_risk():
     ("load", "said"),
     [
         (
-            Load("fast", False, 29, 46, 0, big=True),
+            Load("fast", "fast", 29, 46, 0, big=True),
             (
                 "29 of 175 tracks this hour · full speed · ban risk medium "
                 "· don't keep this up for long"
             ),
         ),
         (
-            Load("fast", False, 180, 400, 0, hours_over=2),
+            Load("fast", "fast", 180, 400, 0, hours_over=2),
             (
                 "180 of 175 tracks this hour · full speed · ban risk very high "
                 "· stop now, and rerun with --pace slow"
@@ -399,18 +404,55 @@ def test_a_track_waiting_for_its_turn_shows_when_it_comes(paced):
     assert client.load().next_in == pytest.approx(30.0)
     out = Console(width=200, record=True, color_system=None)
     out.print(load_table([client]))
-    assert "steady pace · next track in 0:30 · ban risk low" in out.export_text()
+    assert "slow pace · next track in 0:30 · ban risk low" in out.export_text()
 
 
 def test_the_time_left_is_the_pace_s(paced, monkeypatch):
-    """A gap per track while the hour has room, then TRACKS_PER_HOUR an hour;
+    """A gap per track while the hour has room, then the tier's hourly cap;
     at full speed the downloads set the time, so it has none."""
     client, _ = paced
-    monkeypatch.setattr(client_module, "TRACKS_PER_HOUR", 80)
+    monkeypatch.setitem(client_module.PACE_TRACKS_PER_HOUR, "slow", 80)
     assert client.time_for(10) == pytest.approx(10 * 30)
     assert client.time_for(100) == pytest.approx(80 * 30 + 20 * 3600 / 80)
     client.pace("fast", 1)
     assert client.time_for(10) is None
+
+
+def test_medium_paces_like_its_own_tier_not_slows(paced, monkeypatch):
+    """medium has its own gap and cap, not slow's: its real ones, not the
+    autouse fixture's huge stand-in."""
+    client, _ = paced
+    cap = _REAL_PACE_TRACKS_PER_HOUR["medium"]
+    monkeypatch.setitem(client_module.PACE_TRACKS_PER_HOUR, "medium", cap)
+    client.pace("medium", 1)
+    mean = client_module.PACE_GAP_MEAN["medium"]
+    assert mean != client_module.PACE_GAP_MEAN["slow"]
+    assert cap != _REAL_PACE_TRACKS_PER_HOUR["slow"]
+    assert client.time_for(10) == pytest.approx(10 * mean)
+    assert client.time_for(cap + 20) == pytest.approx(
+        cap * mean + 20 * max(mean, 3600 / cap)
+    )
+
+
+def test_auto_never_resolves_to_medium(paced, monkeypatch):
+    """auto only ever earns fast or slow: medium is unproven for a job big
+    enough that auto would pace it at all."""
+    monkeypatch.setattr(client_module, "FAST_BUDGET", 1)
+    client, _ = paced
+    client.pace("auto", 5)  # well past FAST_BUDGET
+    assert client.load().tier == "slow"
+
+
+def test_an_explicit_medium_is_not_turned_slow_by_a_429(paced):
+    """fast and slow, asked for by name, are not overridden either -- only
+    auto adapts its pace mid-run."""
+    client, clock = paced
+    client.pace("medium", 1)
+    _elapse(client, clock)
+    client._pause_requests(10.0)
+    clock.now += 11
+    _elapse(client, clock)
+    assert client.load().tier == "medium"
 
 
 def test_the_overall_bar_counts_down_at_the_pace():
@@ -453,7 +495,7 @@ def test_each_clock_hour_is_logged_once_it_is_over(paced, caplog):
     # In local time, as the log's own timestamps.
     up_to = datetime.fromtimestamp(3600).strftime("%H:%M")
     assert (
-        f"1 track and no rate limits in the hour up to {up_to} (steady pace)."
+        f"1 track and no rate limits in the hour up to {up_to} (slow pace)."
         in caplog.text
     )
 
