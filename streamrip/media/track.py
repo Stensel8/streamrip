@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -31,6 +32,12 @@ logger = logging.getLogger("streamrip")
 
 # One try plus three retries with exponential backoff.
 MAX_DOWNLOAD_ATTEMPTS = 4
+
+# A download url resolved this long ago is refreshed before use: sources sign
+# their urls with a token whose real TTL isn't published, so this is a
+# conservative margin, not a measured one. Every retry refreshes regardless,
+# as a backstop if the margin guesses wrong.
+STALE_DOWNLOADABLE_AFTER = 45
 
 # Formats a track is downloaded in. A lossless copy of a track makes a lossy
 # copy of the same track redundant, so only one of them is kept.
@@ -122,6 +129,29 @@ class Track(Media):
         )
         async with global_download_semaphore(self.config.session.downloads):
             for attempt in range(1, MAX_DOWNLOAD_ATTEMPTS + 1):
+                # A url resolved well before its turn here (queued behind
+                # max_connections) or reused across a retry can have gone
+                # stale; get a fresh one rather than fail on a dead token.
+                if self.client is not None and (
+                    attempt > 1
+                    or time.time() - self.downloadable.resolved_at
+                    > STALE_DOWNLOADABLE_AFTER
+                ):
+                    tier = getattr(self.config.session, self.client.source).quality
+                    try:
+                        fresh = await self.client.get_downloadable(
+                            self.meta.info.id, tier
+                        )
+                        fresh.resolved_at = time.time()
+                        self.downloadable = fresh
+                    except Exception as e:
+                        logger.debug(
+                            "Could not refresh download url for '%s', reusing "
+                            "the old one: %s: %s",
+                            self.meta.title,
+                            type(e).__name__,
+                            e,
+                        )
                 # Retries continue the partial file instead of starting over,
                 # so a connection that keeps dropping near the end of a large
                 # FLAC still gets there (upstream #951, #1022).
@@ -435,7 +465,7 @@ async def fetch_downloadable(
     # its turn at the pace here. A skipped track never gets here.
     await client.before_track()
     try:
-        return await client.get_downloadable(track_id, quality)
+        downloadable = await client.get_downloadable(track_id, quality)
     except Exception as e:
         _record_failure(
             db,
@@ -444,6 +474,10 @@ async def fetch_downloadable(
             f"Error fetching download info for track {track_id}: {type(e).__name__}: {e}",
         )
         return None
+    else:
+        if downloadable is not None:
+            downloadable.resolved_at = time.time()
+        return downloadable
 
 
 @dataclass(slots=True)
