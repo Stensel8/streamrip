@@ -3,7 +3,7 @@
 All notable changes in this fork of [nathom/streamrip](https://github.com/nathom/streamrip). Numbers can refer to
 upstream issues and pull requests.
 
-## Unreleased
+## 2.6.6
 
 - A track's download url is refreshed if it has gone stale (queued behind
   `max_connections`, or across a retry) instead of failing with HTTP 403.
