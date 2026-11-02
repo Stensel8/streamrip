@@ -716,7 +716,11 @@ class RequestClient:
         now = time.time()
         starts = _within(owner._track_starts, now, FAST_WINDOW)
         owner._report_hour(starts, now - now % 3600)
-        if owner._pace == "auto" and owner._tier == "fast" and len(starts) >= FAST_BUDGET:
+        if (
+            owner._pace == "auto"
+            and owner._tier == "fast"
+            and len(starts) >= FAST_BUDGET
+        ):
             owner._turn_slow(
                 f"{len(starts)} tracks in the last {FAST_WINDOW // 3600} hours"
             )

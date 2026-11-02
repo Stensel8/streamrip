@@ -359,8 +359,7 @@ def test_the_load_line_says_the_pace_the_hour_and_the_risk():
     text = out.export_text()
     assert text.startswith("Tidal ")
     assert text.rstrip().endswith(
-        "250 of 175 tracks this hour · slow pace (auto) · 3 rate limits "
-        "· ban risk high"
+        "250 of 175 tracks this hour · slow pace (auto) · 3 rate limits · ban risk high"
     )
     calm = SimpleNamespace(source="tidal", load=lambda: Load("fast", "fast", 1, 1, 0))
     out.print(load_table([calm]))
