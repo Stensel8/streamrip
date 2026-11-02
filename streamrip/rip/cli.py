@@ -394,10 +394,13 @@ class _StreamripGroup(_ColoredHelp, click.Group):
 @click.option(
     "--pace",
     help="How fast to rip. auto (the default): full speed for a small job, a "
-    "steady pace of about 80 tracks an hour for a big one. fast: always full "
-    "speed, no waiting between tracks. slow: always the steady pace. At about "
-    "200 tracks an hour Tidal starts refusing requests, and keeping that up gets "
-    "an account banned.",
+    "steady pace of about 80 tracks an hour for a big one -- the pace a real "
+    "account ran 18 hours on without a single rate limit. fast: always full "
+    "speed, no waiting between tracks; fine for one album, not for hours on "
+    "end. medium: always a faster, unproven ~150 tracks an hour -- a middle "
+    "ground for a session, not a day-long run. slow: always the proven ~80. "
+    "At about 200 tracks an hour Tidal starts refusing requests, and keeping "
+    "that up gets an account banned.",
     type=click.Choice(PACES, case_sensitive=False),
 )
 @click.option(

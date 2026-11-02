@@ -19,8 +19,9 @@ APP_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
 if os.name == "posix":
     APP_DIR.chmod(0o700)
 DEFAULT_CONFIG_PATH = APP_DIR / "config.toml"
-# How fast to rip (see client.client): auto chooses, fast and slow insist.
-PACES = ("auto", "fast", "slow")
+# How fast to rip (see client.client): auto chooses; fast, medium and slow
+# insist.
+PACES = ("auto", "fast", "medium", "slow")
 
 
 # Every option is documented in config.toml, the template each user's config

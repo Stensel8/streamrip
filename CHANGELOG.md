@@ -7,6 +7,9 @@ upstream issues and pull requests.
 
 - A track's download url is refreshed if it has gone stale (queued behind
   `max_connections`, or across a retry) instead of failing with HTTP 403.
+- `--pace` gains `medium`: a faster, unproven ~150 tracks an hour for a
+  session, between `fast` (no waiting, not for hours on end) and the proven
+  `slow` (~80 an hour). `auto` still only ever resolves to `fast` or `slow`.
 
 ## 2.6.5
 

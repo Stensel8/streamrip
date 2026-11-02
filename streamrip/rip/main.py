@@ -18,7 +18,7 @@ from ..client import (
     SpotifyClient,
     TidalClient,
 )
-from ..client.client import HOURLY_DANGER, TRACKS_PER_HOUR
+from ..client.client import HOURLY_DANGER
 from ..console import console, plural
 from ..exceptions import (
     APIError,
@@ -86,7 +86,7 @@ def load_table(clients: list[Client]) -> Table:
 
     The bar is this clock hour's tracks out of HOURLY_DANGER, streamrip's
     line a margin under where Tidal began refusing requests (see the notes on
-    Tidal in client.client): green within the steady pace's TRACKS_PER_HOUR,
+    Tidal in client.client): green within the active tier's own hourly cap,
     yellow past it, red at the line. The text after it says so, then the
     pace, how long until the next track's turn when one waits for it, the
     rate limits of the last hour when there are any, the risk of a ban those
@@ -98,12 +98,12 @@ def load_table(clients: list[Client]) -> Table:
     table.add_column()
     for client in clients:
         load = client.load()
-        pace = "steady pace" if load.slow else "full speed"
+        pace = "full speed" if load.tier == "fast" else f"{load.tier} pace"
         if load.pace == "auto":
             pace += " (auto)"
         zone = (
             "green"
-            if load.this_hour <= TRACKS_PER_HOUR
+            if load.this_hour <= load.cap
             else "yellow"
             if load.this_hour < HOURLY_DANGER
             else "red"
