@@ -1,6 +1,8 @@
 [downloads]
 # Folder where tracks are downloaded to
 folder = ""
+# Create a folder for each album downloaded (set to false to download directly to the download directory)
+create_album_folder = true  
 # Put Qobuz albums in a 'Qobuz' folder, Tidal albums in 'Tidal' etc.
 source_subdirectories = false
 # Put tracks in an album with 2 or more discs into a subfolder named `Disc N` 

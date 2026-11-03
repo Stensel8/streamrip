@@ -398,11 +398,14 @@ def album_folder(config: Config, source: str, album: AlbumMetadata) -> Path:
     parent = root
     if c.downloads.source_subdirectories:
         parent = parent / source.capitalize()
-    folder = album.format_folder_path(c.filepaths.folder_format)
-    return ensure_inside(
-        root,
-        parent / clean_filepath(folder.as_posix(), c.filepaths.restrict_characters),
-    )
+    if c.downloads.create_album_folder:
+        folder = album.format_folder_path(c.filepaths.folder_format)
+        return ensure_inside(
+            root,
+            parent / clean_filepath(folder.as_posix(), c.filepaths.restrict_characters),
+        )
+    else:
+        return parent
 
 
 def _record_failure(db: Database, source: str, track_id: str, message: str):
@@ -542,7 +545,7 @@ class PendingSingle(PendingItem):
             return None
         album, c = meta.album, self.config.session
         in_album_folder = c.filepaths.add_singles_to_folder
-        if in_album_folder:
+        if in_album_folder and c.downloads.create_album_folder:
             folder = album_folder(self.config, self.client.source, album)
         else:
             folder = Path(c.downloads.folder)

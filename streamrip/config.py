@@ -162,6 +162,7 @@ class DownloadsConfig:
     """Download destination, concurrency, and connection options."""
 
     folder: str
+    create_album_folder: bool
     source_subdirectories: bool
     disc_subdirectories: bool
     max_connections: int
