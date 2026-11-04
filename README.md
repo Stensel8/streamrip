@@ -6,8 +6,19 @@
 [![Image size](https://ghcr-badge.egpl.dev/stensel8/streamrip/size)](https://github.com/Stensel8/streamrip/pkgs/container/streamrip)
 [![Image vulnerabilities](https://img.shields.io/github/actions/workflow/status/Stensel8/streamrip/container-scan.yml?branch=dev&label=image%20vulnerabilities)](https://github.com/Stensel8/streamrip/actions/workflows/container-scan.yml)
 [![Also on opencommit.eu](https://img.shields.io/badge/mirror-opencommit.eu-blue)](https://opencommit.eu/Stensel8/streamrip)
+[![Also on codetrunk.eu](https://img.shields.io/badge/mirror-codetrunk.eu-blue)](https://repos.codetrunk.eu/Stensel8/streamrip)
 
 A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, SoundCloud and Spotify.
+
+> [!IMPORTANT]
+> **Bookmark these mirrors.** GitHub has taken down repositories before, and
+> there's no guarantee this one is safe from that. If
+> github.com/Stensel8/streamrip ever disappears, the project lives on at:
+> - **[opencommit.eu/Stensel8/streamrip](https://opencommit.eu/Stensel8/streamrip)**
+>   -- maintained by hand, pushed to directly alongside GitHub
+> - **[repos.codetrunk.eu/Stensel8/streamrip](https://repos.codetrunk.eu/Stensel8/streamrip)**
+>   -- pulls from GitHub automatically every 4 hours, so it is never more than
+>   a few hours behind
 
 > [!NOTE]
 > A fork of [nathom/streamrip](https://github.com/nathom/streamrip) that I keep
