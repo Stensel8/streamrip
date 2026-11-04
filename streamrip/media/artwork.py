@@ -70,7 +70,7 @@ async def download_artwork(
     folder: Path,
     covers: Covers,
     config: ArtworkConfig,
-    for_playlist: bool,
+    shared_folder: bool,
 ) -> tuple[Path | None, Path | None]:
     """Download artwork and update passed Covers object with filepaths.
 
@@ -79,10 +79,12 @@ async def download_artwork(
 
     Embedded artworks are put in unique temporary directories under `folder`
     that can be deleted once the download session is done. Hi-res (saved)
-    artworks are kept in `folder` as "cover.jpg", except `for_playlist`.
+    artworks are kept in `folder` as "cover.jpg" -- skipped when `folder` is
+    shared with other albums (a playlist, or `create_album_folder` off), since
+    one album's cover would overwrite another's.
     """
     save_artwork, embed = config.save_artwork, config.embed
-    if for_playlist:
+    if shared_folder:
         save_artwork = False
 
     if not (save_artwork or embed) or covers.empty():

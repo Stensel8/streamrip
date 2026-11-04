@@ -170,6 +170,8 @@ class DownloadsConfig:
     lyrics: bool
     # Not in the config unless the user adds it: see the template.
     pacing: str = "auto"
+    create_album_folder: bool = True
+    save_lrc: bool = False
 
     def __post_init__(self):
         if self.pacing not in PACES:

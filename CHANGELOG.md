@@ -3,6 +3,14 @@
 All notable changes in this fork of [nathom/streamrip](https://github.com/nathom/streamrip). Numbers can refer to
 upstream issues and pull requests.
 
+## 2.6.7
+
+- feat: `[downloads] create_album_folder = false` puts tracks directly in the
+  downloads folder instead of a per-album subfolder (based on
+  [#90](https://github.com/Stensel8/streamrip/pull/90) by
+  [@Xenxia](https://github.com/Xenxia))
+- feat: `[downloads] save_lrc` also writes lyrics to an `.lrc` file
+
 ## 2.6.6
 
 - A track's download url is refreshed if it has gone stale (queued behind

@@ -142,6 +142,18 @@ async def test_partly_downloaded_album_reports_once_and_keeps_the_rest(
     assert "Skipping track" not in caplog.text
 
 
+@pytest.mark.parametrize("create_album_folder", [True, False])
+async def test_create_album_folder_controls_whether_artwork_can_be_saved(
+    monkeypatch, tmp_path, create_album_folder
+):
+    pending, artwork = _pending_album(monkeypatch, tmp_path, ["1"], downloaded=set())
+    pending.config.session.downloads.create_album_folder = create_album_folder
+
+    await pending.resolve()
+
+    assert artwork.call_args.kwargs["shared_folder"] is not create_album_folder
+
+
 async def test_new_album_logs_nothing_about_skipping(monkeypatch, tmp_path, caplog):
     pending, _ = _pending_album(monkeypatch, tmp_path, ["1", "2"], downloaded=set())
     with caplog.at_level(logging.INFO, logger="streamrip"):
@@ -205,6 +217,24 @@ async def test_booklets_follow_the_config(monkeypatch, tmp_path, enabled):
 
     await album.preprocess()
     assert download.await_count == (1 if enabled else 0)
+
+
+async def test_flat_downloads_get_no_booklets(monkeypatch, tmp_path):
+    # Booklets land next to the album's tracks; with no album folder to put
+    # them in, they would collide with every other album's.
+    pending, _ = _pending_album(monkeypatch, tmp_path, ["1"], downloaded=set())
+    album_module.AlbumMetadata.from_album_resp(None, None).info.booklets = [
+        {"description": "Booklet", "url": "https://q/1.pdf"}
+    ]
+    pending.config.session.qobuz.download_booklets = True
+    pending.config.session.downloads.create_album_folder = False
+    download = AsyncMock()
+    monkeypatch.setattr(album_module, "download_booklets", download)
+    monkeypatch.setattr(album_module, "progress", MagicMock())
+
+    await (await pending.resolve()).preprocess()
+
+    download.assert_not_awaited()
 
 
 async def test_finished_album_gets_no_booklets(monkeypatch, tmp_path):
