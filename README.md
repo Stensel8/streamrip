@@ -59,6 +59,19 @@ It installs streamrip and ffmpeg into a `.venv` there with
 `.venv/bin/streamrip` (Windows: `.venv\Scripts\streamrip.exe`), or activate the
 venv and type `streamrip`.
 
+### With a wheel
+
+Already have [uv](https://docs.astral.sh/uv/)? Download the `.whl` from the
+[latest release](https://github.com/Stensel8/streamrip/releases/latest) and:
+
+```bash
+uv tool install ./streamrip-*.whl
+```
+
+uv fetches Python 3.15 itself if you don't have it. Add the `browser` and
+`ffmpeg` extras for the automatic-login browser and a bundled ffmpeg:
+`uv tool install "./streamrip-*.whl[browser,ffmpeg]"`.
+
 ### With Podman or Docker
 
 Everything built in, ffmpeg too, for amd64 and arm64:
