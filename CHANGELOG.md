@@ -10,6 +10,8 @@ upstream issues and pull requests.
   [#90](https://github.com/Stensel8/streamrip/pull/90) by
   [@Xenxia](https://github.com/Xenxia))
 - feat: `[downloads] save_lrc` also writes lyrics to an `.lrc` file
+- fix: a fresh config downloads to the user's real Music folder, not
+  `~/StreamripDownloads`
 
 ## 2.6.6
 
