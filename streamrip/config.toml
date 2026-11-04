@@ -1,23 +1,35 @@
 [downloads]
 # Folder where tracks are downloaded to
 folder = ""
+
+# Put each album in its own subfolder, instead of all tracks directly in the
+# downloads folder. Saved artwork and Qobuz booklets are skipped when this is
+# off, since several albums downloaded without one would overwrite each
+# other's cover.jpg.
+create_album_folder = true
+
 # Put Qobuz albums in a 'Qobuz' folder, Tidal albums in 'Tidal' etc.
 source_subdirectories = false
-# Put tracks in an album with 2 or more discs into a subfolder named `Disc N` 
+
+# Put tracks in an album with 2 or more discs into a subfolder named `Disc N`
 disc_subdirectories = true
+
 # How many tracks to download at once. 1 downloads them one after another,
 # -1 means no limit. More than your connection can carry only slows each
 # download down.
 max_connections = 5
+
 # Max number of API requests per source to handle per minute
 # Set to -1 for no limit. Downloading many albums at once (e.g. an artist's
 # full discography) can burst past a higher limit and get 429 "Too Many
 # Requests" errors from the streaming service; lower this further if that
 # still happens.
 requests_per_minute = 35
+
 # Verify SSL certificates for API connections
 # Set to false if you encounter SSL certificate verification errors (not recommended)
 verify_ssl = true
+
 # Download and embed lyrics. Tidal supplies them for most tracks. For a track
 # whose source has none (Qobuz, Deezer, SoundCloud and Spotify send none at all),
 # they are looked up on lrclib.net:
@@ -27,6 +39,13 @@ verify_ssl = true
 # stay the property of their owners: this is for your own library. Set this to
 # false to download no lyrics and look none up.
 lyrics = true
+
+# Also save the looked-up lyrics as a .lrc file next to the track, for a
+# player that does not read the embedded tag. Time-synced where LRCLIB or the
+# source has them, plain text otherwise; never for MP3, whose plain lyrics are
+# already in the tag.
+save_lrc = false
+
 # How fast to rip. Services limit how much an account may download in an hour,
 # and going over that hour after hour gets an account suspended. "auto" rips a
 # small job (up to about 100 tracks in 6 hours) at full speed and anything

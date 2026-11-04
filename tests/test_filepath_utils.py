@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from streamrip.config import Config
+from streamrip.config import Config, set_user_defaults
 from streamrip.filepath_utils import clean_filepath, ensure_inside, fit_filename
 from streamrip.media import track as track_module
 from streamrip.media.track import album_folder
@@ -178,3 +178,37 @@ def test_album_folder_refuses_a_path_outside_the_downloads_folder(monkeypatch):
 
     with pytest.raises(ValueError, match="not inside the download folder"):
         album_folder(config, "qobuz", _album("Björk"))
+
+
+def test_create_album_folder_off_puts_every_album_in_the_downloads_folder():
+    config = Config.defaults()
+    config.session.downloads.folder = "/music"
+    config.session.downloads.create_album_folder = False
+    config.session.filepaths.folder_format = "{albumartist}/{title}"
+
+    assert album_folder(config, "qobuz", _album("Björk")) == Path("/music")
+    assert album_folder(config, "qobuz", _album("Adele", "25")) == Path("/music")
+
+
+def test_create_album_folder_off_still_separates_by_source():
+    config = Config.defaults()
+    config.session.downloads.folder = "/music"
+    config.session.downloads.create_album_folder = False
+    config.session.downloads.source_subdirectories = True
+
+    assert album_folder(config, "qobuz", _album("Björk")) == Path("/music/Qobuz")
+
+
+def test_create_album_folder_off_works_under_the_real_default_music_folder(tmp_path):
+    # The two don't interact in the code -- create_album_folder only ever
+    # reads whatever string is in downloads.folder -- but a fresh config's
+    # actual default (the user's real Music folder, not a hardcoded stand-in)
+    # deserves its own end-to-end check, not just an assumption.
+    config_path = tmp_path / "config.toml"
+    set_user_defaults(config_path)
+    config = Config(config_path)
+    config.session.downloads.create_album_folder = False
+
+    folder = album_folder(config, "qobuz", _album("Björk"))
+
+    assert folder == Path(config.session.downloads.folder)

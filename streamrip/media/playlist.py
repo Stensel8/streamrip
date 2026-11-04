@@ -284,7 +284,7 @@ class PendingPlaylistTrack(Pending):
             self.folder,
             album.covers,
             c.artwork,
-            for_playlist=True,
+            shared_folder=True,
         )
         return Track(
             meta,

@@ -89,6 +89,7 @@ class Album(Media):
             and self.client is not None
             and self.meta.info.booklets
             and self.config.session.qobuz.download_booklets
+            and self.config.session.downloads.create_album_folder
         ):
             await download_booklets(
                 self.client.session, self.meta.info.booklets, self.folder
@@ -146,7 +147,7 @@ class PendingAlbum(PendingItem):
             folder,
             meta.covers,
             self.config.session.artwork,
-            for_playlist=False,
+            shared_folder=not self.config.session.downloads.create_album_folder,
         )
         pending_tracks = [
             PendingTrack(

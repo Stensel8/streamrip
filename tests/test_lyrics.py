@@ -474,3 +474,37 @@ async def test_the_lookup_comes_before_the_conversion(tmp_path, asked, monkeypat
 
     asked.assert_awaited_once()
     assert lyrics_in(tmp_path / "Song.flac") == SYNCED
+
+
+async def test_save_lrc_off_by_default(tmp_path, asked):
+    await _make_track(tmp_path, "m4a").rip()
+
+    assert not (tmp_path / "Song.lrc").exists()
+
+
+async def test_save_lrc_writes_the_synced_lyrics_beside_the_track(tmp_path, asked):
+    track = _make_track(tmp_path, "m4a")
+    track.config.session.downloads.save_lrc = True
+
+    await track.rip()
+
+    assert (tmp_path / "Song.lrc").read_text(encoding="utf-8") == SYNCED
+
+
+async def test_save_lrc_skips_plain_lyrics(tmp_path, asked):
+    track = _make_track(tmp_path, "m4a")
+    track.config.session.downloads.save_lrc = True
+    track.download_path = tmp_path / "Song.mp3"  # plain takes over for an mp3
+
+    await track._look_up_lyrics()
+
+    assert not (tmp_path / "Song.lrc").exists()
+
+
+async def test_save_lrc_also_covers_the_source_s_own_lyrics(tmp_path, asked):
+    track = _from_tidal(_make_track(tmp_path, "m4a"), return_value=SYNCED)
+    track.config.session.downloads.save_lrc = True
+
+    await track.rip()
+
+    assert (tmp_path / "Song.lrc").read_text(encoding="utf-8") == SYNCED

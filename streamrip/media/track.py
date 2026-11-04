@@ -271,6 +271,7 @@ class Track(Media):
                     e,
                 )
             if self.meta.lyrics:
+                self._save_lrc(plain)
                 return
         try:
             audio = _open_audio(self.download_path)
@@ -299,8 +300,19 @@ class Track(Media):
             return
         if found:
             self.meta.lyrics = found
+            self._save_lrc(plain)
         else:
             logger.info("No lyrics found for '%s' on LRCLIB", self.meta.title)
+
+    def _save_lrc(self, plain: bool):
+        """Write the looked-up lyrics to an .lrc file beside the track too.
+
+        For a player that does not read the embedded tag. Skipped for plain
+        (MP3) lyrics, which have no timestamps to make an .lrc file worth it.
+        """
+        if plain or not self.config.session.downloads.save_lrc:
+            return
+        self._sibling_path("lrc").write_text(self.meta.lyrics, encoding="utf-8")
 
     async def _convert(self):
         c = self.config.session.conversion
@@ -391,13 +403,19 @@ def album_folder(config: Config, source: str, album: AlbumMetadata) -> Path:
     """The folder an album's tracks go in, inside the downloads folder.
 
     Raises ValueError if it would be anywhere else: the names in it come from
-    a streaming service.
+    a streaming service. With `create_album_folder` off, this is shared by
+    every album, so its tracks must already have unique names of their own.
     """
     c = config.session
     root = Path(c.downloads.folder)
     parent = root
     if c.downloads.source_subdirectories:
         parent = parent / source.capitalize()
+    if not c.downloads.create_album_folder:
+        # No album/artist-derived component is added below, so there is
+        # nothing for ensure_inside to validate; `parent` (root, or
+        # root/Source) is already known-safe.
+        return parent
     folder = album.format_folder_path(c.filepaths.folder_format)
     return ensure_inside(
         root,
@@ -541,7 +559,9 @@ class PendingSingle(PendingItem):
         if meta is None:
             return None
         album, c = meta.album, self.config.session
-        in_album_folder = c.filepaths.add_singles_to_folder
+        in_album_folder = (
+            c.filepaths.add_singles_to_folder and c.downloads.create_album_folder
+        )
         if in_album_folder:
             folder = album_folder(self.config, self.client.source, album)
         else:
@@ -550,7 +570,11 @@ class PendingSingle(PendingItem):
 
         (cover_path, _), downloadable = await asyncio.gather(
             download_artwork(
-                self.client.session, folder, album.covers, c.artwork, for_playlist=False
+                self.client.session,
+                folder,
+                album.covers,
+                c.artwork,
+                shared_folder=not in_album_folder,
             ),
             fetch_downloadable(self.client, self.config, self.db, self.id),
         )

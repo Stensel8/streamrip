@@ -292,6 +292,23 @@ async def test_valid_disc_number_download_stays_in_album(
     pending.db.set_failed.assert_not_called()
 
 
+async def test_create_album_folder_off_skips_the_disc_subfolder_too(
+    pending_disc_track,
+):
+    # A single with create_album_folder off goes straight in the downloads
+    # folder; a multi-disc "Disc N" subfolder there would contradict that.
+    pending, _, artwork = pending_disc_track
+    if not isinstance(pending, PendingSingle):
+        pytest.skip("only a single reads create_album_folder for its own folder")
+    pending.config.session.downloads.create_album_folder = False
+
+    track = await pending.resolve()
+
+    assert track is not None
+    assert track.folder == Path(pending.config.session.downloads.folder)
+    assert artwork.call_args.kwargs["shared_folder"] is True
+
+
 @pytest.mark.parametrize("phase", ["preprocess", "postprocess"])
 @pytest.mark.parametrize("is_single", [False, True])
 async def test_processing_failures_are_counted_and_stored_for_repair(
