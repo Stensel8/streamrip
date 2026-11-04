@@ -1,9 +1,13 @@
 import re
 import shutil
+import subprocess
+import sys
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
+from streamrip import config as config_module
 from streamrip.config import (
     BLANK_CONFIG_PATH,
     ArtistFilterConfig,
@@ -189,6 +193,78 @@ def test_the_template_and_the_config_classes_agree():
         ConfigData.from_toml(
             re.sub(r"^max_search_results = .*\n", "", template, flags=re.MULTILINE)
         )
+
+
+def test_user_defaults_download_to_the_music_folder(tmp_path, monkeypatch):
+    fake_music = tmp_path / "home" / "Music"
+    monkeypatch.setattr(config_module, "DEFAULT_DOWNLOADS_FOLDER", fake_music)
+    path = tmp_path / "config.toml"
+
+    set_user_defaults(path)
+
+    assert Config(path).session.downloads.folder == str(fake_music)
+
+
+def test_xdg_music_dir_honours_a_moved_or_localized_folder(monkeypatch):
+    run = MagicMock(
+        return_value=subprocess.CompletedProcess([], 0, stdout="/data/Muziek\n")
+    )
+    monkeypatch.setattr(config_module.subprocess, "run", run)
+
+    assert config_module._xdg_music_dir() == Path("/data/Muziek")
+    assert run.call_args.args[0] == ["xdg-user-dir", "MUSIC"]
+
+
+@pytest.mark.parametrize(
+    "run",
+    [
+        MagicMock(return_value=subprocess.CompletedProcess([], 1, stdout="")),
+        MagicMock(side_effect=FileNotFoundError("no xdg-user-dir")),
+    ],
+    ids=["xdg-user-dirs not set up", "no xdg-user-dir binary"],
+)
+def test_xdg_music_dir_is_none_where_there_is_nothing_to_ask(monkeypatch, run):
+    monkeypatch.setattr(config_module.subprocess, "run", run)
+
+    assert config_module._xdg_music_dir() is None
+
+
+def test_windows_music_dir_honours_a_moved_or_localized_folder(monkeypatch):
+    winreg = MagicMock()
+    winreg.QueryValueEx.return_value = ("D:\\Muziek", 1)
+    winreg.OpenKey.return_value.__enter__ = lambda self: winreg
+    winreg.OpenKey.return_value.__exit__ = lambda *a: None
+    monkeypatch.setitem(sys.modules, "winreg", winreg)
+
+    assert config_module._windows_music_dir() == Path("D:\\Muziek")
+
+
+def test_windows_music_dir_is_none_without_that_registry_key(monkeypatch):
+    winreg = MagicMock()
+    winreg.OpenKey.side_effect = OSError("no such key")
+    monkeypatch.setitem(sys.modules, "winreg", winreg)
+
+    assert config_module._windows_music_dir() is None
+
+
+@pytest.mark.parametrize(
+    ("platform", "asked"),
+    [("win32", "_windows_music_dir"), ("linux", "_xdg_music_dir")],
+)
+def test_default_music_dir_asks_the_platform_first(monkeypatch, platform, asked):
+    monkeypatch.setattr(config_module.sys, "platform", platform)
+    monkeypatch.setattr(config_module, asked, lambda: Path("/found"))
+
+    assert config_module._default_music_dir() == Path("/found")
+
+
+@pytest.mark.parametrize("platform", ["win32", "linux", "darwin"])
+def test_default_music_dir_falls_back_to_home_music(monkeypatch, platform):
+    monkeypatch.setattr(config_module.sys, "platform", platform)
+    monkeypatch.setattr(config_module, "_windows_music_dir", lambda: None)
+    monkeypatch.setattr(config_module, "_xdg_music_dir", lambda: None)
+
+    assert config_module._default_music_dir() == config_module.HOME / "Music"
 
 
 # Other tests for the Config class can be added as needed

@@ -3,6 +3,8 @@
 import copy
 import logging
 import os
+import subprocess
+import sys
 import tempfile
 from dataclasses import MISSING, dataclass, fields, is_dataclass
 from pathlib import Path
@@ -197,7 +199,63 @@ class CliConfig:
 
 
 HOME = Path.home()
-DEFAULT_DOWNLOADS_FOLDER = HOME / "StreamripDownloads"
+
+
+def _windows_music_dir() -> Path | None:
+    """The user's Music folder from the registry.
+
+    Honours both a move (it may not be under the home folder at all) and a
+    non-English Windows, where the real folder is named e.g. "Muziek", not
+    "Music" -- only its registry entry says which.
+    """
+    import winreg  # noqa: PLC0415
+
+    try:
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders",
+        ) as key:
+            value, _ = winreg.QueryValueEx(key, "My Music")
+    except OSError:
+        return None
+    return Path(os.path.expandvars(value)) if value else None
+
+
+def _xdg_music_dir() -> Path | None:
+    """The user's Music folder from xdg-user-dirs, if there is one to ask.
+
+    Same reasoning as _windows_music_dir: honours a move and a non-English
+    locale (e.g. "Muziek"), which only xdg-user-dirs' own config knows.
+    """
+    try:
+        found = subprocess.run(
+            ["xdg-user-dir", "MUSIC"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+    except OSError, subprocess.SubprocessError:
+        return None
+    path = found.stdout.strip()
+    return Path(path) if found.returncode == 0 and path else None
+
+
+def _default_music_dir() -> Path:
+    """The user's Music folder, asked for the platform-appropriate way.
+
+    macOS keeps it named "Music" on disk whatever the display language, so
+    HOME / "Music" is always right there; Windows and Linux can have really
+    renamed or moved it, and only ask their own registry/config for the truth.
+    """
+    if sys.platform == "win32":
+        return _windows_music_dir() or HOME / "Music"
+    if sys.platform != "darwin":
+        return _xdg_music_dir() or HOME / "Music"
+    return HOME / "Music"
+
+
+DEFAULT_DOWNLOADS_FOLDER = _default_music_dir()
 DEFAULT_DOWNLOADS_DB_PATH = APP_DIR / "downloads.db"
 DEFAULT_FAILED_DOWNLOADS_DB_PATH = APP_DIR / "failed_downloads.db"
 BLANK_CONFIG_PATH = Path(__file__).parent / "config.toml"
