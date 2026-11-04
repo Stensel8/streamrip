@@ -11,6 +11,10 @@ upstream issues and pull requests.
   `slow`'s own 18-hour clean run
 - docs: `--pace --help` is far shorter, pointing at `[downloads] pacing` in
   config.toml for the full story instead of repeating it
+- feat: the update check now also tries
+  [opencommit.eu](https://opencommit.eu/Stensel8/streamrip) when GitHub
+  itself doesn't answer, and suggests `uv tool install` on the released
+  wheel instead of a git source install where that is the install in use
 
 ## 2.6.7
 

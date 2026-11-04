@@ -52,7 +52,7 @@ def _no_real_update_check(monkeypatch):
     """
     monkeypatch.setattr(
         "streamrip.rip.cli.latest_streamrip_version",
-        AsyncMock(return_value=(__version__, None, False)),
+        AsyncMock(return_value=(__version__, None, False, "github.com", None)),
     )
 
 

@@ -48,18 +48,44 @@ logger = logging.getLogger("streamrip")
 
 # Where this build of streamrip comes from, for update checks and advice.
 REPOSITORY = "Stensel8/streamrip"
+DEFAULT_BRANCH = "dev"
+GITHUB_HOST = "github.com"
+OPENCOMMIT_HOST = "opencommit.eu"
 GIT_DOWNLOADS = "https://git-scm.com/downloads"
 
 
-def _upgrade_command(version: str, *, is_release: bool = True) -> str:
+def _is_uv_tool_install() -> bool:
+    """Whether this install is one of uv's own tool venvs.
+
+    Only then does `uv tool install` on the released wheel upgrade the
+    install actually in use (printed as sys.prefix in the notice); any
+    other -- install.sh's own .venv, a system install -- has to be upgraded
+    through the Python already running instead. Every OS puts a uv tool
+    venv's own folder directly under one named "tools".
+    """
+    return Path(sys.prefix).parent.name == "tools"
+
+
+def _upgrade_command(
+    version: str,
+    *,
+    is_release: bool = True,
+    host: str = GITHUB_HOST,
+    wheel_url: str | None = None,
+) -> str:
     """Install the detected release tag or the default branch used as fallback.
 
-    The command installs from a git URL, so it needs git (pip cannot do
-    without it; uv sometimes can).
+    Prefers `uv tool install` on the released wheel for an install that is
+    itself one of uv's tool venvs. Otherwise installs from a git URL, which
+    needs git (pip cannot do without it; uv sometimes can) -- from `host`,
+    whichever answered the update check, so the command does not point at a
+    GitHub that didn't.
     """
-    ref = f"v{version}" if is_release else "HEAD"
-    target = f"git+https://github.com/{REPOSITORY}.git@{ref}"
     uv = shutil.which("uv")
+    if wheel_url and uv and _is_uv_tool_install():
+        return f'"{uv}" tool install --upgrade "{wheel_url}"'
+    ref = f"v{version}" if is_release else "HEAD"
+    target = f"git+https://{host}/{REPOSITORY}.git@{ref}"
     if uv:
         return f'"{uv}" pip install --python "{sys.executable}" --upgrade {target}'
     return f'"{sys.executable}" -m pip install --upgrade {target}'
@@ -172,17 +198,23 @@ def _git_note() -> str:
 
 
 def _print_update_notice(
-    latest_version: str, notes: str | None, is_release: bool
+    latest_version: str,
+    notes: str | None,
+    is_release: bool,
+    host: str = GITHUB_HOST,
+    wheel_url: str | None = None,
 ) -> None:
     """Print the available-update message and its release notes, if any."""
+    cmd = _upgrade_command(
+        latest_version, is_release=is_release, host=host, wheel_url=wheel_url
+    )
     err_console.print(
         f"[green]A new version of streamrip [cyan]v{latest_version}"
         f"[/cyan] is available.[/green]\n"
         f"This installation is in [cyan]{escape(sys.prefix)}[/cyan]. Update it with:\n"
         f"[white][bold]"
-        f"{_upgrade_command(latest_version, is_release=is_release)}"
-        "[/bold][/white]\n"
-        f"{_git_note()}\n"
+        f"{cmd}"
+        "[/bold][/white]\n" + ("" if "git+" not in cmd else f"{_git_note()}\n")
     )
     if notes:
         err_console.print(Markdown(notes))
@@ -335,9 +367,11 @@ class _StreamripGroup(_ColoredHelp, click.Group):
                     ),
                     closing(latest_streamrip_version()) as check,
                 ):
-                    latest_version, notes, is_release = asyncio.run(check)
+                    latest_version, notes, is_release, host, wheel_url = asyncio.run(
+                        check
+                    )
                 if is_newer_version(latest_version):
-                    notice = (latest_version, notes, is_release)
+                    notice = (latest_version, notes, is_release, host, wheel_url)
             except Exception as exc:
                 logger.debug("Could not check for updates: %s", exc)
         try:
@@ -1026,46 +1060,103 @@ def is_newer_version(latest: str | None, current: str = __version__) -> bool:
         return False
 
 
+# host, its releases API, and its raw-file URL for a path on DEFAULT_BRANCH.
+_UPDATE_SOURCES = (
+    (
+        GITHUB_HOST,
+        f"https://api.github.com/repos/{REPOSITORY}/releases/latest",
+        lambda path: f"https://raw.githubusercontent.com/{REPOSITORY}/HEAD/{path}",
+    ),
+    (
+        OPENCOMMIT_HOST,
+        f"https://opencommit.eu/api/v1/repos/{REPOSITORY}/releases/latest",
+        lambda path: (
+            f"https://opencommit.eu/{REPOSITORY}/raw/branch/{DEFAULT_BRANCH}/{path}"
+        ),
+    ),
+)
+
+
+async def _latest_release(s, url: str) -> tuple[str, str | None, str | None] | None:
+    """(tag, notes, wheel asset url) from a releases/latest endpoint.
+
+    GitHub's and a Forgejo/Gitea mirror's (opencommit.eu) are shaped the
+    same way. None where the endpoint didn't answer or has no releases.
+    """
+    async with s.get(url, headers={"Accept": "application/vnd.github+json"}) as resp:
+        if resp.status != 200:
+            return None
+        release = await resp.json(content_type=None)
+    tag = str(release.get("tag_name") or "").lstrip("vV")
+    if not tag:
+        return None
+    wheel_url = next(
+        (
+            a.get("browser_download_url")
+            for a in release.get("assets", [])
+            if str(a.get("name", "")).endswith(".whl")
+        ),
+        None,
+    )
+    return tag, release.get("body"), wheel_url
+
+
+async def _default_branch_version(s, url: str) -> str | None:
+    """The version in pyproject.toml on the default branch, or None."""
+    async with s.get(url) as resp:
+        if resp.status != 200:
+            return None
+        match = re.search(r'^version\s*=\s*"([^"]+)"', await resp.text(), re.MULTILINE)
+        return match.group(1) if match else None
+
+
 async def latest_streamrip_version(
     verify_ssl: bool = True,
-) -> tuple[str, str | None, bool]:
-    """Get the latest version of this fork and its release notes from GitHub.
+) -> tuple[str, str | None, bool, str, str | None]:
+    """Get the latest version of this fork, its notes, and where to get it.
 
-    Uses the latest GitHub release, or the version in pyproject.toml on the
-    default branch when the repository has no releases. Network problems are
-    never fatal: the check is simply skipped (upstream PR #995).
+    Tries GitHub first, then the opencommit.eu mirror -- kept for exactly
+    the case GitHub itself is unreachable, which has happened to other
+    projects before. Whichever one answers is also where the upgrade
+    command installs from: suggesting a GitHub command when GitHub didn't
+    even answer would just fail again. Within a host, a release's wheel
+    (not opencommit.eu's: GitHub Actions builds and attaches it there only)
+    beats the version in pyproject.toml on the default branch, used when the
+    repository has no releases yet. Network problems are never fatal: the
+    check is simply skipped (upstream PR #995).
 
     Args:
         verify_ssl: Whether to verify SSL certificates
 
     Returns:
-        A tuple of (version, release_notes, is_release)
+        (version, release notes, is a release, host, wheel url)
     """
     try:
         timeout = aiohttp.ClientTimeout(total=10)
         async with new_session(verify_ssl=verify_ssl, timeout=timeout) as s:
-            async with s.get(
-                f"https://api.github.com/repos/{REPOSITORY}/releases/latest",
-                headers={"Accept": "application/vnd.github+json"},
-            ) as resp:
-                if resp.status == 200:
-                    release = await resp.json(content_type=None)
-                    tag = str(release.get("tag_name") or "").lstrip("vV")
-                    if tag:
-                        return tag, release.get("body"), True
+            for host, releases_url, _raw_url in _UPDATE_SOURCES:
+                try:
+                    found = await _latest_release(s, releases_url)
+                except Exception as e:
+                    logger.debug("Could not reach %s: %s", host, e)
+                    continue
+                if found:
+                    tag, notes, wheel_url = found
+                    return tag, notes, True, host, wheel_url
 
-            async with s.get(
-                f"https://raw.githubusercontent.com/{REPOSITORY}/HEAD/pyproject.toml"
-            ) as resp:
-                if resp.status == 200:
-                    match = re.search(
-                        r'^version\s*=\s*"([^"]+)"', await resp.text(), re.MULTILINE
+            for host, _releases_url, raw_url in _UPDATE_SOURCES:
+                try:
+                    version = await _default_branch_version(
+                        s, raw_url("pyproject.toml")
                     )
-                    if match:
-                        return match.group(1), None, False
+                except Exception as e:
+                    logger.debug("Could not reach %s: %s", host, e)
+                    continue
+                if version:
+                    return version, None, False, host, None
     except Exception as e:
         logger.debug("Could not check for updates: %s", e)
-    return __version__, None, False
+    return __version__, None, False, GITHUB_HOST, None
 
 
 if __name__ == "__main__":
