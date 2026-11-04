@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 from mutagen.flac import FLAC
-from mutagen.id3 import ID3
+from mutagen.id3 import ID3, TSSE
 from mutagen.mp4 import MP4
 
 from streamrip.metadata import (
@@ -87,6 +87,14 @@ async def test_tag_flac_cover(sample_metadata, flac_path):
     assert file.pictures[0].data == TEST_COVER.read_bytes()
 
 
+async def test_tag_flac_cover_carries_its_own_dimensions(sample_metadata, flac_path):
+    # Left at Mutagen's default of 0, some players take that as "no usable
+    # cover" without decoding the JPEG themselves to find out.
+    await tag_file(flac_path, sample_metadata, TEST_COVER)
+    picture = FLAC(flac_path).pictures[0]
+    assert (picture.width, picture.height, picture.depth) == (1, 1, 24)
+
+
 async def test_tag_flac_multiple_artists(sample_metadata, flac_path):
     """Several credited artists land as separate ARTIST fields.
 
@@ -162,6 +170,40 @@ async def test_exclude_only_drops_the_named_tag(sample_metadata, tmp_path):
     assert "\xa9wrt" not in tags
     assert "covr" not in tags
     assert tags["\xa9day"] == ["1999"]
+
+
+@pytest.mark.parametrize("ext", ["flac", "m4a", "mp3"])
+async def test_an_earlier_tool_s_tag_does_not_survive_retagging(
+    sample_metadata, tmp_path, ext
+):
+    # A remux (Deezer's download goes through ffmpeg) leaves its own
+    # "encoder" tag on the file; tag_file's set of tags is meant to be the
+    # whole, authoritative story, so nothing a prior pass wrote should linger.
+    path = tmp_path / f"track.{ext}"
+    if ext == "flac":
+        shutil.copy(TEST_FLAC, path)
+        audio = FLAC(path)
+        audio["encoder"] = ["Lavf60.3.100"]
+        audio.save()
+    elif ext == "m4a":
+        shutil.copy(TEST_M4A, path)
+        audio = MP4(path)
+        audio.tags["\xa9too"] = ["Lavf60.3.100"]
+        audio.save()
+    else:
+        path.touch()
+        audio = ID3()
+        audio.add(TSSE(encoding=3, text="Lavf60.3.100"))
+        audio.save(path)
+
+    await tag_file(path, sample_metadata, None)
+
+    if ext == "flac":
+        assert "encoder" not in FLAC(path)
+    elif ext == "m4a":
+        assert "\xa9too" not in MP4(path).tags
+    else:
+        assert not ID3(path).getall("TSSE")
 
 
 @pytest.mark.parametrize("ext", ["flac", "m4a", "mp3"])

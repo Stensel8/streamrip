@@ -1,3 +1,4 @@
+import io
 import logging
 from enum import Enum
 lazy from pathlib import Path
@@ -12,6 +13,7 @@ from mutagen.id3 import (
 )
 from mutagen.mp4 import MP4, MP4Cover
 lazy import aiofiles
+lazy from PIL import Image
 
 lazy from .track import TrackMetadata
 
@@ -173,6 +175,16 @@ class Container(Enum):
                     if k in values
                 ]
 
+    def clear_tags(self, audio):
+        """Drop whatever tags are already there (e.g. an "encoder" comment an
+        ffmpeg remux left behind) before this container's own set replaces them.
+        """
+        match self:
+            case Container.FLAC | Container.AAC:
+                audio.tags.clear()
+            case Container.MP3 | Container.AIFF:
+                audio.clear()
+
     def tag_audio(self, audio, tags: list[tuple]):
         """Set each (key, value) tag on the mutagen object."""
         for k, v in tags:
@@ -188,6 +200,12 @@ class Container(Enum):
             case Container.FLAC:
                 cover = Picture()
                 cover.type, cover.mime, cover.data = 3, "image/jpeg", data
+                # Left at Mutagen's default of 0 otherwise, which some players
+                # take as "no usable cover" without decoding the JPEG itself
+                # to find out.
+                with Image.open(io.BytesIO(data)) as image:
+                    cover.width, cover.height = image.size
+                    cover.depth = 8 * len(image.getbands())
                 # add_picture appends, unlike ID3 and MP4 which replace: without
                 # this, re-tagging a converted FLAC embedded a second cover.
                 audio.clear_pictures()
@@ -238,6 +256,7 @@ async def tag_file(
     audio = container.get_mutagen_class(path)
     tags = container.get_tag_pairs(meta, exclude)
     logger.debug("Tagging with %s", tags)
+    container.clear_tags(audio)
     container.tag_audio(audio, tags)
     if cover_path is not None and "cover" not in (exclude or ()):
         await container.embed_cover(audio, cover_path)
