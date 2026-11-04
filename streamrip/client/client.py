@@ -220,10 +220,10 @@ HOURLY_DANGER = 175
 # and slow: the gaps and hourly cap below, PACE_GAP_MEAN/PACE_TRACKS_PER_HOUR
 # apart. auto: fast for a small job -- when the tracks it brings and those
 # the account started in the last FAST_WINDOW stay within FAST_BUDGET -- and
-# slow (never medium: unproven for a job that size) from the first track for
-# anything bigger. On the way auto turns slow once the budget is spent, or at
-# the first 429. medium and slow, asked for by name, are not turned off a
-# user's explicit choice, the same as fast: only auto adapts.
+# slow (never medium, which hasn't had slow's own 18-hour clean run) from the
+# first track for anything bigger. On the way auto turns slow once the budget
+# is spent, or at the first 429. medium and slow, asked for by name, are not
+# turned off a user's explicit choice, the same as fast: only auto adapts.
 FAST_BUDGET = 100
 FAST_WINDOW = 6 * 3600
 # Between two track starts (not requests) at medium or slow is a person-shaped
@@ -477,8 +477,9 @@ class RequestClient:
         recent = len(_within(owner._track_starts, time.time(), FAST_WINDOW))
         big = planned + recent > FAST_BUDGET
         owner._pace, owner._big = pace, big
-        # auto never resolves to medium: unproven for a job that size, so it
-        # only ever earns the pace a real account ran clean for 18 hours.
+        # auto never resolves to medium: only slow has run clean for 18
+        # hours straight, so a job big enough for auto to pace at all gets
+        # that one.
         owner._tier = pace if pace != "auto" else ("slow" if big else "fast")
 
         def steady(tier: str) -> str:

@@ -3,6 +3,15 @@
 All notable changes in this fork of [nathom/streamrip](https://github.com/nathom/streamrip). Numbers can refer to
 upstream issues and pull requests.
 
+## 2.6.8
+
+- docs: `medium` is no longer called "unproven" -- changes in wording/docs,
+  based on tests the maintainer did against Tidal's own API: `medium`'s
+  ~150 tracks an hour is just as tested as `slow`'s ~80, only without
+  `slow`'s own 18-hour clean run
+- docs: `--pace --help` is far shorter, pointing at `[downloads] pacing` in
+  config.toml for the full story instead of repeating it
+
 ## 2.6.7
 
 - feat: `[downloads] create_album_folder = false` puts tracks directly in the
