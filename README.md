@@ -28,7 +28,7 @@ A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, SoundCl
 > [opencommit.eu](https://opencommit.eu/Stensel8/streamrip); either is fine for
 > issues and pull requests.
 
-> [!IMPORTANT]
+> [!CAUTION]
 > `pip install streamrip`, the AUR package and `brew install streamrip` install
 > **upstream** streamrip, which doesn't work on Python 3.15.
 

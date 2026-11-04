@@ -1,9 +1,9 @@
 [project]
 name = "streamrip"
-version = "2.6.6"
+version = "2.6.7"
 description = "A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, SoundCloud, and Spotify."
 authors = [{ name = "nathom", email = "nathanthomas707@gmail.com" }]
-maintainers = [{ name = "Stensel8" }]
+maintainers = [{ name = "Stensel8", email = "stentijhuis@protonmail.com" }]
 license = "GPL-3.0-only"
 license-files = ["LICENSE"]
 readme = "README.md"
