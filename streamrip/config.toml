@@ -52,8 +52,9 @@ save_lrc = false
 # bigger at a steady pace of about 80 tracks an hour, the pace a real account
 # ran 18 hours on without a single rate limit. "fast" always goes at full
 # speed -- fine for one album, not for hours on end. "medium" always goes at
-# a faster, unproven ~150 tracks an hour: a middle ground for a session, not
-# a day-long run. "slow" always goes at the proven ~80. --pace overrides this
+# a faster ~150 tracks an hour, without slow's long-run track record: a
+# middle ground for a session, not a day-long run. "slow" always goes at the
+# proven ~80. --pace overrides this
 # for one run.
 # pacing = "auto"
 

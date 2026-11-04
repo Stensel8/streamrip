@@ -434,8 +434,9 @@ def test_medium_paces_like_its_own_tier_not_slows(paced, monkeypatch):
 
 
 def test_auto_never_resolves_to_medium(paced, monkeypatch):
-    """auto only ever earns fast or slow: medium is unproven for a job big
-    enough that auto would pace it at all."""
+    """auto only ever earns fast or slow: only slow has had its own 18-hour
+    clean run, so a job big enough that auto would pace it at all gets
+    that one."""
     monkeypatch.setattr(client_module, "FAST_BUDGET", 1)
     client, _ = paced
     client.pace("auto", 5)  # well past FAST_BUDGET
