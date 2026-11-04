@@ -54,7 +54,7 @@ async def test_update_check_follows_verify_ssl_and_is_never_fatal():
     with patch(
         "streamrip.rip.cli.new_session", side_effect=RuntimeError("offline")
     ) as make:
-        _, notes, _ = await latest_streamrip_version(verify_ssl=False)
+        _, notes, _, _, _ = await latest_streamrip_version(verify_ssl=False)
     assert notes is None
     assert make.call_args.kwargs["verify_ssl"] is False
 

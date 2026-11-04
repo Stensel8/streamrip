@@ -5,11 +5,19 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 import tomlkit
+from aiohttp import web
 from click.testing import CliRunner
 
 from streamrip import db
 from streamrip.config import Config, set_user_defaults
-from streamrip.rip.cli import _upgrade_command, is_newer_version, rip
+from streamrip.rip import cli as cli_module
+from streamrip.rip.cli import (
+    _is_uv_tool_install,
+    _upgrade_command,
+    is_newer_version,
+    latest_streamrip_version,
+    rip,
+)
 
 
 def test_version_comparison_is_numeric():
@@ -247,7 +255,7 @@ class _FakeMain:
 def _run_url_with_a_newer_version_available(tmp_path, monkeypatch, raise_during_rip):
     monkeypatch.setattr(
         "streamrip.rip.cli.latest_streamrip_version",
-        AsyncMock(return_value=("99.0.0", None, True)),
+        AsyncMock(return_value=("99.0.0", None, True, "github.com", None)),
     )
     _FakeMain.to_raise = raise_during_rip
     monkeypatch.setattr("streamrip.rip.cli.Main", _FakeMain)
@@ -309,6 +317,172 @@ def test_update_notice_still_prints_when_the_download_is_cancelled(
 def test_upgrade_command_preserves_release_or_branch_origin():
     assert _upgrade_command("2.4.5", is_release=True).endswith("@v2.4.5")
     assert _upgrade_command("2.4.5", is_release=False).endswith("@HEAD")
+
+
+def test_upgrade_command_uses_the_wheel_in_a_uv_tool_install(monkeypatch):
+    monkeypatch.setattr(cli_module.shutil, "which", lambda _: "/path/to/uv")
+    monkeypatch.setattr(cli_module, "_is_uv_tool_install", lambda: True)
+
+    cmd = _upgrade_command("2.4.5", wheel_url="https://example/streamrip.whl")
+
+    assert cmd == '"/path/to/uv" tool install --upgrade "https://example/streamrip.whl"'
+
+
+def test_upgrade_command_ignores_the_wheel_outside_a_uv_tool_install(monkeypatch):
+    # install.sh's own .venv (or any other) has to be upgraded through the
+    # Python already running: a uv tool venv elsewhere is not the install in
+    # use, printed as sys.prefix in the notice.
+    monkeypatch.setattr(cli_module.shutil, "which", lambda _: "/path/to/uv")
+    monkeypatch.setattr(cli_module, "_is_uv_tool_install", lambda: False)
+
+    cmd = _upgrade_command("2.4.5", wheel_url="https://example/streamrip.whl")
+
+    assert "tool install" not in cmd
+    assert cmd.endswith("@v2.4.5")
+
+
+def test_upgrade_command_ignores_the_wheel_without_uv(monkeypatch):
+    monkeypatch.setattr(cli_module.shutil, "which", lambda _: None)
+    monkeypatch.setattr(cli_module, "_is_uv_tool_install", lambda: True)
+
+    cmd = _upgrade_command("2.4.5", wheel_url="https://example/streamrip.whl")
+
+    assert "tool install" not in cmd
+
+
+@pytest.mark.parametrize(
+    ("prefix", "expected"),
+    [
+        ("/home/sten/.local/share/uv/tools/streamrip", True),
+        ("/home/sten/Documents/GitHub/streamrip/.venv", False),
+    ],
+    ids=["a uv tool venv", "an ordinary venv"],
+)
+def test_is_uv_tool_install_reads_the_venv_s_own_parent_folder(
+    monkeypatch, prefix, expected
+):
+    monkeypatch.setattr(cli_module.sys, "prefix", prefix)
+
+    assert _is_uv_tool_install() is expected
+
+
+def _github_shaped_release(tag: str, wheel_name: str | None = None) -> dict:
+    assets = [{"name": wheel_name, "browser_download_url": f"https://dl/{wheel_name}"}]
+    return {
+        "tag_name": tag,
+        "body": f"notes for {tag}",
+        "assets": assets if wheel_name else [],
+    }
+
+
+async def test_the_update_check_prefers_github(serve, monkeypatch):
+    async def releases(request):
+        return web.json_response(_github_shaped_release("v9.0.0", "streamrip.whl"))
+
+    github = await serve({"/repos/x/x/releases/latest": releases})
+    opencommit = await serve({})
+    monkeypatch.setattr(
+        cli_module,
+        "_UPDATE_SOURCES",
+        (
+            (
+                "github.com",
+                f"{github}repos/x/x/releases/latest",
+                lambda p: f"{github}{p}",
+            ),
+            (
+                "opencommit.eu",
+                f"{opencommit}repos/x/x/releases/latest",
+                lambda p: f"{opencommit}{p}",
+            ),
+        ),
+    )
+
+    version, notes, is_release, host, wheel_url = await latest_streamrip_version()
+
+    assert (version, is_release, host) == ("9.0.0", True, "github.com")
+    assert notes == "notes for v9.0.0"
+    assert wheel_url == "https://dl/streamrip.whl"
+
+
+async def test_the_update_check_falls_back_to_opencommit(serve, monkeypatch):
+    async def releases(request):
+        return web.json_response(_github_shaped_release("v9.0.0"))
+
+    opencommit = await serve({"/repos/x/x/releases/latest": releases})
+    monkeypatch.setattr(
+        cli_module,
+        "_UPDATE_SOURCES",
+        (
+            # Nothing is listening on .test, so GitHub's "request" fails outright.
+            ("github.com", "http://unreachable.test/releases/latest", lambda p: p),
+            (
+                "opencommit.eu",
+                f"{opencommit}repos/x/x/releases/latest",
+                lambda p: f"{opencommit}{p}",
+            ),
+        ),
+    )
+
+    version, _notes, is_release, host, wheel_url = await latest_streamrip_version()
+
+    assert (version, is_release, host, wheel_url) == (
+        "9.0.0",
+        True,
+        "opencommit.eu",
+        None,
+    )
+
+
+async def test_the_update_check_falls_back_to_the_default_branch_s_version(
+    serve, monkeypatch
+):
+    async def no_releases(request):
+        return web.Response(status=404)
+
+    async def pyproject(request):
+        return web.Response(text='version = "9.0.0"\n')
+
+    github = await serve(
+        {"/repos/x/x/releases/latest": no_releases, "/pyproject.toml": pyproject}
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "_UPDATE_SOURCES",
+        (
+            (
+                "github.com",
+                f"{github}repos/x/x/releases/latest",
+                lambda p: f"{github}{p}",
+            ),
+            ("opencommit.eu", "http://unreachable.test/releases/latest", lambda p: p),
+        ),
+    )
+
+    version, notes, is_release, host, wheel_url = await latest_streamrip_version()
+
+    assert (version, notes, is_release, host, wheel_url) == (
+        "9.0.0",
+        None,
+        False,
+        "github.com",
+        None,
+    )
+
+
+async def test_the_update_check_gives_up_quietly_when_nothing_answers(monkeypatch):
+    monkeypatch.setattr(
+        cli_module,
+        "_UPDATE_SOURCES",
+        (
+            ("github.com", "http://unreachable.test/a", lambda p: p),
+            ("opencommit.eu", "http://unreachable.test/b", lambda p: p),
+        ),
+    )
+
+    result = await latest_streamrip_version()
+
+    assert result == (cli_module.__version__, None, False, "github.com", None)
 
 
 @pytest.mark.parametrize("args", [["--help"], ["--version"]])
@@ -501,7 +675,7 @@ def _config_with_no_update_check(tmp_path, value="true") -> str:
 
 
 def _update_check(monkeypatch) -> AsyncMock:
-    check = AsyncMock(return_value=("99.0.0", None, True))
+    check = AsyncMock(return_value=("99.0.0", None, True, "github.com", None))
     monkeypatch.setattr("streamrip.rip.cli.latest_streamrip_version", check)
     return check
 
