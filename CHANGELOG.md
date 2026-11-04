@@ -12,6 +12,9 @@ upstream issues and pull requests.
 - feat: `[downloads] save_lrc` also writes lyrics to an `.lrc` file
 - fix: a fresh config downloads to the user's real Music folder, not
   `~/StreamripDownloads`
+- fix: a FLAC's embedded cover now carries its real width/height/depth
+- fix: retagging no longer leaves an earlier pass's tags behind (e.g.
+  ffmpeg's "encoder" comment)
 
 ## 2.6.6
 
