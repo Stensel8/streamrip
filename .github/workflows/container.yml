@@ -1,9 +1,9 @@
-# Builds the container image with Podman, on amd64 and arm64 hardware. A pull
-# request only builds it and runs `streamrip --version`, so a dependency
-# without an arm64 wheel shows up in the pull request that brings it. A
-# published release pushes each architecture to ghcr.io and joins the two
-# under the version, its minor version and `latest`. opencommit.eu builds the
-# same tag for its own registry (.forgejo/workflows/container.yml).
+# The image for ghcr.io/stensel8/streamrip, built with Podman on amd64 and arm64
+# hardware. A pull request builds and tests both, so a dependency without an
+# arm64 wheel shows up there. A published release, or "Run workflow" with an
+# existing tag, also pushes them and joins them under the version, its minor
+# and `latest`; "Run workflow" without a tag only builds and tests. opencommit.eu
+# builds the same tag the same way (.forgejo/workflows/container.yml).
 name: Container
 
 on:
@@ -20,64 +20,58 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: A tag to build and publish again, like v2.7.0. Empty to only build and test.
+        required: false
+        type: string
 
 permissions:
   contents: read
 
 env:
   IMAGE: ghcr.io/stensel8/streamrip
+  TAG: ${{ github.event.release.tag_name || inputs.tag || '' }}
 
 jobs:
-  image:
+  build:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - arch: amd64
-            runner: ubuntu-latest
-          - arch: arm64
-            runner: ubuntu-26.04-arm
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
+        runs-on: [ubuntu-latest, ubuntu-26.04-arm]
+    runs-on: ${{ matrix.runs-on }}
+    timeout-minutes: 45
     permissions:
       contents: read
       packages: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ env.TAG }}
           persist-credentials: false
-
-      - name: Build and smoke test
+      - name: Build, test and push
         env:
-          TAG_NAME: ${{ github.event.release.tag_name }}
-        run: |
-          set -euo pipefail
-          command -v podman >/dev/null || { sudo apt-get update && sudo apt-get install --yes podman; }
-          if [[ -n "$TAG_NAME" ]]; then
-            version="${TAG_NAME#v}"
-            podman build --tag streamrip:ci \
-              --label "org.opencontainers.image.version=$version" \
-              --label "org.opencontainers.image.revision=$GITHUB_SHA" .
-            test "$(podman run --rm streamrip:ci --version)" = "streamrip, version $version"
-          else
-            podman build --tag streamrip:ci .
-            podman run --rm streamrip:ci --version
-          fi
-
-      - name: Push this architecture
-        if: github.event_name == 'release'
-        env:
-          TAG_NAME: ${{ github.event.release.tag_name }}
-          ARCH: ${{ matrix.arch }}
           REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          command -v podman >/dev/null || { sudo apt-get update && sudo apt-get install --yes podman; }
+          case "$(uname -m)" in x86_64) arch=amd64 ;; aarch64) arch=arm64 ;; esac
+          version=""; [[ "$TAG" == v[0-9]* ]] && version="${TAG#v}"
+          image="$IMAGE:${version:-test}-$arch"
+
+          podman build --file Containerfile --tag "$image" \
+            --label "org.opencontainers.image.version=${version:-dev}" \
+            --label "org.opencontainers.image.revision=$(git rev-parse HEAD)" .
+          podman run --rm "$image" --version
+          [[ -n "$version" ]] || exit 0   # without a tag: built and tested, nothing to publish
+          test "$(podman run --rm "$image" --version)" = "streamrip, version $version"
+
           podman login ghcr.io --username "$GITHUB_ACTOR" --password-stdin <<<"$REGISTRY_TOKEN"
-          podman push streamrip:ci "docker://$IMAGE:${TAG_NAME#v}-$ARCH"
+          podman push "$image"
 
   manifest:
-    if: github.event_name == 'release'
-    needs: image
+    if: github.event_name == 'release' || inputs.tag != ''
+    needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -86,21 +80,16 @@ jobs:
     steps:
       - name: Join the architectures
         env:
-          TAG_NAME: ${{ github.event.release.tag_name }}
           PRERELEASE: ${{ github.event.release.prerelease }}
           REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          version="${TAG_NAME#v}"
+          version="${TAG#v}"
           tags=("$version")
           # A stable release also moves its minor tag (2.6), and `latest`.
-          if [[ "$version" != *-* ]]; then
-            tags+=("${version%.*}")
+          if [[ "$version" != *-* && "$PRERELEASE" != "true" ]]; then
+            tags+=("${version%.*}" latest)
           fi
-          if [[ "$PRERELEASE" != "true" ]]; then
-            tags+=(latest)
-          fi
-
           podman login ghcr.io --username "$GITHUB_ACTOR" --password-stdin <<<"$REGISTRY_TOKEN"
           podman manifest create streamrip:release
           for arch in amd64 arm64; do
