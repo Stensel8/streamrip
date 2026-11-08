@@ -19,6 +19,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
       # The ruff of uv.lock, without installing streamrip.
       - run: uv run --locked --only-group dev ruff check .
       - run: uv run --locked --only-group dev ruff format --check .
@@ -30,6 +32,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
       # --locked fails when uv.lock no longer matches pyproject.toml.
       - name: Install dependencies
         run: uv sync --locked --all-extras --python 3.15
@@ -48,27 +52,17 @@ jobs:
       - run: ./install.sh && .venv/bin/streamrip --help
 
   # The tests on arm64, on the pi. Only for a push, never a pull request: the
-  # pi is at home. uv is a pinned download, as setup-uv needs Node.
+  # pi is at home.
   test-arm64:
     if: github.event_name == 'push'
     runs-on: pi
     timeout-minutes: 30
     steps:
-      - name: Run tests
-        shell: bash
-        env:
-          UV_VERSION: "0.13.7"
-          UV_SHA256: "71279f8d3c67241e807b9d8db872d1bf541579fb9f08b7d1eb1682196d1e57dc"
-        run: |
-          set -euo pipefail
-          work="$(mktemp -d)"
-          trap 'rm -rf "$work"' EXIT
-          git clone --quiet --depth 1 --branch "$GITHUB_REF_NAME" \
-            "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git" "$work/src"
-          curl -sSL --fail-with-body --retry 5 -o "$work/uv.tar.gz" \
-            "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-aarch64-unknown-linux-gnu.tar.gz"
-          echo "$UV_SHA256  $work/uv.tar.gz" | sha256sum -c -
-          tar -xzf "$work/uv.tar.gz" -C "$work" --strip-components=1
-          cd "$work/src"
-          "$work/uv" sync --locked --all-extras --python 3.15
-          "$work/uv" run --locked pytest -m "not login"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+      - run: uv sync --locked --all-extras --python 3.15
+      - run: uv run --locked pytest -m "not login"
