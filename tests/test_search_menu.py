@@ -3,6 +3,7 @@
 import asyncio
 import builtins
 import io
+import json
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, Mock
 
@@ -445,3 +446,44 @@ async def test_real_sixel_adapter_restores_last_row_and_handles_encoder_errors(
         await pilot.pause(0.2)
         assert pane.pixel_widget is None
         assert pane.query_one(BlockCover).size.height > 1
+
+
+async def test_deezer_album_details_arrive_once_highlighted(monkeypatch):
+    urls = []
+
+    async def fetch(self, url):
+        urls.append(url)
+        album = {
+            "id": 7,
+            "title": "Visions",
+            "artist": {"name": "The Artist"},
+            "record_type": "album",
+            "nb_tracks": 12,
+            "release_date": "2024-03-08",
+            "duration": 2734,
+            "genres": {"data": [{"name": "Jazz"}]},
+            "label": "Blue Note Records",
+        }
+        return json.dumps(album).encode()
+
+    monkeypatch.setattr(CoverCache, "_fetch", fetch)
+    found = album_summary(
+        {"id": 7, "title": "Visions", "artist": {"name": "The Artist"}, "nb_tracks": 12}
+    )
+    app = SearchMenu(SearchResults([found]), "deezer", "album", "visions")
+    try:
+        async with app.run_test(size=(100, 40)) as pilot:
+            await pilot.pause(0.3)
+            assert urls == ["https://api.deezer.com/album/7"]
+            assert dict(app.results[0].details) == {
+                "Released": "2024-03-08",
+                "Type": "Album",
+                "Tracks": "12",
+                "Length": "45:34",
+                "Genre": "Jazz",
+                "Label": "Blue Note Records",
+            }
+            prompt = app.query_one(OptionList).get_option_at_index(0).prompt
+            assert "Visions by The Artist (2024)" in str(prompt)
+    finally:
+        await app.covers.close()

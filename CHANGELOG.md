@@ -14,6 +14,8 @@ upstream issues and pull requests.
 - feat: your liked tracks and albums on Tidal (`my-collection/tracks`,
   `/albums`), and a Deezer profile's liked albums (`/albums`); Deezer profile
   links no longer need a language in them
+- feat: Deezer's search shows an album's release date, length, genre and label
+  too, and the container shows covers in full color
 - chore: four dependencies fewer: aiofiles makes way for the standard library,
   m3u8, pathvalidate and deezer-py for code of our own. File and folder names
   stay exactly as they were. Deezer now goes over aiohttp like every other
