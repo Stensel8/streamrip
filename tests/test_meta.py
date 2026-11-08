@@ -335,3 +335,71 @@ def test_lossy_folder_names_drop_only_brackets_that_are_all_quality(fmt, folder)
     }
 
     assert AlbumMetadata.from_deezer(resp).format_folder_path(fmt) == Path(folder)
+
+
+def test_qobuz_track_credits_replaygain_and_copyright():
+    """A Qobuz track's composers and lyricists come from its credits, and its
+    ReplayGain from audio_info.
+    """
+    album = AlbumMetadata.from_qobuz(qobuz_track_resp["album"])
+    t = TrackMetadata.from_qobuz(album, qobuz_track_resp)
+    assert (t.composers, t.lyricists) == (["John Darnielle"], ["John Darnielle"])
+    assert (t.replaygain_gain, t.replaygain_peak) == (-7.08, 0.936676)
+    # Qobuz sent its (C) and (P) lines without their symbols: one line twice.
+    assert album.get_copyright() == "2023 Merge Records"
+
+
+def test_qobuz_album_label_barcode_and_release_type():
+    m = AlbumMetadata.from_qobuz(qobuz_album_resp)
+    assert (m.info.label, m.barcode, m.releasetype) == (
+        "Rhino - Warner Records",
+        "0603497941032",
+        "album",
+    )
+
+
+@pytest.mark.parametrize(("scale", "key"), [("MAJOR", "Bb"), ("MINOR", "Bbm")])
+def test_tidal_bpm_replaygain_key_barcode_and_release_type(scale, key):
+    album = AlbumMetadata.from_tidal(_tidal_album(upc="00602508053610", type="EP"))
+    assert (album.barcode, album.releasetype) == ("00602508053610", "ep")
+    t = TrackMetadata.from_tidal(
+        album,
+        {
+            "id": 1,
+            "title": "Song",
+            "artists": [{"name": "A"}],
+            "bpm": 88,
+            "replayGain": -10.05,
+            "peak": 0.999873,
+            "key": "Bb",
+            "keyScale": scale,
+        },
+    )
+    assert (t.bpm, t.replaygain_gain, t.replaygain_peak, t.key) == (
+        88,
+        -10.05,
+        0.999873,
+        key,
+    )
+
+
+@pytest.mark.parametrize(("bpm", "expected"), [(0, None), (125.6, 126)])
+def test_deezer_bpm_barcode_and_release_type(bpm, expected):
+    """Deezer's "compile" is a compilation, and a BPM of 0 means unknown."""
+    album = AlbumMetadata.from_deezer(
+        {
+            "id": 5,
+            "title": "Album",
+            "artist": {"name": "A"},
+            "tracks": [],
+            "upc": "602445964840",
+            "record_type": "compile",
+            **{f"cover_{s}": "u" for s in ("xl", "big", "medium", "small")},
+        }
+    )
+    assert (album.barcode, album.releasetype) == ("602445964840", "compilation")
+    t = TrackMetadata.from_deezer(
+        album,
+        {"id": 8, "title": "Song", "track_position": 1, "disk_number": 1, "bpm": bpm},
+    )
+    assert t.bpm == expected

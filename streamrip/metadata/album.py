@@ -9,6 +9,7 @@ from .util import (
     SOURCES,
     deezer_artists,
     get_quality_id,
+    release_type,
     safe_get,
     tidal_quality_id,
     typed,
@@ -93,6 +94,9 @@ class AlbumMetadata:
     # The album artists one by one, where the source lists them (like
     # TrackMetadata.artists): written as separate ALBUMARTIST values.
     albumartists: list[str] | None = None
+    barcode: str | None = None
+    # album, ep, single or compilation
+    releasetype: str | None = None
 
     def get_genres(self) -> str:
         return ", ".join(self.genre)
@@ -100,6 +104,10 @@ class AlbumMetadata:
     def get_copyright(self) -> str | None:
         if self.copyright is None:
             return None
+        # Qobuz sometimes sends its (C) and (P) lines without their symbols:
+        # one line twice.
+        if twice := re.fullmatch(r"(.+?)\s+\1", self.copyright.strip()):
+            return twice[1]
         # (P) and (C) as the symbols they stand for
         phonographic = re.sub(r"(?i)\(P\)", PHON_COPYRIGHT, self.copyright)
         return re.sub(r"(?i)\(C\)", COPYRIGHT, phonographic)
@@ -196,6 +204,8 @@ class AlbumMetadata:
             description=resp.get("description") or "",
             version=version,
             albumartists=artists or None,
+            barcode=resp.get("upc"),
+            releasetype=release_type(resp.get("release_type")),
         )
 
     @classmethod
@@ -222,6 +232,8 @@ class AlbumMetadata:
             disctotal=resp["tracks"][-1]["disk_number"] if resp["tracks"] else 1,
             date=date,
             albumartists=artists,
+            barcode=resp.get("upc"),
+            releasetype=release_type(resp.get("record_type")),
         )
 
     @classmethod
@@ -307,6 +319,8 @@ class AlbumMetadata:
             copyright=_spotify_copyright(resp.get("copyrights")),
             date=date,
             albumartists=artists or None,
+            barcode=(resp.get("external_ids") or {}).get("upc"),
+            releasetype=release_type(resp.get("album_type")),
         )
 
     @classmethod
@@ -351,6 +365,8 @@ class AlbumMetadata:
             copyright=resp.get("copyright") or "",
             date=date,
             albumartists=artists or None,
+            barcode=resp.get("upc"),
+            releasetype=release_type(resp.get("type")),
         )
 
     @classmethod

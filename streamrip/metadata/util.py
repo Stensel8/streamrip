@@ -22,20 +22,36 @@ def deezer_artists(resp: dict) -> list[str]:
     return names or [safe_get(resp, "artist", "name", default="Unknown Artist")]
 
 
+# The sources' release types as MusicBrainz names them in RELEASETYPE.
+_RELEASE_TYPES = frozendict(
+    {
+        "album": "album",
+        "ep": "ep",
+        "epmini": "ep",
+        "single": "single",
+        "compile": "compilation",
+        "compilation": "compilation",
+    }
+)
+
+
+def release_type(value: str | None) -> str | None:
+    """A source's release type as album, ep, single or compilation."""
+    return _RELEASE_TYPES.get((value or "").lower())
+
+
 # A comma-separated word that is part of a name, not a credit role.
 _NAME_SUFFIXES = frozenset({"jr", "sr", "ii", "iii", "iv"})
 
 
-def qobuz_artists(resp: dict) -> list[str]:
-    """The credited artists of a Qobuz track response, one name each: the
-    main artists, then the featured ones (the order Tidal lists them in).
+def _qobuz_credits(resp: dict) -> list[tuple[str, set[str]]]:
+    """Each credit of a Qobuz track response as (name, lower-cased roles).
 
     Qobuz's "performer" is a single display string ("A, B"), but "performers"
     lists every credit as "Name, Role[, Role] - Name, Role ...", in no fixed
     order: a clean and an explicit edition can list a feature first or last.
     """
-    main: list[str] = []
-    featured: list[str] = []
+    found = []
     for credit in (resp.get("performers") or "").split(" - "):
         parts = [part.strip() for part in credit.split(",")]
         # Roles are single CamelCase words after the name, which may itself
@@ -47,11 +63,22 @@ def qobuz_artists(resp: dict) -> list[str]:
             and parts[-1].lower() not in _NAME_SUFFIXES
         ):
             roles.add(parts.pop().lower())
-        name = ", ".join(parts)
-        if name and "mainartist" in roles:
-            main.append(name)
-        elif name and "featuredartist" in roles:
-            featured.append(name)
+        if name := ", ".join(parts):
+            found.append((name, roles))
+    return found
+
+
+def qobuz_credited(resp: dict, *roles: str) -> list[str]:
+    """The names credited with any of `roles` (lower case), once each."""
+    return list(dict.fromkeys(n for n, r in _qobuz_credits(resp) if r & set(roles)))
+
+
+def qobuz_artists(resp: dict) -> list[str]:
+    """The credited artists of a Qobuz track response, one name each: the
+    main artists, then the featured ones (the order Tidal lists them in).
+    """
+    main = qobuz_credited(resp, "mainartist")
+    featured = qobuz_credited(resp, "featuredartist")
     return list(dict.fromkeys(main + featured))
 
 

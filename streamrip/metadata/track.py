@@ -1,10 +1,17 @@
 import logging
 from dataclasses import dataclass
 
-from .util import SOURCES, deezer_artists, qobuz_artists, safe_get
+from .util import SOURCES, deezer_artists, qobuz_artists, qobuz_credited, safe_get
 lazy from .album import AlbumMetadata
 
 logger = logging.getLogger("streamrip")
+
+
+def _key(note: str | None, scale: str | None) -> str | None:
+    """Tidal's key and scale ("Bb", "MAJOR") as one: "Bb", or "Bbm" for minor."""
+    if not note:
+        return None
+    return f"{note}m" if (scale or "").upper() == "MINOR" else note
 
 
 @dataclass(slots=True)
@@ -35,6 +42,15 @@ class TrackMetadata:
     # tag instead of baking the join into one string, which players then
     # show as one artist named "A, B".
     artists: list[str] | None = None
+    # Like `artists`: `composer` above is them joined.
+    composers: list[str] | None = None
+    lyricists: list[str] | None = None
+    bpm: int | None = None
+    # ReplayGain of the track: gain in dB, peak as a fraction of full scale.
+    replaygain_gain: float | None = None
+    replaygain_peak: float | None = None
+    # The musical key as DJ software writes it: "Bb", "F#m".
+    key: str | None = None
 
     @classmethod
     def from_qobuz(cls, album: AlbumMetadata, resp: dict) -> TrackMetadata | None:
@@ -48,6 +64,10 @@ class TrackMetadata:
         if work and work not in title:
             title = f"{work}: {title}"
         artists = qobuz_artists(resp)
+        composers = qobuz_credited(resp, "composer", "composerlyricist") or [
+            name for name in [safe_get(resp, "composer", "name")] if name
+        ]
+        gain = resp.get("audio_info") or {}
         return cls(
             TrackInfo(str(resp["id"]), bool(resp.get("parental_warning"))),
             title,
@@ -60,9 +80,13 @@ class TrackMetadata:
             or album.albumartist,
             resp.get("track_number", 1),
             resp.get("media_number", 1),
-            safe_get(resp, "composer", "name"),
+            ", ".join(composers) or None,
             isrc=resp.get("isrc"),
             artists=artists or None,
+            composers=composers or None,
+            lyricists=qobuz_credited(resp, "lyricist", "composerlyricist") or None,
+            replaygain_gain=gain.get("replaygain_track_gain"),
+            replaygain_peak=gain.get("replaygain_track_peak"),
         )
 
     @classmethod
@@ -79,6 +103,7 @@ class TrackMetadata:
             None,
             isrc=resp.get("isrc"),
             artists=artists,
+            bpm=round(resp["bpm"]) if resp.get("bpm") else None,
         )
 
     @classmethod
@@ -132,6 +157,10 @@ class TrackMetadata:
             None,
             isrc=resp.get("isrc"),
             artists=artists,
+            bpm=resp.get("bpm") or None,
+            replaygain_gain=resp.get("replayGain"),
+            replaygain_peak=resp.get("peak"),
+            key=_key(resp.get("key"), resp.get("keyScale")),
         )
 
     @classmethod
