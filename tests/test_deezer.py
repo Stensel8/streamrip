@@ -1,9 +1,8 @@
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
-import deezer
 import pytest
 
-from streamrip.client.deezer import DeezerClient
+from streamrip.client.deezer import DeezerClient, WrongLicenseError
 from streamrip.config import Config
 from streamrip.exceptions import NonStreamableError
 
@@ -17,8 +16,8 @@ def mock_deezer_client():
     config.session.deezer.lower_quality_if_not_available = True
 
     client = DeezerClient(config)
-    client.client = Mock()
-    client.client.gw = Mock()
+    client.client = AsyncMock()
+    client.client.current_user = {}
     client.session = Mock()
 
     return client
@@ -281,7 +280,7 @@ async def test_deezer_wrong_license_steps_down(mock_deezer_client):
 
     def get_track_url(token, fmt):
         if fmt == "FLAC":
-            raise deezer.WrongLicense(fmt)
+            raise WrongLicenseError(fmt)
         return "https://cdn/x.mp3"
 
     mock_deezer_client.client.gw.get_track.return_value = {

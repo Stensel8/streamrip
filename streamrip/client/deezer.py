@@ -1,8 +1,10 @@
 import asyncio
+import json
 import logging
+import re
 
-lazy import deezer
-lazy import requests
+import aiohttp
+from yarl import URL
 
 from ..exceptions import (
     AuthenticationError,
@@ -20,9 +22,229 @@ logging.captureWarnings(True)
 FORMATS = ("MP3_128", "MP3_320", "FLAC")
 
 
+class DeezerError(Exception):
+    """An error Deezer answered a request with."""
+
+
+class WrongLicenseError(DeezerError):
+    """The account's subscription doesn't allow the format."""
+
+
+class WrongGeolocationError(DeezerError):
+    """The track isn't available in the account's country."""
+
+
+class _Deezer:
+    """What streamrip uses of Deezer, over the client's aiohttp session: the
+    public API (`api`), the website's own API (`gw`), which takes the ARL login,
+    and the media API that gives a track's download URL.
+    """
+
+    def __init__(self, owner: DeezerClient):
+        self._owner = owner
+        # Follows the rotating browser identity (register_header_dict).
+        self.http_headers: dict[str, str] = {}
+        self.current_user: dict = {}
+        self.api = _PublicAPI(self)
+        self.gw = _GatewayAPI(self)
+
+    async def request(self, method: str, url: str, **kwargs) -> dict:
+        """JSON from Deezer, trying twice more after a lost connection."""
+        for attempt in range(3):
+            try:
+                async with self._owner.session.request(
+                    method, url, headers=self.http_headers, **kwargs
+                ) as resp:
+                    resp.raise_for_status()
+                    return await resp.json(content_type=None)
+            except aiohttp.ClientConnectionError, TimeoutError:
+                if attempt == 2:
+                    raise
+                await asyncio.sleep(2)
+        raise AssertionError("unreachable")
+
+    async def login_via_arl(self, arl: str) -> bool:
+        """Log in with the ARL cookie; False if Deezer doesn't take it.
+
+        The licence of a family account's main user is the one every profile
+        streams with, so its own profiles need no switching here.
+        """
+        self._owner.session.cookie_jar.update_cookies(
+            {"arl": arl.strip()}, URL("https://www.deezer.com")
+        )
+        user = (await self.gw.call("deezer.getUserData")).get("USER") or {}
+        if not user.get("USER_ID"):
+            return False
+        options = user["OPTIONS"]
+        self.current_user = {
+            "id": user["USER_ID"],
+            "license_token": options["license_token"],
+            "can_stream_hq": options["web_hq"] or options["mobile_hq"],
+            "can_stream_lossless": options["web_lossless"]
+            or options["mobile_lossless"],
+            "country": options["license_country"],
+        }
+        language = (user.get("SETTING") or {}).get("global", {}).get("language", "")
+        if language := re.sub(r"[^0-9A-Za-z *,-.;=]", "", str(language)):
+            self.http_headers["Accept-Language"] = language
+        return True
+
+    async def get_track_url(self, track_token: str, track_format: str) -> str | None:
+        """A track's download URL in a format, or None if Deezer gives none."""
+        user = self.current_user
+        if not user.get("license_token"):
+            return None
+        if (track_format == "FLAC" and not user.get("can_stream_lossless")) or (
+            track_format == "MP3_320" and not user.get("can_stream_hq")
+        ):
+            raise WrongLicenseError(track_format)
+        body = {
+            "license_token": user["license_token"],
+            "media": [
+                {
+                    "type": "FULL",
+                    "formats": [{"cipher": "BF_CBC_STRIPE", "format": track_format}],
+                }
+            ],
+            "track_tokens": [track_token],
+        }
+        try:
+            resp = await self.request(
+                "POST", "https://media.deezer.com/v1/get_url", json=body
+            )
+        except aiohttp.ClientResponseError:
+            return None  # a failed request, not an answer (see get_downloadable)
+        for data in resp.get("data") or []:
+            if errors := data.get("errors"):
+                if errors[0].get("code") == 2002:
+                    raise WrongGeolocationError(user.get("country"))
+                raise DeezerError(json.dumps(errors))
+            media = data.get("media") or []
+            return media[0]["sources"][0]["url"] if media else None
+        return None
+
+
+class _PublicAPI:
+    """Deezer's public API, api.deezer.com."""
+
+    def __init__(self, dz: _Deezer):
+        self._dz = dz
+
+    async def call(self, path: str, params: dict | None = None) -> dict:
+        """An answer of the API; its quota and busy errors (4, 700) are waited
+        out a few times, as deezer-py did.
+        """
+        for attempt in range(5):
+            body = await self._dz.request(
+                "GET", f"https://api.deezer.com/{path}", params=params or {}
+            )
+            if not (error := body.get("error")):
+                return body
+            if error.get("code") in {4, 700} and attempt < 4:
+                await asyncio.sleep(5)
+                continue
+            raise DeezerError(f"{path}: {error.get('message') or error}")
+        raise AssertionError("unreachable")
+
+    async def get_track(self, track_id) -> dict:
+        return await self.call(f"track/{track_id}")
+
+    async def get_album(self, album_id) -> dict:
+        return await self.call(f"album/{album_id}")
+
+    async def get_album_tracks(self, album_id) -> dict:
+        return await self.call(f"album/{album_id}/tracks", {"index": 0, "limit": -1})
+
+    async def get_playlist(self, playlist_id) -> dict:
+        return await self.call(f"playlist/{playlist_id}")
+
+    async def get_playlist_tracks(self, playlist_id) -> dict:
+        return await self.call(
+            f"playlist/{playlist_id}/tracks", {"index": 0, "limit": -1}
+        )
+
+    async def get_artist(self, artist_id) -> dict:
+        return await self.call(f"artist/{artist_id}")
+
+    async def get_artist_albums(self, artist_id) -> dict:
+        return await self.call(f"artist/{artist_id}/albums", {"index": 0, "limit": -1})
+
+    async def search(self, media_type: str, query: str, limit: int) -> dict:
+        return await self.call(f"search/{media_type}", {"q": query, "limit": limit})
+
+
+class _GatewayAPI:
+    """The website's own API (gw-light), which takes the ARL login."""
+
+    URL = "https://www.deezer.com/ajax/gw-light.php"
+
+    def __init__(self, dz: _Deezer):
+        self._dz = dz
+        self._token: str | None = None
+
+    async def call(self, method: str, args: dict | None = None) -> dict:
+        """A method's results. A stale token is renewed, and a FALLBACK the
+        answer names is followed, a couple of times at most.
+        """
+        args = dict(args or {})
+        for _ in range(3):
+            if self._token is None and method != "deezer.getUserData":
+                self._token = (await self.call("deezer.getUserData"))["checkForm"]
+            params = {
+                "api_version": "1.0",
+                "input": "3",
+                "method": method,
+                "api_token": "null" if method == "deezer.getUserData" else self._token,
+            }
+            body = await self._dz.request("POST", self.URL, params=params, json=args)
+            error = body.get("error")
+            if not error:
+                results = body["results"]
+                if method == "deezer.getUserData" and self._token is None:
+                    self._token = results.get("checkForm")
+                return results
+            if error in (
+                {"GATEWAY_ERROR": "invalid api token"},
+                {"VALID_TOKEN_REQUIRED": "Invalid CSRF token"},
+            ):
+                self._token = None
+                continue
+            if fallback := (body.get("payload") or {}).get("FALLBACK"):
+                args.update(fallback)
+                continue
+            raise DeezerError(f"{method}: {json.dumps(error)}")
+        raise DeezerError(f"{method}: no answer after renewing the token")
+
+    async def get_track(self, track_id) -> dict:
+        return await self.call("song.getData", {"SNG_ID": track_id})
+
+    async def get_album_tracks(self, album_id) -> list[dict]:
+        resp = await self.call("song.getListByAlbum", {"ALB_ID": album_id, "nb": -1})
+        return resp["data"]
+
+    async def get_playlist_page(self, playlist_id) -> dict:
+        args = {"PLAYLIST_ID": playlist_id, "lang": "en", "header": True, "tab": 0}
+        return await self.call("deezer.pagePlaylist", args)
+
+    async def get_playlist_tracks(self, playlist_id) -> list[dict]:
+        resp = await self.call(
+            "playlist.getSongs", {"PLAYLIST_ID": playlist_id, "nb": -1}
+        )
+        return resp["data"]
+
+    async def get_user_favorite_ids(self, limit: int, start: int) -> dict:
+        args = {"nb": limit, "start": start, "checksum": None}
+        return await self.call("song.getFavoriteIds", args)
+
+    async def get_user_albums(self, user_id, limit: int) -> list[dict]:
+        args = {"USER_ID": user_id, "tab": "albums", "nb": limit}
+        page = await self.call("deezer.pageProfile", args)
+        return [{"id": a["ALB_ID"]} for a in page["TAB"]["albums"]["data"]]
+
+
 class DeezerClient(Client):
-    """Deezer: an ARL login, deezer-py for the API (self.client), aiohttp for
-    the audio (self.session)."""
+    """Deezer: an ARL login and its API (self.client), and the audio, all over
+    aiohttp (self.session)."""
 
     source = "deezer"
     max_quality = 2
@@ -31,35 +253,18 @@ class DeezerClient(Client):
 
     def __init__(self, config: Config):
         super().__init__(config)
-        self.client = deezer.Deezer()
-        # deezer-py's API and GW calls share this dict; its own is Chrome 79.
+        self.client = _Deezer(self)
         # Registered to follow the browser identity as it rotates.
         register_header_dict(self.client.http_headers)
         self._album_cache = {}
         self._quality_warned = False
-
-        # Increase the deezer-py requests session pool well above max_connections.
-        # Each concurrent download spawns several API calls (metadata, track token,
-        # GW info…) via asyncio.to_thread(), so the actual number of simultaneous
-        # requests easily exceeds max_connections. pool_maxsize is just a ceiling —
-        # no memory is pre-allocated — so a generous value avoids the urllib3
-        # "Connection pool is full" warning without any real cost.
-        # max_connections is -1 for "no limit", so never go below the default.
-        max_conn = max(config.session.downloads.max_connections, 10)
-        adapter = requests.adapters.HTTPAdapter(
-            pool_connections=max_conn,
-            pool_maxsize=max(max_conn * 4, 32),
-            max_retries=0,
-        )
-        self.client.session.mount("https://", adapter)
-        self.client.session.mount("http://", adapter)
 
     async def login(self):
         self._ensure_session()
         arl = self.config.arl
         if not arl:
             raise MissingCredentialsError
-        success = await asyncio.to_thread(self.client.login_via_arl, arl)
+        success = await self.client.login_via_arl(arl)
         if not success:
             raise AuthenticationError("Invalid or expired Deezer ARL.")
         self.logged_in = True
@@ -83,7 +288,7 @@ class DeezerClient(Client):
     async def _get_track(self, item_id: str) -> dict:
         """A track's metadata, with its album."""
         try:
-            item = await asyncio.to_thread(self.client.api.get_track, item_id)
+            item = await self.client.api.get_track(item_id)
         except Exception as e:
             raise NonStreamableError(e) from e
 
@@ -104,8 +309,8 @@ class DeezerClient(Client):
             logger.debug("Deezer album cache hit for album ID %s", item_id)
             return self._album_cache[item_id]
         album_metadata, album_tracks, stream_quality = await asyncio.gather(
-            asyncio.to_thread(self.client.api.get_album, item_id),
-            asyncio.to_thread(self.client.api.get_album_tracks, item_id),
+            self.client.api.get_album(item_id),
+            self.client.api.get_album_tracks(item_id),
             self._album_quality(item_id),
             return_exceptions=True,
         )
@@ -121,9 +326,7 @@ class DeezerClient(Client):
             if new_id == item_id:
                 raise NonStreamableError(album_tracks)
             logger.debug("Deezer album %s now lives at %s", item_id, new_id)
-            album_tracks = await asyncio.to_thread(
-                self.client.api.get_album_tracks, new_id
-            )
+            album_tracks = await self.client.api.get_album_tracks(new_id)
         album_metadata["tracks"] = album_tracks["data"]
         album_metadata["track_total"] = len(album_tracks["data"])
         album_metadata["stream_quality"] = stream_quality
@@ -137,8 +340,8 @@ class DeezerClient(Client):
             return await self._get_user_favorites(user_id)
         try:
             pl_metadata, pl_tracks = await asyncio.gather(
-                asyncio.to_thread(self.client.api.get_playlist, item_id),
-                asyncio.to_thread(self.client.api.get_playlist_tracks, item_id),
+                self.client.api.get_playlist(item_id),
+                self.client.api.get_playlist_tracks(item_id),
             )
             tracks = pl_tracks["data"]
         except Exception as e:
@@ -156,8 +359,8 @@ class DeezerClient(Client):
     async def _get_playlist_gw(self, item_id: str) -> dict:
         try:
             page, songs = await asyncio.gather(
-                asyncio.to_thread(self.client.gw.get_playlist_page, item_id),
-                asyncio.to_thread(self.client.gw.get_playlist_tracks, item_id),
+                self.client.gw.get_playlist_page(item_id),
+                self.client.gw.get_playlist_tracks(item_id),
             )
         except Exception as e:
             raise NonStreamableError(
@@ -200,8 +403,8 @@ class DeezerClient(Client):
         all_entries: list[dict] = []
         start = 0
         while len(all_entries) < self.max_favorites:
-            response = await asyncio.to_thread(
-                self.client.gw.get_user_favorite_ids, limit=page_size, start=start
+            response = await self.client.gw.get_user_favorite_ids(
+                limit=page_size, start=start
             )
             entries: list[dict] = response.get("data", [])
             if not entries:
@@ -217,9 +420,7 @@ class DeezerClient(Client):
 
     async def _get_user_favorite_albums(self, user_id: str) -> dict:
         """The albums a profile has liked, label-shaped for LabelMetadata."""
-        albums = await asyncio.to_thread(
-            self.client.gw.get_user_albums, user_id, limit=self.max_favorites
-        )
+        albums = await self.client.gw.get_user_albums(user_id, limit=self.max_favorites)
         return {
             "name": "Loved Albums",
             "albums": [{"id": str(a["id"])} for a in albums],
@@ -227,18 +428,16 @@ class DeezerClient(Client):
 
     async def _get_artist(self, item_id: str) -> dict:
         artist, albums = await asyncio.gather(
-            asyncio.to_thread(self.client.api.get_artist, item_id),
-            asyncio.to_thread(self.client.api.get_artist_albums, item_id),
+            self.client.api.get_artist(item_id),
+            self.client.api.get_artist_albums(item_id),
         )
         artist["albums"] = albums["data"]
         return artist
 
     async def search(self, media_type: str, query: str, limit: int = 200) -> list[dict]:
-        try:
-            search_function = getattr(self.client.api, f"search_{media_type}")
-        except AttributeError:
-            raise ValueError(f"Cannot search Deezer for {media_type}s") from None
-        response = await asyncio.to_thread(search_function, query, limit=limit)
+        if media_type not in {"track", "album", "artist", "playlist"}:
+            raise ValueError(f"Cannot search Deezer for {media_type}s")
+        response = await self.client.api.search(media_type, query, limit)
         if response.get("total", 0) > 0:
             return [response]
         return []
@@ -253,7 +452,7 @@ class DeezerClient(Client):
         # Deezer only has qualities 0-2; `streamrip --quality 3/4` used to IndexError.
         quality = max(0, min(quality, self.max_quality))
 
-        track_info = await asyncio.to_thread(self.client.gw.get_track, item_id)
+        track_info = await self.client.gw.get_track(item_id)
 
         fallback_id = track_info.get("FALLBACK", {}).get("SNG_ID")
 
@@ -268,7 +467,7 @@ class DeezerClient(Client):
         size_map = [int(track_info.get(f"FILESIZE_{f}", 0)) for f in FORMATS]
 
         # Never ask for more than the subscription allows. Deezer answers that
-        # with WrongLicense, which used to surface as "HiFi is required for
+        # with WrongLicenseError, which used to surface as "HiFi is required for
         # quality 2" even when quality 1 was requested on a free account
         # (upstream #1015).
         account_max = self._account_max_quality()
@@ -299,10 +498,8 @@ class DeezerClient(Client):
                 logger.debug(
                     "Fetching deezer url (%s) with token %s", format_str, token
                 )
-                url = await asyncio.to_thread(
-                    self.client.get_track_url, token, format_str
-                )
-            except deezer.WrongLicense:
+                url = await self.client.get_track_url(token, format_str)
+            except WrongLicenseError:
                 if not self.config.lower_quality_if_not_available:
                     raise NonStreamableError(
                         f"Your Deezer subscription does not allow {format_str} "
@@ -310,7 +507,7 @@ class DeezerClient(Client):
                         "MP3 320 (quality 1) needs a paid plan.",
                     ) from None
                 continue
-            except deezer.WrongGeolocation:
+            except WrongGeolocationError:
                 if not is_retry and fallback_id:
                     return await self.get_downloadable(
                         fallback_id, quality, is_retry=True
@@ -399,7 +596,7 @@ class DeezerClient(Client):
         if target == 0 or not self.config.lower_quality_if_not_available:
             return target
         try:
-            rows = await asyncio.to_thread(self.client.gw.get_album_tracks, album_id)
+            rows = await self.client.gw.get_album_tracks(album_id)
         except Exception as e:
             logger.debug("No file sizes for Deezer album %s: %s", album_id, e)
             return target

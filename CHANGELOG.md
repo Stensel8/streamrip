@@ -14,9 +14,12 @@ upstream issues and pull requests.
 - feat: your liked tracks and albums on Tidal (`my-collection/tracks`,
   `/albums`), and a Deezer profile's liked albums (`/albums`); Deezer profile
   links no longer need a language in them
-- chore: three dependencies fewer: aiofiles, m3u8 and pathvalidate, all
-  unmaintained, are replaced by the standard library and a few lines of our
-  own. File and folder names stay exactly as they were
+- chore: four dependencies fewer: aiofiles, m3u8, pathvalidate and deezer-py,
+  all unmaintained, are replaced by the standard library and code of our own.
+  File and folder names stay exactly as they were
+- feat: Deezer talks to Deezer over aiohttp like every other source: an album
+  resolves about twice as fast, and the ARL only ever goes over https (deezer-py
+  sent its website requests, cookie included, over http)
 
 ## 2.6.9
 
