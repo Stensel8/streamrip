@@ -1,0 +1,110 @@
+# Builds the container image for opencommit.eu's registry, as
+# opencommit.eu/stensel8/streamrip. A pull request only builds it and runs
+# `streamrip --version`. A v* tag builds each architecture natively, amd64 on
+# the shared runner and arm64 on the pi, and joins the two under the version,
+# its minor version and `latest`. GitHub builds the same tag for ghcr.io
+# (.github/workflows/container.yml).
+#
+# The pi is hardware at home: only a tag runs there, never a pull request.
+# Pushing needs the secret REGISTRY_TOKEN, an access token of Stensel8 with
+# write:package; the job's own token has no access to packages.
+name: Container
+
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - Containerfile
+      - .dockerignore
+      - .forgejo/workflows/container.yml
+      - pyproject.toml
+      - uv.lock
+      - README.md
+      - LICENSE
+      - streamrip/**
+
+env:
+  IMAGE: opencommit.eu/stensel8/streamrip
+
+jobs:
+  smoke:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build and smoke test
+        run: |
+          docker build --file Containerfile --tag streamrip:ci .
+          docker run --rm streamrip:ci --version
+          docker image rm streamrip:ci
+
+  build:
+    if: github.event_name == 'push'
+    strategy:
+      fail-fast: false
+      matrix:
+        runs-on: [ubuntu-latest, pi]
+    runs-on: ${{ matrix.runs-on }}
+    timeout-minutes: 45
+    steps:
+      - name: Build, test and push this architecture
+        shell: bash
+        env:
+          REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
+        run: |
+          set -euo pipefail
+          case "$(uname -m)" in
+            x86_64) arch=amd64 ;;
+            aarch64) arch=arm64 ;;
+            *) echo "unknown architecture $(uname -m)" >&2; exit 1 ;;
+          esac
+          version="${GITHUB_REF_NAME#v}"
+          image="$IMAGE:$version-$arch"
+          # A clone and a login of this run's own, so nothing stays behind on
+          # the pi: not the source, not the token in ~/.docker.
+          work="$(mktemp -d)"
+          export DOCKER_CONFIG="$work/docker"
+          trap 'rm -rf "$work"; docker image rm --force "$image" >/dev/null 2>&1 || true' EXIT
+
+          git clone --quiet --depth 1 --branch "$GITHUB_REF_NAME" \
+            "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git" "$work/src"
+          docker build --file "$work/src/Containerfile" --tag "$image" \
+            --label "org.opencontainers.image.version=$version" \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            "$work/src"
+          test "$(docker run --rm "$image" --version)" = "streamrip, version $version"
+
+          docker login opencommit.eu --username Stensel8 --password-stdin <<<"$REGISTRY_TOKEN"
+          docker push "$image"
+
+  manifest:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Join the architectures
+        shell: bash
+        env:
+          REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          tags=("$version")
+          # A stable release also moves its minor tag (2.6), and `latest`.
+          if [[ "$version" != *-* ]]; then
+            tags+=("${version%.*}" latest)
+          fi
+          export DOCKER_CONFIG="$(mktemp -d)"
+          trap 'rm -rf "$DOCKER_CONFIG"' EXIT
+
+          docker login opencommit.eu --username Stensel8 --password-stdin <<<"$REGISTRY_TOKEN"
+          for tag in "${tags[@]}"; do
+            docker manifest create "$IMAGE:$tag" \
+              "$IMAGE:$version-amd64" "$IMAGE:$version-arm64"
+            docker manifest push "$IMAGE:$tag"
+          done

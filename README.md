@@ -17,7 +17,7 @@ A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, SoundCl
 > - **[opencommit.eu/Stensel8/streamrip](https://opencommit.eu/Stensel8/streamrip)**
 >   -- the primary one: development and the dependency updates happen here
 > - **[github.com/Stensel8/streamrip](https://github.com/Stensel8/streamrip)**
->   -- kept in sync with opencommit.eu; the container image is built here
+>   -- kept in sync with opencommit.eu
 > - **[repos.codetrunk.eu/Stensel8/streamrip](https://repos.codetrunk.eu/Stensel8/streamrip)**
 >   -- copies GitHub automatically every 8 hours
 
@@ -80,11 +80,12 @@ Everything built in, ffmpeg too, for amd64 and arm64:
 
 ```bash
 mkdir -p streamrip
-podman run --rm -it -v ./streamrip:/data ghcr.io/stensel8/streamrip url <link>
+podman run --rm -it -v ./streamrip:/data opencommit.eu/stensel8/streamrip url <link>
 ```
 
-Config, databases and downloads end up in `./streamrip`. Docker, SELinux and
-more: [docs/container.md](docs/container.md).
+Config, databases and downloads end up in `./streamrip`. The same image is on
+`ghcr.io/stensel8/streamrip`. Docker, SELinux and more:
+[docs/container.md](docs/container.md).
 
 ### With Nix
 

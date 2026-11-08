@@ -3,8 +3,6 @@
 # left out here runs on GitHub instead, on pushes made there directly:
 #   - Windows and macOS: opencommit.eu has Linux runners only.
 #   - CodeQL and the Trivy scan: they report to GitHub's Security tab.
-#   - The container image: the runner image has no Podman, and the image is
-#     published to ghcr.io from GitHub.
 #   - The Nix flake check: it needs a Nix install the runner container lacks.
 name: CI
 
