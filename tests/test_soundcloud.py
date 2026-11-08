@@ -5,6 +5,7 @@ import pytest
 from streamrip.client.downloadable import (
     SegmentedMP4Downloadable,
     SoundcloudDownloadable,
+    hls_playlist,
 )
 from streamrip.client.soundcloud import SoundcloudClient, _find_client_id
 from streamrip.config import Config
@@ -366,3 +367,21 @@ async def test_a_failed_request_says_which_and_why():
     client = _client_answering({"tracks/7": (404, {})})
     with pytest.raises(APIError, match=r"tracks/7 failed \(HTTP 404\)"):
         await client.get_metadata("7|whatever", "track")
+
+
+def test_hls_playlist_reads_the_init_segment_and_makes_urls_absolute():
+    text = """#EXTM3U
+#EXT-X-VERSION:7
+#EXT-X-MAP:URI="init.mp4"
+#EXTINF:10.0,
+seg/1.m4s
+
+#EXTINF:10.0,
+https://cdn.other/2.m4s
+#EXT-X-ENDLIST
+"""
+    init, segments = hls_playlist(text, "https://cdn/a/playlist.m3u8")
+    assert init == "https://cdn/a/init.mp4"
+    assert segments == ["https://cdn/a/seg/1.m4s", "https://cdn.other/2.m4s"]
+    mp3 = "#EXTM3U\n#EXTINF:1.0,\nhttps://x/1.mp3\n"
+    assert hls_playlist(mp3, "https://x/p.m3u8") == (None, ["https://x/1.mp3"])

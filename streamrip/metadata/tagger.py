@@ -1,3 +1,4 @@
+import asyncio
 import io
 import logging
 from enum import Enum
@@ -12,7 +13,6 @@ from mutagen.id3 import (
     ID3NoHeaderError,
 )
 from mutagen.mp4 import MP4, MP4Cover
-lazy import aiofiles
 lazy from PIL import Image
 
 lazy from .track import TrackMetadata
@@ -237,8 +237,7 @@ class Container(Enum):
         """Embed the JPEG at cover_path as the front cover (picture type 3)."""
         if self == Container.FLAC and cover_path.stat().st_size > FLAC_MAX_BLOCKSIZE:
             raise ValueError("Cover art too big for FLAC")
-        async with aiofiles.open(cover_path, "rb") as img:
-            data = await img.read()
+        data = await asyncio.to_thread(cover_path.read_bytes)
         match self:
             case Container.FLAC:
                 cover = Picture()

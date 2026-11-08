@@ -4,7 +4,6 @@ import logging
 import sys
 lazy from pathlib import Path
 
-lazy import aiofiles
 lazy from rich.progress_bar import ProgressBar
 lazy from rich.table import Table
 lazy from rich.text import Text
@@ -398,8 +397,7 @@ class Main:
             return
 
         file_contents = json.dumps(search_results.as_list(source), indent=4)
-        async with aiofiles.open(filepath, "w") as f:
-            await f.write(file_contents)
+        await asyncio.to_thread(Path(filepath).write_text, file_contents, "utf-8")
 
         console.print(
             f"Wrote [purple]{len(search_results.results)}[/purple] results to [cyan]{filepath} as JSON!"
