@@ -18,7 +18,8 @@ podman run --rm -it -v ./streamrip:/data opencommit.eu/stensel8/streamrip url <l
 ```
 
 Everything after the image name is a streamrip command. Config, databases and
-downloads all live in `/data`, hence the folder; `-it` is for the prompts,
+downloads all live in `/data`, hence the folder (downloads in `./streamrip/Music`;
+add `-v ~/Music:/data/Music` to put them straight into your own music folder); `-it` is for the prompts,
 progress bars and search menu. The config is
 `./streamrip/.config/streamrip/config.toml`.
 
