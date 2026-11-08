@@ -358,8 +358,16 @@ def test_qobuz_album_label_barcode_and_release_type():
     )
 
 
-@pytest.mark.parametrize(("scale", "key"), [("MAJOR", "Bb"), ("MINOR", "Bbm")])
-def test_tidal_bpm_replaygain_key_barcode_and_release_type(scale, key):
+@pytest.mark.parametrize(
+    ("note", "scale", "key"),
+    [
+        ("Bb", "MAJOR", "Bb"),
+        ("Bb", "MINOR", "Bbm"),
+        ("FSharp", "MINOR", "F#m"),
+        ("EFlat", "MAJOR", "Eb"),
+    ],
+)
+def test_tidal_bpm_replaygain_key_barcode_and_release_type(note, scale, key):
     album = AlbumMetadata.from_tidal(_tidal_album(upc="00602508053610", type="EP"))
     assert (album.barcode, album.releasetype) == ("00602508053610", "ep")
     t = TrackMetadata.from_tidal(
@@ -371,7 +379,7 @@ def test_tidal_bpm_replaygain_key_barcode_and_release_type(scale, key):
             "bpm": 88,
             "replayGain": -10.05,
             "peak": 0.999873,
-            "key": "Bb",
+            "key": note,
             "keyScale": scale,
         },
     )
