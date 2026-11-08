@@ -194,6 +194,8 @@ class TidalClient(Client):
         """An item's metadata, with an album's or playlist's tracks and an
         artist's albums (EPs and singles included).
         """
+        # An album's or artist's listing gives ids as numbers.
+        item_id = str(item_id)
         if item_id.startswith("favorites:"):
             return await self._favorites(item_id.removeprefix("favorites:"))
         if media_type not in {"track", "album", "playlist", "video", "artist"}:

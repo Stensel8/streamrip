@@ -886,3 +886,14 @@ async def test_favorites_are_paged_oldest_first(kind):
     if kind == "tracks":
         # Its tracks need no request of their own when they resolve.
         assert "7" in c._listed
+
+
+async def test_an_album_listing_gives_ids_as_numbers():
+    """An album's tracks are asked for by the ids its listing gave: numbers.
+    The check for a favorites id once failed every track of an album on that.
+    """
+    c = _client()
+    c._listed["7"] = {"id": 7, "album": {"id": 1}}
+    c._albums["1"] = {"id": 1}
+    track = await c.get_metadata(7, "track")
+    assert track["id"] == 7
