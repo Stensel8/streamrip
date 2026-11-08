@@ -80,10 +80,12 @@ Everything built in, ffmpeg too, for amd64 and arm64:
 
 ```bash
 mkdir -p streamrip
-podman run --rm -it -v ./streamrip:/data opencommit.eu/stensel8/streamrip url <link>
+podman run --rm -it -v ./streamrip:/data -v "$(xdg-user-dir MUSIC)":/data/Music \
+  opencommit.eu/stensel8/streamrip url <link>
 ```
 
-Config, databases and downloads end up in `./streamrip`. The same image is on
+Downloads go to your own music folder (on macOS: `-v ~/Music:/data/Music`);
+config and databases stay in `./streamrip`. The same image is on
 `ghcr.io/stensel8/streamrip`. Docker, SELinux and more:
 [docs/container.md](docs/container.md).
 
