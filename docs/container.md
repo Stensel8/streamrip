@@ -14,13 +14,13 @@ works the same.
 
 ```bash
 mkdir -p streamrip      # the folder must exist
-podman run --rm -it -v ./streamrip:/data -v "$(xdg-user-dir MUSIC)":/data/Music \
+podman run --rm -it -v ./streamrip:/data -v ~/Music:/data/Music \
   opencommit.eu/stensel8/streamrip url <link>
 ```
 
 Everything after the image name is a streamrip command. Config and databases
 live in `/data`, hence the folder, and downloads in `/data/Music`: your own music
-folder, which `xdg-user-dir` finds on Linux (on macOS: `-v ~/Music:/data/Music`).
+folder (on a Linux desktop in another language, `xdg-user-dir MUSIC` shows its name).
 Without that second `-v` they end up in `./streamrip/Music`; `-it` is for the prompts,
 progress bars and search menu. The config is
 `./streamrip/.config/streamrip/config.toml`.
@@ -34,7 +34,7 @@ progress bars and search menu. The config is
 To type it like the Python version:
 
 ```bash
-alias streamrip='podman run --rm -it -v "$HOME/streamrip:/data" -v "$(xdg-user-dir MUSIC):/data/Music" opencommit.eu/stensel8/streamrip'
+alias streamrip='podman run --rm -it -v "$HOME/streamrip:/data" -v "$HOME/Music:/data/Music" opencommit.eu/stensel8/streamrip'
 ```
 
 Build the image yourself from this checkout with `podman build -t streamrip .`
