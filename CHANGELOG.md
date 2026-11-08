@@ -3,6 +3,12 @@
 All notable changes in this fork of [nathom/streamrip](https://github.com/nathom/streamrip). Numbers can refer to
 upstream issues and pull requests.
 
+## Unreleased
+
+- feat: the container image is 65 MiB instead of 190: distroless, Python
+  from uv, an ffmpeg with only what streamrip uses, and QuickJS-ng instead of
+  Deno for Spotify
+
 ## 2.6.9
 
 - fix: Tidal and Qobuz tracks failed after downloading with
