@@ -129,6 +129,11 @@ when a track doesn't have it; `--quality` sets the highest to ask for:
 
 ![streamrip interactive search](demo/playlist_search.svg)
 
+The search menu shows each result's cover. A terminal that can show images
+shows the real one: Ghostty, Kitty, WezTerm, Konsole or foot on Linux, Windows
+Terminal, iTerm2 on macOS, and VS Code with `terminal.integrated.enableImages`.
+Others get it in colored blocks. This works from the container and over SSH too.
+
 ## Logging in
 
 streamrip asks for what it needs the first time you use a source, and saves it
