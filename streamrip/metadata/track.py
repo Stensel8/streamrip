@@ -8,9 +8,12 @@ logger = logging.getLogger("streamrip")
 
 
 def _key(note: str | None, scale: str | None) -> str | None:
-    """Tidal's key and scale ("Bb", "MAJOR") as one: "Bb", or "Bbm" for minor."""
+    """Tidal's key and scale as one key the way TKEY spells it, "m" for minor.
+    Tidal writes sharps and flats out as words.
+    """
     if not note:
         return None
+    note = note.replace("Sharp", "#").replace("Flat", "b")
     return f"{note}m" if (scale or "").upper() == "MINOR" else note
 
 
