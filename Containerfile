@@ -14,7 +14,10 @@ RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
 
 WORKDIR /tmp/ffmpeg
 RUN set -eux; \
-    git clone --quiet --depth 1 --branch "${FFMPEG_VERSION}" https://git.ffmpeg.org/ffmpeg.git .; \
+    # FFmpeg's own git first, its GitHub mirror if that can't be reached: the
+    # commit check makes either as good.
+    timeout 30 git clone --quiet --depth 1 --branch "${FFMPEG_VERSION}" https://git.ffmpeg.org/ffmpeg.git . \
+      || { rm -rf ./* ./.git; git clone --quiet --depth 1 --branch "${FFMPEG_VERSION}" https://github.com/FFmpeg/FFmpeg.git .; }; \
     test "$(git rev-parse HEAD)" = "${FFMPEG_COMMIT}"; \
     ./configure \
         --disable-everything --disable-autodetect --disable-network --disable-doc --disable-debug \
