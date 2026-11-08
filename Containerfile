@@ -106,7 +106,10 @@ COPY --from=build /opt/streamrip /opt/streamrip
 
 # No USER: under rootless Podman, root in the container is whoever started it,
 # so the files in /data are theirs. Docker users add `--user "$(id -u):$(id -g)"`.
+# Textual shows 16 colors to a TERM=xterm without COLORTERM, which is what a
+# container gets; nearly every terminal today has 24-bit color.
 ENV PATH=/opt/streamrip/bin:$PATH \
+    COLORTERM=truecolor \
     HOME=/data \
     STREAMRIP_NO_UPDATE_CHECK=1
 WORKDIR /data

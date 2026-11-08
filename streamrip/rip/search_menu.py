@@ -1,6 +1,7 @@
 """Interactive search: results above a cover and its metadata, on every OS."""
 
 import asyncio
+import json
 import textwrap
 from collections import OrderedDict
 from typing import ClassVar
@@ -21,6 +22,7 @@ lazy from textual.widgets.option_list import Option
 from ..client import new_session
 from .cover_preview import CoverPane, decode_cover, image_widget
 lazy from ..metadata import SearchResults, Summary
+lazy from ..metadata.search_results import album_summary
 
 PREVIEW_SIZE = 0.5
 DETAILS_WIDTH = 60
@@ -74,6 +76,10 @@ class CoverCache:
             if self.images[url] is not None:
                 return self.images[url]
         return None
+
+    async def json(self, url: str) -> dict:
+        """A small JSON document, over the session the covers use."""
+        return json.loads(await self._fetch(url))
 
     async def close(self):
         if self.session is not None:
@@ -145,6 +151,9 @@ class SearchMenu(App[tuple[int, ...] | None]):
         self.current: int | None = None
         self._cover_urls: tuple[str, ...] = ()
         self._cover_worker = None
+        # Deezer's album search leaves out the date, length, genre and label;
+        # the album itself has them, fetched once it is highlighted.
+        self._complete = set() if (source, media_type) == ("deezer", "album") else None
         self._preview_resize_timer = None
         self._resizing_preview = False
 
@@ -232,7 +241,27 @@ class SearchMenu(App[tuple[int, ...] | None]):
                 self._cover_worker = self.run_worker(
                     self._load_cover(urls), group="cover", exclusive=True
                 )
+        if self._complete is not None and index not in self._complete:
+            self.run_worker(self._load_album(index), group="album", exclusive=True)
         self._resize_preview()
+
+    async def _load_album(self, index: int):
+        await asyncio.sleep(0.08)
+        try:
+            album = await self.covers.json(
+                f"https://api.deezer.com/album/{self.results[index].id}"
+            )
+        except aiohttp.ClientError, TimeoutError, ValueError:
+            return
+        if "error" in album:
+            return
+        self._complete.add(index)
+        self.results[index] = album_summary(album)
+        self.query_one(OptionList).replace_option_prompt(
+            str(index), self._option(index).prompt
+        )
+        if self.current == index:
+            self._show_details()
 
     async def _load_cover(self, urls: tuple[str, ...]):
         # Avoid fetching every intermediate result when holding an arrow key.

@@ -119,7 +119,10 @@ def _genre(item: dict) -> str | None:
         return genre.get("name")
     if isinstance(genre, str):  # SoundCloud
         return genre or None
-    names = [g.get("name") for g in item.get("genres") or [] if isinstance(g, dict)]
+    genres = item.get("genres") or []
+    if isinstance(genres, dict):  # Deezer
+        genres = genres.get("data") or []
+    names = [g.get("name") for g in genres if isinstance(g, dict)]
     return ", ".join(n for n in names if n) or None
 
 
