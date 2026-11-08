@@ -1,8 +1,8 @@
 # The image for ghcr.io/stensel8/streamrip, built with Podman on amd64 and arm64
 # hardware. A pull request builds and tests both, so a dependency without an
-# arm64 wheel shows up there. A published release, or "Run workflow" with an
-# existing tag, also pushes them and joins them under the version, its minor
-# and `latest`; "Run workflow" without a tag only builds and tests. opencommit.eu
+# arm64 wheel shows up there. A published release also pushes them and joins
+# them under the version, its minor and `latest`; "Run workflow" with an existing
+# tag publishes that version again, without a tag it only builds and tests. opencommit.eu
 # builds the same tag the same way (.forgejo/workflows/container.yml).
 name: Container
 
@@ -86,8 +86,9 @@ jobs:
           set -euo pipefail
           version="${TAG#v}"
           tags=("$version")
-          # A stable release also moves its minor tag (2.6), and `latest`.
-          if [[ "$version" != *-* && "$PRERELEASE" != "true" ]]; then
+          # A published stable release also moves its minor tag and `latest`;
+          # publishing an older tag again, or a pre-release, leaves them where they are.
+          if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && "$PRERELEASE" != "true" && "$GITHUB_EVENT_NAME" == release ]]; then
             tags+=("${version%.*}" latest)
           fi
           podman login ghcr.io --username "$GITHUB_ACTOR" --password-stdin <<<"$REGISTRY_TOKEN"

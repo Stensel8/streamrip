@@ -1,8 +1,8 @@
 # The image for opencommit.eu/stensel8/streamrip. A pull request only builds and
-# tests it. A v* tag, or "Run workflow" with an existing tag, builds amd64 on the
-# shared runner and arm64 on the pi, then joins them under the version, its minor
-# and `latest`. "Run workflow" without a tag builds and tests both, and publishes
-# nothing. The pi is at home: a pull request reaches it only from a branch of
+# tests it. A v* tag builds amd64 on the shared runner and arm64 on the pi, then
+# joins them under the version, its minor and `latest`. "Run workflow" with an
+# existing tag publishes that version again; without a tag it builds and tests
+# both, and publishes nothing. The pi is at home: a pull request reaches it only from a branch of
 # this repository (Patchbot's included), never from someone else's fork.
 #
 # Pushing needs the secret REGISTRY_TOKEN: a token of Stensel8 with write:package.
@@ -87,7 +87,14 @@ jobs:
           export DOCKER_CONFIG="$(mktemp -d)"
           trap 'rm -rf "$DOCKER_CONFIG"; docker image rm --force "$image" >/dev/null 2>&1 || true' EXIT
 
-          docker buildx build --load --file Containerfile --tag "$image" \
+          # A release builds from scratch: pull requests share this daemon, and with
+          # it the layer cache and the uv cache mount.
+          fresh=()
+          if [[ -n "$version" ]]; then
+            docker buildx prune --force --filter type=exec.cachemount >/dev/null
+            fresh=(--no-cache)
+          fi
+          docker buildx build --load "${fresh[@]}" --file Containerfile --tag "$image" \
             --label "org.opencontainers.image.version=${version:-dev}" \
             --label "org.opencontainers.image.revision=$(git rev-parse HEAD)" \
             --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" .
@@ -112,8 +119,9 @@ jobs:
           set -euo pipefail
           version="${TAG#v}"
           tags=(--tag "$IMAGE:$version")
-          # A stable release also moves its minor tag (2.6), and `latest`.
-          if [[ "$version" != *-* ]]; then
+          # A pushed stable tag also moves its minor tag and `latest`; publishing an
+          # older tag again, or a pre-release, leaves them where they are.
+          if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && "$GITHUB_EVENT_NAME" == push ]]; then
             tags+=(--tag "$IMAGE:${version%.*}" --tag "$IMAGE:latest")
           fi
           export DOCKER_CONFIG="$(mktemp -d)"

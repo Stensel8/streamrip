@@ -85,6 +85,13 @@
       "rangeStrategy": "pin"
     },
     {
+      "description": "A new Python package version waits three days before its pull request, whose tests run on the pi",
+      "matchDatasources": [
+        "pypi"
+      ],
+      "minimumReleaseAge": "3 days"
+    },
+    {
       "description": "The Containerfile's base images, pinned to a digest",
       "matchManagers": [
         "dockerfile"
