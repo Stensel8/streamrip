@@ -74,7 +74,7 @@ class DeezerClient(Client):
                 return await self._get_playlist(item_id)
             case "artist":
                 return await self._get_artist(item_id)
-            case "label" if item_id.startswith("favorites:"):
+            case "label" if str(item_id).startswith("favorites:"):
                 return await self._get_user_favorite_albums(
                     item_id.removeprefix("favorites:")
                 )
@@ -131,6 +131,7 @@ class DeezerClient(Client):
         return album_metadata
 
     async def _get_playlist(self, item_id: str) -> dict:
+        item_id = str(item_id)
         if item_id.startswith("favorites:"):
             user_id = item_id.removeprefix("favorites:")
             return await self._get_user_favorites(user_id)

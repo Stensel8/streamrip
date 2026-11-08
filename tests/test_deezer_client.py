@@ -92,3 +92,11 @@ async def test_loved_albums_are_a_label_of_the_profile():
     resp = await client.get_metadata("favorites:99", "label")
     assert resp["albums"] == [{"id": "11"}, {"id": "12"}]
     assert client.client.gw.get_user_albums.call_args.args == ("99",)
+
+
+async def test_a_playlist_id_may_be_a_number():
+    client = _client()
+    client.client.api.get_playlist.return_value = {"title": "P", "nb_tracks": 0}
+    client.client.api.get_playlist_tracks.return_value = {"data": []}
+    resp = await client.get_metadata(123, "playlist")
+    assert resp["title"] == "P"
