@@ -51,10 +51,13 @@ jobs:
           persist-credentials: false
       - run: ./install.sh && .venv/bin/streamrip --help
 
-  # The tests on arm64, on the pi. Only for a push, never a pull request: the
-  # pi is at home.
+  # The tests on arm64, on the pi. The pi is at home: a pull request reaches it
+  # only from a branch of this repository (Patchbot's included), never from
+  # someone else's fork.
   test-arm64:
-    if: github.event_name == 'push'
+    if: >-
+      github.event_name == 'push'
+      || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: pi
     timeout-minutes: 30
     steps:
