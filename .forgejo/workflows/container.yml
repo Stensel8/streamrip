@@ -41,7 +41,7 @@ jobs:
         with:
           persist-credentials: false
       - run: |
-          docker buildx build --load --tag streamrip:ci .
+          docker buildx build --load --file Containerfile --tag streamrip:ci .
           docker run --rm streamrip:ci --version
           docker image rm streamrip:ci
 
@@ -71,7 +71,7 @@ jobs:
           export DOCKER_CONFIG="$(mktemp -d)"
           trap 'rm -rf "$DOCKER_CONFIG"; docker image rm --force "$image" >/dev/null 2>&1 || true' EXIT
 
-          docker buildx build --load --tag "$image" \
+          docker buildx build --load --file Containerfile --tag "$image" \
             --label "org.opencontainers.image.version=${version:-dev}" \
             --label "org.opencontainers.image.revision=$(git rev-parse HEAD)" \
             --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" .
