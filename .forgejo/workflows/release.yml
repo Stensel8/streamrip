@@ -1,0 +1,42 @@
+# Builds the wheel and sdist for a published opencommit.eu release and
+# attaches them to it, as .github/workflows/release.yml does on GitHub. The
+# update check offers the wheel of whichever of the two answers.
+name: Release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: false  # a release builds from nothing a cache could alter
+      - run: uv build
+      - name: Attach to the release
+        shell: bash
+        env:
+          TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ github.event.release.id }}
+        run: |
+          set -euo pipefail
+          api="$GITHUB_SERVER_URL/api/v1/repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets"
+          auth="Authorization: token $TOKEN"
+          for file in dist/*; do
+            name="$(basename "$file")"
+            # Replaced when it is already there, as on a re-run.
+            existing="$(curl --silent --show-error --fail-with-body --header "$auth" "$api" \
+              | jq --arg name "$name" '.[] | select(.name == $name) | .id')"
+            for id in $existing; do
+              curl --silent --show-error --fail-with-body --request DELETE --header "$auth" "$api/$id"
+            done
+            curl --silent --show-error --fail-with-body --output /dev/null --header "$auth" \
+              --form "attachment=@$file" "$api?name=$name"
+            echo "attached $name"
+          done

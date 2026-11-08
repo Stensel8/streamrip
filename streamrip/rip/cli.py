@@ -1120,7 +1120,6 @@ async def latest_streamrip_version(
     projects before. Whichever one answers is also where the upgrade
     command installs from: suggesting a GitHub command when GitHub didn't
     even answer would just fail again. Within a host, a release's wheel
-    (not opencommit.eu's: GitHub Actions builds and attaches it there only)
     beats the version in pyproject.toml on the default branch, used when the
     repository has no releases yet. Network problems are never fatal: the
     check is simply skipped (upstream PR #995).
