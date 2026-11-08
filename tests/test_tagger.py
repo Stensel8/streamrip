@@ -246,3 +246,71 @@ async def test_retagging_keeps_a_single_cover(sample_metadata, tmp_path, ext):
     else:
         covers = ID3(path).getall("APIC")
     assert len(covers) == 1
+
+
+@pytest.mark.parametrize("ext", ["flac", "mp3", "m4a"])
+async def test_label_barcode_release_type_bpm_key_credits_and_replaygain(
+    sample_metadata, tmp_path, ext
+):
+    # Where MusicBrainz Picard puts them, so players and Navidrome read them.
+    path = tmp_path / f"track.{ext}"
+    if ext == "flac":
+        shutil.copy(TEST_FLAC, path)
+    elif ext == "m4a":
+        shutil.copy(TEST_M4A, path)
+    else:
+        path.touch()
+    m = sample_metadata
+    m.album.info.label, m.album.barcode, m.album.releasetype = "Label", "0123", "ep"
+    m.composers, m.composer = ["C1", "C2"], "C1, C2"
+    m.lyricists, m.bpm, m.key = ["L1", "L2"], 120, "F#m"
+    m.replaygain_gain, m.replaygain_peak = -7.08, 0.936676
+    await tag_file(path, m, None)
+
+    if ext == "flac":
+        t = FLAC(path)
+        got = {
+            k: t[k] for k in ("label", "barcode", "releasetype", "bpm", "initialkey")
+        }
+        assert got == {
+            "label": ["Label"],
+            "barcode": ["0123"],
+            "releasetype": ["ep"],
+            "bpm": ["120"],
+            "initialkey": ["F#m"],
+        }
+        assert (t["composer"], t["lyricist"]) == (["C1", "C2"], ["L1", "L2"])
+        assert t["itunesadvisory"] == ["1"]
+        assert t["replaygain_track_gain"] == ["-7.08 dB"]
+        assert t["replaygain_track_peak"] == ["0.936676"]
+    elif ext == "mp3":
+        t = ID3(path, translate=False)
+        assert t["TPUB"].text == ["Label"]
+        assert t["TXXX:BARCODE"].text == ["0123"]
+        assert t["TXXX:MusicBrainz Album Type"].text == ["ep"]
+        assert (t["TBPM"].text, t["TKEY"].text) == (["120"], ["F#m"])
+        assert (t["TCOM"].text, t["TEXT"].text) == (["C1/C2"], ["L1/L2"])
+        assert t["TXXX:ITUNESADVISORY"].text == ["1"]
+        assert t["TXXX:REPLAYGAIN_TRACK_GAIN"].text == ["-7.08 dB"]
+        assert t["TXXX:REPLAYGAIN_TRACK_PEAK"].text == ["0.936676"]
+    else:
+        t = MP4(path).tags
+        free = "----:com.apple.iTunes:"
+        assert t[free + "LABEL"] == [b"Label"]
+        assert t[free + "BARCODE"] == [b"0123"]
+        assert t[free + "MusicBrainz Album Type"] == [b"ep"]
+        assert (t["tmpo"], t[free + "initialkey"]) == ([120], [b"F#m"])
+        assert (t["\xa9wrt"], t[free + "LYRICIST"]) == (["C1", "C2"], [b"L1", b"L2"])
+        assert t["rtng"] == [1]
+        assert t[free + "replaygain_track_gain"] == [b"-7.08 dB"]
+        assert t[free + "replaygain_track_peak"] == [b"0.936676"]
+
+
+async def test_a_clean_track_gets_no_advisory_and_unknown_values_stay_out(
+    sample_metadata, flac_path
+):
+    sample_metadata.info.explicit = False
+    await tag_file(flac_path, sample_metadata, None)
+    t = FLAC(flac_path)
+    for name in ("itunesadvisory", "bpm", "label", "replaygain_track_gain"):
+        assert name not in t

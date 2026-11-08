@@ -22,7 +22,8 @@ logger = logging.getLogger("streamrip")
 FLAC_MAX_BLOCKSIZE = 16777215  # 16.7 MB
 
 # Where each of streamrip's tag names (see _tag_values) goes in MP3/AIFF (ID3)
-# and M4A files. FLAC's Vorbis comments take every name, upper-cased.
+# and M4A files, as MusicBrainz Picard writes them; a string in MP3_KEY is the
+# description of a TXXX frame. FLAC's Vorbis comments take every name, upper-cased.
 MP3_KEY = frozendict(
     {
         "title": id3.TIT2,
@@ -38,6 +39,15 @@ MP3_KEY = frozendict(
         "tracknumber": id3.TRCK,
         "discnumber": id3.TPOS,
         "isrc": id3.TSRC,
+        "label": id3.TPUB,
+        "barcode": "BARCODE",
+        "releasetype": "MusicBrainz Album Type",
+        "lyricist": id3.TEXT,
+        "bpm": id3.TBPM,
+        "initialkey": id3.TKEY,
+        "itunesadvisory": "ITUNESADVISORY",
+        "replaygain_track_gain": "REPLAYGAIN_TRACK_GAIN",
+        "replaygain_track_peak": "REPLAYGAIN_TRACK_PEAK",
     }
 )
 
@@ -57,6 +67,15 @@ MP4_KEY = frozendict(
         "tracknumber": "trkn",
         "discnumber": "disk",
         "isrc": "----:com.apple.iTunes:ISRC",
+        "label": "----:com.apple.iTunes:LABEL",
+        "barcode": "----:com.apple.iTunes:BARCODE",
+        "releasetype": "----:com.apple.iTunes:MusicBrainz Album Type",
+        "lyricist": "----:com.apple.iTunes:LYRICIST",
+        "bpm": "tmpo",
+        "initialkey": "----:com.apple.iTunes:initialkey",
+        "itunesadvisory": "rtng",
+        "replaygain_track_gain": "----:com.apple.iTunes:replaygain_track_gain",
+        "replaygain_track_peak": "----:com.apple.iTunes:replaygain_track_peak",
     }
 )
 
@@ -76,7 +95,7 @@ def _tag_values(meta: TrackMetadata) -> dict:
         "artist": _names(meta.artists, meta.artist),
         "album": album.album,
         "albumartist": _names(album.albumartists, album.albumartist),
-        "composer": meta.composer,
+        "composer": _names(meta.composers, meta.composer),
         "year": album.year,
         "description": album.description,
         "genre": album.get_genres(),
@@ -90,6 +109,20 @@ def _tag_values(meta: TrackMetadata) -> dict:
         "date": album.date,
         "isrc": meta.isrc,
         "version": album.version,
+        "label": album.info.label,
+        "barcode": album.barcode,
+        "releasetype": album.releasetype,
+        "lyricist": _names(meta.lyricists, ", ".join(meta.lyricists or [])),
+        "bpm": meta.bpm,
+        "initialkey": meta.key,
+        # 1 is explicit; a clean edition (2) is not told apart from any other.
+        "itunesadvisory": 1 if meta.info.explicit else None,
+        "replaygain_track_gain": None
+        if meta.replaygain_gain is None
+        else f"{meta.replaygain_gain:.2f} dB",
+        "replaygain_track_peak": None
+        if meta.replaygain_peak is None
+        else f"{meta.replaygain_peak:.6f}",
     }
     return {k: v for k, v in values.items() if v is not None and v != ""}
 
@@ -110,17 +143,27 @@ def _mp3_value(name: str, value, values: dict):
     return value if isinstance(value, list) else str(value)
 
 
+def _id3_frame(frame, text) -> tuple:
+    """(key, frame) for an ID3 frame class, or a TXXX frame with that description."""
+    if isinstance(frame, str):
+        return f"TXXX:{frame}", id3.TXXX(encoding=3, desc=frame, text=text)
+    return frame.__name__, frame(encoding=3, text=text)
+
+
 def _mp4_value(name: str, value, values: dict):
     """Format a tag value for an MP4 (M4A) atom."""
     if name == "tracknumber":
         return [(value, values.get("tracktotal", 0))]
     if name == "discnumber":
         return [(value, values.get("disctotal", 0))]
-    if name == "isrc":
-        # A freeform atom, which mutagen wants as bytes.
-        return value.encode("utf-8")
     if name == "compilation":
         return True  # cpil is a flag, and only ever set for compilations
+    if name in {"bpm", "itunesadvisory"}:
+        return [int(value)]
+    if MP4_KEY[name].startswith("----:"):
+        # A freeform atom, which mutagen wants as bytes.
+        items = value if isinstance(value, list) else [value]
+        return [str(item).encode("utf-8") for item in items]
     return value if isinstance(value, list) else str(value)
 
 
@@ -161,10 +204,7 @@ class Container(Enum):
                 return [(k.upper(), _flac_value(k, v)) for k, v in values.items()]
             case Container.MP3 | Container.AIFF:
                 return [
-                    (
-                        frame.__name__,
-                        frame(encoding=3, text=_mp3_value(k, values[k], values)),
-                    )
+                    _id3_frame(frame, _mp3_value(k, values[k], values))
                     for k, frame in MP3_KEY.items()
                     if k in values
                 ]
