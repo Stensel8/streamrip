@@ -165,8 +165,8 @@ def api_headers(headers: dict | None = None) -> dict[str, str]:
 
 
 def register_header_dict(headers: dict[str, str]):
-    """Keep a plain header dict on the rotating identity: deezer-py's, which
-    its API and GW calls read per request. See _apply_identity for what it
+    """Keep a plain header dict on the rotating identity: the Deezer client's,
+    which its API and GW calls send with each request. See _apply_identity for what it
     gets."""
     _header_dicts.append(headers)
     _current_identity()
