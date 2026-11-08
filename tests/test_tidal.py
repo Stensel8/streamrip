@@ -856,3 +856,33 @@ async def test_only_a_hires_track_keeps_the_cached_hires_format():
     assert await label("8") == (16, 44.1)  # lossless only
     assert await label("9") == (24, 96)  # hi-res
     assert await label("10") == (24, 96)  # no tag data: could be hi-res
+
+
+@pytest.mark.parametrize("kind", ["tracks", "albums"])
+async def test_favorites_are_paged_oldest_first(kind):
+    total = 130
+
+    async def api(path, params=None):
+        assert path == f"users/42/favorites/{kind}"
+        assert (params["order"], params["orderDirection"]) == ("DATE", "ASC")
+        offset = params.get("offset", 0)
+        return {
+            "totalNumberOfItems": total,
+            "items": [
+                {"item": {"id": n}} for n in range(offset, min(offset + 100, total))
+            ],
+        }
+
+    c = _client()
+    c.config.user_id = 42
+    c._api_request = AsyncMock(side_effect=api)
+    resp = await c.get_metadata(
+        f"favorites:{kind}", "playlist" if kind == "tracks" else "label"
+    )
+
+    listed = resp["tracks"] if kind == "tracks" else resp["albums"]
+    assert [i["id"] for i in listed] == list(range(total))
+    assert c._api_request.await_count == 2
+    if kind == "tracks":
+        # Its tracks need no request of their own when they resolve.
+        assert "7" in c._listed

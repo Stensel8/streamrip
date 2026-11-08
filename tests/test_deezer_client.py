@@ -84,3 +84,11 @@ async def test_redirected_album_id_is_followed():
     client.client.api.get_album_tracks.side_effect = tracks
     resp = await client._get_album("997825")
     assert resp["track_total"] == 1
+
+
+async def test_loved_albums_are_a_label_of_the_profile():
+    client = _client()
+    client.client.gw.get_user_albums.return_value = [{"id": 11}, {"id": "12"}]
+    resp = await client.get_metadata("favorites:99", "label")
+    assert resp["albums"] == [{"id": "11"}, {"id": "12"}]
+    assert client.client.gw.get_user_albums.call_args.args == ("99",)
