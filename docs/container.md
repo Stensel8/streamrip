@@ -3,7 +3,7 @@
 # Podman and Docker
 
 The image has everything streamrip needs built in: ffmpeg, and the JavaScript
-runtime Spotify needs. It runs on amd64 and arm64, and is about 65 MiB to pull.
+runtime Spotify needs. It runs on amd64 and arm64, and is about 50 MiB to pull.
 It is distroless: there is no shell in it, only streamrip. Tags: `latest` and every
 version, like `2.6.5`. It is scanned for known vulnerabilities on every change
 and every week.
@@ -28,6 +28,8 @@ progress bars and search menu. The config is
 - **Docker:** the same, with `--user "$(id -u):$(id -g)"` after `run`, so the
   files are yours. Under rootless Podman they already are.
 - **SELinux** (Fedora, RHEL): add `:Z` to the volume: `-v ./streamrip:/data:Z`.
+- **Docker 23 or newer:** the image is compressed with zstd, which older Docker
+  cannot unpack. Podman can.
 - **Updating:** pull the newest image (`podman pull opencommit.eu/stensel8/streamrip`);
   the image does not check for updates itself.
 
