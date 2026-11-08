@@ -34,7 +34,7 @@ A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, SoundCl
 > `pip install streamrip`, the AUR package and `brew install streamrip` install
 > **upstream** streamrip, which doesn't work on Python 3.15.
 
-![downloading an album](demo/download_album.svg)
+![downloading an album from Qobuz](demo/download.avif)
 
 - Tracks, albums, playlists, discographies and labels, your liked tracks and
   albums on Tidal and Deezer, Spotify links ([details](docs/spotify.md)), CSV
@@ -127,7 +127,7 @@ when a track doesn't have it; `--quality` sets the highest to ask for:
 | 3       | 24 bit, ≤ 96 kHz (Qobuz), ≤ 192 kHz (Tidal)  | Tidal, Qobuz         |
 | 4       | 24 bit, ≤ 192 kHz                            | Qobuz                |
 
-![streamrip interactive search](demo/playlist_search.svg)
+![searching Deezer and Qobuz, with the cover and details of each result](demo/search.avif)
 
 The search menu shows each result's cover. A terminal that can show images
 shows the real one: Ghostty, Kitty, WezTerm, Konsole or foot on Linux, Windows
