@@ -45,7 +45,7 @@ class LyricsUnavailableError(Exception):
 
 def _user_agent() -> str:
     """What LRCLIB asks for: a User-Agent that says what is asking."""
-    return f"streamrip/{__version__} (https://github.com/Stensel8/streamrip)"
+    return f"streamrip/{__version__} (https://opencommit.eu/Stensel8/streamrip)"
 
 
 def _without_timestamps(synced: str) -> str:
