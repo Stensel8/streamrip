@@ -3,7 +3,7 @@ import re
 from abc import ABC, abstractmethod
 
 from ..client import Client, SoundcloudClient, new_session
-from ..media import Pending, PendingArtist, PendingPlaylist, pending_item
+from ..media import Pending, PendingArtist, pending_item
 lazy from ..config import Config
 lazy from ..db import Database
 
@@ -182,13 +182,12 @@ class DeezerDynamicURL(URL):
 
 
 class DeezerFavoriteURL(URL):
-    """Matches Deezer liked-tracks profile URLs.
-
-    Example: https://www.deezer.com/fr/profile/1234567/loved
-    """
+    """A Deezer profile's liked tracks, as a playlist, or liked albums."""
 
     source = "deezer"
-    regex = re.compile(r"https://(?:www\.)?deezer\.com/[a-z]{2}/profile/(\d+)/loved")
+    regex = re.compile(
+        r"https://(?:www\.)?deezer\.com/(?:[a-z]{2}(?:-[a-z]{2})?/)?profile/(\d+)/(loved|albums)"
+    )
 
     async def into_pending(
         self,
@@ -196,8 +195,28 @@ class DeezerFavoriteURL(URL):
         config: Config,
         db: Database,
     ) -> Pending:
-        user_id = self.match.group(1)
-        return PendingPlaylist(f"favorites:{user_id}", client, config, db)
+        user_id, kind = self.match.groups()
+        media_type = "playlist" if kind == "loved" else "label"
+        return pending_item(media_type, f"favorites:{user_id}", client, config, db)
+
+
+class TidalFavoriteURL(URL):
+    """The Tidal account's liked tracks, as a playlist, or liked albums."""
+
+    source = "tidal"
+    regex = re.compile(
+        r"https://(?:listen\.)?tidal\.com/(?:browse/)?my-collection/(tracks|albums)"
+    )
+
+    async def into_pending(
+        self,
+        client: Client,
+        config: Config,
+        db: Database,
+    ) -> Pending:
+        kind = self.match.group(1)
+        media_type = "playlist" if kind == "tracks" else "label"
+        return pending_item(media_type, f"favorites:{kind}", client, config, db)
 
 
 class SoundcloudURL(URL):
@@ -254,5 +273,6 @@ def parse_url(url: str) -> URL | None:
         SpotifyURL.from_str(url),
         DeezerDynamicURL.from_str(url),
         DeezerFavoriteURL.from_str(url),
+        TidalFavoriteURL.from_str(url),
     ]
     return next((u for u in parsed_urls if u is not None), None)

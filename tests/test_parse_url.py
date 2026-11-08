@@ -5,12 +5,14 @@ import pytest
 
 from streamrip.client import new_session
 from streamrip.config import Config
+from streamrip.media import PendingLabel, PendingPlaylist
 from streamrip.rip.parse_url import (
     DeezerDynamicURL,
     DeezerFavoriteURL,
     GenericURL,
     QobuzInterpreterURL,
     SoundcloudURL,
+    TidalFavoriteURL,
     parse_url,
 )
 
@@ -91,6 +93,43 @@ def test_deezer_loved_tracks_url():
 
     assert isinstance(result, DeezerFavoriteURL)
     assert result.match.group(1) == "1234567"
+
+
+@pytest.mark.parametrize(
+    ("url", "kind", "item_id"),
+    [
+        (
+            "https://www.deezer.com/fr/profile/1234567/loved",
+            "playlist",
+            "favorites:1234567",
+        ),
+        # Without a language in the path, as Deezer's own links often are.
+        (
+            "https://www.deezer.com/profile/1234567/loved",
+            "playlist",
+            "favorites:1234567",
+        ),
+        (
+            "https://www.deezer.com/en-gb/profile/1234567/albums",
+            "label",
+            "favorites:1234567",
+        ),
+        (
+            "https://listen.tidal.com/my-collection/tracks",
+            "playlist",
+            "favorites:tracks",
+        ),
+        ("https://tidal.com/browse/my-collection/albums", "label", "favorites:albums"),
+    ],
+)
+async def test_favorites_urls_are_a_playlist_of_tracks_or_a_label_of_albums(
+    url, kind, item_id
+):
+    result = parse_url(url)
+    assert isinstance(result, DeezerFavoriteURL | TidalFavoriteURL)
+    pending = await result.into_pending(MagicMock(), Config.defaults(), MagicMock())
+    assert isinstance(pending, PendingPlaylist if kind == "playlist" else PendingLabel)
+    assert pending.id == item_id
 
 
 @pytest.mark.parametrize(

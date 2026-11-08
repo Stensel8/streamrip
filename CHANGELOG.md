@@ -11,6 +11,9 @@ upstream issues and pull requests.
 - feat: more tags: label, barcode, release type, BPM, key, ReplayGain,
   lyricists, every Qobuz composer, and explicit (ITUNESADVISORY), named as
   MusicBrainz Picard writes them. A Qobuz copyright sent twice is written once
+- feat: your liked tracks and albums on Tidal (`my-collection/tracks`,
+  `/albums`), and a Deezer profile's liked albums (`/albums`); Deezer profile
+  links no longer need a language in them
 
 ## 2.6.9
 

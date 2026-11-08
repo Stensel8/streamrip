@@ -194,6 +194,8 @@ class TidalClient(Client):
         """An item's metadata, with an album's or playlist's tracks and an
         artist's albums (EPs and singles included).
         """
+        if item_id.startswith("favorites:"):
+            return await self._favorites(item_id.removeprefix("favorites:"))
         if media_type not in {"track", "album", "playlist", "video", "artist"}:
             raise ValueError(f"Tidal has no {media_type}s")
 
@@ -288,14 +290,7 @@ class TidalClient(Client):
         tracks; they're left out rather than failing (and being retried by
         `streamrip repair`) one by one.
         """
-        first = await self._api_request(f"{url}/items")
-        pages = await asyncio.gather(
-            *(
-                self._api_request(f"{url}/items", {"offset": offset})
-                for offset in range(100, first.get("totalNumberOfItems", 0), 100)
-            )
-        )
-        items = [*page["items"] for page in (first, *pages)]
+        items = await self._paged(f"{url}/items")
         tracks = [i["item"] for i in items if i.get("type", "track") == "track"]
         if len(tracks) < len(items):
             logger.info(
@@ -304,6 +299,34 @@ class TidalClient(Client):
         self._note_hires_tags(tracks)
         self._listed.update((str(t["id"]), t) for t in tracks)
         return tracks
+
+    async def _paged(self, path: str, params: dict | None = None) -> list[dict]:
+        """Every item of a listing, fetched 100 at a time."""
+        first = await self._api_request(path, dict(params or {}))
+        pages = await asyncio.gather(
+            *(
+                self._api_request(path, {**(params or {}), "offset": offset})
+                for offset in range(100, first.get("totalNumberOfItems", 0), 100)
+            )
+        )
+        return [*page["items"] for page in (first, *pages)]
+
+    async def _favorites(self, kind: str) -> dict:
+        """The account's liked tracks as a playlist, or its liked albums as a
+        label, oldest first so a new like lands at the end.
+        """
+        if kind not in {"tracks", "albums"}:
+            raise ValueError(f"Tidal has no favorite {kind}")
+        items = await self._paged(
+            f"users/{self.config.user_id}/favorites/{kind}",
+            {"order": "DATE", "orderDirection": "ASC"},
+        )
+        liked = [i["item"] for i in items]
+        if kind == "albums":
+            return {"name": "Tidal favorite albums", "albums": liked}
+        self._note_hires_tags(liked)
+        self._listed.update((str(t["id"]), t) for t in liked)
+        return {"title": "Tidal favorites", "tracks": liked}
 
     async def _add_hires_format(self, album: dict, tracks: list[dict]):
         """Say what a hi-res album really is, for its folder name.

@@ -74,6 +74,10 @@ class DeezerClient(Client):
                 return await self._get_playlist(item_id)
             case "artist":
                 return await self._get_artist(item_id)
+            case "label" if item_id.startswith("favorites:"):
+                return await self._get_user_favorite_albums(
+                    item_id.removeprefix("favorites:")
+                )
         raise ValueError(f"Deezer has no {media_type}s")
 
     async def _get_track(self, item_id: str) -> dict:
@@ -208,6 +212,16 @@ class DeezerClient(Client):
             "title": "Loved Tracks",
             "tracks": [{"id": str(entry["SNG_ID"])} for entry in all_entries],
             "track_total": len(all_entries),
+        }
+
+    async def _get_user_favorite_albums(self, user_id: str) -> dict:
+        """The albums a profile has liked, label-shaped for LabelMetadata."""
+        albums = await asyncio.to_thread(
+            self.client.gw.get_user_albums, user_id, limit=self.max_favorites
+        )
+        return {
+            "name": "Loved Albums",
+            "albums": [{"id": str(a["id"])} for a in albums],
         }
 
     async def _get_artist(self, item_id: str) -> dict:

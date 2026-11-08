@@ -36,9 +36,9 @@ A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, SoundCl
 
 ![downloading an album](demo/download_album.svg)
 
-- Tracks, albums, playlists, discographies and labels, Spotify links
-  ([details](docs/spotify.md)), CSV lists ([details](docs/csv-lists.md)) and
-  last.fm playlists
+- Tracks, albums, playlists, discographies and labels, your liked tracks and
+  albums on Tidal and Deezer, Spotify links ([details](docs/spotify.md)), CSV
+  lists ([details](docs/csv-lists.md)) and last.fm playlists
 - Interactive search on every source
 - Tags, cover art and lyrics, and if you like conversion to FLAC, ALAC, AIFF, MP3,
   AAC, OGG or Opus
@@ -112,8 +112,9 @@ streamrip repair                                                # retry what fai
 streamrip config open                                           # every option, explained
 ```
 
-Links from Qobuz, Deezer, SoundCloud and Spotify work the same way, and every
-command has `--help`. Each source is asked for its highest quality, stepping down
+Links from Qobuz, Deezer, SoundCloud and Spotify work the same way, and so do
+your likes: `https://listen.tidal.com/my-collection/tracks` (or `/albums`), and a
+Deezer profile's `/loved` or `/albums`. Every command has `--help`. Each source is asked for its highest quality, stepping down
 when a track doesn't have it; `--quality` sets the highest to ask for:
 
 | Quality | Audio                                        | Sources              |
