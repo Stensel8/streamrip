@@ -10,6 +10,7 @@
   "assigneesFromCodeOwners": true,
   "reviewersFromCodeOwners": true,
   "semanticCommits": "enabled",
+  "automerge": false,
   "enabledManagers": [
     "pep621",
     "github-actions",
@@ -80,26 +81,7 @@
       "enabled": false
     },
     {
-      "description": "Minor, patch and digest updates merge themselves once CI is green",
-      "matchUpdateTypes": [
-        "minor",
-        "patch",
-        "pin",
-        "digest",
-        "lockFileMaintenance"
-      ],
-      "automerge": true,
-      "automergeType": "pr"
-    },
-    {
-      "description": "Major updates wait for a human",
-      "matchUpdateTypes": [
-        "major"
-      ],
-      "automerge": false
-    },
-    {
-      "description": "Nix updates run monthly with the shared automerge policy",
+      "description": "Nix updates run monthly",
       "matchManagers": [
         "nix"
       ],
