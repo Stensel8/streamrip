@@ -5,28 +5,30 @@
 [![Python 3.15](https://img.shields.io/badge/python-3.15-blue)](https://github.com/Stensel8/streamrip/blob/dev/pyproject.toml)
 [![Image size](https://ghcr-badge.egpl.dev/stensel8/streamrip/size)](https://github.com/Stensel8/streamrip/pkgs/container/streamrip)
 [![Image vulnerabilities](https://img.shields.io/github/actions/workflow/status/Stensel8/streamrip/container-scan.yml?branch=dev&label=image%20vulnerabilities)](https://github.com/Stensel8/streamrip/actions/workflows/container-scan.yml)
-[![Also on opencommit.eu](https://img.shields.io/badge/mirror-opencommit.eu-blue)](https://opencommit.eu/Stensel8/streamrip)
-[![Also on codetrunk.eu](https://img.shields.io/badge/mirror-codetrunk.eu-blue)](https://repos.codetrunk.eu/Stensel8/streamrip)
+[![Mirror: github.com](https://img.shields.io/badge/mirror-github.com-blue)](https://github.com/Stensel8/streamrip)
+[![Mirror: opencommit.eu](https://img.shields.io/badge/mirror-opencommit.eu-blue)](https://opencommit.eu/Stensel8/streamrip)
+[![Mirror: codetrunk.eu](https://img.shields.io/badge/mirror-codetrunk.eu-blue)](https://repos.codetrunk.eu/Stensel8/streamrip)
 
 A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, SoundCloud and Spotify.
 
 > [!IMPORTANT]
-> **Bookmark these mirrors.** GitHub has taken down repositories before, and
-> there's no guarantee this one is safe from that. If
-> github.com/Stensel8/streamrip ever disappears, the project lives on at:
+> **Bookmark these mirrors.** GitHub has taken down repositories before, so
+> streamrip lives in three places:
 > - **[opencommit.eu/Stensel8/streamrip](https://opencommit.eu/Stensel8/streamrip)**
->   -- maintained by hand, pushed to directly alongside GitHub
+>   -- the primary one: development and the dependency updates happen here
+> - **[github.com/Stensel8/streamrip](https://github.com/Stensel8/streamrip)**
+>   -- kept in sync with opencommit.eu; the container image is built here
 > - **[repos.codetrunk.eu/Stensel8/streamrip](https://repos.codetrunk.eu/Stensel8/streamrip)**
->   -- pulls from GitHub automatically every 4 hours, so it is never more than
->   a few hours behind
+>   -- copies GitHub automatically every 8 hours
 
 > [!NOTE]
 > A fork of [nathom/streamrip](https://github.com/nathom/streamrip) that I keep
 > working and up to date ([changes](CHANGELOG.md)). It needs the latest stable
 > Python, and streaming services change their APIs without notice, so things can
-> break. Developed on both [GitHub](https://github.com/Stensel8/streamrip) and
-> [opencommit.eu](https://opencommit.eu/Stensel8/streamrip); either is fine for
-> issues and pull requests.
+> break. Development happens on [opencommit.eu](https://opencommit.eu/Stensel8/streamrip),
+> the primary platform. I also look at the issues and pull requests on
+> [GitHub](https://github.com/Stensel8/streamrip), and the issues on
+> [codetrunk.eu](https://repos.codetrunk.eu/Stensel8/streamrip), now and then.
 
 > [!CAUTION]
 > `pip install streamrip`, the AUR package and `brew install streamrip` install
@@ -148,7 +150,8 @@ Details per source: [Logging in](docs/logging-in.md), [Spotify](docs/spotify.md)
 
 ## Contributing
 
-Report problems in the [issue tracker](https://github.com/Stensel8/streamrip/issues).
+Report problems in the [issue tracker on opencommit.eu](https://opencommit.eu/Stensel8/streamrip/issues)
+(or on [GitHub](https://github.com/Stensel8/streamrip/issues)).
 For code, `uv sync --all-extras` sets things up, and `uv run pytest` and
 `uv run ruff check . && uv run ruff format .` should pass before you open a pull
 request to `dev`. Tests that drive a real browser are skipped when there is none.
