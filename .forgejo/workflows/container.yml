@@ -25,6 +25,7 @@ on:
       tag:
         description: A tag to build and publish again, like v2.7.0. Empty to only build and test.
         required: false
+        type: string
 
 env:
   IMAGE: opencommit.eu/stensel8/streamrip
