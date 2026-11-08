@@ -62,8 +62,10 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev --no-install-project --python 3.15
 COPY README.md LICENSE ./
 COPY streamrip ./streamrip
+# Reinstalled every time: uv would take streamrip's wheel from the cache as
+# long as pyproject.toml is unchanged, however much of the code changed.
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev --no-editable --python 3.15
+    uv sync --locked --no-dev --no-editable --reinstall-package streamrip --python 3.15
 
 # Python without Tk, IDLE, its tests and pip (20 MiB less), and the packages
 # without their debug symbols.
