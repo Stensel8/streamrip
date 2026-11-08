@@ -10,6 +10,8 @@ upstream issues and pull requests.
   ([#91](https://github.com/Stensel8/streamrip/issues/91), reported by
   [@Vaela-V](https://github.com/Vaela-V) and
   [@calavikevin](https://github.com/calavikevin))
+- feat: the container image is also on `opencommit.eu/stensel8/streamrip`,
+  and arm64 is built on arm64 hardware
 - docs: opencommit.eu is the primary platform
 
 ## 2.6.8

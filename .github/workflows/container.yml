@@ -1,6 +1,9 @@
-# Builds the container image with Podman. A pull request only builds it and
-# runs `streamrip --version`; a published release pushes it to ghcr.io for
-# linux/amd64 and linux/arm64.
+# Builds the container image with Podman, on amd64 and arm64 hardware. A pull
+# request only builds it and runs `streamrip --version`, so a dependency
+# without an arm64 wheel shows up in the pull request that brings it. A
+# published release pushes each architecture to ghcr.io and joins the two
+# under the version, its minor version and `latest`. opencommit.eu builds the
+# same tag for its own registry (.forgejo/workflows/container.yml).
 name: Container
 
 on:
@@ -20,33 +23,67 @@ on:
 permissions:
   contents: read
 
+env:
+  IMAGE: ghcr.io/stensel8/streamrip
+
 jobs:
   image:
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-26.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: write
-    env:
-      IMAGE: ghcr.io/stensel8/streamrip
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Build and smoke test
-        if: github.event_name == 'pull_request'
+        env:
+          TAG_NAME: ${{ github.event.release.tag_name }}
         run: |
-          podman build --tag streamrip:ci .
-          podman run --rm streamrip:ci --version
+          set -euo pipefail
+          command -v podman >/dev/null || { sudo apt-get update && sudo apt-get install --yes podman; }
+          if [[ -n "$TAG_NAME" ]]; then
+            version="${TAG_NAME#v}"
+            podman build --tag streamrip:ci \
+              --label "org.opencontainers.image.version=$version" \
+              --label "org.opencontainers.image.revision=$GITHUB_SHA" .
+            test "$(podman run --rm streamrip:ci --version)" = "streamrip, version $version"
+          else
+            podman build --tag streamrip:ci .
+            podman run --rm streamrip:ci --version
+          fi
 
-      # The arm64 half of the release image is built under emulation.
-      - name: Install the arm64 emulator
+      - name: Push this architecture
         if: github.event_name == 'release'
-        run: sudo apt-get update && sudo apt-get install --yes qemu-user-static
+        env:
+          TAG_NAME: ${{ github.event.release.tag_name }}
+          ARCH: ${{ matrix.arch }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          podman login ghcr.io --username "$GITHUB_ACTOR" --password-stdin <<<"$REGISTRY_TOKEN"
+          podman push streamrip:ci "docker://$IMAGE:${TAG_NAME#v}-$ARCH"
 
-      - name: Build and push
-        if: github.event_name == 'release'
+  manifest:
+    if: github.event_name == 'release'
+    needs: image
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Join the architectures
         env:
           TAG_NAME: ${{ github.event.release.tag_name }}
           PRERELEASE: ${{ github.event.release.prerelease }}
@@ -55,7 +92,7 @@ jobs:
           set -euo pipefail
           version="${TAG_NAME#v}"
           tags=("$version")
-          # A stable release also moves its minor tag (2.5), and `latest`.
+          # A stable release also moves its minor tag (2.6), and `latest`.
           if [[ "$version" != *-* ]]; then
             tags+=("${version%.*}")
           fi
@@ -64,30 +101,10 @@ jobs:
           fi
 
           podman login ghcr.io --username "$GITHUB_ACTOR" --password-stdin <<<"$REGISTRY_TOKEN"
-          podman build \
-            --platform linux/amd64,linux/arm64 \
-            --manifest streamrip:release \
-            --label "org.opencontainers.image.version=$version" \
-            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
-            .
+          podman manifest create streamrip:release
+          for arch in amd64 arm64; do
+            podman manifest add streamrip:release "docker://$IMAGE:$version-$arch"
+          done
           for tag in "${tags[@]}"; do
             podman manifest push --all streamrip:release "docker://$IMAGE:$tag"
           done
-
-  # The arm64 image on arm64 hardware, so a dependency without an arm64 wheel
-  # shows up in the pull request that brings it, not on release day.
-  image-arm64:
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-26.04-arm
-    timeout-minutes: 30
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Build and smoke test
-        run: |
-          command -v podman >/dev/null || sudo apt-get install --yes podman
-          podman build --tag streamrip:ci .
-          podman run --rm streamrip:ci --version

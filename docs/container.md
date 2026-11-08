@@ -7,9 +7,13 @@ runtime Spotify needs. It runs on amd64 and arm64. Tags: `latest` and every
 version, like `2.6.5`. It is scanned for known vulnerabilities on every change
 and every week.
 
+Each release is built from the same tag on both platforms, for
+`opencommit.eu/stensel8/streamrip` and `ghcr.io/stensel8/streamrip`: either
+works the same.
+
 ```bash
 mkdir -p streamrip      # the folder must exist
-podman run --rm -it -v ./streamrip:/data ghcr.io/stensel8/streamrip url <link>
+podman run --rm -it -v ./streamrip:/data opencommit.eu/stensel8/streamrip url <link>
 ```
 
 Everything after the image name is a streamrip command. Config, databases and
@@ -20,13 +24,13 @@ progress bars and search menu. The config is
 - **Docker:** the same, with `--user "$(id -u):$(id -g)"` after `run`, so the
   files are yours. Under rootless Podman they already are.
 - **SELinux** (Fedora, RHEL): add `:Z` to the volume: `-v ./streamrip:/data:Z`.
-- **Updating:** pull the newest image (`podman pull ghcr.io/stensel8/streamrip`);
+- **Updating:** pull the newest image (`podman pull opencommit.eu/stensel8/streamrip`);
   the image does not check for updates itself.
 
 To type it like the Python version:
 
 ```bash
-alias streamrip='podman run --rm -it -v "$HOME/streamrip:/data" ghcr.io/stensel8/streamrip'
+alias streamrip='podman run --rm -it -v "$HOME/streamrip:/data" opencommit.eu/stensel8/streamrip'
 ```
 
 Build the image yourself from this checkout with `podman build -t streamrip .`
