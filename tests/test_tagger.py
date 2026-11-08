@@ -206,6 +206,25 @@ async def test_an_earlier_tool_s_tag_does_not_survive_retagging(
         assert not ID3(path).getall("TSSE")
 
 
+async def test_tag_flac_without_a_tag_block(sample_metadata, tmp_path):
+    # A FLAC with no Vorbis comment block at all has mutagen's tags at None:
+    # clearing them raised AttributeError, failing every Tidal and Qobuz
+    # track in 2.6.7 and 2.6.8 (issue #91).
+    path = tmp_path / "track.flac"
+    shutil.copy(TEST_FLAC, path)
+    audio = FLAC(path)
+    audio.metadata_blocks = [b for b in audio.metadata_blocks if b.code != 4]
+    audio.tags = None
+    audio.save()
+    assert FLAC(path).tags is None
+
+    await tag_file(path, sample_metadata, TEST_COVER)
+
+    file = FLAC(path)
+    assert file["title"] == ["testtitle"]
+    assert len(file.pictures) == 1
+
+
 @pytest.mark.parametrize("ext", ["flac", "m4a", "mp3"])
 async def test_retagging_keeps_a_single_cover(sample_metadata, tmp_path, ext):
     # A converted file is tagged a second time, and ffmpeg may already have

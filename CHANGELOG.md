@@ -3,6 +3,14 @@
 All notable changes in this fork of [nathom/streamrip](https://github.com/nathom/streamrip). Numbers can refer to
 upstream issues and pull requests.
 
+## Unreleased
+
+- fix: Tidal and Qobuz tracks failed after downloading with
+  `'NoneType' object has no attribute 'clear'` since 2.6.7
+  ([#91](https://github.com/Stensel8/streamrip/issues/91), reported by
+  [@Vaela-V](https://github.com/Vaela-V) and
+  [@calavikevin](https://github.com/calavikevin))
+
 ## 2.6.8
 
 - docs: `medium` is no longer called "unproven" -- changes in wording/docs,

@@ -181,7 +181,10 @@ class Container(Enum):
         """
         match self:
             case Container.FLAC | Container.AAC:
-                audio.tags.clear()
+                # A file with no tag block at all (the FLACs from Tidal and
+                # Qobuz in issue #91) has none to clear: tag_audio adds one.
+                if audio.tags is not None:
+                    audio.tags.clear()
             case Container.MP3 | Container.AIFF:
                 audio.clear()
 
