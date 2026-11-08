@@ -1,21 +1,21 @@
 # --- tools: an ffmpeg with only what streamrip uses, and QuickJS-ng for yt-dlp ---
 FROM docker.io/library/debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS tools
 
-ARG FFMPEG_VERSION=9.0.2
-ARG FFMPEG_SHA256=8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e
-ARG QJS_VERSION=v0.18.0
-ARG QJS_SHA256_AMD64=85ded23b9fabe8c1644fc40a8d2bbdd71157affcbd807359c618cc717ee24d7d
-ARG QJS_SHA256_ARM64=2c005c7171424a598d31c53c8dc4a0ae2e4958eb6fbb37908c885a307c78187c
+# Patchbot keeps these four current: a tag of FFmpeg's own git and its commit,
+# and QuickJS-ng's release files with their sha256.
+ARG FFMPEG_VERSION=n9.0.2
+ARG FFMPEG_COMMIT=946fcce07b6dcd0331c8cc609192aeff5e1924f8
+ARG QJS_AMD64=v0.18.0@sha256:85ded23b9fabe8c1644fc40a8d2bbdd71157affcbd807359c618cc717ee24d7d
+ARG QJS_ARM64=v0.18.0@sha256:2c005c7171424a598d31c53c8dc4a0ae2e4958eb6fbb37908c885a307c78187c
 
 RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
-        ca-certificates curl xz-utils build-essential pkg-config nasm \
+        ca-certificates curl git build-essential pkg-config nasm \
         libmp3lame-dev libopus-dev libvorbis-dev
 
 WORKDIR /tmp/ffmpeg
 RUN set -eux; \
-    curl -fsSLo ffmpeg.tar.xz "https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VERSION}.tar.xz"; \
-    echo "${FFMPEG_SHA256}  ffmpeg.tar.xz" | sha256sum -c -; \
-    tar -xf ffmpeg.tar.xz --strip-components=1; \
+    git clone --quiet --depth 1 --branch "${FFMPEG_VERSION}" https://git.ffmpeg.org/ffmpeg.git .; \
+    test "$(git rev-parse HEAD)" = "${FFMPEG_COMMIT}"; \
     ./configure \
         --disable-everything --disable-autodetect --disable-network --disable-doc --disable-debug \
         --disable-ffplay --disable-ffprobe --disable-avdevice \
@@ -35,11 +35,11 @@ RUN set -eux; \
 
 RUN set -eux; \
     case "$(dpkg --print-architecture)" in \
-        amd64) arch=x86_64  sum="${QJS_SHA256_AMD64}" ;; \
-        arm64) arch=aarch64 sum="${QJS_SHA256_ARM64}" ;; \
+        amd64) ref="${QJS_AMD64}" file=qjs-linux-x86_64 ;; \
+        arm64) ref="${QJS_ARM64}" file=qjs-linux-aarch64 ;; \
     esac; \
-    curl -fsSLo /usr/local/bin/qjs "https://github.com/quickjs-ng/quickjs/releases/download/${QJS_VERSION}/qjs-linux-${arch}"; \
-    echo "${sum}  /usr/local/bin/qjs" | sha256sum -c -; \
+    curl -fsSLo /usr/local/bin/qjs "https://github.com/quickjs-ng/quickjs/releases/download/${ref%@*}/${file}"; \
+    echo "${ref#*sha256:}  /usr/local/bin/qjs" | sha256sum -c -; \
     chmod 755 /usr/local/bin/qjs
 
 

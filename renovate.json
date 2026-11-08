@@ -15,7 +15,36 @@
     "pep621",
     "github-actions",
     "nix",
-    "dockerfile"
+    "dockerfile",
+    "custom.regex"
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "ffmpeg in the Containerfile: a tag of FFmpeg's own git and its commit",
+      "managerFilePatterns": [
+        "/(^|/)Containerfile$/"
+      ],
+      "matchStrings": [
+        "ARG FFMPEG_VERSION=(?<currentValue>n[\\d.]+)\\s+ARG FFMPEG_COMMIT=(?<currentDigest>[0-9a-f]{40})"
+      ],
+      "datasourceTemplate": "git-tags",
+      "depNameTemplate": "ffmpeg",
+      "packageNameTemplate": "https://git.ffmpeg.org/ffmpeg.git",
+      "versioningTemplate": "regex:^n(?<major>\\d+)\\.(?<minor>\\d+)(?:\\.(?<patch>\\d+))?$"
+    },
+    {
+      "customType": "regex",
+      "description": "QuickJS-ng in the Containerfile: a release file per architecture and its sha256",
+      "managerFilePatterns": [
+        "/(^|/)Containerfile$/"
+      ],
+      "matchStrings": [
+        "ARG QJS_(?:AMD64|ARM64)=(?<currentValue>v[\\d.]+)@sha256:(?<currentDigest>[0-9a-f]{64})"
+      ],
+      "datasourceTemplate": "github-release-attachments",
+      "depNameTemplate": "quickjs-ng/quickjs"
+    }
   ],
   "labels": [
     "dependencies"
