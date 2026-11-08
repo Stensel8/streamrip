@@ -17,7 +17,6 @@ classifiers = [
 dependencies = [
   "mutagen>=1.48,<2",
   "tomlkit>=0.15,<1",
-  "pathvalidate>=3.3,<4",
   "textual>=8.2.8,<9",
   "textual-image>=0.14.1,<0.15",
   "Pillow>=13,<14",

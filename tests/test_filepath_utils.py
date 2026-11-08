@@ -6,7 +6,12 @@ from pathlib import Path
 import pytest
 
 from streamrip.config import Config, set_user_defaults
-from streamrip.filepath_utils import clean_filepath, ensure_inside, fit_filename
+from streamrip.filepath_utils import (
+    clean_filepath,
+    ensure_inside,
+    fit_filename,
+    sanitize_filename,
+)
 from streamrip.media import track as track_module
 from streamrip.media.track import album_folder
 from streamrip.metadata import AlbumMetadata
@@ -212,3 +217,53 @@ def test_create_album_folder_off_works_under_the_real_default_music_folder(tmp_p
     folder = album_folder(config, "qobuz", _album("Björk"))
 
     assert folder == Path(config.session.downloads.folder)
+
+
+# What pathvalidate 3.3.1's sanitize_filename made of each, which streamrip used
+# before its own: the names of an existing library must not change.
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("", ""),
+        (" ", ""),
+        (".", "."),
+        ("..", ".."),
+        ("...", ""),
+        (". .", ""),
+        (" a. ", "a"),
+        ("a..", "a"),
+        ("...a", "...a"),
+        (".a", ".a"),
+        ("CON", "CON_"),
+        ("con.txt", "con_.txt"),
+        ("CON.CON", "CON_.CON_"),
+        ("CON ", "CON"),
+        (" CON", "CON"),
+        ("con.", "con_."),
+        (".con", ".con"),
+        ("x.CON", "x.CON"),
+        ("AUX.tar.gz", "AUX_.tar.gz"),
+        ("COM1.flac", "COM1_.flac"),
+        ("LPT³", "LPT³_"),
+        ("CLOCK$", "CLOCK$_"),
+        ("a/b", "ab"),
+        ("a\\b", "ab"),
+        ("C:foo", "Cfoo"),
+        ('AC/DC: "Who?" <live> | *', "ACDC Who live"),
+        ("tab\there\nnewline", "tabherenewline"),
+        ("\x00\x1f\x7fok", "ok"),
+        ("\xa0", ""),
+        ("\u3000x\u3000", "\u3000x\u3000"),
+        (":\xa0", ""),
+        ("Björk \u2013 Jóga", "Björk \u2013 Jóga"),
+        ("日本語のタイトル", "日本語のタイトル"),
+        ("trail. ", "trail"),
+    ],
+)
+def test_sanitize_filename_names_files_as_pathvalidate_did(name, expected):
+    assert sanitize_filename(name) == expected
+
+
+def test_sanitize_filename_cuts_at_255_bytes_without_splitting_a_character():
+    assert sanitize_filename("a" * 260) == "a" * 255
+    assert sanitize_filename("é" * 130) == "é" * 127  # 254 bytes

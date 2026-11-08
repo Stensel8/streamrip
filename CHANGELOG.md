@@ -14,8 +14,9 @@ upstream issues and pull requests.
 - feat: your liked tracks and albums on Tidal (`my-collection/tracks`,
   `/albums`), and a Deezer profile's liked albums (`/albums`); Deezer profile
   links no longer need a language in them
-- chore: two dependencies fewer: aiofiles and m3u8, both unmaintained, are
-  replaced by the standard library and a few lines of our own
+- chore: three dependencies fewer: aiofiles, m3u8 and pathvalidate, all
+  unmaintained, are replaced by the standard library and a few lines of our
+  own. File and folder names stay exactly as they were
 
 ## 2.6.9
 

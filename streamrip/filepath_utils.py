@@ -3,9 +3,16 @@ import re
 from pathlib import Path
 from string import printable
 
-lazy from pathvalidate import sanitize_filename  # type: ignore
-
 ALLOWED_CHARS = frozenset(printable)
+
+# What no file name may hold on Linux, macOS or Windows: control characters and
+# the ones Windows reserves.
+_INVALID_CHARS = re.compile(r'[\x00-\x1f\x7f/\\:*?"<>|]')
+# Windows' reserved device names, in any case and with any extension.
+_RESERVED_NAMES = frozenset(
+    {"CON", "PRN", "AUX", "CLOCK$", "NUL"}
+    | {f"{d}{n}" for d in ("COM", "LPT") for n in (*"0123456789", "¹", "²", "³")}
+)
 
 # What separates the folders of a path template: both kinds of slash on every
 # system, since a template written on Windows has to work elsewhere too.
@@ -23,8 +30,33 @@ def truncate_str(text: str, max_bytes: int = MAX_COMPONENT_BYTES) -> str:
     return str_bytes.decode(errors="ignore").rstrip()
 
 
+def sanitize_filename(name: str) -> str:
+    """A file name that is valid on Linux, macOS and Windows alike.
+
+    Exactly what pathvalidate 3's sanitize_filename made of it, which streamrip
+    used before, so the names of an existing library stay the same: invalid
+    characters go, the name is cut at 255 bytes, and then one problem left is
+    fixed: a reserved name gets an underscore, or else spaces and dots go from
+    the end and spaces from the start.
+    """
+    if not name.strip():
+        return ""
+    name = _INVALID_CHARS.sub("", name).encode()[:255].decode(errors="ignore")
+    if not name.strip():
+        return ""
+    if name in {".", ".."}:
+        return name
+    root = name if name.startswith("...") else re.match(r"[^.]*", name)[0]
+    if root.upper() in _RESERVED_NAMES or name.upper() in _RESERVED_NAMES:
+        return name.replace(root, f"{root}_")
+    if name[-1] in " ." or name[0] == " ":
+        name = name.strip(" ")
+        return name if name in {".", ".."} else name.rstrip(" .")
+    return name
+
+
 def clean_filename(fn: str, restrict: bool = False) -> str:
-    path = truncate_str(str(sanitize_filename(fn)))
+    path = truncate_str(sanitize_filename(fn))
     if restrict:
         path = "".join(c for c in path if c in ALLOWED_CHARS)
 
