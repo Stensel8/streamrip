@@ -3,7 +3,8 @@
 # Podman and Docker
 
 The image has everything streamrip needs built in: ffmpeg, and the JavaScript
-runtime Spotify needs. It runs on amd64 and arm64. Tags: `latest` and every
+runtime Spotify needs. It runs on amd64 and arm64, and is about 65 MiB to pull.
+It is distroless: there is no shell in it, only streamrip. Tags: `latest` and every
 version, like `2.6.5`. It is scanned for known vulnerabilities on every change
 and every week.
 

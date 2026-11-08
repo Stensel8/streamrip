@@ -66,21 +66,6 @@
       ]
     },
     {
-      "description": "The Python image follows requires-python, so only its digest moves",
-      "matchManagers": [
-        "dockerfile"
-      ],
-      "matchPackageNames": [
-        "python",
-        "docker.io/library/python"
-      ],
-      "matchUpdateTypes": [
-        "major",
-        "minor"
-      ],
-      "enabled": false
-    },
-    {
       "description": "Nix updates run monthly",
       "matchManagers": [
         "nix"

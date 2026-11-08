@@ -1,49 +1,102 @@
-# Fully qualified names, so Podman never has to ask which registry is meant.
-FROM docker.io/library/python:3.15-slim@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928 AS build
+# --- tools: an ffmpeg with only what streamrip uses, and QuickJS-ng for yt-dlp ---
+FROM docker.io/library/debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS tools
+
+ARG FFMPEG_VERSION=9.0.2
+ARG FFMPEG_SHA256=8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e
+ARG QJS_VERSION=v0.18.0
+ARG QJS_SHA256_AMD64=85ded23b9fabe8c1644fc40a8d2bbdd71157affcbd807359c618cc717ee24d7d
+ARG QJS_SHA256_ARM64=2c005c7171424a598d31c53c8dc4a0ae2e4958eb6fbb37908c885a307c78187c
+
+RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
+        ca-certificates curl xz-utils build-essential pkg-config nasm \
+        libmp3lame-dev libopus-dev libvorbis-dev
+
+WORKDIR /tmp/ffmpeg
+RUN set -eux; \
+    curl -fsSLo ffmpeg.tar.xz "https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VERSION}.tar.xz"; \
+    echo "${FFMPEG_SHA256}  ffmpeg.tar.xz" | sha256sum -c -; \
+    tar -xf ffmpeg.tar.xz --strip-components=1; \
+    ./configure \
+        --disable-everything --disable-autodetect --disable-network --disable-doc --disable-debug \
+        --disable-ffplay --disable-ffprobe --disable-avdevice \
+        --enable-small --enable-static --disable-shared \
+        --pkg-config-flags=--static --extra-ldflags=-static \
+        --enable-libmp3lame --enable-libopus --enable-libvorbis \
+        --enable-protocol=file,pipe,concat \
+        --enable-demuxer=flac,mp3,mov,matroska,ogg,aac,aiff,wav \
+        --enable-muxer=flac,mp3,ipod,mp4,mov,ogg,opus,aiff,wav,null \
+        --enable-decoder=flac,alac,aac,mp3float,mp3,opus,vorbis,mjpeg,png,pcm_s16le,pcm_s24le,pcm_s32le,pcm_f32le,pcm_s16be,pcm_s24be,pcm_s32be \
+        --enable-encoder=flac,alac,aac,libmp3lame,libopus,libvorbis,pcm_s16be,pcm_s24be,pcm_s32be \
+        --enable-parser=flac,aac,mpegaudio,opus,vorbis,mjpeg,png \
+        --enable-bsf=aac_adtstoasc \
+        --enable-filter=aformat,aresample,anull,null,format; \
+    make -j"$(nproc)" ffmpeg; \
+    install -m 755 ffmpeg /usr/local/bin/ffmpeg
+
+RUN set -eux; \
+    case "$(dpkg --print-architecture)" in \
+        amd64) arch=x86_64  sum="${QJS_SHA256_AMD64}" ;; \
+        arm64) arch=aarch64 sum="${QJS_SHA256_ARM64}" ;; \
+    esac; \
+    curl -fsSLo /usr/local/bin/qjs "https://github.com/quickjs-ng/quickjs/releases/download/${QJS_VERSION}/qjs-linux-${arch}"; \
+    echo "${sum}  /usr/local/bin/qjs" | sha256sum -c -; \
+    chmod 755 /usr/local/bin/qjs
+
+
+# --- build: Python from uv and streamrip with its packages ---
+FROM docker.io/library/debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS build
 
 COPY --from=ghcr.io/astral-sh/uv:0.13.7@sha256:96f40d3904aad8d0bd010539001d36c8e2188b981e1334471a90c4a1d93bb490 /uv /usr/local/bin/uv
-# The versions of uv.lock, all from wheels: no compiler is needed. The ffmpeg
-# extra brings a static ffmpeg. streamrip itself is copied into the
-# environment (--no-editable), which is all the image takes from this stage.
+
 ENV UV_PROJECT_ENVIRONMENT=/opt/streamrip \
-    UV_PYTHON_DOWNLOADS=never \
+    UV_PYTHON_INSTALL_DIR=/opt/python \
+    UV_PYTHON_INSTALL_BIN=0 \
+    UV_PYTHON_PREFERENCE=only-managed \
+    UV_PYTHON_CACHE_DIR=/root/.cache/uv/python \
     UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy
+
 WORKDIR /src
 COPY pyproject.toml uv.lock ./
-RUN uv sync --locked --no-dev --no-install-project --extra ffmpeg
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --no-dev --no-install-project --python 3.15
 COPY README.md LICENSE ./
 COPY streamrip ./streamrip
-RUN uv sync --locked --no-dev --no-editable --extra ffmpeg
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --no-dev --no-editable --python 3.15
+
+# Python without Tk, IDLE, its tests and pip (20 MiB less), and the packages
+# without their debug symbols.
+RUN set -eux; \
+    cd "$(dirname "$(dirname "$(readlink -f /opt/streamrip/bin/python)")")"; \
+    rm -rf include share bin/pip* bin/idle* bin/pydoc* bin/*-config \
+        lib/pkgconfig lib/*.a lib/libpython* lib/*tcl* lib/*tk* lib/itcl* lib/thread*; \
+    cd lib/python3.*; \
+    rm -rf test idlelib tkinter turtledemo turtle.py ensurepip pydoc_data config-* \
+        site-packages/pip* site-packages/setuptools*; \
+    apt-get update -qq && apt-get install -y -qq --no-install-recommends binutils; \
+    find /opt/streamrip -type f \( -name '*.so' -o -name '*.so.*' \) -exec strip --strip-unneeded {} +; \
+    /opt/streamrip/bin/python -c 'import ssl, sqlite3, lzma, bz2, ctypes, streamrip.rip.cli'; \
+    /opt/streamrip/bin/streamrip --version
 
 
-FROM docker.io/library/python:3.15-slim@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928
+# --- the image: distroless, so no shell and no apt; Patchbot keeps the digest current ---
+FROM gcr.io/distroless/cc-debian13:latest@sha256:58e12be899275afaa05f1b03051ab19037ed7f252528e57a3a9ad7e220a62578
 
 LABEL org.opencontainers.image.title="streamrip" \
       org.opencontainers.image.description="A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, SoundCloud, and Spotify." \
       org.opencontainers.image.source="https://github.com/Stensel8/streamrip" \
       org.opencontainers.image.licenses="GPL-3.0-only"
 
-# Deno is the JavaScript runtime yt-dlp needs for Spotify.
-COPY --from=docker.io/denoland/deno:bin-2.9.8@sha256:b507583d3c68ba69f3ed2ce5969ae5b8b70f43421c781279c7aea06435263543 /deno /usr/local/bin/deno
+COPY --from=build /opt/python /opt/python
+COPY --from=tools /usr/local/bin/ffmpeg /usr/local/bin/qjs /usr/local/bin/
 COPY --from=build /opt/streamrip /opt/streamrip
-ENV PATH=/opt/streamrip/bin:$PATH
 
-# Config, databases and downloads all live under HOME. There is no USER: under
-# rootless Podman, root in the container is whoever started it, so the files in
-# /data are theirs without any flags. Docker users add `--user "$(id -u):$(id -g)"`.
-ENV HOME=/data
-# A container is updated by pulling a newer image, not with the pip command the
-# update notice would give, and the check costs about half a second of every run.
-ENV STREAMRIP_NO_UPDATE_CHECK=1
-# Debian's security fixes, which reach the base image a few days later. pip
-# only installs, and the image is updated by pulling a newer one. It also
-# brings its own, older copies of certifi, urllib3 and msgpack. Removed rather
-# than uninstalled: running pip would leave a layer of bytecode behind.
-RUN apt-get update \
- && DEBIAN_FRONTEND=noninteractive apt-get upgrade --yes \
- && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin /var/log/apt /var/log/dpkg.log \
- && rm -r /usr/local/lib/python3.15/site-packages/pip* /usr/local/bin/pip*
+# No USER: under rootless Podman, root in the container is whoever started it,
+# so the files in /data are theirs. Docker users add `--user "$(id -u):$(id -g)"`.
+ENV PATH=/opt/streamrip/bin:$PATH \
+    HOME=/data \
+    STREAMRIP_NO_UPDATE_CHECK=1
 WORKDIR /data
 VOLUME /data
 
