@@ -14,7 +14,7 @@ streamrip csv playlist.csv --source tidal --fallback-source qobuz
 ```
 
 The list comes from anywhere: `music-sync export spotify --liked -o liked.csv`
-([Music-Sync](https://github.com/Stensel8/Music-Sync)), Exportify, TuneMyMusic or
+([Music-Sync](https://opencommit.eu/Stensel8/Music-Sync)), Exportify, TuneMyMusic or
 a spreadsheet of your own.
 
 - One track per row, with a title and an artist (several artists separated by

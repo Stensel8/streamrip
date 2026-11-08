@@ -58,9 +58,9 @@ ffmpeg = ["imageio-ffmpeg>=0.6"]
 streamrip = "streamrip.rip:rip"
 
 [project.urls]
-Homepage = "https://github.com/Stensel8/streamrip"
-Repository = "https://github.com/Stensel8/streamrip"
-"Bug Reports" = "https://github.com/Stensel8/streamrip/issues"
+Homepage = "https://opencommit.eu/Stensel8/streamrip"
+Repository = "https://opencommit.eu/Stensel8/streamrip"
+"Bug Reports" = "https://opencommit.eu/Stensel8/streamrip/issues"
 Upstream = "https://github.com/nathom/streamrip"
 
 [dependency-groups]

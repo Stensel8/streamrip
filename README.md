@@ -1,8 +1,8 @@
 ![streamrip logo](demo/logo.svg)
 
-[![CI](https://github.com/Stensel8/streamrip/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/Stensel8/streamrip/actions/workflows/ci.yml)
-[![Latest release](https://img.shields.io/github/v/release/Stensel8/streamrip?display_name=tag&sort=semver)](https://github.com/Stensel8/streamrip/releases/latest)
-[![Python 3.15](https://img.shields.io/badge/python-3.15-blue)](https://github.com/Stensel8/streamrip/blob/dev/pyproject.toml)
+[![CI](https://opencommit.eu/Stensel8/streamrip/badges/workflows/ci.yml/badge.svg?branch=dev&label=CI)](https://opencommit.eu/Stensel8/streamrip/actions?workflow=ci.yml)
+[![Latest release](https://img.shields.io/gitea/v/release/Stensel8/streamrip?gitea_url=https%3A%2F%2Fopencommit.eu&display_name=tag&sort=semver)](https://opencommit.eu/Stensel8/streamrip/releases/latest)
+[![Python 3.15](https://img.shields.io/badge/python-3.15-blue)](https://opencommit.eu/Stensel8/streamrip/src/branch/dev/pyproject.toml)
 [![Image size](https://ghcr-badge.egpl.dev/stensel8/streamrip/size)](https://github.com/Stensel8/streamrip/pkgs/container/streamrip)
 [![Image vulnerabilities](https://img.shields.io/github/actions/workflow/status/Stensel8/streamrip/container-scan.yml?branch=dev&label=image%20vulnerabilities)](https://github.com/Stensel8/streamrip/actions/workflows/container-scan.yml)
 [![Mirror: github.com](https://img.shields.io/badge/mirror-github.com-blue)](https://github.com/Stensel8/streamrip)
@@ -48,7 +48,7 @@ A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, SoundCl
 
 ### With Python
 
-Download **Source code (zip)** from the [latest release](https://github.com/Stensel8/streamrip/releases/latest),
+Download **Source code (ZIP)** from the [latest release](https://opencommit.eu/Stensel8/streamrip/releases/latest),
 extract it and run the installer in that folder:
 
 ```bash

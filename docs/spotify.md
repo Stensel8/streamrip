@@ -15,7 +15,7 @@ length) and downloads that, tagged with what Spotify says. Because of that:
 - A track YouTube Music does not have, or has only as another version (live,
   remix, ...), is reported as not found rather than downloaded wrong.
 - **For better quality, move the playlist first.** With
-  [Music-Sync](https://github.com/Stensel8/Music-Sync) you can move your liked
+  [Music-Sync](https://opencommit.eu/Stensel8/Music-Sync) you can move your liked
   songs and playlists from Spotify to Tidal, or export them to a CSV, and then
   download them from a lossless source: [`streamrip csv`](csv-lists.md) searches
   such a CSV on Qobuz, Tidal or Deezer. streamrip reminds you of this the first
@@ -37,7 +37,7 @@ User Management*. Making the app takes a minute:
    It has to be `127.0.0.1`, not `localhost`; Spotify no longer accepts that.
 3. Under *Which API/SDKs are you planning to use?* tick **Web API** only.
 
-   ![Only Web API is ticked.](https://github.com/Stensel8/Music-Sync/blob/main/docs/images/spotify-web-api-ticked.avif?raw=true)
+   ![Only Web API is ticked.](https://opencommit.eu/Stensel8/Music-Sync/raw/branch/main/docs/images/spotify-web-api-ticked.avif)
 
 4. Save, open the app's *Settings* and copy its **Client ID**. You do not need
    the client secret.
@@ -49,7 +49,7 @@ the address you end up on instead). The login is saved in the `[spotify]`
 section of the config and renews itself. If you had to give the Client ID by
 hand, it goes in `client_id` there.
 
-![What you see without Premium: "Your application is blocked from accessing the Web API since you do not have a Spotify Premium subscription."](https://github.com/Stensel8/Music-Sync/blob/main/docs/images/spotify-premium-required.avif?raw=true)
+![What you see without Premium: "Your application is blocked from accessing the Web API since you do not have a Spotify Premium subscription."](https://opencommit.eu/Stensel8/Music-Sync/raw/branch/main/docs/images/spotify-premium-required.avif)
 
 (Without Premium the dashboard shows this banner, and every request fails with
 HTTP 403.)
@@ -80,7 +80,7 @@ matching "song"; turn it off to be strict) and `redirect_uri`.
 
 The Spotify support in this fork borrows from three projects. Thank you:
 
-- **[Music-Sync](https://github.com/Stensel8/Music-Sync)** (AGPL-3.0, the same
+- **[Music-Sync](https://opencommit.eu/Stensel8/Music-Sync)** (AGPL-3.0, the same
   author). The Spotify login and the handling of Spotify's API follow it: OAuth
   with PKCE and a loopback redirect (`streamrip/rip/spotify_login.py`,
   `streamrip/client/spotify.py`), token refresh, and the rules for apps in

@@ -150,7 +150,7 @@ async def test_it_says_what_is_asking_and_sends_no_login(lrclib):
 
     headers = {k.lower(): v for k, v in lrclib.calls[0]["headers"].items()}
     assert headers["user-agent"].startswith("streamrip/")
-    assert "github.com/Stensel8/streamrip" in headers["user-agent"]
+    assert "opencommit.eu/Stensel8/streamrip" in headers["user-agent"]
     assert not {"authorization", "cookie", "x-user-auth-token"} & set(headers)
 
 
