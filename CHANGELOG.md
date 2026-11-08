@@ -3,25 +3,18 @@
 All notable changes in this fork of [nathom/streamrip](https://github.com/nathom/streamrip). Numbers can refer to
 upstream issues and pull requests.
 
-## Unreleased
+## 2.7.0
 
-- feat: the container image is a 50 MiB download instead of 190: distroless,
-  Python from uv, an ffmpeg with only what streamrip uses, QuickJS-ng instead
-  of Deno for Spotify, and zstd instead of gzip (Docker 23 or newer)
+- feat: a container image of 50 MiB instead of 190; it needs Docker 23 or
+  newer, or Podman
 - feat: more tags: label, barcode, release type, BPM, key, ReplayGain,
-  lyricists, every Qobuz composer, and explicit (ITUNESADVISORY), named as
-  MusicBrainz Picard writes them. A Qobuz copyright sent twice is written once
-- feat: your liked tracks and albums on Tidal (`my-collection/tracks`,
-  `/albums`), and a Deezer profile's liked albums (`/albums`); Deezer profile
-  links no longer need a language in them
-- feat: Deezer's search shows an album's release date, length, genre and label
-  too, and the container shows covers in full color. Where covers can only be
-  colored blocks, the menu names terminals that show the real one
-- chore: four dependencies fewer: aiofiles makes way for the standard library,
-  m3u8, pathvalidate and deezer-py for code of our own. File and folder names
-  stay exactly as they were. Deezer now goes over aiohttp like every other
-  source: an album resolves about twice as fast, and the ARL only goes over
-  https (deezer-py sent its website requests, cookie included, over http)
+  lyricists, every Qobuz composer and explicit, named as MusicBrainz Picard
+  writes them
+- feat: your liked tracks and albums on Tidal, and your liked albums on Deezer
+- feat: Deezer's search shows release date, length, genre and label, and
+  covers show in full color
+- chore: four dependencies fewer: aiofiles, m3u8, pathvalidate and deezer-py.
+  Deezer resolves albums about twice as fast and only talks https
 
 ## 2.6.9
 
