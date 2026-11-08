@@ -230,6 +230,11 @@ async def test_public_api_waits_out_its_quota_error(monkeypatch):
     client = _dz({"error": {"code": 4, "message": "Quota limit exceeded"}}, {"id": 5})
     assert await client.client.api.get_album(5) == {"id": 5}
     assert waits == [5]
+    waits.clear()
+    quota = {"error": {"code": 4, "message": "Quota limit exceeded"}}
+    with pytest.raises(DeezerError, match="Quota"):
+        await _dz(*[quota] * 13).client.api.get_album(7)
+    assert waits == [5] * 12
     with pytest.raises(DeezerError, match="no data"):
         await _dz({"error": {"code": 800, "message": "no data"}}).client.api.get_album(
             6

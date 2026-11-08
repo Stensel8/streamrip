@@ -132,15 +132,15 @@ class _PublicAPI:
 
     async def call(self, path: str, params: dict | None = None) -> dict:
         """An answer of the API; its quota and busy errors (4, 700) are waited
-        out a few times, as deezer-py did.
+        out for up to a minute, so a long queue still gets through.
         """
-        for attempt in range(5):
+        for attempt in range(13):
             body = await self._dz.request(
                 "GET", f"https://api.deezer.com/{path}", params=params or {}
             )
             if not (error := body.get("error")):
                 return body
-            if error.get("code") in {4, 700} and attempt < 4:
+            if error.get("code") in {4, 700} and attempt < 12:
                 await asyncio.sleep(5)
                 continue
             raise DeezerError(f"{path}: {error.get('message') or error}")
