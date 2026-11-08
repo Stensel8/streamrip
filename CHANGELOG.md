@@ -3,7 +3,7 @@
 All notable changes in this fork of [nathom/streamrip](https://github.com/nathom/streamrip). Numbers can refer to
 upstream issues and pull requests.
 
-## Unreleased
+## 2.6.9
 
 - fix: Tidal and Qobuz tracks failed after downloading with
   `'NoneType' object has no attribute 'clear'` since 2.6.7
