@@ -39,7 +39,7 @@ def file_url_signature(
         f"track_id{track_id}{timestamp}{secret}"
     )
     # codeql[py/weak-sensitive-data-hashing] Qobuz's API mandates MD5 here.
-    return hashlib.md5(preimage.encode("utf-8")).hexdigest()
+    return hashlib.md5(preimage.encode(), usedforsecurity=False).hexdigest()
 
 
 # What the web player's bundle.js is scraped for: the app id, and secrets
@@ -327,8 +327,8 @@ class QobuzClient(Client):
 
     async def get_downloadable(self, item_id: str, quality: int) -> Downloadable:
         """Ask Qobuz for a track's file URL at `quality` (1 to 4)."""
-        assert self.secret is not None
-        assert self.logged_in
+        if self.secret is None or not self.logged_in:
+            raise RuntimeError("Qobuz is not logged in")
         # Qobuz has no quality 0 (128 kbps); clamp instead of asserting so
         # `streamrip --quality 0` still works for mixed-source downloads.
         quality = max(1, min(quality, self.max_quality))

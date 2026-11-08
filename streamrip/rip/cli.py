@@ -560,7 +560,7 @@ async def file(ctx, path):
     """
     _require_config(ctx)
     async with main_session(ctx) as main:
-        content = await asyncio.to_thread(path.read_text, "utf-8")
+        content = await asyncio.to_thread(path.read_text)
         try:
             items: Any = json.loads(content)
             loaded = True

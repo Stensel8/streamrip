@@ -48,7 +48,7 @@ def _open_audio(path: Path):
     """`path` as a mutagen file with format-independent tag names, or None."""
     try:
         return mutagen.File(path, easy=True)
-    except Exception:
+    except mutagen.MutagenError, OSError:
         return None
 
 
@@ -312,7 +312,7 @@ class Track(Media):
         """
         if plain or not self.config.session.downloads.save_lrc:
             return
-        self._sibling_path("lrc").write_text(self.meta.lyrics, encoding="utf-8")
+        self._sibling_path("lrc").write_text(self.meta.lyrics)
 
     async def _convert(self):
         c = self.config.session.conversion

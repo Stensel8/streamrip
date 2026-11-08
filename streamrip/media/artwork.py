@@ -94,14 +94,12 @@ async def download_artwork(
     downloadables = []
 
     _, l_url, saved_cover_path = covers.largest()
-    if saved_cover_path is None and save_artwork:
+    if saved_cover_path is None and save_artwork and l_url is not None:
         saved_cover_path = folder / "cover.jpg"
-        assert l_url is not None
         downloadables.append(_download_cover(session, l_url, saved_cover_path))
 
     _, embed_url, embed_cover_path = covers.get_size(config.embed_size)
-    if embed_cover_path is None and embed:
-        assert embed_url is not None
+    if embed_cover_path is None and embed and embed_url is not None:
         folder.mkdir(parents=True, exist_ok=True)
         embed_dir = Path(tempfile.mkdtemp(prefix="__artwork_", dir=folder))
         _artwork_tempdirs.add(embed_dir)
@@ -118,14 +116,12 @@ async def download_artwork(
         return None, None
 
     # Update `covers` to reflect the current download state
-    if save_artwork:
-        assert saved_cover_path is not None
+    if save_artwork and saved_cover_path is not None:
         covers.set_largest_path(saved_cover_path)
         if config.saved_max_width > 0:
             downscale_image(saved_cover_path, config.saved_max_width)
 
-    if embed:
-        assert embed_cover_path is not None
+    if embed and embed_cover_path is not None:
         covers.set_path(config.embed_size, embed_cover_path)
         if config.embed_max_width > 0:
             downscale_image(embed_cover_path, config.embed_max_width)

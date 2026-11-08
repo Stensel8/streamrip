@@ -370,7 +370,7 @@ class DeezerDownloadable(Downloadable):
     @staticmethod
     def _generate_blowfish_key(track_id: str) -> bytes:
         """The Blowfish key a Deezer track's stream is encrypted with."""
-        md5_hash = hashlib.md5(track_id.encode()).hexdigest()
+        md5_hash = hashlib.md5(track_id.encode(), usedforsecurity=False).hexdigest()
         # good luck :)
         return "".join(
             chr(functools.reduce(operator.xor, map(ord, t)))
@@ -470,7 +470,7 @@ class SegmentedMP4Downloadable(Downloadable):
                     async with self.session.head(url) as resp:
                         resp.raise_for_status()
                         return int(resp.headers.get("Content-Length", 0))
-                except Exception:
+                except aiohttp.ClientError, TimeoutError, ValueError:
                     return None
 
         sizes = await asyncio.gather(
