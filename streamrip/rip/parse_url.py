@@ -188,9 +188,7 @@ class DeezerFavoriteURL(URL):
     """
 
     source = "deezer"
-    regex = favorite_re = re.compile(
-        r"https://(?:www\.)?deezer\.com/[a-z]{2}/profile/(\d+)/loved"
-    )
+    regex = re.compile(r"https://(?:www\.)?deezer\.com/[a-z]{2}/profile/(\d+)/loved")
 
     async def into_pending(
         self,
