@@ -79,9 +79,16 @@ RUN set -eux; \
     cd lib/python3.*; \
     rm -rf test idlelib tkinter turtledemo turtle.py ensurepip pydoc_data config-* \
         site-packages/pip* site-packages/setuptools*; \
+    # What streamrip never loads: a self-test, and Pillow's AVIF, font, colour
+    # profile and Tk modules with the libraries only they use.
+    cd /opt/streamrip/lib/python3.*/site-packages; \
+    rm -rf Cryptodome/SelfTest PIL/_avif.* PIL/_imagingcms.* PIL/_imagingft.* PIL/_imagingtk.* \
+        pillow.libs/libavif* pillow.libs/liblcms2* pillow.libs/libfreetype* \
+        pillow.libs/libharfbuzz* pillow.libs/libpng16* pillow.libs/libbrotli*; \
     apt-get update -qq && apt-get install -y -qq --no-install-recommends binutils; \
     find /opt/streamrip -type f \( -name '*.so' -o -name '*.so.*' \) -exec strip --strip-unneeded {} +; \
-    /opt/streamrip/bin/python -c 'import ssl, sqlite3, lzma, bz2, ctypes, streamrip.rip.cli'; \
+    /opt/streamrip/bin/python -c 'import ssl, sqlite3, lzma, bz2, ctypes, streamrip.rip.cli; \
+        from PIL import features; assert all(map(features.check, ("jpg", "zlib", "webp")))'; \
     /opt/streamrip/bin/streamrip --version
 
 

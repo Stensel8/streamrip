@@ -5,9 +5,9 @@ upstream issues and pull requests.
 
 ## Unreleased
 
-- feat: the container image is 65 MiB instead of 190: distroless, Python
-  from uv, an ffmpeg with only what streamrip uses, and QuickJS-ng instead of
-  Deno for Spotify
+- feat: the container image is a 50 MiB download instead of 190: distroless,
+  Python from uv, an ffmpeg with only what streamrip uses, QuickJS-ng instead
+  of Deno for Spotify, and zstd instead of gzip (Docker 23 or newer)
 - feat: more tags: label, barcode, release type, BPM, key, ReplayGain,
   lyricists, every Qobuz composer, and explicit (ITUNESADVISORY), named as
   MusicBrainz Picard writes them. A Qobuz copyright sent twice is written once

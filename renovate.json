@@ -44,6 +44,17 @@
       ],
       "datasourceTemplate": "github-release-attachments",
       "depNameTemplate": "quickjs-ng/quickjs"
+    },
+    {
+      "customType": "regex",
+      "description": "The BuildKit image a release on opencommit.eu builds in",
+      "managerFilePatterns": [
+        "/(^|/)\\.forgejo/workflows/container\\.yml$/"
+      ],
+      "matchStrings": [
+        "BUILDKIT: (?<depName>moby/buildkit):(?<currentValue>v[\\d.]+)@(?<currentDigest>sha256:[0-9a-f]{64})"
+      ],
+      "datasourceTemplate": "docker"
     }
   ],
   "labels": [

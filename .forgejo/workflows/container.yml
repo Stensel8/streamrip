@@ -31,6 +31,8 @@ on:
 env:
   IMAGE: opencommit.eu/stensel8/streamrip
   TAG: ${{ github.event.inputs.tag || github.ref_name }}
+  # The builder a release runs in; Patchbot keeps it current.
+  BUILDKIT: moby/buildkit:v0.34.2@sha256:c5f8862f52499773af85bc07695b2379ef08e8002352b0df2c4864c91d78dabe
 
 jobs:
   smoke:
@@ -85,25 +87,31 @@ jobs:
           image="$IMAGE:${version:-test}-$arch"
           # The login stays in this run; the build cache stays in the docker daemon.
           export DOCKER_CONFIG="$(mktemp -d)"
-          trap 'rm -rf "$DOCKER_CONFIG"; docker image rm --force "$image" >/dev/null 2>&1 || true' EXIT
+          builder="release-$GITHUB_RUN_ID-$arch"
+          trap 'rm -rf "$DOCKER_CONFIG"; docker image rm --force "$image" >/dev/null 2>&1 || true
+                docker buildx rm --force "$builder" >/dev/null 2>&1 || true' EXIT
 
-          # A release builds from scratch: pull requests share this daemon, and with
-          # it the layer cache and the uv cache mount.
-          fresh=()
+          # A release builds in a builder of its own: without the cache that pull
+          # requests share in this daemon, and able to push zstd, which docker push is not.
+          use=()
           if [[ -n "$version" ]]; then
-            docker buildx prune --force --filter type=exec.cachemount >/dev/null
-            fresh=(--no-cache)
+            docker buildx create --name "$builder" --driver docker-container \
+              --driver-opt "image=$BUILDKIT" >/dev/null
+            use=(--builder "$builder")
           fi
-          docker buildx build --load "${fresh[@]}" --file Containerfile --tag "$image" \
-            --label "org.opencontainers.image.version=${version:-dev}" \
-            --label "org.opencontainers.image.revision=$(git rev-parse HEAD)" \
-            --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" .
+          build() {
+            docker buildx build "${use[@]}" --file Containerfile \
+              --label "org.opencontainers.image.version=${version:-dev}" \
+              --label "org.opencontainers.image.revision=$(git rev-parse HEAD)" \
+              --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" "$@" .
+          }
+          build --load --tag "$image"
           docker run --rm "$image" --version
           [[ -n "$version" ]] || exit 0   # without a tag: built and tested, nothing to publish
           test "$(docker run --rm "$image" --version)" = "streamrip, version $version"
 
           docker login opencommit.eu --username Stensel8 --password-stdin <<<"$REGISTRY_TOKEN"
-          docker push "$image"
+          build --output "type=image,name=$image,push=true,oci-mediatypes=true,compression=zstd,compression-level=12,force-compression=true"
 
   manifest:
     if: github.event_name == 'push' || github.event.inputs.tag != ''

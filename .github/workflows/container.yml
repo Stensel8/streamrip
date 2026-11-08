@@ -67,7 +67,7 @@ jobs:
           test "$(podman run --rm "$image" --version)" = "streamrip, version $version"
 
           podman login ghcr.io --username "$GITHUB_ACTOR" --password-stdin <<<"$REGISTRY_TOKEN"
-          podman push "$image"
+          podman push --compression-format zstd --compression-level 12 --force-compression "$image"
 
   manifest:
     if: github.event_name == 'release' || inputs.tag != ''
@@ -97,5 +97,5 @@ jobs:
             podman manifest add streamrip:release "docker://$IMAGE:$version-$arch"
           done
           for tag in "${tags[@]}"; do
-            podman manifest push --all streamrip:release "docker://$IMAGE:$tag"
+            podman manifest push --all --compression-format zstd streamrip:release "docker://$IMAGE:$tag"
           done
