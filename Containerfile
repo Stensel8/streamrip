@@ -36,10 +36,14 @@ ENV HOME=/data
 # A container is updated by pulling a newer image, not with the pip command the
 # update notice would give, and the check costs about half a second of every run.
 ENV STREAMRIP_NO_UPDATE_CHECK=1
-# pip only installs, and the image is updated by pulling a newer one. It also
+# Debian's security fixes, which reach the base image a few days later. pip
+# only installs, and the image is updated by pulling a newer one. It also
 # brings its own, older copies of certifi, urllib3 and msgpack. Removed rather
 # than uninstalled: running pip would leave a layer of bytecode behind.
-RUN rm -r /usr/local/lib/python3.15/site-packages/pip* /usr/local/bin/pip*
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get upgrade --yes \
+ && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin /var/log/apt /var/log/dpkg.log \
+ && rm -r /usr/local/lib/python3.15/site-packages/pip* /usr/local/bin/pip*
 WORKDIR /data
 VOLUME /data
 

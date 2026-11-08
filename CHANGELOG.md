@@ -13,6 +13,8 @@ upstream issues and pull requests.
 - feat: the container image is also on `opencommit.eu/stensel8/streamrip`,
   and arm64 is built on arm64 hardware
 - feat: opencommit.eu releases get the wheel too
+- fix: the container image gets Debian's security fixes when it is built,
+  not only when its base image moves (zlib, CVE-2026-85091)
 - docs: opencommit.eu is the primary platform, and the links go there
 
 ## 2.6.8
