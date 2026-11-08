@@ -1,7 +1,8 @@
 # The image for opencommit.eu/stensel8/streamrip. A pull request only builds it.
 # A v* tag, or "Run workflow" with an existing tag, builds amd64 on the shared
 # runner and arm64 on the pi, then joins them under the version, its minor and
-# `latest`. Only tags and runs by hand reach the pi, which is at home.
+# `latest`. "Run workflow" without a tag builds and tests both, and publishes
+# nothing. Only tags and runs by hand reach the pi, which is at home.
 #
 # Pushing needs the secret REGISTRY_TOKEN: a token of Stensel8 with write:package.
 name: Container
@@ -22,8 +23,8 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: The tag to build again, like v2.6.9
-        required: true
+        description: A tag to build and publish again, like v2.7.0. Empty to only build and test.
+        required: false
 
 env:
   IMAGE: opencommit.eu/stensel8/streamrip
@@ -62,24 +63,26 @@ jobs:
           REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
         run: |
           set -euo pipefail
-          [[ "$TAG" == v[0-9]* ]] || { echo "not a version tag: $TAG" >&2; exit 1; }
           case "$(uname -m)" in x86_64) arch=amd64 ;; aarch64) arch=arm64 ;; esac
-          version="${TAG#v}"
-          image="$IMAGE:$version-$arch"
+          version=""; [[ "$TAG" == v[0-9]* ]] && version="${TAG#v}"
+          image="$IMAGE:${version:-test}-$arch"
           # The login stays in this run; the build cache stays in the docker daemon.
           export DOCKER_CONFIG="$(mktemp -d)"
           trap 'rm -rf "$DOCKER_CONFIG"; docker image rm --force "$image" >/dev/null 2>&1 || true' EXIT
 
           docker buildx build --load --tag "$image" \
-            --label "org.opencontainers.image.version=$version" \
+            --label "org.opencontainers.image.version=${version:-dev}" \
             --label "org.opencontainers.image.revision=$(git rev-parse HEAD)" \
             --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" .
+          docker run --rm "$image" --version
+          [[ -n "$version" ]] || exit 0   # without a tag: built and tested, nothing to publish
           test "$(docker run --rm "$image" --version)" = "streamrip, version $version"
 
           docker login opencommit.eu --username Stensel8 --password-stdin <<<"$REGISTRY_TOKEN"
           docker push "$image"
 
   manifest:
+    if: github.event_name == 'push' || github.event.inputs.tag != ''
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
