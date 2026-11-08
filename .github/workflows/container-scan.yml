@@ -1,5 +1,6 @@
 # Builds the container image and scans it for known vulnerabilities with Trivy.
-# The check fails on a HIGH or CRITICAL one that has a fix, and the README's
+# The check fails on a CRITICAL one that has a fix; HIGH ones go to the Security
+# tab as warnings, as a base image's fix can take days to arrive. The README's
 # "image vulnerabilities" badge is this workflow's status on dev. It also runs
 # every week: new vulnerabilities are found in an image that did not change.
 #
@@ -60,7 +61,7 @@ jobs:
           # Known vulnerabilities only: the secret scan reads the API keys that
           # yt-dlp's extractors carry for public sites as leaked credentials.
           scanners: vuln
-          severity: HIGH,CRITICAL
+          severity: CRITICAL
           ignore-unfixed: true
           exit-code: "1"
 
