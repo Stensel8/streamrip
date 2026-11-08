@@ -64,7 +64,7 @@ venv and type `streamrip`.
 ### With a wheel
 
 Already have [uv](https://docs.astral.sh/uv/)? Download the `.whl` from the
-[latest release](https://github.com/Stensel8/streamrip/releases/latest) and:
+[latest release](https://opencommit.eu/Stensel8/streamrip/releases/latest) and:
 
 ```bash
 uv tool install ./streamrip-*.whl
