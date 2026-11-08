@@ -1,8 +1,9 @@
-# The image for opencommit.eu/stensel8/streamrip. A pull request only builds it.
-# A v* tag, or "Run workflow" with an existing tag, builds amd64 on the shared
-# runner and arm64 on the pi, then joins them under the version, its minor and
-# `latest`. "Run workflow" without a tag builds and tests both, and publishes
-# nothing. Only tags and runs by hand reach the pi, which is at home.
+# The image for opencommit.eu/stensel8/streamrip. A pull request only builds and
+# tests it. A v* tag, or "Run workflow" with an existing tag, builds amd64 on the
+# shared runner and arm64 on the pi, then joins them under the version, its minor
+# and `latest`. "Run workflow" without a tag builds and tests both, and publishes
+# nothing. The pi is at home: a pull request reaches it only from a branch of
+# this repository (Patchbot's included), never from someone else's fork.
 #
 # Pushing needs the secret REGISTRY_TOKEN: a token of Stensel8 with write:package.
 name: Container
@@ -36,6 +37,21 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: |
+          docker buildx build --load --file Containerfile --tag streamrip:ci .
+          docker run --rm streamrip:ci --version
+          docker image rm streamrip:ci
+
+  smoke-arm64:
+    if: >-
+      github.event_name == 'pull_request'
+      && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: pi
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
