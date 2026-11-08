@@ -10,6 +10,7 @@ upstream issues and pull requests.
   ([#91](https://github.com/Stensel8/streamrip/issues/91), reported by
   [@Vaela-V](https://github.com/Vaela-V) and
   [@calavikevin](https://github.com/calavikevin))
+- docs: opencommit.eu is the primary platform
 
 ## 2.6.8
 
