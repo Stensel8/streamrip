@@ -27,6 +27,11 @@ lazy from ..metadata.search_results import album_summary
 PREVIEW_SIZE = 0.5
 DETAILS_WIDTH = 60
 MAX_COVER_BYTES = 5 * 1024 * 1024
+# Under the details while covers are colored blocks.
+COVER_TIP = (
+    "The real cover shows in a terminal with images, such as Ghostty, Kitty, "
+    "WezTerm, Konsole, Windows Terminal or iTerm2."
+)
 
 
 def cover_size(columns: int, lines: int) -> int:
@@ -216,10 +221,12 @@ class SearchMenu(App[tuple[int, ...] | None]):
         if self.current is None:
             details.update("No matching results")
         else:
-            width = self.query_one("#details-scroll").size.width
-            details.update(
-                Text("\n").join(detail_rows(self.results[self.current], max(width, 20)))
-            )
+            width = max(self.query_one("#details-scroll").size.width, 20)
+            summary = self.results[self.current]
+            rows = detail_rows(summary, width)
+            if self.pixel_widget is None and summary.image_urls:
+                rows += [Text(), Text(COVER_TIP, style="dim")]
+            details.update(Text("\n").join(rows))
 
     @on(OptionList.OptionHighlighted)
     async def highlight(self, event: OptionList.OptionHighlighted):

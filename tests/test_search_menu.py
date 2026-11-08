@@ -487,3 +487,15 @@ async def test_deezer_album_details_arrive_once_highlighted(monkeypatch):
             assert "Visions by The Artist (2024)" in str(prompt)
     finally:
         await app.covers.close()
+
+
+@pytest.mark.parametrize(("urls", "tip"), [(("cover",), True), ((), False)])
+async def test_block_covers_name_terminals_that_show_images(monkeypatch, urls, tip):
+    async def fetch(self, url):
+        return png()
+
+    monkeypatch.setattr(CoverCache, "_fetch", fetch)
+    results = summaries(*urls) if urls else summaries()
+    async with menu(results) as (app, pilot):
+        await pilot.pause(0.2)
+        assert ("Ghostty" in str(app.query_one("#details", Static).content)) is tip
