@@ -749,11 +749,12 @@ class RequestClient:
                         start - now,
                     )
             owner._track_hour_full = full
-        elif (clock_hour := now - now % 3600) != owner._danger_warned:
-            # fast: said once an hour when it crosses the line
-            if sum(1 for t in starts if t >= clock_hour) + 1 >= HOURLY_DANGER:
-                owner._danger_warned = clock_hour
-                self._warn_over(1 + _hours_over(starts))
+        # fast: said once an hour when it crosses the line
+        elif (clock_hour := now - now % 3600) != owner._danger_warned and (
+            sum(1 for t in starts if t >= clock_hour) + 1 >= HOURLY_DANGER
+        ):
+            owner._danger_warned = clock_hour
+            self._warn_over(1 + _hours_over(starts))
         owner._track_starts = (*starts, start)
         # A track that starts with no 429 since the last one eases the gaps.
         owner._track_gap_scale = max(owner._track_gap_scale * TRACK_GAP_EASING, 1.0)
