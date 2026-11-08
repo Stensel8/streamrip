@@ -240,7 +240,8 @@ class Main:
                     # that fixes it is already built and sitting right there.
                     await self._reauthenticate(source, prompter, e)
 
-        assert client.logged_in
+        if not client.logged_in:
+            raise AuthenticationError(f"Could not log in to {source}")
         self._announce(source)
         return client
 
@@ -397,7 +398,7 @@ class Main:
             return
 
         file_contents = json.dumps(search_results.as_list(source), indent=4)
-        await asyncio.to_thread(Path(filepath).write_text, file_contents, "utf-8")
+        await asyncio.to_thread(Path(filepath).write_text, file_contents)
 
         console.print(
             f"Wrote [purple]{len(search_results.results)}[/purple] results to [cyan]{filepath} as JSON!"

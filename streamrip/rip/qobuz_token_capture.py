@@ -111,7 +111,7 @@ async def capture_qobuz_auth_token(timeout_s: int = 300) -> tuple[str, str]:
             payload = await request.json()
             user_id = str(payload["user_id"])
             token = str(payload["token"])
-        except Exception:
+        except ValueError, KeyError, TypeError:
             return web.Response(status=400, headers=_cors_headers())
         if not result.done():
             result.set_result((user_id, token))

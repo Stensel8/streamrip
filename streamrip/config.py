@@ -329,7 +329,7 @@ class Config:
         """Load the config at path, securing it first if it holds secrets."""
         self.path = path
 
-        with path.open(encoding="utf-8") as toml_file:
+        with path.open() as toml_file:
             # The packaged template is shared, but user configs contain secrets.
             if os.name == "posix" and not path.samefile(BLANK_CONFIG_PATH):
                 os.fchmod(toml_file.fileno(), 0o600)

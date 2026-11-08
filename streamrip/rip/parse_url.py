@@ -80,7 +80,8 @@ class GenericURL(URL):
         Its source, media type and id come from the match.
         """
         source, media_type, item_id = self.match.groups()
-        assert client.source == source
+        if client.source != source:
+            raise ValueError(f"A {source} URL for the {client.source} client")
         return pending_item(media_type, item_id, client, config, db)
 
 
