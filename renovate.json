@@ -21,16 +21,16 @@
   "customManagers": [
     {
       "customType": "regex",
-      "description": "ffmpeg in the Containerfile: a tag of FFmpeg's own git and its commit",
+      "description": "ffmpeg in the Containerfile: a tag and its commit, looked up on FFmpeg's GitHub mirror, which Patchbot can reach where git.ffmpeg.org times out",
       "managerFilePatterns": [
         "/(^|/)Containerfile$/"
       ],
       "matchStrings": [
         "ARG FFMPEG_VERSION=(?<currentValue>n[\\d.]+)\\s+ARG FFMPEG_COMMIT=(?<currentDigest>[0-9a-f]{40})"
       ],
-      "datasourceTemplate": "git-tags",
+      "datasourceTemplate": "github-tags",
       "depNameTemplate": "ffmpeg",
-      "packageNameTemplate": "https://git.ffmpeg.org/ffmpeg.git",
+      "packageNameTemplate": "FFmpeg/FFmpeg",
       "versioningTemplate": "regex:^n(?<major>\\d+)\\.(?<minor>\\d+)(?:\\.(?<patch>\\d+))?$"
     },
     {
