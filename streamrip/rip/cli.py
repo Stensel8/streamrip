@@ -15,7 +15,6 @@ from typing import Any
 lazy import asyncio
 
 import click
-lazy import aiofiles
 lazy import aiohttp
 lazy from rich.logging import RichHandler
 lazy from rich.markdown import Markdown
@@ -561,14 +560,13 @@ async def file(ctx, path):
     """
     _require_config(ctx)
     async with main_session(ctx) as main:
-        async with aiofiles.open(path) as f:
-            content = await f.read()
-            try:
-                items: Any = json.loads(content)
-                loaded = True
-            except json.JSONDecodeError:
-                items = content.split()
-                loaded = False
+        content = await asyncio.to_thread(path.read_text, "utf-8")
+        try:
+            items: Any = json.loads(content)
+            loaded = True
+        except json.JSONDecodeError:
+            items = content.split()
+            loaded = False
         if loaded:
             console.print(
                 f"Detected json file. Loading [yellow]{len(items)}[/yellow] items"

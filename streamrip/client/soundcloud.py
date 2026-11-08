@@ -6,11 +6,13 @@ import re
 from typing import Any
 from urllib.parse import urljoin
 
-lazy import m3u8
-
 from ..exceptions import APIError, NonStreamableError
 from .client import Client
-from .downloadable import SegmentedMP4Downloadable, SoundcloudDownloadable
+from .downloadable import (
+    SegmentedMP4Downloadable,
+    SoundcloudDownloadable,
+    hls_playlist,
+)
 
 # e.g. 123456-293847-121314-209849
 USER_ID = "-".join(str(random.randint(111111, 999999)) for _ in range(4))
@@ -142,13 +144,13 @@ class SoundcloudClient(Client):
         """AAC over HLS: fragmented MP4, an init segment and media segments."""
         async with self.session.get(url) as resp:
             resp.raise_for_status()
-            segments = m3u8.loads(await resp.text(), uri=url).segments
-        if not segments or segments[0].init_section is None:
+            init, segments = hls_playlist(await resp.text(), url)
+        if not segments or init is None:
             raise NonStreamableError(f"SoundCloud AAC stream without segments: {url}")
         return SegmentedMP4Downloadable(
             self.session,
-            init_url=segments[0].init_section.absolute_uri,
-            segment_urls=[s.absolute_uri for s in segments],
+            init_url=init,
+            segment_urls=segments,
             codec="aac",
             source=self.source,
         )

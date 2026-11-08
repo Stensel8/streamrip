@@ -16,11 +16,10 @@ from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
+from urllib.parse import urljoin
 lazy from collections.abc import Callable
 
-lazy import aiofiles
 lazy import aiohttp
-lazy import m3u8
 lazy import requests
 lazy from Cryptodome.Cipher import AES, Blowfish
 lazy from Cryptodome.Util import Counter
@@ -43,6 +42,20 @@ http.client._MAXHEADERS = 1000  # type: ignore[attr-defined]
 BLOWFISH_SECRET = "g4el58wc0zvf9na1"
 # Deezer encrypts the first 2048 bytes of every stripe of this many.
 DEEZER_STRIPE = 3 * 2048
+
+
+def hls_playlist(text: str, url: str) -> tuple[str | None, list[str]]:
+    """An HLS media playlist's init segment (EXT-X-MAP), if any, and its media
+    segments, as absolute URLs.
+    """
+    init, segments = None, []
+    for line in map(str.strip, text.splitlines()):
+        if line.startswith("#EXT-X-MAP:"):
+            if uri := re.search(r'URI="([^"]+)"', line):
+                init = urljoin(url, uri[1])
+        elif line and not line.startswith("#"):
+            segments.append(urljoin(url, line))
+    return init, segments
 
 
 def generate_temp_path(url: str) -> Path:
@@ -323,7 +336,7 @@ class DeezerDownloadable(Downloadable):
                 # Decrypt as it arrives rather than holding the whole file in
                 # memory: only an incomplete stripe is ever kept back.
                 pending = bytearray()
-                async with aiofiles.open(path, "wb") as audio:
+                with await asyncio.to_thread(Path(path).open, "wb") as audio:
                     async for data in resp.content.iter_chunked(2**17):
                         callback(len(data))
                         pending += data
@@ -331,8 +344,10 @@ class DeezerDownloadable(Downloadable):
                         if whole:
                             chunk = pending[:whole]
                             del pending[:whole]
-                            await audio.write(self._decrypt(blowfish_key, chunk))
-                    await audio.write(self._decrypt(blowfish_key, pending))
+                            decrypted = self._decrypt(blowfish_key, chunk)
+                            await asyncio.to_thread(audio.write, decrypted)
+                    decrypted = self._decrypt(blowfish_key, pending)
+                    await asyncio.to_thread(audio.write, decrypted)
 
     @classmethod
     def _decrypt(cls, key, data: bytearray) -> bytearray:
@@ -394,8 +409,7 @@ class TidalDownloadable(Downloadable):
         )
         if self.enc_key is not None:
             dec_bytes = await self._decrypt_mqa_file(path, self.enc_key)
-            async with aiofiles.open(path, "wb") as audio:
-                await audio.write(dec_bytes)
+            await asyncio.to_thread(Path(path).write_bytes, dec_bytes)
 
     @staticmethod
     async def _decrypt_mqa_file(in_path, encryption_key) -> bytes:
@@ -409,8 +423,7 @@ class TidalDownloadable(Downloadable):
         )
         key, nonce = decrypted_st[:16], decrypted_st[16:24]
         counter = Counter.new(64, prefix=nonce, initial_value=0)
-        async with aiofiles.open(in_path, "rb") as enc_file:
-            encrypted = await enc_file.read()
+        encrypted = await asyncio.to_thread(Path(in_path).read_bytes)
         return AES.new(key, AES.MODE_CTR, counter=counter).decrypt(encrypted)
 
 
@@ -481,12 +494,12 @@ class SegmentedMP4Downloadable(Downloadable):
         require_ffmpeg()
         tmp_path = path.with_name(path.name + ".part.mp4")
         try:
-            async with aiofiles.open(tmp_path, "wb") as f:
+            with await asyncio.to_thread(tmp_path.open, "wb") as f:
                 for url in (self.init_url, *self.segment_urls):
                     async with self.session.get(url) as resp:
                         resp.raise_for_status()
                         chunk = await resp.read()
-                    await f.write(chunk)
+                    await asyncio.to_thread(f.write, chunk)
                     callback(len(chunk))
 
             # -map_metadata -1 -fflags +bitexact: a plain stream-copy remux
@@ -533,10 +546,10 @@ class SoundcloudDownloadable(Downloadable):
         if self.file_type == "original":
             await converter.FLAC(path).convert()
 
-    async def _segments(self) -> list:
-        """The HLS playlist's segments."""
+    async def _segments(self) -> list[str]:
+        """The HLS playlist's segment URLs."""
         async with self.session.get(self.url) as resp:
-            return m3u8.loads(await resp.text("utf-8")).segments
+            return hls_playlist(await resp.text("utf-8"), self.url)[1]
 
     async def _download_hls(self, path: Path, callback):
         """Download every MP3 segment concurrently, then concatenate them."""
@@ -545,9 +558,9 @@ class SoundcloudDownloadable(Downloadable):
         # Segments finish in any order; each has its own path, so they're
         # concatenated in playlist order, and all removed afterwards -- also
         # when one fails, or they pile up in the temp dir.
-        segment_paths = [generate_temp_path(s.uri) for s in segments]
+        segment_paths = [generate_temp_path(s) for s in segments]
         tasks = [
-            asyncio.create_task(self._download_segment(segment.uri, tmp, callback))
+            asyncio.create_task(self._download_segment(segment, tmp, callback))
             for segment, tmp in zip(segments, segment_paths, strict=True)
         ]
         try:
@@ -566,8 +579,8 @@ class SoundcloudDownloadable(Downloadable):
         """Download one HLS segment to tmp and report it done."""
         async with self.session.get(segment_uri) as resp:
             resp.raise_for_status()
-            async with aiofiles.open(tmp, "wb") as file:
-                await file.write(await resp.content.read())
+            data = await resp.content.read()
+        await asyncio.to_thread(tmp.write_bytes, data)
         callback(1)
 
     async def size(self) -> int:
