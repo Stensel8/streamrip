@@ -1,3 +1,4 @@
+import asyncio
 import json
 import shutil
 from pathlib import Path
@@ -341,6 +342,43 @@ async def test_exhausted_track_download_is_counted_only_once(tmp_path, monkeypat
         await track.rip()
     assert track.db.failed_now == 1
     assert track.db.downloaded_now == 0
+
+
+async def test_a_track_waiting_to_retry_leaves_its_slot_to_another(
+    tmp_path, monkeypatch
+):
+    second_done = asyncio.Event()
+
+    class FailsOnce(FakeDownloadable):
+        failed = False
+
+        async def _download(self, path, callback):
+            if not self.failed:
+                self.failed = True
+                raise OSError("connection dropped")
+            await super()._download(path, callback)
+
+    class Second(FakeDownloadable):
+        async def _download(self, path, callback):
+            await super()._download(path, callback)
+            second_done.set()
+
+    async def backoff(_delay):
+        # Waits until the other track got the one slot and finished.
+        await asyncio.wait_for(second_done.wait(), 2)
+
+    monkeypatch.setattr("streamrip.media.track.asyncio.sleep", backoff)
+    tracks = []
+    for name, downloadable in (("a", FailsOnce("flac")), ("b", Second("flac"))):
+        track = _make_track(tmp_path / name, "flac")
+        track.config.session.downloads.max_connections = 1
+        track.downloadable = downloadable
+        await track.preprocess()
+        tracks.append(track)
+
+    await asyncio.gather(*(t.download() for t in tracks))
+
+    assert all(t.download_path.is_file() for t in tracks)
 
 
 async def test_partial_file_cleanup_failure_is_counted_once(tmp_path, monkeypatch):

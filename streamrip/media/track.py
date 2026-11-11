@@ -127,8 +127,9 @@ class Track(Media):
             self.meta.album.info.bit_depth,
             self.meta.album.info.sampling_rate,
         )
-        async with global_download_semaphore(self.config.session.downloads):
-            for attempt in range(1, MAX_DOWNLOAD_ATTEMPTS + 1):
+        slots = global_download_semaphore(self.config.session.downloads)
+        for attempt in range(1, MAX_DOWNLOAD_ATTEMPTS + 1):
+            async with slots:
                 # A url resolved well before its turn here (queued behind
                 # max_connections) or reused across a retry can have gone
                 # stale; get a fresh one rather than fail on a dead token.
@@ -174,39 +175,40 @@ class Track(Media):
                 except Exception as e:
                     error = f"{type(e).__name__}: {e}"
                     # A missing ffmpeg does not fix itself in 2-8 seconds.
-                    if attempt < MAX_DOWNLOAD_ATTEMPTS and not isinstance(
+                    if attempt == MAX_DOWNLOAD_ATTEMPTS or isinstance(
                         e, FFmpegNotFoundError
                     ):
-                        delay = 2**attempt  # 2s, 4s, 8s
-                        logger.warning(
-                            "Error downloading track '%s', retrying in %ss: %s",
+                        logger.error(
+                            "Persistent error downloading track '%s', skipping: %s",
                             self.meta.title,
-                            delay,
                             error,
                         )
-                        await asyncio.sleep(delay)
-                        continue
-
-                    logger.error(
-                        "Persistent error downloading track '%s', skipping: %s",
+                        if self.download_path.is_file():
+                            self.download_path.unlink()
+                        # postprocess() normally does this, but raising below
+                        # skips it, which would leave a phantom title in the
+                        # progress display for the rest of the run.
+                        if self.is_single:
+                            remove_title(
+                                id(self), self.config.session.cli.progress_bars
+                            )
+                        self.db.set_failed(
+                            self.downloadable.source, "track", self.meta.info.id
+                        )
+                        raise TrackDownloadFailedError(
+                            f"{self.meta.title} ({self.meta.info.id})"
+                        ) from e
+                    delay = 2**attempt  # 2s, 4s, 8s
+                    logger.warning(
+                        "Error downloading track '%s', retrying in %ss: %s",
                         self.meta.title,
+                        delay,
                         error,
                     )
-                    if self.download_path.is_file():
-                        self.download_path.unlink()
-                    # postprocess() normally does this, but raising below
-                    # skips it, which would leave a phantom title in the
-                    # progress display for the rest of the run.
-                    if self.is_single:
-                        remove_title(id(self), self.config.session.cli.progress_bars)
-                    self.db.set_failed(
-                        self.downloadable.source, "track", self.meta.info.id
-                    )
-                    raise TrackDownloadFailedError(
-                        f"{self.meta.title} ({self.meta.info.id})"
-                    ) from e
                 else:
                     return
+            # Outside the slot: a track waiting to retry leaves it to another.
+            await asyncio.sleep(delay)
 
     async def postprocess(self):
         """Tag, convert, and dedup the downloaded file, then mark it downloaded."""
