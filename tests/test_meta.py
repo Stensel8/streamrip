@@ -411,3 +411,10 @@ def test_deezer_bpm_barcode_and_release_type(bpm, expected):
         {"id": 8, "title": "Song", "track_position": 1, "disk_number": 1, "bpm": bpm},
     )
     assert t.bpm == expected
+
+
+def test_a_qobuz_album_without_its_disc_count_or_tracks_has_one_disc():
+    # Qobuz no longer inlines the tracks; without media_count there is nothing.
+    resp = {**qobuz_album_resp, "tracks": {"items": []}}
+    resp.pop("media_count", None)
+    assert AlbumMetadata.from_qobuz(resp).disctotal == 1

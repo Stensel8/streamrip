@@ -194,8 +194,11 @@ class AlbumMetadata:
             # `streamrip repair`), which then loses the "Disc N" subfolder.
             disctotal=resp.get("media_count")
             or max(
-                track.get("media_number", 1)
-                for track in safe_get(resp, "tracks", "items", default=[{}])  # type: ignore
+                (
+                    track.get("media_number", 1)
+                    for track in safe_get(resp, "tracks", "items", default=[])  # type: ignore
+                ),
+                default=1,
             )
             or 1,
             albumcomposer=safe_get(resp, "composer", "name", default=""),
