@@ -51,9 +51,12 @@ class _Deezer:
         """JSON from Deezer, trying twice more after a lost connection."""
         for attempt in range(3):
             try:
-                async with self._owner.session.request(
-                    method, url, headers=self.http_headers, **kwargs
-                ) as resp:
+                async with (
+                    self._owner.rate_limiter,
+                    self._owner.session.request(
+                        method, url, headers=self.http_headers, **kwargs
+                    ) as resp,
+                ):
                     resp.raise_for_status()
                     return await resp.json(content_type=None)
             except aiohttp.ClientConnectionError, TimeoutError:

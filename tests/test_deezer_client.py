@@ -1,5 +1,6 @@
 """Unit tests for Deezer client behaviour that needs no network or ARL."""
 
+import contextlib
 import copy
 from unittest.mock import AsyncMock, Mock
 
@@ -146,6 +147,7 @@ class _FakeSession:
 def _dz(*replies) -> DeezerClient:
     client = DeezerClient(Config.defaults())
     client.session = _FakeSession(*replies)
+    client.rate_limiter = contextlib.nullcontext()  # its pacing has tests of its own
     return client
 
 
@@ -281,3 +283,19 @@ async def test_track_url(user, fmt, reply, expected):
             await client.client.get_track_url("tok", fmt)
     else:
         assert await client.client.get_track_url("tok", fmt) == expected
+
+
+async def test_deezer_requests_go_through_its_rate_limiter():
+    entered = []
+
+    class Limiter:
+        async def __aenter__(self):
+            entered.append(True)
+
+        async def __aexit__(self, *_):
+            return False
+
+    client = _dz({"id": 5})
+    client.rate_limiter = Limiter()
+    await client.client.request("GET", "https://api.deezer.com/track/5")
+    assert entered == [True]
