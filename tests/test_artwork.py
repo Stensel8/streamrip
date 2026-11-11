@@ -48,7 +48,8 @@ async def test_artwork_cleanup_preserves_existing_files(
     assert not artwork._artwork_tempdirs
     assert all(path.parent != legacy for path in downloaded)
     if not for_playlist:
-        assert (folder / "cover.jpg").read_bytes() == b"image"
+        # A download that failed leaves no cover.jpg it may have cut off.
+        assert (folder / "cover.jpg").exists() is not download_fails
 
     # A later cleanup must not delete a path recreated after the first cleanup.
     recreated = owned.pop()
@@ -65,6 +66,7 @@ def _flaky_download(monkeypatch, failures):
     async def download(self, path, callback):
         calls.append(path)
         if pending:
+            path.write_bytes(b"ima")  # cut off mid-download
             raise pending.pop(0)
         path.write_bytes(b"image")
 
@@ -124,3 +126,4 @@ async def test_a_cover_that_keeps_failing_gives_up(tmp_path, monkeypatch):
     )
     assert result == (None, None)
     assert len(calls) == artwork.ARTWORK_ATTEMPTS
+    assert not (tmp_path / "cover.jpg").exists()
