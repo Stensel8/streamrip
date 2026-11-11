@@ -227,8 +227,8 @@ class QobuzClient(Client):
         self.secret = await self._get_valid_secret(c.secrets)
 
     async def get_metadata(self, item_id: str, media_type: str) -> dict:
-        if media_type == "label":
-            return await self._get_label(item_id)
+        if media_type in {"artist", "label"}:
+            return await self._with_all_albums(media_type, item_id)
 
         params = {
             "app_id": str(self.config.app_id),
@@ -239,7 +239,6 @@ class QobuzClient(Client):
         }
 
         extras = {
-            "artist": "albums",
             # tracks may come back empty (July 2026 API change); track_ids is
             # the replacement. Request both so either response shape works.
             "playlist": "tracks,track_ids",
@@ -294,25 +293,26 @@ class QobuzClient(Client):
             items.extend((page.get("tracks") or {}).get("items") or [])
         logger.debug("Fetched %d/%d playlist tracks", len(items), total)
 
-    async def _get_label(self, label_id: str) -> dict:
-        """A label with its whole catalog, fetched 500 albums at a time."""
+    async def _with_all_albums(self, media_type: str, item_id: str) -> dict:
+        """An artist or label with its whole catalog, fetched 500 albums at a time."""
+        epoint = f"{media_type}/get"
         params = {
             "app_id": str(self.config.app_id),
-            "label_id": label_id,
+            f"{media_type}_id": item_id,
             "limit": 500,
             "offset": 0,
             "extra": "albums",
         }
-        label = await self._request_ok("label/get", params)
+        resp = await self._request_ok(epoint, params)
         pages = await asyncio.gather(
             *(
-                self._request_ok("label/get", {**params, "offset": offset})
-                for offset in range(500, label["albums_count"], 500)
+                self._request_ok(epoint, {**params, "offset": offset})
+                for offset in range(500, resp.get("albums_count", 0), 500)
             )
         )
         for page in pages:
-            label["albums"]["items"].extend(page["albums"]["items"])
-        return label
+            resp["albums"]["items"].extend(page["albums"]["items"])
+        return resp
 
     async def search(self, media_type: str, query: str, limit: int = 500) -> list[dict]:
         if media_type not in {"artist", "album", "track", "playlist"}:
