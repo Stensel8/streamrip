@@ -88,8 +88,6 @@ class Track(Media):
         """Record failures from every processing phase for summaries and repair."""
         try:
             await super().rip()
-        except TrackDownloadFailedError:
-            raise  # The exhausted download was already recorded.
         except Exception:
             self.db.set_failed(self.downloadable.source, "track", self.meta.info.id)
             if self.is_single:
@@ -117,8 +115,8 @@ class Track(Media):
     async def download(self):
         """Skip redundant lossy copies or download with progress and retries.
 
-        Missing ffmpeg fails without retrying. On final failure, record the
-        failure, remove partial output, and raise TrackDownloadFailedError.
+        Missing ffmpeg fails without retrying. On final failure, remove partial
+        output and raise TrackDownloadFailedError, which rip() records.
         """
         if self._skip_lossy_duplicate:
             return
@@ -189,16 +187,6 @@ class Track(Media):
                         )
                         if self.download_path.is_file():
                             self.download_path.unlink()
-                        # postprocess() normally does this, but raising below
-                        # skips it, which would leave a phantom title in the
-                        # progress display for the rest of the run.
-                        if self.is_single:
-                            remove_title(
-                                id(self), self.config.session.cli.progress_bars
-                            )
-                        self.db.set_failed(
-                            self.downloadable.source, "track", self.meta.info.id
-                        )
                         raise TrackDownloadFailedError(
                             f"{self.meta.title} ({self.meta.info.id})"
                         ) from e
