@@ -240,11 +240,11 @@ class Container(Enum):
         for k, v in tags:
             audio[k] = v
 
-    async def embed_cover(self, audio, cover_path: Path):
+    def embed_cover(self, audio, cover_path: Path):
         """Embed the JPEG at cover_path as the front cover (picture type 3)."""
         if self == Container.FLAC and cover_path.stat().st_size > FLAC_MAX_BLOCKSIZE:
             raise ValueError("Cover art too big for FLAC")
-        data = await asyncio.to_thread(cover_path.read_bytes)
+        data = cover_path.read_bytes()
         match self:
             case Container.FLAC:
                 cover = Picture()
@@ -297,6 +297,13 @@ async def tag_file(
     cover_path: Path | None,
     exclude: list[str] | tuple[str, ...] = (),
 ):
+    """Tag the file at path, in a thread: tags that outgrow their room (a cover
+    into a FLAC with no tag block) make mutagen rewrite the whole file, which
+    for a hi-res FLAC would hold up every other download meanwhile."""
+    await asyncio.to_thread(_tag_file, path, meta, cover_path, exclude)
+
+
+def _tag_file(path: Path, meta: TrackMetadata, cover_path: Path | None, exclude):
     ext = path.suffix.lower().removeprefix(".")
     container = EXTENSION_CONTAINERS.get(ext)
     if container is None:
@@ -308,5 +315,5 @@ async def tag_file(
     container.clear_tags(audio)
     container.tag_audio(audio, tags)
     if cover_path is not None and "cover" not in (exclude or ()):
-        await container.embed_cover(audio, cover_path)
+        container.embed_cover(audio, cover_path)
     container.save_audio(audio, path)

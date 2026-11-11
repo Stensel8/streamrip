@@ -1,4 +1,5 @@
 import shutil
+import threading
 from pathlib import Path
 
 import pytest
@@ -13,6 +14,7 @@ from streamrip.metadata import (
     TrackInfo,
     TrackMetadata,
     tag_file,
+    tagger,
 )
 
 TESTS = Path(__file__).parent
@@ -327,3 +329,14 @@ async def test_unknown_year_and_impossible_totals_are_not_tagged(
     for name in ("date", "year", "tracktotal", "totaltracks", "disctotal"):
         assert name not in t, name
     assert t["tracknumber"] == ["03"]
+
+
+async def test_tagging_runs_off_the_event_loop(monkeypatch, sample_metadata, flac_path):
+    """A FLAC whose tags outgrow their room is rewritten whole: not on the loop."""
+    threads = []
+    monkeypatch.setattr(
+        tagger, "_tag_file", lambda *_: threads.append(threading.current_thread())
+    )
+    await tag_file(flac_path, sample_metadata, None)
+    assert threads
+    assert threads[0] is not threading.main_thread()
