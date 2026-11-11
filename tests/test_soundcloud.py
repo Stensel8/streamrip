@@ -351,6 +351,22 @@ async def test_the_container_is_the_one_the_download_makes(mime, container):
     assert AlbumMetadata.from_soundcloud(resp).info.container == container
 
 
+async def test_a_track_recorded_by_its_bare_id_can_be_fetched_again():
+    # A failed track is recorded by its bare id; repair and the stale-url
+    # refresh hand that back instead of the "id|how" the search made.
+    track = _track(_tc("hls", "audio/mpeg", "https://x/stream/hls"), id=7)
+    client = _client_answering(
+        {
+            "tracks/7": (200, {**track, "user": {"username": "u"}}),
+            "/stream/hls": (200, {"url": "https://cdn/a/playlist.m3u8"}),
+        }
+    )
+
+    assert (await client.get_metadata("7", "track"))["id"] == 7
+    d = await client.get_downloadable("7", 0)
+    assert (d.file_type, d.extension) == ("hls", "mp3")
+
+
 async def test_mp3_over_hls_is_still_joined_from_its_segments():
     client = _client_answering(
         {"/stream/hls": (200, {"url": "https://cdn/a/playlist.m3u8"})}

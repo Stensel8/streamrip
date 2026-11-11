@@ -61,8 +61,7 @@ class SoundcloudClient(Client):
         """A track (by its custom id), or a playlist with its tracks' ids made
         custom ids."""
         if media_type == "track":
-            track_id, _ = item_id.split("|")
-            resp = await self._get_track(track_id)
+            resp = await self._get_track(item_id.partition("|")[0])
             # What the download makes, for the folder name and the progress
             # bar (AlbumMetadata.from_soundcloud reads it).
             stream = self._stream(resp) or ""
@@ -97,8 +96,11 @@ class SoundcloudClient(Client):
 
     async def get_downloadable(self, item_id: str, quality: int):
         # item_id is the custom id _get_custom_id made: "id|how", how being
-        # NON_STREAMABLE, ORIGINAL_DOWNLOAD or a stream (see _stream).
-        track_id, how = item_id.split("|")
+        # NON_STREAMABLE, ORIGINAL_DOWNLOAD or a stream (see _stream). A track
+        # recorded by its bare id (a failed one, for `repair`) is looked up.
+        track_id, _, how = item_id.partition("|")
+        if not how:
+            how = self._get_custom_id(await self._get_track(track_id)).partition("|")[2]
 
         if how == self.NON_STREAMABLE:
             raise NonStreamableError(item_id)
