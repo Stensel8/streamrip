@@ -795,6 +795,9 @@ async def repair(ctx, yes, flat):
         # in-memory session copy, so config.toml is left alone.
         if not flat:
             cfg.session.filepaths.add_singles_to_folder = True
+        # What succeeded is read back from the downloads db below, so it is
+        # kept even with --no-db or downloads_enabled = false.
+        cfg.session.database.downloads_enabled = True
         database = db.Database(
             db.Downloads(cfg.session.database.downloads_path),
             db.Failed(cfg.session.database.failed_downloads_path),
