@@ -159,6 +159,18 @@ def test_soundcloud_url(url):
     assert result.source == "soundcloud"
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://www.soundcloud.com/artist-name/track-name",
+        "https://m.soundcloud.com/artist-name/track-name",
+        "http://soundcloud.com/artist-name/track-name",
+    ],
+)
+def test_other_soundcloud_hosts_resolve_as_the_plain_one(url):
+    assert parse_url(url).url == "https://soundcloud.com/artist-name/track-name"
+
+
 async def test_a_deezer_dynamic_link_becomes_the_album_it_leads_to():
     with patch(
         "streamrip.rip.parse_url.DeezerDynamicURL._extract_info_from_dynamic_link"

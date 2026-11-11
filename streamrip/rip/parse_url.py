@@ -12,7 +12,8 @@ URL_REGEX = re.compile(
     r"https?://(?:www|open|play|listen)?\.?(qobuz|tidal|deezer)\.com?(?:(?:/(album|artist|track|playlist|video|label))|(?:\/[-\w]+?))+\/([-\w]+)",
 )
 TIDAL_SHARE_SUFFIX_REGEX = re.compile(r"^(https?://[^/]*tidal\.com/.+?)/u/?$")
-SOUNDCLOUD_URL_REGEX = re.compile(r"https://soundcloud.com/[-\w:/]+")
+# Also the www. and mobile (m.) hosts; resolved as the plain soundcloud.com.
+SOUNDCLOUD_URL_REGEX = re.compile(r"https?://(?:www\.|m\.)?soundcloud\.com/([-\w:/]+)")
 # open.spotify.com links (with an optional "intl-xx/" and the old "user/name/" in
 # them) and spotify:track:... URIs. A Spotify id is 22 letters and digits.
 SPOTIFY_URL_REGEX = re.compile(
@@ -244,7 +245,7 @@ class SoundcloudURL(URL):
         soundcloud_url = SOUNDCLOUD_URL_REGEX.match(url)
         if soundcloud_url is None:
             return None
-        return cls(soundcloud_url.group(0))
+        return cls(f"https://soundcloud.com/{soundcloud_url[1]}")
 
 
 class SpotifyURL(URL):
