@@ -254,7 +254,7 @@ class DeezerClient(Client):
         self.client = _Deezer(self)
         # Registered to follow the browser identity as it rotates.
         register_header_dict(self.client.http_headers)
-        self._album_cache = {}
+        self._album_cache: dict[str, asyncio.Task[dict]] = {}
         self._quality_warned = False
 
     async def login(self):
@@ -301,11 +301,26 @@ class DeezerClient(Client):
         return item
 
     async def _get_album(self, item_id: str) -> dict:
-        """An album's metadata, tracks and quality, cached per run."""
+        """An album's metadata, tracks and quality, fetched once per run.
+
+        The tracks of a playlist resolve 20 at a time, so those of one album
+        share the request in flight instead of each making their own three.
+        A failed one is not kept: the next track asks again.
+        """
         item_id = str(item_id)
-        if item_id in self._album_cache:
-            logger.debug("Deezer album cache hit for album ID %s", item_id)
-            return self._album_cache[item_id]
+        request = self._album_cache.get(item_id)
+        if request is None:
+            request = asyncio.create_task(self._fetch_album(item_id))
+            self._album_cache[item_id] = request
+        try:
+            # Shielded: one track giving up must not cancel it for the rest.
+            return await asyncio.shield(request)
+        except Exception:
+            if self._album_cache.get(item_id) is request:
+                del self._album_cache[item_id]
+            raise
+
+    async def _fetch_album(self, item_id: str) -> dict:
         album_metadata, album_tracks, stream_quality = await asyncio.gather(
             self.client.api.get_album(item_id),
             self.client.api.get_album_tracks(item_id),
@@ -328,7 +343,6 @@ class DeezerClient(Client):
         album_metadata["tracks"] = album_tracks["data"]
         album_metadata["track_total"] = len(album_tracks["data"])
         album_metadata["stream_quality"] = stream_quality
-        self._album_cache[item_id] = album_metadata
         return album_metadata
 
     async def _get_playlist(self, item_id: str) -> dict:

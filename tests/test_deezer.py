@@ -1,3 +1,4 @@
+import asyncio
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -316,6 +317,34 @@ async def test_deezer_album_cache(mock_deezer_client):
     # Assert api call was made exactly once
     assert mock_deezer_client.client.api.get_album.call_count == 1
     assert mock_deezer_client.client.api.get_album_tracks.call_count == 1
+
+
+async def test_tracks_of_one_album_resolving_together_share_its_request(
+    mock_deezer_client,
+):
+    api = mock_deezer_client.client.api
+    api.get_album.return_value = {"id": "1", "title": "A", "genres": {"data": []}}
+    api.get_album_tracks.return_value = {"data": []}
+
+    albums = await asyncio.gather(
+        *(mock_deezer_client._get_album("1") for _ in range(20))
+    )
+
+    assert all(a is albums[0] for a in albums)
+    assert (api.get_album.call_count, api.get_album_tracks.call_count) == (1, 1)
+
+
+async def test_a_failed_album_request_is_tried_again(mock_deezer_client):
+    api = mock_deezer_client.client.api
+    api.get_album.side_effect = [
+        ConnectionError("down"),
+        {"id": "1", "title": "A", "genres": {"data": []}},
+    ]
+    api.get_album_tracks.return_value = {"data": []}
+
+    with pytest.raises(NonStreamableError):
+        await mock_deezer_client._get_album("1")
+    assert (await mock_deezer_client._get_album("1"))["title"] == "A"
 
 
 def _album_rows(*sizes):
