@@ -182,7 +182,7 @@ class AlbumMetadata:
             album,
             albumartist,
             _year(date),
-            genre=list(set(genre_clean.findall(genre)))
+            genre=list(dict.fromkeys(genre_clean.findall(genre)))
             if isinstance(genre, str)
             else [],
             covers=Covers.from_qobuz(resp),
