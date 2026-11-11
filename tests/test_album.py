@@ -131,12 +131,13 @@ async def test_partly_downloaded_album_reports_once_and_keeps_the_rest(
     with caplog.at_level(logging.INFO, logger="streamrip"):
         album = await pending.resolve()
     assert [t.id for t in album.tracks] == ["2", "3"]
-    artwork.assert_awaited_once()
-    assert (tmp_path / "Encore").is_dir()
     assert pending.db.skipped_now == 0
     assert "already downloaded" not in caplog.text
     with caplog.at_level(logging.INFO, logger="streamrip"):
         await album.preprocess()
+    artwork.assert_awaited_once()
+    assert (tmp_path / "Encore").is_dir()
+    assert [t.cover_path for t in album.tracks] == ["cover.jpg", "cover.jpg"]
     assert pending.db.skipped_now == 1
     assert "Encore: skipping 1 of 3 tracks already downloaded" in caplog.text
     assert "Skipping track" not in caplog.text
@@ -149,9 +150,20 @@ async def test_create_album_folder_controls_whether_artwork_can_be_saved(
     pending, artwork = _pending_album(monkeypatch, tmp_path, ["1"], downloaded=set())
     pending.config.session.downloads.create_album_folder = create_album_folder
 
-    await pending.resolve()
+    await (await pending.resolve()).preprocess()
 
     assert artwork.call_args.kwargs["shared_folder"] is not create_album_folder
+
+
+async def test_an_album_a_filter_drops_gets_no_folder_or_cover(monkeypatch, tmp_path):
+    # An artist's albums all resolve before its filters drop some; only the
+    # ones it keeps are preprocessed.
+    pending, artwork = _pending_album(monkeypatch, tmp_path, ["1"], downloaded=set())
+
+    await pending.resolve()
+
+    artwork.assert_not_awaited()
+    assert not (tmp_path / "Encore").exists()
 
 
 async def test_new_album_logs_nothing_about_skipping(monkeypatch, tmp_path, caplog):
