@@ -30,7 +30,7 @@ def summaries(*urls):
                 str(i),
                 names[i],
                 artist="The Artist",
-                image_url=url,
+                image_urls=(url,) if url else (),
                 details=[("Released", "2026-10-03"), ("Tracks", "12")],
             )
             for i, url in enumerate(urls or (None, None, None))
