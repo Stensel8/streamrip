@@ -138,8 +138,8 @@ class Artist(Media):
 
     # ----- Filter predicates -----
     def _features(self, a: Album) -> bool:
-        """Filter out features."""
-        return a.meta.albumartist == self.name
+        """Filter out features: albums this artist is not an album artist of."""
+        return self.name in (a.meta.albumartists or [a.meta.albumartist])
 
     def _extras(self, a: Album) -> bool:
         """Filter out extras: special editions, live albums, remixes and the

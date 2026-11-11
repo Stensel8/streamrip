@@ -162,3 +162,17 @@ async def test_repeats_choose_among_what_the_other_filters_keep(monkeypatch):
     await artist._resolve_then_download(filters)
 
     assert ripped == ["plain"]
+
+
+def test_features_filter_keeps_albums_the_artist_shares():
+    duet = create_album("Duets", False, 44.1, 16, id="d")
+    duet.meta.albumartist, duet.meta.albumartists = "artist, Other", ["artist", "Other"]
+    feature = create_album("Their Album", False, 44.1, 16, id="f")
+    feature.meta.albumartist = "Someone Else"
+    artist = Artist(name="artist", albums=[], client=None, config=None)  # type: ignore
+    filters = ArtistFilterConfig(
+        extras=False, repeats=False, non_albums=False, features=True, non_remaster=False
+    )
+    assert artist._wanted(duet, filters)
+    assert not artist._wanted(feature, filters)
+    assert artist._wanted(create_album("Solo", False, 44.1, 16, id="s"), filters)
