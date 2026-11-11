@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import sys
+from itertools import starmap
 lazy from pathlib import Path
 
 lazy from rich.progress_bar import ProgressBar
@@ -195,24 +196,25 @@ class Main:
             )
 
     async def add_all(self, urls: list[str]):
-        """Add multiple urls concurrently as pending items."""
-        parsed = [parse_url(url) for url in urls]
-        url_client_pairs = []
-        for i, p in enumerate(parsed):
-            if p is None:
-                console.print(
-                    f"[red]Found invalid url [cyan]{urls[i]}[/cyan], skipping.",
-                )
-                continue
-            url_client_pairs.append((p, await self.get_logged_in_client(p.source)))
+        """Add multiple urls concurrently as pending items.
 
-        pendings = await asyncio.gather(
-            *[
-                url.into_pending(client, self.config, self.database)
-                for url, client in url_client_pairs
-            ],
-        )
-        self.pending.extend(pendings)
+        A url that fails is logged and costs only itself, as in resolve().
+        """
+        jobs = []
+        for url in urls:
+            if (parsed := parse_url(url)) is None:
+                console.print(f"[red]Found invalid url [cyan]{url}[/cyan], skipping.")
+                continue
+            jobs.append((url, parsed, await self.get_logged_in_client(parsed.source)))
+        pendings = await asyncio.gather(*starmap(self._pending_or_none, jobs))
+        self.pending.extend(p for p in pendings if p is not None)
+
+    async def _pending_or_none(self, url: str, parsed, client) -> Pending | None:
+        try:
+            return await parsed.into_pending(client, self.config, self.database)
+        except Exception as e:
+            logger.error("Error with %s: %s: %s", url, type(e).__name__, e)
+            return None
 
     async def get_logged_in_client(self, source: str):
         """Return a functioning client instance for `source`."""
