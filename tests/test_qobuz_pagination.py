@@ -128,3 +128,17 @@ async def test_missing_page_size_uses_bounded_request_default():
     client = _client(page)
     assert await client.search("album", "query", limit=5) == [page]
     assert client._request_ok.call_count == 1
+
+
+@pytest.mark.parametrize("media_type", ["artist", "label"])
+async def test_artists_and_labels_past_500_albums_get_all_of_them(media_type):
+    async def reply(epoint, params):
+        assert epoint == f"{media_type}/get"
+        start = params["offset"]
+        items = [{"id": i} for i in range(start, min(start + 500, 1234))]
+        return {"albums_count": 1234, "albums": {"items": items}}
+
+    client = QobuzClient(Config.defaults())
+    client._request_ok = AsyncMock(side_effect=reply)
+    resp = await client.get_metadata("1", media_type)
+    assert [a["id"] for a in resp["albums"]["items"]] == list(range(1234))
