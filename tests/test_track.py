@@ -452,3 +452,19 @@ async def test_a_track_waits_its_turn_right_before_its_stream(tmp_path):
     await fetch_downloadable(client, Config.defaults(), database, "123")
 
     assert asked == ["metadata", "turn", "stream"]
+
+
+@pytest.mark.parametrize("expires", [True, False])
+async def test_only_a_url_that_goes_stale_is_resolved_again(tmp_path, expires):
+    # A YouTube watch url (Spotify) never expires: resolving it again only
+    # searched YouTube Music once more for every track that waited its turn.
+    track = _make_track(tmp_path, "flac")
+    track.client = MagicMock(source="tidal")
+    track.client.get_downloadable = AsyncMock(return_value=FakeDownloadable("flac"))
+    track.downloadable.url_expires = expires
+    track.downloadable.resolved_at = 0.0  # long ago
+    await track.preprocess()
+
+    await track.download()
+
+    assert track.client.get_downloadable.await_count == int(expires)

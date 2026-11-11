@@ -219,6 +219,8 @@ class Downloadable(ABC):
     # When this was resolved: some sources sign the url with a short-lived
     # token, so Track.download() re-resolves it once this gets old.
     resolved_at: float = 0.0
+    # Whether the url goes stale like that at all.
+    url_expires: bool = True
 
     async def download(self, path: Path, callback: Callable[[int], Any]):
         await self._download(path, callback)
@@ -675,6 +677,8 @@ class YtDlpDownloadable(Downloadable):
     """
 
     EXTENSIONS = ("m4a", "mp3")
+    # A watch url: resolving it again would only search YouTube Music again.
+    url_expires = False
 
     def __init__(
         self,

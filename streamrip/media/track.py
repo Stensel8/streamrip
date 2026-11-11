@@ -133,10 +133,14 @@ class Track(Media):
                 # A url resolved well before its turn here (queued behind
                 # max_connections) or reused across a retry can have gone
                 # stale; get a fresh one rather than fail on a dead token.
-                if self.client is not None and (
-                    attempt > 1
-                    or time.time() - self.downloadable.resolved_at
-                    > STALE_DOWNLOADABLE_AFTER
+                if (
+                    self.client is not None
+                    and self.downloadable.url_expires
+                    and (
+                        attempt > 1
+                        or time.time() - self.downloadable.resolved_at
+                        > STALE_DOWNLOADABLE_AFTER
+                    )
                 ):
                     tier = getattr(self.config.session, self.client.source).quality
                     try:
