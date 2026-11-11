@@ -728,7 +728,7 @@ class YtDlpDownloadable(Downloadable):
                         await asyncio.sleep(0.05)
                 raise
             if fetched.suffix.lower() == ".m4a" and self.extension == "m4a":
-                fetched.move(path)
+                await asyncio.to_thread(fetched.move, path)
             else:
                 # Re-encoded to the wanted format, without its old tags.
                 await run_ffmpeg(
@@ -763,7 +763,7 @@ async def concat_audio_files(
         raise NonStreamableError("There is no audio to join")
     require_ffmpeg()
     if len(paths) == 1:
-        paths[0].move(out)
+        await asyncio.to_thread(paths[0].move, out)
         return
 
     batches = list(itertools.batched(paths, max_files_open, strict=False))
