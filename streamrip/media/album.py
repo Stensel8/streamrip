@@ -66,7 +66,7 @@ class Album(Media):
         return f"{self.meta.album} {quality}"
 
     async def preprocess(self):
-        """Count skips for this selected album, register progress, and fetch booklets."""
+        """Count skips, show the album, and make its folder, cover and booklets."""
         self.db.skipped_now += self.skipped_tracks
         total = self.skipped_tracks + len(self.tracks)
         if self.skipped_tracks and not self.tracks:
@@ -84,14 +84,26 @@ class Album(Media):
             id(self), self._title(), self.config.session.cli.progress_bars
         )
         # Here, not when the album is resolved: artists and labels resolve every
-        # album before their filters drop some, and those get no booklets. Only
-        # Qobuz albums have any; a finished album has no folder to put them in.
+        # album before their filters drop some, and those get no folder, cover
+        # or booklets. A finished album needs none of them either.
+        if not self.tracks or self.client is None:
+            return
+        downloads = self.config.session.downloads
+        self.folder.mkdir(parents=True, exist_ok=True)
+        embed_cover, _ = await download_artwork(
+            self.client.session,
+            self.folder,
+            self.meta.covers,
+            self.config.session.artwork,
+            shared_folder=not downloads.create_album_folder,
+        )
+        for track in self.tracks:
+            track.cover_path = embed_cover
+        # Only Qobuz albums have booklets.
         if (
-            self.tracks
-            and self.client is not None
-            and self.meta.info.booklets
+            self.meta.info.booklets
             and self.config.session.qobuz.download_booklets
-            and self.config.session.downloads.create_album_folder
+            and downloads.create_album_folder
         ):
             await download_booklets(
                 self.client.session, self.meta.info.booklets, self.folder
@@ -118,7 +130,7 @@ class Album(Media):
 @dataclass(slots=True)
 class PendingAlbum(PendingItem):
     async def resolve(self) -> Album | None:
-        """Fetch the album and cover; an Album of the tracks still to download."""
+        """Fetch the album; an Album of the tracks still to download."""
         if (resp := await self._fetch("album")) is None:
             return None
         try:
@@ -143,14 +155,6 @@ class PendingAlbum(PendingItem):
         folder = album_folder(self.config, self.client.source, meta)
         if tracklist and not todo:
             return Album(meta, [], self.config, folder, self.db, skipped_tracks=done)
-        folder.mkdir(parents=True, exist_ok=True)
-        embed_cover, _ = await download_artwork(
-            self.client.session,
-            folder,
-            meta.covers,
-            self.config.session.artwork,
-            shared_folder=not self.config.session.downloads.create_album_folder,
-        )
         pending_tracks = [
             PendingTrack(
                 track_id,
@@ -159,7 +163,7 @@ class PendingAlbum(PendingItem):
                 config=self.config,
                 folder=folder,
                 db=self.db,
-                cover_path=embed_cover,
+                cover_path=None,  # set in Album.preprocess, once it's wanted
             )
             for track_id in todo
         ]
