@@ -3,6 +3,38 @@
 All notable changes in this fork of [nathom/streamrip](https://github.com/nathom/streamrip). Numbers can refer to
 upstream issues and pull requests.
 
+## 2.7.1
+
+A cleanup round: small bugs and slow spots, found by testing more thoroughly
+and pushing streamrip to its limits.
+
+- fix: a failed conversion or download never deletes or damages a file you
+  already had
+- fix: Tidal artists with over 100 albums and Qobuz artists with over 500 get
+  all of them
+- fix: one bad url no longer stops the rest, and `repair` works for SoundCloud
+  and with the downloads database off
+- fix: no endless retries after a renewed Tidal login, and no endless loop on
+  an empty SoundCloud stream
+- fix: artist filters: `repeats` picks among what the others keep, `features`
+  keeps shared albums, and a dropped album leaves no folder behind
+- fix: no `YEAR=Unknown` or "5/1" tags, Qobuz genres keep their order,
+  SoundCloud tracks get a cover at every size, and a track listed twice in a
+  playlist downloads once
+- fix: closing the Qobuz login window or Ctrl-C at the Spotify login stops at
+  once
+- fix: a config with a BOM, or in a folder that isn't there yet, loads, and
+  `restrict_characters` can't make a Windows device name like `CON`
+- fix: SoundCloud links with `www.` or `m.` work, and AIFF from a 16-bit track
+  stays 16-bit
+- feat: rate limits per service, in its own section of the config; Tidal's
+  measured ones by default, and Deezer keeps to them too
+- perf: Tidal hi-res needs about 65 fewer requests a track; tagging no longer
+  holds up other downloads; Spotify matches each track once; block covers
+  draw twice as fast; a long run no longer piles up memory
+- chore: dependencies updated, and CI tests real accounts from home with a
+  `STREAMRIP_CONFIG` secret
+
 ## 2.7.0
 
 - feat: a container image of 50 MiB instead of 190; it needs Docker 23 or
