@@ -30,8 +30,20 @@ PACES = ("auto", "fast", "medium", "slow")
 # is made from. These classes only give the options their types.
 
 
+@dataclass(slots=True, kw_only=True)
+class ServiceLimits:
+    """How fast streamrip may go on one service. None: streamrip's own numbers
+    (client/client.py), measured on Tidal, and [downloads] requests_per_minute."""
+
+    requests_per_minute: int | None = None
+    slow_tracks_per_hour: int | None = None
+    medium_tracks_per_hour: int | None = None
+    max_tracks_per_hour: int | None = None
+    full_speed_tracks: int | None = None
+
+
 @dataclass(slots=True)
-class QobuzConfig:
+class QobuzConfig(ServiceLimits):
     user_id: str
     auth_token: str
     app_id: str
@@ -41,7 +53,7 @@ class QobuzConfig:
 
 
 @dataclass(slots=True)
-class TidalConfig:
+class TidalConfig(ServiceLimits):
     """Tidal section of the config file."""
 
     user_id: str
@@ -62,7 +74,7 @@ class TidalConfig:
 
 
 @dataclass(slots=True)
-class DeezerConfig:
+class DeezerConfig(ServiceLimits):
     """Deezer section of the config file."""
 
     arl: str
@@ -71,7 +83,7 @@ class DeezerConfig:
 
 
 @dataclass(slots=True)
-class SoundcloudConfig:
+class SoundcloudConfig(ServiceLimits):
     """SoundCloud section of the config file."""
 
     client_id: str
@@ -81,7 +93,7 @@ class SoundcloudConfig:
 
 
 @dataclass(slots=True)
-class SpotifyConfig:
+class SpotifyConfig(ServiceLimits):
     """Spotify section of the config file."""
 
     client_id: str

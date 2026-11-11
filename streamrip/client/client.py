@@ -236,10 +236,6 @@ FAST_WINDOW = 6 * 3600
 PACE_TRACKS_PER_HOUR = {"medium": 150, "slow": 80}
 PACE_GAP_MEAN = {"medium": 12, "slow": 30}
 TRACK_GAP_SIGMA = 0.75
-PACE_GAP_MU = {
-    tier: math.log(mean) - TRACK_GAP_SIGMA**2 / 2
-    for tier, mean in PACE_GAP_MEAN.items()
-}
 # Though nobody's coffee break lasts half an hour mid-album.
 TRACK_GAP_MAX = 300
 # Every 429 widens the track gaps by this much, up to a limit; every track
@@ -263,14 +259,16 @@ def _within(times, now: float, window: float = RATE_LIMIT_WINDOW) -> tuple[float
     return tuple(t for t in times if now - t < window)
 
 
-def _hours_over(times) -> int:
-    """How many clock hours among times have HOURLY_DANGER track starts or more."""
+def _hours_over(times, line: int) -> int:
+    """How many clock hours among times have `line` track starts or more."""
     per_hour = Counter(int(t // 3600) for t in times)
-    return sum(n >= HOURLY_DANGER for n in per_hour.values())
+    return sum(n >= line for n in per_hour.values())
 
 
-def _danger(name: str) -> str:
-    """What HOURLY_DANGER means, the same in every message that warns of it."""
+def _danger(name: str, line: int) -> str:
+    """What the hourly line means, the same in every message that warns of it."""
+    if line != HOURLY_DANGER:  # the service's own, not the one Tidal showed
+        return f"Hours on end over {line} tracks an hour can get an account banned."
     return (
         f"From about {REFUSED_FROM} tracks an hour {name} starts refusing "
         "requests, and keeping that up gets an account banned: streamrip draws "
@@ -298,8 +296,16 @@ class Load:
     # a job auto would pace: more than FAST_BUDGET tracks in FAST_WINDOW,
     # those before it included
     big: bool = False
-    # clock hours in FAST_WINDOW with HOURLY_DANGER tracks or more
+    # clock hours in FAST_WINDOW with hourly_line tracks or more
     hours_over: int = 0
+    # the service's own max_tracks_per_hour and this tier's cap; 0: streamrip's
+    line: int = 0
+    tier_cap: int = 0
+
+    @property
+    def hourly_line(self) -> int:
+        """Where full speed is warned of: HOURLY_DANGER, or the service's own."""
+        return self.line or HOURLY_DANGER
 
     @property
     def slow(self) -> bool:
@@ -308,9 +314,9 @@ class Load:
 
     @property
     def cap(self) -> int:
-        """This tier's hourly cap, or HOURLY_DANGER at full speed (nothing
+        """This tier's hourly cap, or the hourly line at full speed (nothing
         enforces one there)."""
-        return PACE_TRACKS_PER_HOUR.get(self.tier, HOURLY_DANGER)
+        return self.tier_cap or PACE_TRACKS_PER_HOUR.get(self.tier, self.hourly_line)
 
     @property
     def risk(self) -> str:
@@ -320,15 +326,15 @@ class Load:
         after a 429, or at full speed on a big job."""
         if (
             self.hours_over >= 2
-            or self.this_hour >= 2 * HOURLY_DANGER
+            or self.this_hour >= 2 * self.hourly_line
             or self.limited >= RATE_LIMIT_BUDGET // 2
         ):
             return "very high"
-        if self.this_hour >= HOURLY_DANGER or self.limited >= 2:
+        if self.this_hour >= self.hourly_line or self.limited >= 2:
             return "high"
         if (
             self.limited
-            or self.this_hour >= HOURLY_DANGER // 2
+            or self.this_hour >= self.hourly_line // 2
             or (self.big and not self.slow)
         ):
             return "medium"
@@ -389,6 +395,24 @@ class RequestClient:
     def _pause_owner(self) -> RequestClient:
         """The client whose 429 pause this one shares (itself, by default)."""
         return self
+
+    def _limit(self, name: str, default: int) -> int:
+        """The service's own `name` from its section ([tidal], ...), else
+        `default`: streamrip's number, measured on Tidal."""
+        value = getattr(getattr(self, "config", None), name, None)
+        return default if value is None else value
+
+    def _cap(self, tier: str) -> int:
+        """Tracks an hour at a pace tier, medium or slow."""
+        return self._limit(f"{tier}_tracks_per_hour", PACE_TRACKS_PER_HOUR[tier])
+
+    def _gap_mean(self, tier: str) -> float:
+        """Seconds between track starts at a tier, in step with its cap."""
+        return PACE_GAP_MEAN[tier] * PACE_TRACKS_PER_HOUR[tier] / self._cap(tier)
+
+    def _line(self) -> int:
+        """The tracks an hour where full speed is warned of."""
+        return self._limit("max_tracks_per_hour", HOURLY_DANGER)
 
     async def _renew_login(self, resp=None) -> bool:
         """Renew a login that lapsed mid-run, as the 401 `resp` may say; True if
@@ -476,7 +500,7 @@ class RequestClient:
         owner = self._paced_owner()
         name = self.source.capitalize()
         recent = len(_within(owner._track_starts, time.time(), FAST_WINDOW))
-        big = planned + recent > FAST_BUDGET
+        big = planned + recent > owner._limit("full_speed_tracks", FAST_BUDGET)
         owner._pace, owner._big = pace, big
         # auto never resolves to medium: only slow has run clean for 18
         # hours straight, so a job big enough for auto to pace at all gets
@@ -484,7 +508,7 @@ class RequestClient:
         owner._tier = pace if pace != "auto" else ("slow" if big else "fast")
 
         def steady(tier: str) -> str:
-            return f"a steady pace of about {PACE_TRACKS_PER_HOUR[tier]} tracks an hour"
+            return f"a steady pace of about {owner._cap(tier)} tracks an hour"
 
         if pace == "fast":
             # Asked for, so said either way, and loudly when it is a lot.
@@ -493,7 +517,9 @@ class RequestClient:
                 "between tracks%s",
                 name,
                 plural(planned, "track"),
-                f", so don't keep it up for long. {_danger(name)}" if big else ".",
+                f", so don't keep it up for long. {_danger(name, owner._line())}"
+                if big
+                else ".",
             )
         elif pace in {"medium", "slow"}:
             logger.info(
@@ -513,7 +539,7 @@ class RequestClient:
                 if recent
                 else "",
                 steady(owner._tier),
-                _danger(name),
+                _danger(name, owner._line()),
             )
         else:
             logger.info(
@@ -530,8 +556,8 @@ class RequestClient:
             "%s: %s, so from here on at a steady pace of about %s tracks an hour. %s",
             name,
             why,
-            PACE_TRACKS_PER_HOUR["slow"],
-            _danger(name),
+            self._cap("slow"),
+            _danger(name, self._line()),
         )
 
     def _warn_over(self, hours: int):
@@ -545,7 +571,7 @@ class RequestClient:
                 "line. Don't keep this up: hours over it are what got an account "
                 "banned. Stop and rerun with --pace slow to go on safely.",
                 name,
-                HOURLY_DANGER,
+                self._line(),
             )
         else:
             logger.error(
@@ -553,7 +579,7 @@ class RequestClient:
                 "hours. Hour after hour over the line is how an account got "
                 "banned. Stop now, and rerun with --pace slow to go on safely.",
                 name,
-                HOURLY_DANGER,
+                self._line(),
                 hours,
                 FAST_WINDOW // 3600,
             )
@@ -594,8 +620,11 @@ class RequestClient:
             recent=len(recent),
             limited=len(_within(owner._limited_at, now)),
             next_in=min(waiting) - now if waiting else 0.0,
-            big=owner._big or len(recent) > FAST_BUDGET,
-            hours_over=_hours_over(recent),
+            big=owner._big
+            or len(recent) > owner._limit("full_speed_tracks", FAST_BUDGET),
+            hours_over=_hours_over(recent, owner._line()),
+            line=owner._line(),
+            tier_cap=owner._cap(owner._tier) if owner._tier != "fast" else 0,
         )
 
     def time_for(self, tracks: int) -> float | None:
@@ -606,8 +635,8 @@ class RequestClient:
         owner = self._paced_owner()
         if owner._tier == "fast":
             return None
-        cap = PACE_TRACKS_PER_HOUR[owner._tier]
-        gap = PACE_GAP_MEAN[owner._tier] * owner._track_gap_scale
+        cap = owner._cap(owner._tier)
+        gap = owner._gap_mean(owner._tier) * owner._track_gap_scale
         room = max(cap - len(_within(owner._track_starts, time.time())), 0)
         first, rest = min(tracks, room), max(tracks - room, 0)
         return first * gap + rest * max(gap, RATE_LIMIT_WINDOW / cap)
@@ -635,7 +664,7 @@ class RequestClient:
         louder as RATE_LIMIT_BUDGET comes near."""
         owner = self._paced_owner()
         name = self.source.capitalize()
-        gap_mean = PACE_GAP_MEAN.get(owner._tier, PACE_GAP_MEAN["slow"])
+        gap_mean = owner._gap_mean("slow" if owner._tier == "fast" else owner._tier)
         wait = (
             f"pausing {seconds:.0f}s, then one request every {owner._spacing:.0f}s "
             f"and tracks about {gap_mean * owner._track_gap_scale:.0f}s apart"
@@ -721,20 +750,19 @@ class RequestClient:
         if (
             owner._pace == "auto"
             and owner._tier == "fast"
-            and len(starts) >= FAST_BUDGET
+            and len(starts) >= owner._limit("full_speed_tracks", FAST_BUDGET)
         ):
             owner._turn_slow(
                 f"{len(starts)} tracks in the last {FAST_WINDOW // 3600} hours"
             )
         start = now
         if owner._tier != "fast":
-            cap = PACE_TRACKS_PER_HOUR[owner._tier]
+            cap = owner._cap(owner._tier)
             hour = _within(starts, now)
             if hour:
-                gap = min(
-                    random.lognormvariate(PACE_GAP_MU[owner._tier], TRACK_GAP_SIGMA),
-                    TRACK_GAP_MAX,
-                )
+                # mu makes the log-normal's mean the tier's: exp(mu + sigma²/2)
+                mu = math.log(owner._gap_mean(owner._tier)) - TRACK_GAP_SIGMA**2 / 2
+                gap = min(random.lognormvariate(mu, TRACK_GAP_SIGMA), TRACK_GAP_MAX)
                 start = max(now, hour[-1]) + gap * owner._track_gap_scale
             full = len(hour) >= cap
             if full:
@@ -752,10 +780,10 @@ class RequestClient:
             owner._track_hour_full = full
         # fast: said once an hour when it crosses the line
         elif (clock_hour := now - now % 3600) != owner._danger_warned and (
-            sum(1 for t in starts if t >= clock_hour) + 1 >= HOURLY_DANGER
+            sum(1 for t in starts if t >= clock_hour) + 1 >= owner._line()
         ):
             owner._danger_warned = clock_hour
-            self._warn_over(1 + _hours_over(starts))
+            self._warn_over(1 + _hours_over(starts, owner._line()))
         owner._track_starts = (*starts, start)
         # A track that starts with no 429 since the last one eases the gaps.
         owner._track_gap_scale = max(owner._track_gap_scale * TRACK_GAP_EASING, 1.0)
@@ -908,7 +936,9 @@ class Client(RequestClient, ABC):
         self.config = getattr(config.session, self.source)
         self.logged_in = False
         self.rate_limiter = self.get_rate_limiter(
-            config.session.downloads.requests_per_minute
+            self._limit(
+                "requests_per_minute", config.session.downloads.requests_per_minute
+            )
         )
 
     def _ensure_session(self):
