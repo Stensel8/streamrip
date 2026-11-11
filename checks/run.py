@@ -94,7 +94,11 @@ def install():
 def container():
     if not (engine := shutil.which("podman") or shutil.which("docker")):
         record("container", skipped="neither podman nor docker is installed")
-    elif command("container build", [engine, "build", "--tag", "streamrip:check", "."]):
+    # --file: docker only looks for a Dockerfile by itself.
+    elif command(
+        "container build",
+        [engine, "build", "--file", "Containerfile", "--tag", "streamrip:check", "."],
+    ):
         command(
             "container runs", [engine, "run", "--rm", "streamrip:check", "--version"]
         )
