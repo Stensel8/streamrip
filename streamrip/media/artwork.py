@@ -58,6 +58,16 @@ async def _download_cover(session: aiohttp.ClientSession, url: str, path: Path):
             return
 
 
+async def _cover_or_none(session, url: str, path: Path) -> Path | None:
+    """path, once the cover is downloaded to it; None (logged) if it can't be."""
+    try:
+        await _download_cover(session, url, path)
+    except Exception as e:
+        logger.error("Error downloading artwork: %s", e)
+        return None
+    return path
+
+
 def remove_artwork_tempdirs():
     """Delete every temporary embed-artwork directory created this session."""
     logger.debug("Removing dirs %s", _artwork_tempdirs)
@@ -93,12 +103,12 @@ async def download_artwork(
         # No need to download anything
         return None, None
 
-    downloadables = []
+    jobs = {}
 
     _, l_url, saved_cover_path = covers.largest()
     if saved_cover_path is None and save_artwork and l_url is not None:
         saved_cover_path = folder / "cover.jpg"
-        downloadables.append(_download_cover(session, l_url, saved_cover_path))
+        jobs["saved"] = _cover_or_none(session, l_url, saved_cover_path)
 
     _, embed_url, embed_cover_path = covers.get_size(config.embed_size)
     if embed_cover_path is None and embed and embed_url is not None:
@@ -106,16 +116,16 @@ async def download_artwork(
         embed_dir = Path(tempfile.mkdtemp(prefix="__artwork_", dir=folder))
         _artwork_tempdirs.add(embed_dir)
         embed_cover_path = embed_dir / f"cover{hash(embed_url)}.jpg"
-        downloadables.append(_download_cover(session, embed_url, embed_cover_path))
+        jobs["embed"] = _cover_or_none(session, embed_url, embed_cover_path)
 
-    if len(downloadables) == 0:
+    if not jobs:
         return embed_cover_path, saved_cover_path
 
-    try:
-        await asyncio.gather(*downloadables)
-    except Exception as e:
-        logger.error("Error downloading artwork: %s", e)
-        return None, None
+    # Each on its own: a saved cover that fails (Qobuz's derived _org.jpg can
+    # 404) must not cost the tracks their embedded one.
+    got = dict(zip(jobs, await asyncio.gather(*jobs.values()), strict=True))
+    saved_cover_path = got.get("saved", saved_cover_path)
+    embed_cover_path = got.get("embed", embed_cover_path)
 
     # Update `covers` to reflect the current download state
     if save_artwork and saved_cover_path is not None:
