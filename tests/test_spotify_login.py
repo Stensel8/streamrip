@@ -121,6 +121,28 @@ async def test_waiting_ends_when_the_time_is_up(monkeypatch):
         await capture_code(f"http://127.0.0.1:{free_port()}/callback", "s1")
 
 
+async def test_a_cancelled_login_lets_go_of_the_port_at_once(monkeypatch):
+    monkeypatch.setattr(spotify_login, "LOGIN_TIMEOUT", 30)
+    port = free_port()
+    waiting = asyncio.create_task(
+        capture_code(f"http://127.0.0.1:{port}/callback", "s1")
+    )
+    await asyncio.sleep(0.3)
+    waiting.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await waiting
+
+    # The listening thread stops within its 1-second poll, not after 30.
+    for _ in range(30):
+        try:
+            socket.create_server(("127.0.0.1", port)).close()
+            break
+        except OSError:
+            await asyncio.sleep(0.1)
+    else:
+        raise AssertionError("the port is still taken 3 seconds after Ctrl-C")
+
+
 async def test_a_redirect_uri_that_is_not_on_this_computer_cannot_be_caught():
     with pytest.raises(SpotifyLoginError, match="only catch a login on this computer"):
         await capture_code("https://example.com/callback", "s1")
