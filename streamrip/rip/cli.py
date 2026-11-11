@@ -468,6 +468,9 @@ def rip(
         datefmt="[%X]",
         handlers=[RichHandler(console=console)],
     )
+    # Warnings (urllib3's InsecureRequestWarning with --no-ssl-verify) go
+    # through the log too, not straight over the progress bars.
+    logging.captureWarnings(True)
     if verbose:
         # No show_locals: a traceback is what people paste into bug reports,
         # and the locals of a failing frame routinely hold credentials -- the

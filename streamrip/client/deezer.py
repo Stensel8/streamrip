@@ -3,8 +3,8 @@ import json
 import logging
 import re
 
-import aiohttp
-from yarl import URL
+lazy import aiohttp
+lazy from yarl import URL
 
 from ..exceptions import (
     AuthenticationError,
@@ -16,7 +16,6 @@ from .downloadable import DeezerDownloadable
 lazy from ..config import Config
 
 logger = logging.getLogger("streamrip")
-logging.captureWarnings(True)
 
 # Deezer's formats by quality tier.
 FORMATS = ("MP3_128", "MP3_320", "FLAC")
