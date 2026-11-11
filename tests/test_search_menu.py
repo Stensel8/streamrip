@@ -4,6 +4,7 @@ import asyncio
 import builtins
 import io
 import json
+import random
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, Mock
 
@@ -506,3 +507,36 @@ async def test_block_covers_name_terminals_that_show_images(monkeypatch, urls, t
     async with menu(results) as (app, pilot):
         await pilot.pause(0.2)
         assert ("Ghostty" in str(app.query_one("#details", Static).content)) is tip
+
+
+def _cell_by_brute_force(pixels):
+    """_cell as it was written first: every split's means and error from scratch."""
+
+    def mean(group):
+        return tuple(sum(p[i] for p in group) // len(group) for i in range(3))
+
+    def error(group, m):
+        return sum(sum((a - b) ** 2 for a, b in zip(p, m, strict=True)) for p in group)
+
+    order = sorted(range(6), key=lambda i: cover_preview._brightness(pixels[i]))
+    best = None
+    for split in range(1, 6):
+        dark = [pixels[i] for i in order[:split]]
+        light = [pixels[i] for i in order[split:]]
+        fg, bg = mean(dark), mean(light)
+        total = error(dark, fg) + error(light, bg)
+        if best is None or total < best[0]:
+            best = (total, sum(1 << i for i in order[:split]), fg, bg)
+    return cover_preview._sextant(best[1]), best[2], best[3]
+
+
+def test_block_cells_match_the_brute_force_search():
+    rng = random.Random(1)
+    cells = [
+        [tuple(rng.randrange(256) for _ in range(3)) for _ in range(6)]
+        for _ in range(20000)
+    ]
+    cells += [[(rng.choice((0, 255)),) * 3 for _ in range(6)] for _ in range(2000)]
+    cells += [[(7, 7, 7)] * 6, [(0, 0, 0)] * 3 + [(255, 255, 255)] * 3]
+    for pixels in cells:
+        assert cover_preview._cell(pixels) == _cell_by_brute_force(pixels), pixels

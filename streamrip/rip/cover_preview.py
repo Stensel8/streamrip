@@ -100,11 +100,6 @@ def _sextant(mask: int) -> str:
     return chr(0x1FB00 + mask - 1 - (mask > LEFT_HALF) - (mask > RIGHT_HALF))
 
 
-def _mean(pixels: list) -> tuple[int, int, int]:
-    """The average color of some (r, g, b) pixels."""
-    return tuple(sum(p[i] for p in pixels) // len(pixels) for i in range(3))
-
-
 def _brightness(pixel: tuple) -> int:
     """How light an (r, g, b) pixel looks, to compare, not to display."""
     return 299 * pixel[0] + 587 * pixel[1] + 114 * pixel[2]
@@ -114,20 +109,31 @@ def _cell(pixels: list) -> tuple[str, tuple, tuple]:
     """The sextant, and its two colors, closest to a cell's 2x3 pixels.
 
     The two colors split the pixels by brightness, which finds the best split of
-    the pixels of a picture without trying all 31.
+    the pixels of a picture without trying all 31. Each split's squared error
+    comes from running sums, as sum(a*a) - 2*m*sum(a) + n*m*m for n values of
+    mean m: no pass over the pixels per split.
     """
-    order = sorted(range(len(pixels)), key=lambda i: _brightness(pixels[i]))
-    best = None
-    for split in range(1, len(pixels)):
-        dark, light = order[:split], order[split:]
-        fg, bg = _mean([pixels[i] for i in dark]), _mean([pixels[i] for i in light])
-        error = sum(
-            sum((a - b) ** 2 for a, b in zip(pixels[i], fg, strict=True)) for i in dark
-        ) + sum(
-            sum((a - b) ** 2 for a, b in zip(pixels[i], bg, strict=True)) for i in light
-        )
+    count = len(pixels)
+    order = sorted(range(count), key=lambda i: _brightness(pixels[i]))
+    total = [sum(p[c] for p in pixels) for c in range(3)]
+    total_sq = [sum(p[c] * p[c] for p in pixels) for c in range(3)]
+    dark, dark_sq = [0, 0, 0], [0, 0, 0]
+    best, mask = None, 0
+    for n in range(1, count):
+        pixel = pixels[order[n - 1]]
+        mask |= 1 << order[n - 1]
+        error, fg, bg = 0, [], []
+        for c in range(3):
+            dark[c] += pixel[c]
+            dark_sq[c] += pixel[c] * pixel[c]
+            light, light_sq = total[c] - dark[c], total_sq[c] - dark_sq[c]
+            m_dark, m_light = dark[c] // n, light // (count - n)
+            error += dark_sq[c] - 2 * m_dark * dark[c] + n * m_dark * m_dark
+            error += light_sq - 2 * m_light * light + (count - n) * m_light * m_light
+            fg.append(m_dark)
+            bg.append(m_light)
         if best is None or error < best[0]:
-            best = (error, sum(1 << i for i in dark), fg, bg)
+            best = (error, mask, tuple(fg), tuple(bg))
     return _sextant(best[1]), best[2], best[3]
 
 
