@@ -1,5 +1,6 @@
 """Certificate checking for HTTPS connections."""
 
+import functools
 import ssl
 import sys
 
@@ -12,7 +13,13 @@ def get_aiohttp_connector_kwargs(verify_ssl: bool = True) -> dict:
     """
     if not verify_ssl:
         return {"ssl": False}
-    return {"ssl": ssl.create_default_context(cafile=certifi.where())}
+    return {"ssl": _certifi_context()}
+
+
+@functools.cache
+def _certifi_context() -> ssl.SSLContext:
+    """One context for every session: each new one parses the bundle again."""
+    return ssl.create_default_context(cafile=certifi.where())
 
 
 def print_ssl_error_help():
