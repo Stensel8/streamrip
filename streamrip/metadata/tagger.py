@@ -87,6 +87,12 @@ def _names(names: list[str] | None, joined: str):
     return names if names and len(names) > 1 else joined
 
 
+def _total(total: int | None, number: int | None) -> int | None:
+    """A track or disc count to tag, or None where it is not known: a 0, or
+    the 1 a source's fallback guessed for track 5 ("5/1")."""
+    return total if total and total >= (number or 0) else None
+
+
 def _tag_values(meta: TrackMetadata) -> dict:
     """A track's tags by streamrip's own names, leaving out empty ones."""
     album = meta.album
@@ -96,7 +102,8 @@ def _tag_values(meta: TrackMetadata) -> dict:
         "album": album.album,
         "albumartist": _names(album.albumartists, album.albumartist),
         "composer": _names(meta.composers, meta.composer),
-        "year": album.year,
+        # "Unknown" names a folder; it is no year.
+        "year": None if album.year == "Unknown" else album.year,
         "description": album.description,
         "genre": album.get_genres(),
         "lyrics": meta.lyrics,
@@ -104,8 +111,8 @@ def _tag_values(meta: TrackMetadata) -> dict:
         "compilation": album.compilation,
         "tracknumber": meta.tracknumber,
         "discnumber": meta.discnumber,
-        "tracktotal": album.tracktotal,
-        "disctotal": album.disctotal,
+        "tracktotal": _total(album.tracktotal, meta.tracknumber),
+        "disctotal": _total(album.disctotal, meta.discnumber),
         "date": album.date,
         "isrc": meta.isrc,
         "version": album.version,

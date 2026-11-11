@@ -314,3 +314,16 @@ async def test_a_clean_track_gets_no_advisory_and_unknown_values_stay_out(
     t = FLAC(flac_path)
     for name in ("itunesadvisory", "bpm", "label", "replaygain_track_gain"):
         assert name not in t
+
+
+async def test_unknown_year_and_impossible_totals_are_not_tagged(
+    sample_metadata, flac_path
+):
+    album = sample_metadata.album
+    album.year, album.date = "Unknown", None
+    album.tracktotal, album.disctotal = 1, 0  # fallbacks for track 3 of disc 1
+    await tag_file(flac_path, sample_metadata, None)
+    t = FLAC(flac_path)
+    for name in ("date", "year", "tracktotal", "totaltracks", "disctotal"):
+        assert name not in t, name
+    assert t["tracknumber"] == ["03"]
