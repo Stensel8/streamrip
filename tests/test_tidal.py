@@ -113,6 +113,8 @@ async def test_dash_manifest_becomes_segmented_downloadable():
     assert (dl.source, dl.extension) == ("tidal", "flac")
     assert dl.init_url == "https://sp.example/init.mp4"
     assert dl.segment_urls == [f"https://sp.example/{n}.mp4" for n in range(1, 5)]
+    # 3 Mb/s for (3 x 384000 + 100000) / 96000 seconds, without a HEAD each.
+    assert await dl.size() == 4_890_625
 
 
 async def test_json_manifest_still_supported():
