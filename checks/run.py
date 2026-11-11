@@ -266,14 +266,15 @@ def live(source: str, config: Path | None, query_override: str | None):
                 )
         record(f"{source}: the track is whole and tagged", "; ".join(problems))
 
+        # By the file, not by what is said: the wording changes.
+        written = files[0].stat().st_mtime_ns
         again = streamrip(*download, capture_output=True)
-        said = again.stdout + again.stderr
         record(
             f"{source}: the same track again is skipped",
             None
             if again.returncode == 0
-            and "already downloaded" in said
-            and len(downloaded()) == 1
+            and downloaded() == files
+            and files[0].stat().st_mtime_ns == written
             else "it was downloaded again, or the run failed",
         )
 
