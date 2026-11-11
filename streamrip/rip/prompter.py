@@ -236,7 +236,6 @@ class TidalPrompter(CredentialPrompter):
                     pass
             await self._device_login(lane)
         self.client.logged_in = True
-        self.save()
 
     async def _device_login(self, lane: TidalClient):
         """Walk the user through Tidal's device login flow for one lane."""
