@@ -419,6 +419,26 @@ async def _artist(albums, prefer_explicit=True):
     return {"albums": [a for a in resp["albums"] if a["id"] in kept]}
 
 
+async def test_artist_albums_past_the_first_hundred_are_fetched():
+    counts = {"album": 250, "ep": 120}
+
+    async def reply(path, params=None, **_):
+        if not path.endswith("/albums"):
+            return {"name": "Test Artist"}
+        kind = "ep" if params.get("filter") == "EPSANDSINGLES" else "album"
+        start = params.get("offset", 0)
+        ids = range(start, min(start + 100, counts[kind]))
+        return {
+            "totalNumberOfItems": counts[kind],
+            "items": [{"id": f"{kind}{i}"} for i in ids],
+        }
+
+    c = _client()
+    c._api_request = AsyncMock(side_effect=reply)
+    ids = [a["id"] for a in (await c.get_metadata("1", "artist"))["albums"]]
+    assert ids == [f"album{i}" for i in range(250)] + [f"ep{i}" for i in range(120)]
+
+
 @pytest.mark.parametrize(
     ("clean_title", "explicit_title", "tracks"),
     [

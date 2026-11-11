@@ -225,14 +225,11 @@ class TidalClient(Client):
                 album = {k: v for k, v in item.items() if k != "tracks"}
                 self._albums[str(item["id"])] = album
         elif media_type == "artist":
-            logger.debug("filtering eps")
-            album_resp, ep_resp = await asyncio.gather(
-                self._api_request(f"{url}/albums"),
-                self._api_request(f"{url}/albums", params={"filter": "EPSANDSINGLES"}),
+            albums, eps = await asyncio.gather(
+                self._paged(f"{url}/albums"),
+                self._paged(f"{url}/albums", {"filter": "EPSANDSINGLES"}),
             )
-
-            item["albums"] = album_resp["items"]
-            item["albums"].extend(ep_resp["items"])
+            item["albums"] = [*albums, *eps]
 
         logger.debug(item)
         return item
