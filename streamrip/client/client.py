@@ -390,8 +390,9 @@ class RequestClient:
         """The client whose 429 pause this one shares (itself, by default)."""
         return self
 
-    async def _renew_login(self) -> bool:
-        """Renew a login that lapsed mid-run; True if there is a fresh one.
+    async def _renew_login(self, resp=None) -> bool:
+        """Renew a login that lapsed mid-run, as the 401 `resp` may say; True if
+        there is a fresh one.
 
         Only Tidal's access token expires while a rip runs; every other
         source returns False and the 401 reaches the caller as before.
@@ -824,7 +825,7 @@ class RequestClient:
                         if (
                             resp.status == 401
                             and not renewed
-                            and await self._renew_login()
+                            and await self._renew_login(resp)
                         ):
                             # A login that lapsed mid-run (Tidal's token lives
                             # hours) is renewed once, and this request is sent

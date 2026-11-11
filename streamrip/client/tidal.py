@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import contextlib
 import json
 import logging
 import time
@@ -618,14 +619,20 @@ class TidalClient(Client):
         self.save_login()
         self._update_authorization_from_config()
 
-    async def _renew_login(self) -> bool:
+    async def _renew_login(self, resp=None) -> bool:
         """Refresh this lane's access token after a 401 said it lapsed.
 
         At most one real refresh a minute: requests in flight together all
         hit the expiry at once, and retry on the one refresh. A refresh Tidal
         refuses stops the run: every track after it would ask again and be
-        refused too.
+        refused too. Tidal also answers a track it cannot play with a 401
+        (subStatus 4005, "Asset is not ready for playback"); no login lapsed
+        there, so nothing is refreshed.
         """
+        if resp is not None:
+            with contextlib.suppress(Exception):  # no JSON: a lapse, as before
+                if (await resp.json()).get("subStatus") == 4005:
+                    return False
         async with self._renew_lock:
             owner = self._pause_owner()
             if owner._halt is not None:
