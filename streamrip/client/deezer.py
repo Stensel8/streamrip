@@ -113,14 +113,13 @@ class _Deezer:
             )
         except aiohttp.ClientResponseError:
             return None  # a failed request, not an answer (see get_downloadable)
-        for data in resp.get("data") or []:
-            if errors := data.get("errors"):
-                if errors[0].get("code") == 2002:
-                    raise WrongGeolocationError(user.get("country"))
-                raise DeezerError(json.dumps(errors))
-            media = data.get("media") or []
-            return media[0]["sources"][0]["url"] if media else None
-        return None
+        data = (resp.get("data") or [{}])[0]  # one track asked for, one answer
+        if errors := data.get("errors"):
+            if errors[0].get("code") == 2002:
+                raise WrongGeolocationError(user.get("country"))
+            raise DeezerError(json.dumps(errors))
+        media = data.get("media") or []
+        return media[0]["sources"][0]["url"] if media else None
 
 
 class _PublicAPI:
