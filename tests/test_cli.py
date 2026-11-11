@@ -613,7 +613,9 @@ class _RepairMain:
     def __init__(self, config):
         c = config.session.database
         self.database = db.Database(
-            db.Downloads(c.downloads_path), db.Failed(c.failed_downloads_path)
+            # As Main does: a table turned off is a Dummy.
+            db.Downloads(c.downloads_path) if c.downloads_enabled else db.Dummy(),
+            db.Failed(c.failed_downloads_path),
         )
 
     async def __aenter__(self):
@@ -654,6 +656,20 @@ def test_repair_matches_failures_by_source_and_id(tmp_path, monkeypatch, capsys)
     # Tidal 3 was repaired and Qobuz 3 was not: it stays for the next run.
     assert failed.all() == [("qobuz", "track", "3")]
     assert "Repaired1of2items." in _printed(result, capsys)
+
+
+def test_repair_without_the_downloads_db_still_sees_what_it_repaired(
+    tmp_path, monkeypatch, capsys
+):
+    cfg, _downloads, failed = _seeded_databases(tmp_path)
+    _RepairMain.downloaded = [("tidal", "3")]
+    monkeypatch.setattr("streamrip.rip.cli.Main", _RepairMain)
+
+    result = CliRunner().invoke(rip, ["--config-path", cfg, "--no-db", "repair", "-y"])
+
+    assert result.exit_code == 0, result.output
+    assert failed.all() == []
+    assert "Repaired1of1item." in _printed(result, capsys)
 
 
 def test_repair_with_nothing_downloaded_keeps_every_failure(tmp_path, monkeypatch):
