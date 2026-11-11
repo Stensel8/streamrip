@@ -193,7 +193,8 @@ class SearchMenu(App[tuple[int, ...] | None]):
     def on_resize(self):
         # SIXEL drawn with the previous geometry can scroll the whole terminal
         # while it is shrinking. Hide it until Textual has laid out the new size.
-        if not self.is_mounted:
+        # (App.is_mounted is a method about a widget, not this flag.)
+        if not self._is_mounted:
             return
         self._resizing_preview = True
         self.query_one(CoverPane).display = False
