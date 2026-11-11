@@ -7,6 +7,7 @@ import pytest
 
 from streamrip.config import Config, set_user_defaults
 from streamrip.filepath_utils import (
+    clean_filename,
     clean_filepath,
     ensure_inside,
     fit_filename,
@@ -267,3 +268,15 @@ def test_sanitize_filename_names_files_as_pathvalidate_did(name, expected):
 def test_sanitize_filename_cuts_at_255_bytes_without_splitting_a_character():
     assert sanitize_filename("a" * 260) == "a" * 255
     assert sanitize_filename("é" * 130) == "é" * 127  # 254 bytes
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("CON★", "CON_"),  # not the Windows device name
+        ("Love ♥", "Love"),  # no trailing space, which Windows drops
+        ("★ Japanese", "Japanese"),
+    ],
+)
+def test_restricted_names_are_sanitized_after_the_filtering(name, expected):
+    assert clean_filename(name, restrict=True) == expected

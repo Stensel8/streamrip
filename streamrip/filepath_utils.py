@@ -56,11 +56,11 @@ def sanitize_filename(name: str) -> str:
 
 
 def clean_filename(fn: str, restrict: bool = False) -> str:
-    path = truncate_str(sanitize_filename(fn))
     if restrict:
-        path = "".join(c for c in path if c in ALLOWED_CHARS)
-
-    return path
+        # Before sanitizing, which then covers what is left: "CON★" would be
+        # "CON", a device name on Windows, and "Love ♥" end in a space.
+        fn = "".join(c for c in fn if c in ALLOWED_CHARS)
+    return truncate_str(sanitize_filename(fn))
 
 
 def clean_filepath(fn: str, restrict: bool = False) -> Path:
