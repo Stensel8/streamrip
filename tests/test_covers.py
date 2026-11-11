@@ -58,8 +58,8 @@ def test_covers_one(covers_one):
     assert not covers_one.empty()
     assert covers_one.largest() == ("small", "surl", None)
     assert covers_one.get_size("original") == ("small", "surl", None)
-    with pytest.raises(LookupError):
-        covers_one.get_size("thumbnail")
+    # Only a larger one: that rather than none (SoundCloud has one size).
+    assert covers_one.get_size("thumbnail") == ("small", "surl", None)
 
 
 def test_covers_some(covers_some):
@@ -67,5 +67,10 @@ def test_covers_some(covers_some):
     assert covers_some.largest() == ("large", "lurl", None)
     assert covers_some.get_size("original") == ("large", "lurl", None)
     assert covers_some.get_size("small") == ("small", "surl", None)
-    with pytest.raises(LookupError):
-        covers_some.get_size("thumbnail")
+    assert covers_some.get_size("thumbnail") == ("small", "surl", None)
+
+
+@pytest.mark.parametrize("size", Covers.SIZES)
+def test_a_soundcloud_cover_is_there_for_every_embed_size(size):
+    covers = Covers.from_soundcloud({"artwork_url": "https://i/a-large.jpg"})
+    assert covers.get_size(size)[1] == "https://i/a-t500x500.jpg"
