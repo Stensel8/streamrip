@@ -35,8 +35,6 @@ class MatchTrack:
         return f"{', '.join(self.artists) or 'Unknown artist'} - {self.title}"
 
 
-Track = MatchTrack
-
 # Words that mark another version of a recording, with their spellings. A live version is not the studio
 # version: when the two titles do not carry the same ones, the title score is halved.
 VERSION_TAGS = frozendict(
@@ -232,7 +230,7 @@ def _duration_score(a: int | None, b: int | None) -> float:
     return 1.0 if difference <= 3000 else 0.5 if difference <= 10_000 else 0.0
 
 
-def score(wanted: Track, candidate: Track) -> float:
+def score(wanted: MatchTrack, candidate: MatchTrack) -> float:
     """How well ``candidate`` matches ``wanted``, from 0 to 1."""
     title = _title_similarity(wanted.title, candidate.title)
     if _tags(wanted.title) != _tags(
@@ -255,7 +253,7 @@ def score(wanted: Track, candidate: Track) -> float:
     )
 
 
-def rank(wanted: Track, candidate: Track) -> tuple[float, float, float]:
+def rank(wanted: MatchTrack, candidate: MatchTrack) -> tuple[float, float, float]:
     """Orders candidates: by score, then, among equals, by the closest full title ("Song (A Remix)" over
     "Song (B Remix)"), then by the same album (the original release over a compilation)."""
     album = (
