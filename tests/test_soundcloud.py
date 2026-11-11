@@ -5,6 +5,7 @@ import pytest
 from streamrip.client.downloadable import (
     SegmentedMP4Downloadable,
     SoundcloudDownloadable,
+    concat_audio_files,
     hls_playlist,
 )
 from streamrip.client.soundcloud import SoundcloudClient, _find_client_id
@@ -212,7 +213,7 @@ class _Session:
 
     def get(self, url):
         if url == "playlist":
-            return _Resp(M3U.encode())
+            return _Resp(M3U.encode(), fail=url in self.failing)
         n = url.rsplit("/", 1)[1].split(".")[0]
         return _Resp(n.encode(), fail=url in self.failing)
 
@@ -252,6 +253,20 @@ async def test_hls_segments_are_cleaned_up_when_one_fails(hls):
         await make(failing={"https://seg/1.mp3"})._download(out, lambda _: None)
 
     assert list(temp.iterdir()) == []
+
+
+async def test_a_failed_hls_playlist_is_not_read_as_one(hls):
+    make, _temp, out = hls
+
+    with pytest.raises(ConnectionError):
+        await make(failing={"playlist"})._download(out, lambda _: None)
+
+    assert not out.exists()
+
+
+async def test_joining_no_segments_is_an_error_not_endless_recursion(tmp_path):
+    with pytest.raises(NonStreamableError):
+        await concat_audio_files([], tmp_path / "out.mp3", "mp3")
 
 
 def _client_answering(responses):

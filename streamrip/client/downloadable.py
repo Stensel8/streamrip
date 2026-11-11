@@ -549,6 +549,7 @@ class SoundcloudDownloadable(Downloadable):
     async def _segments(self) -> list[str]:
         """The HLS playlist's segment URLs."""
         async with self.session.get(self.url) as resp:
+            resp.raise_for_status()
             return hls_playlist(await resp.text("utf-8"), self.url)[1]
 
     async def _download_hls(self, path: Path, callback):
@@ -758,6 +759,8 @@ async def concat_audio_files(
     file is left. If a process fails or the call is cancelled, the others are
     killed and the intermediate files removed.
     """
+    if not paths:
+        raise NonStreamableError("There is no audio to join")
     require_ffmpeg()
     if len(paths) == 1:
         paths[0].move(out)
