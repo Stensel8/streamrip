@@ -61,14 +61,11 @@ class GenericURL(URL):
         url = TIDAL_SHARE_SUFFIX_REGEX.sub(r"\1", url)
 
         generic_url = URL_REGEX.match(url)
-        if generic_url is None:
+        # The source and id always match; the media type only when the url
+        # names one.
+        if generic_url is None or generic_url[2] is None:
             return None
-
-        source, media_type, item_id = generic_url.groups()
-        if source is None or media_type is None or item_id is None:
-            return None
-
-        return cls(generic_url, source)
+        return cls(generic_url, generic_url[1])
 
     async def into_pending(
         self,
@@ -268,13 +265,13 @@ class SpotifyURL(URL):
 def parse_url(url: str) -> URL | None:
     """The URL type that matches url, or None if none does."""
     url = url.strip()
-    parsed_urls: list[URL | None] = [
-        GenericURL.from_str(url),
-        QobuzInterpreterURL.from_str(url),
-        SoundcloudURL.from_str(url),
-        SpotifyURL.from_str(url),
-        DeezerDynamicURL.from_str(url),
-        DeezerFavoriteURL.from_str(url),
-        TidalFavoriteURL.from_str(url),
-    ]
-    return next((u for u in parsed_urls if u is not None), None)
+    kinds = (
+        GenericURL,
+        QobuzInterpreterURL,
+        SoundcloudURL,
+        SpotifyURL,
+        DeezerDynamicURL,
+        DeezerFavoriteURL,
+        TidalFavoriteURL,
+    )
+    return next(filter(None, (kind.from_str(url) for kind in kinds)), None)
