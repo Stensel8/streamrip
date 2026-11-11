@@ -147,7 +147,14 @@ def live(source: str, config: Path | None, query_override: str | None):
             streamrip("config", "path", capture_output=True).stdout.strip()
         )
         if config:
-            shutil.copy(config, config_path)
+            import tomlkit  # not at the top: the script starts outside its environment
+
+            doc = tomlkit.parse(Path(config).read_text())
+            # Scratch databases as well, or the test download would be recorded
+            # in yours (and skipped there when you have it already).
+            doc["database"]["downloads_path"] = str(Path(tmp) / "downloads.db")
+            doc["database"]["failed_downloads_path"] = str(Path(tmp) / "failed.db")
+            config_path.write_text(tomlkit.dumps(doc))
 
         def downloaded():
             return sorted(p for p in music.rglob("*") if p.suffix.lower() in AUDIO)
