@@ -513,10 +513,10 @@ def rip(
 
     if codec is not None:
         c.session.conversion.enabled = True
-        c.session.conversion.codec = codec.upper()
+        c.session.conversion.codec = codec
 
     if pace is not None:
-        c.session.downloads.pacing = pace.lower()
+        c.session.downloads.pacing = pace
 
     if no_progress:
         c.session.cli.progress_bars = False
@@ -662,7 +662,7 @@ def database_browse(ctx, table):
     """
     cfg = _require_config(ctx)
 
-    if table.lower() == "downloads":
+    if table == "downloads":
         t = Table("Row", "Source", "ID", title="Downloads database")
         rows = list(
             starmap(
@@ -1022,7 +1022,7 @@ async def csv_list(ctx, source, fallback_source, path):
     if source is None:
         source = _ask_source(len(tracks))
     async with main_session(ctx) as main:
-        await main.resolve_csv(path.stem, tracks, source.lower(), fallback_source)
+        await main.resolve_csv(path.stem, tracks, source, fallback_source)
         await main.rip()
 
 
