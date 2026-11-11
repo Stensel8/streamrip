@@ -201,6 +201,23 @@ async def test_playlist_track_is_tagged_as_part_of_one_album(monkeypatch):
     )
 
 
+async def test_a_track_listed_twice_is_downloaded_once(tmp_path):
+    config = Config.defaults()
+    config.session.downloads.folder = str(tmp_path)
+    client = MagicMock()
+    client.source = "tidal"
+    tracks = [{"id": 1}, {"id": 2}, {"id": 1}, {"id": 3}]
+    client.get_metadata = AsyncMock(return_value={"title": "Mix", "tracks": tracks})
+
+    playlist = await PendingPlaylist("1", client, config, MagicMock()).resolve()
+
+    assert [(t.id, t.position) for t in playlist.tracks] == [
+        ("1", 1),
+        ("2", 2),
+        ("3", 4),
+    ]
+
+
 def test_tracks_uploaded_to_deezer_are_left_out_of_a_playlist():
     """Tracks a user uploaded to Deezer have negative ids and are left out of a
     playlist.
