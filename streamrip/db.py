@@ -2,7 +2,7 @@
 
 import logging
 import sqlite3
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from dataclasses import dataclass
 lazy from collections.abc import Generator
 
@@ -76,12 +76,8 @@ class DatabaseBase:
         connection open until it is garbage collected, which Python warns
         about.
         """
-        conn = sqlite3.connect(self.path)
-        try:
-            with conn:
-                yield conn
-        finally:
-            conn.close()
+        with closing(sqlite3.connect(self.path)) as conn, conn:
+            yield conn
 
     def _where(self, items: dict) -> tuple[str, tuple[str, ...]]:
         """The WHERE condition matching every column=value of items, and its
@@ -141,9 +137,7 @@ class DatabaseBase:
     def clear(self) -> int:
         """Delete every row of the table. Returns how many there were."""
         with self._connect() as conn:
-            count = conn.execute(f"SELECT COUNT(*) FROM {self.name}").fetchone()[0]
-            conn.execute(f"DELETE FROM {self.name}")
-        return count
+            return conn.execute(f"DELETE FROM {self.name}").rowcount
 
     def all(self) -> list[tuple]:
         """Every row of the table."""
