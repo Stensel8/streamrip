@@ -46,7 +46,7 @@ def sanitize_filename(name: str) -> str:
         return ""
     if name in {".", ".."}:
         return name
-    root = name if name.startswith("...") else re.match(r"[^.]*", name)[0]
+    root = name if name.startswith("...") else name.partition(".")[0]
     if root.upper() in _RESERVED_NAMES or name.upper() in _RESERVED_NAMES:
         return name.replace(root, f"{root}_")
     if name[-1] in " ." or name[0] == " ":
