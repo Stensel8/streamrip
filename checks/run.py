@@ -39,6 +39,35 @@ AUDIO = {".flac", ".mp3", ".m4a", ".opus", ".ogg"}
 report: list[tuple[str, str]] = []
 
 
+# Logs in to a source with the logins of the config at argv[1], without asking
+# for any: exit code 2 when it has none, 3 when they no longer work.
+LOGIN_CHECK = """
+import asyncio, sys
+from pathlib import Path
+from streamrip.config import Config
+from streamrip.exceptions import AuthenticationError, MissingCredentialsError
+from streamrip.rip.main import Main
+from streamrip.rip.prompter import get_prompter
+
+async def check(path, source):
+    config = Config(Path(path))
+    async with Main(config) as main:
+        if not get_prompter(main.clients[source], config).has_creds():
+            print("no login for it in the config")
+            return 2
+        try:
+            await main.get_logged_in_client(source)
+        except (AuthenticationError, MissingCredentialsError) as e:
+            reason = e.__cause__ or e
+            print(f"its login no longer works ({reason}); log in again, paste the new config")
+            return 3
+    config.save_file()
+    return 0
+
+sys.exit(asyncio.run(check(*sys.argv[1:])))
+"""
+
+
 def record(name: str, problem: str | None = None, skipped: str | None = None) -> bool:
     """Note how one check went, and say so."""
     outcome = (
@@ -117,10 +146,13 @@ def nix():
 
 def live(source: str, config: Path | None, query_override: str | None):
     name = f"{source}, real account"
-    if not sys.stdin.isatty():
-        record(name, skipped="it needs a terminal to log in")
+    # Without a terminal (CI) nobody can log in: only the logins in --config
+    # are used, and a source without a working one is skipped, not failed.
+    unattended = not sys.stdin.isatty()
+    if unattended and config is None:
+        record(name, skipped="it needs a terminal to log in, or --config")
         return
-    if (
+    if not unattended and (
         input(f"\n{name}: streamrip will ask you to log in. Start? [Y/n] ")
         .lower()
         .startswith("n")
@@ -159,6 +191,21 @@ def live(source: str, config: Path | None, query_override: str | None):
             doc["database"]["downloads_path"] = str(Path(tmp) / "downloads.db")
             doc["database"]["failed_downloads_path"] = str(Path(tmp) / "failed.db")
             config_path.write_text(tomlkit.dumps(doc))
+
+        if unattended:
+            checked = subprocess.run(
+                [sys.executable, "-c", LOGIN_CHECK, str(config_path), source],
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if checked.returncode in {2, 3}:
+                record(name, skipped=checked.stdout.strip().splitlines()[-1])
+                return
+            if checked.returncode:
+                record(f"{source}: log in", checked.stderr.strip()[-300:])
+                return
 
         def downloaded():
             return sorted(p for p in music.rglob("*") if p.suffix.lower() in AUDIO)
