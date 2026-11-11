@@ -226,6 +226,16 @@ async def test_a_request_is_renewed_only_once(sleeps):
     c._renew_login.assert_awaited_once()
 
 
+async def test_a_renewal_on_the_last_attempt_still_ends_the_retries(sleeps):
+    # The renewed 401 used up attempt 4, and `attempt == 4` never held again.
+    errors = [_Response(503) for _ in range(MAX_API_ATTEMPTS + 5)]
+    c = _client(*errors[: MAX_API_ATTEMPTS - 1], _Response(401), *errors)
+    c._renew_login = AsyncMock(return_value=True)
+    with pytest.raises(aiohttp.ClientResponseError):
+        await c._api_request("tracks/1")
+    assert c.session.calls == MAX_API_ATTEMPTS + 1
+
+
 async def test_renew_login_refreshes_at_most_once_a_minute(monkeypatch):
     """Requests in flight together all hit the expiry at once; they retry on
     the one refresh, so the refresh token rotates only once."""
