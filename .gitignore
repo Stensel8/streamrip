@@ -25,3 +25,4 @@ StreamripDownloads
 .DS_Store
 pyrightconfig.json
 .venv/
+.uv-cache/
