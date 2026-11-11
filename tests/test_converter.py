@@ -129,6 +129,25 @@ async def test_failed_conversion_says_why_and_cleans_up(tmp_path):
 
 
 @needs_ffmpeg
+async def test_a_result_that_cannot_be_put_in_place_keeps_the_source(
+    tmp_path, monkeypatch
+):
+    source = tmp_path / "track.flac"
+    shutil.copy("tests/silence.flac", source)
+    engine = converter.LAME(source, remove_source=True)
+
+    def disk_full(*_):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(Path, "replace", disk_full)
+    monkeypatch.setattr(Path, "move", disk_full)
+    with pytest.raises(OSError, match="No space"):
+        await engine.convert()
+
+    assert source.exists()
+
+
+@needs_ffmpeg
 async def test_a_name_as_long_as_a_file_name_may_be_converts(tmp_path):
     """The temp file ffmpeg writes doesn't add to the name: it would not fit."""
     source = tmp_path / fit_filename("語" * 100, "flac")
