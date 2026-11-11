@@ -86,6 +86,25 @@ def test_a_wrong_source_or_media_type_is_a_usage_error(tmp_path, capsys, args, w
     assert f"'{wrong}' is not one of" in _output(result, capsys)
 
 
+def test_first_with_an_output_file_is_a_usage_error(tmp_path, capsys):
+    config = tmp_path / "config.toml"
+    set_user_defaults(config)
+    args = [
+        "search",
+        "--first",
+        "-o",
+        str(tmp_path / "out.json"),
+        "tidal",
+        "track",
+        "x",
+    ]
+
+    result = CliRunner().invoke(rip, ["--config-path", str(config), *args])
+
+    assert result.exit_code == 2
+    assert "--first or --output-file" in _output(result, capsys)
+
+
 def test_codec_choice_accepts_opus_and_aiff(tmp_path):
     cfg = str(tmp_path / "config.toml")
     for codec in ("opus", "AIFF"):

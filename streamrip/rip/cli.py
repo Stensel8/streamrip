@@ -914,8 +914,7 @@ async def search(ctx, first, output_file, num_results, source, media_type, query
     """
     cfg = _require_config(ctx)
     if first and output_file:
-        console.print("Cannot choose --first and --output-file!")
-        return
+        raise click.UsageError("Choose --first or --output-file, not both.")
     limit = num_results or cfg.session.cli.max_search_results
     async with main_session(ctx) as main:
         if first:
