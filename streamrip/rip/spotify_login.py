@@ -11,6 +11,7 @@ redirect cannot arrive, and the user pastes the address they ended up on.
 """
 
 import asyncio
+import socket
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -35,6 +36,8 @@ class _CallbackServer(HTTPServer):
     """Waits for the single redirect the browser makes back after the login."""
 
     def __init__(self, address: tuple[str, int], path: str):
+        if ":" in address[0]:  # ::1, which Spotify takes as a loopback too
+            self.address_family = socket.AF_INET6
         super().__init__(address, _CallbackHandler)
         self.path = path
         self.params: dict[str, str] = {}
