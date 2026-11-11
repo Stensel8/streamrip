@@ -31,8 +31,8 @@ def test_album_metadata_qobuz():
     assert m.version == "2001 Remaster"
     assert m.albumartist == "Fleetwood Mac"
     assert m.year == "1977"
-    assert "Pop" in m.genre
-    assert "Rock" in m.genre
+    # In Qobuz's order, the same on every run (a set's order is not).
+    assert m.genre == ["Pop", "Rock"]
     assert not m.covers.empty()
 
     assert m.albumcomposer == "Various Composers"
