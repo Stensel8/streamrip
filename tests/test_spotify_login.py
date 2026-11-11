@@ -87,6 +87,30 @@ async def test_the_code_comes_back_through_the_local_port():
     assert b"You can close this tab" in page
 
 
+def _ipv6_loopback() -> bool:
+    try:
+        with socket.socket(socket.AF_INET6) as s:
+            s.bind(("::1", 0))
+    except OSError:
+        return False
+    return True
+
+
+@pytest.mark.skipif(not _ipv6_loopback(), reason="no IPv6 loopback here")
+async def test_the_code_comes_back_through_the_ipv6_loopback():
+    with socket.socket(socket.AF_INET6) as s:
+        s.bind(("::1", 0))
+        port = s.getsockname()[1]
+    redirect_uri = f"http://[::1]:{port}/callback"
+
+    code, _ = await asyncio.gather(
+        capture_code(redirect_uri, "s1"),
+        browse(f"{redirect_uri}?code=the-code&state=s1"),
+    )
+
+    assert code == "the-code"
+
+
 async def test_a_login_for_another_attempt_is_not_accepted():
     port = free_port()
     redirect_uri = f"http://127.0.0.1:{port}/callback"
