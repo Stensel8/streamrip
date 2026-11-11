@@ -11,6 +11,7 @@ redirect cannot arrive, and the user pastes the address they ended up on.
 """
 
 import asyncio
+import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any, cast
@@ -87,8 +88,11 @@ def code_from_redirect_url(address: str, expected_state: str) -> str:
     return check_redirect(params, expected_state)
 
 
-def _wait_for_redirect(redirect_uri: str, timeout: float) -> dict[str, str]:
-    """Listen at the redirect URI until the browser comes, or the time is up."""
+def _wait_for_redirect(
+    redirect_uri: str, timeout: float, stop: threading.Event
+) -> dict[str, str]:
+    """Listen at the redirect URI until the browser comes, the time is up, or
+    `stop` is set."""
     target = urlsplit(redirect_uri)
     host = target.hostname or ""
     if host not in _LOOPBACK:
@@ -105,7 +109,7 @@ def _wait_for_redirect(redirect_uri: str, timeout: float) -> dict[str, str]:
         ) from e
     with server:  # closes the socket on the way out
         deadline = time.monotonic() + timeout
-        while not server.params and time.monotonic() < deadline:
+        while not server.params and not stop.is_set() and time.monotonic() < deadline:
             server.handle_request()
     if not server.params:
         raise SpotifyLoginError("Timed out waiting for the login to finish.")
@@ -114,5 +118,13 @@ def _wait_for_redirect(redirect_uri: str, timeout: float) -> dict[str, str]:
 
 async def capture_code(redirect_uri: str, expected_state: str) -> str:
     """Wait for the browser to come back to redirect_uri, and return the code."""
-    params = await asyncio.to_thread(_wait_for_redirect, redirect_uri, LOGIN_TIMEOUT)
+    # A cancelled await leaves its thread running: Ctrl-C would wait out the
+    # whole LOGIN_TIMEOUT, with the port still taken, unless it is told to stop.
+    stop = threading.Event()
+    try:
+        params = await asyncio.to_thread(
+            _wait_for_redirect, redirect_uri, LOGIN_TIMEOUT, stop
+        )
+    finally:
+        stop.set()
     return check_redirect(params, expected_state)
