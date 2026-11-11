@@ -6,9 +6,8 @@ import functools
 import logging
 import subprocess
 import uuid
-from pathlib import Path
-from tempfile import gettempdir
 from typing import Final
+lazy from pathlib import Path
 
 lazy from mutagen import flac
 lazy from mutagen.id3 import ID3
@@ -52,9 +51,10 @@ class Converter:
         # Unique per conversion: tracks from different albums often share a
         # file name ("01. Intro"), and concurrent conversions used to
         # overwrite each other's temp file. Not the track's name: that can
-        # already be as long as a file name may be.
-        self.tempfile = (
-            Path(gettempdir()) / f"streamrip-{uuid.uuid4().hex}.{self.container}"
+        # already be as long as a file name may be. Beside the result, so it
+        # is renamed into place, never copied from another filesystem.
+        self.tempfile = self.final_fn.with_name(
+            f".streamrip-{uuid.uuid4().hex}.{self.container}"
         )
         self.remove_source = remove_source
         self.sampling_rate = sampling_rate
@@ -76,9 +76,11 @@ class Converter:
             *args, output=self.tempfile, failure="ffmpeg failed", error=ConversionError
         )
 
-        if self.remove_source:
+        # The source goes only once the result is in place: a failure here
+        # (a full disk) must not leave neither.
+        self.tempfile.replace(self.final_fn)
+        if self.remove_source and self.filename != self.final_fn:
             self.filename.unlink()
-        self.tempfile.move(self.final_fn)
         if cover_data is not None:
             await asyncio.to_thread(self._embed_cover_art, *cover_data)
 
