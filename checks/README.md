@@ -23,7 +23,7 @@ environment with uv.
 | image build and smoke test | yes | `container` |
 | `nix flake check` | yes | `nix` (it only sees files git tracks) |
 | tests marked `login`: prompters, token capture, device login, refresh (mocks and local pages) | no | `login` |
-| real accounts | no | `live` |
+| real accounts | on the pi, with the `STREAMRIP_CONFIG` secret | `live` |
 
 ## Real accounts
 
@@ -44,3 +44,9 @@ themselves, so its default is a generic search that can come up empty).
 
 It does one search and one download per service. Run it when you changed
 something, not on a schedule: services suspend accounts that look like abuse.
+
+### In CI
+
+On a push to `dev` the pi runs `live` for Qobuz, Tidal and Deezer with the
+`STREAMRIP_CONFIG` secret: your whole `config.toml`. Without it, or with a
+login that no longer works, that service is skipped.
