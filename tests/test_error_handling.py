@@ -110,3 +110,28 @@ class TestErrorHandling:
             await main.search_take_first("deezer", "track", "nothing matches")
 
             assert main.pending == []
+
+
+async def test_one_bad_url_costs_only_itself(caplog):
+    """A url streamrip can't queue (here a Tidal video) skips just that url."""
+    from streamrip.config import Config
+    from streamrip.media import PendingAlbum
+    from streamrip.rip.main import Main
+
+    config = Config.defaults()
+    config.session.database.downloads_enabled = False
+    config.session.database.failed_downloads_enabled = False
+    main = Main(config)
+    main.clients["tidal"].logged_in = True
+
+    await main.add_all(
+        [
+            "https://tidal.com/browse/video/5678",
+            "https://tidal.com/browse/album/1234",
+        ]
+    )
+
+    assert [type(p) for p in main.pending] == [PendingAlbum]
+    assert "Error with https://tidal.com/browse/video/5678: NotImplementedError" in (
+        caplog.text
+    )
