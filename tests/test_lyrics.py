@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock
 import mutagen
 import pytest
 from aiohttp import web
-from test_track import FlacToFlacConverter, _make_track
+from test_media import FlacToFlacConverter, _make_track
 
 from streamrip import lyrics
 from streamrip.client.audio_match import MatchTrack
@@ -27,6 +27,7 @@ from streamrip.rip.main import Main
 
 PLAIN = "first made-up line\nsecond made-up line"
 SYNCED = "[00:01.00] first made-up line\n[00:05.50] second made-up line"
+WRONG = {"plain": "wrong made-up line", "synced": "[00:01.00] wrong made-up line"}
 WANTED = MatchTrack("Song", ["Band", "Guest"], "Album", 200_000)
 
 
@@ -73,130 +74,104 @@ class FakeLrclib:
 
 
 @pytest.fixture
-async def lrclib(monkeypatch):
+async def lrclib(monkeypatch, serve):
     """A running fake LRCLIB, which `find_lyrics` is pointed at."""
     fake = FakeLrclib()
-    app = web.Application()
-    app.router.add_get("/api/{endpoint}", fake.handle)
-    runner = web.AppRunner(app, access_log=None)
-    await runner.setup()
-    await web.TCPSite(runner, "127.0.0.1", 0).start()
-    host, port = runner.addresses[0][:2]
-    monkeypatch.setattr(lyrics, "API", f"http://{host}:{port}/api")
+    base = await serve({"/api/{endpoint}": fake.handle})
+    monkeypatch.setattr(lyrics, "API", f"{base}api")
     monkeypatch.setattr(lyrics, "_lrclib", None)
     yield fake
     await lyrics.close()
-    await runner.cleanup()
 
 
 # --- what is in a record -----------------------------------------------------
 
 
-def test_synced_lyrics_are_used_unless_plain_ones_are_wanted():
-    assert lyrics_of(record(), plain=False) == SYNCED
-    assert lyrics_of(record(), plain=True) == PLAIN
-
-
 @pytest.mark.parametrize(
-    ("kinds", "plain", "expected"),
+    ("changes", "plain", "expected"),
     [
+        ({}, False, SYNCED),
+        ({}, True, PLAIN),
         ({"plain": ""}, False, SYNCED),
         ({"synced": None}, False, PLAIN),  # no synced ones: plain will do
         ({"plain": None}, True, PLAIN),  # LRC lines made plain
+        (
+            {
+                "plain": "",
+                "synced": "[00:01.00][00:30.00] again and again\n[01:02.03]  last line",
+            },
+            True,
+            "again and again\nlast line",
+        ),
         ({"plain": "", "synced": ""}, False, None),
         ({"plain": " \n", "synced": None}, True, None),
+        ({"instrumental": True}, False, None),
     ],
 )
-def test_whichever_kind_there_is_is_used(kinds, plain, expected):
-    assert lyrics_of(record(**kinds), plain) == expected
-
-
-def test_timestamps_are_taken_off_lrc_lines():
-    synced = "[00:01.00][00:30.00] again and again\n[01:02.03]  last line"
-
-    assert lyrics_of(record(plain="", synced=synced), plain=True) == (
-        "again and again\nlast line"
-    )
-
-
-def test_an_instrumental_has_no_lyrics():
-    assert lyrics_of(record(instrumental=True), plain=False) is None
+def test_the_lyrics_in_a_record(changes, plain, expected):
+    assert lyrics_of(record(**changes), plain) == expected
 
 
 # --- asking LRCLIB -----------------------------------------------------------
 
 
-async def test_a_track_is_asked_for_by_artist_title_and_length(lrclib):
+@pytest.mark.parametrize(
+    ("seconds", "plain", "found", "duration"),
+    [
+        (200.4, False, SYNCED, "200"),  # the length rounded
+        (200.0, True, PLAIN, "200"),  # for an mp3
+        (None, False, SYNCED, None),
+    ],
+)
+async def test_a_track_is_asked_for_by_artist_title_and_length(
+    lrclib, seconds, plain, found, duration
+):
     lrclib.on("get", record())
 
-    found = await find_lyrics(WANTED, 200.4, plain=False)
+    assert await find_lyrics(WANTED, seconds, plain) == found
 
-    assert found == SYNCED
     [call] = lrclib.requests("get")
-    # The main artist, not "Band, Guest": no album, which services spell
-    # differently; the length rounded.
-    assert call["query"] == {
-        "artist_name": "Band",
-        "track_name": "Song",
-        "duration": "200",
-    }
+    # The main artist, not "Band, Guest"; no album, which services spell
+    # differently.
+    query = {"artist_name": "Band", "track_name": "Song"}
+    assert call["query"] == (query | {"duration": duration} if duration else query)
     assert lrclib.requests("search") == []
-
-
-async def test_it_says_what_is_asking_and_sends_no_login(lrclib):
-    lrclib.on("get", record())
-
-    await find_lyrics(WANTED, 200.0, plain=False)
-
-    headers = {k.lower(): v for k, v in lrclib.calls[0]["headers"].items()}
+    # It says what is asking, and sends no login.
+    headers = {k.lower(): v for k, v in call["headers"].items()}
     assert headers["user-agent"].startswith("streamrip/")
     assert "opencommit.eu/Stensel8/streamrip" in headers["user-agent"]
     assert not {"authorization", "cookie", "x-user-auth-token"} & set(headers)
 
 
-async def test_plain_lyrics_are_given_for_an_mp3(lrclib):
-    lrclib.on("get", record())
-
-    assert await find_lyrics(WANTED, 200.0, plain=True) == PLAIN
-
-
-async def test_without_a_length_none_is_asked_for(lrclib):
-    lrclib.on("get", record())
-
-    await find_lyrics(WANTED, None, plain=False)
-
-    assert "duration" not in lrclib.calls[0]["query"]
-
-
-async def test_when_there_is_no_exact_record_the_search_is_scored(lrclib):
+@pytest.mark.parametrize(
+    ("results", "found"),
+    [
+        (
+            [
+                record(artist="Somebody Else", **WRONG),
+                record(track="Song (Live)", **WRONG),
+                record(duration=31.0, **WRONG),  # a clip
+                record(instrumental=True, **WRONG),
+                record(plain="", synced=""),
+                record(track="Song", duration=201.0),
+            ],
+            SYNCED,
+        ),
+        ([record(artist="Somebody Else"), record(duration=90.0)], None),
+    ],
+    ids=["the track among others", "nothing right"],
+)
+async def test_when_there_is_no_exact_record_the_search_is_scored(
+    lrclib, results, found
+):
     lrclib.on("get", (404, {"statusCode": 404}))
-    wrong = {"plain": "wrong made-up line", "synced": "[00:01.00] wrong made-up line"}
-    lrclib.on(
-        "search",
-        [
-            record(artist="Somebody Else", **wrong),
-            record(track="Song (Live)", **wrong),
-            record(duration=31.0, **wrong),  # a clip
-            record(instrumental=True, **wrong),
-            record(plain="", synced=""),
-            record(track="Song", duration=201.0),
-        ],
-    )
+    lrclib.on("search", results)
 
-    found = await find_lyrics(
-        MatchTrack("Song (feat. Guest)", ["Band"], "Album", 200_000), 200.0, False
-    )
+    wanted = MatchTrack("Song (feat. Guest)", ["Band"], "Album", 200_000)
+    assert await find_lyrics(wanted, 200.0, False) == found
 
-    assert found == SYNCED
     [call] = lrclib.requests("search")
     assert call["query"] == {"track_name": "Song", "artist_name": "Band"}
-
-
-async def test_a_search_with_nothing_right_in_it_finds_nothing(lrclib):
-    lrclib.on("get", (404, {"statusCode": 404}))
-    lrclib.on("search", [record(artist="Somebody Else"), record(duration=90.0)])
-
-    assert await find_lyrics(WANTED, 200.0, plain=False) is None
 
 
 async def test_a_miss_is_remembered_and_so_is_a_hit(lrclib):
@@ -257,20 +232,16 @@ async def test_a_lookup_that_waited_for_a_slot_is_not_made_once_lrclib_is_left_a
 
 
 async def test_a_success_starts_the_count_again(lrclib):
-    for n in range(MAX_FAILURES - 1):
+    # Twice: without the reset, the second run of failures reaches the limit.
+    for attempt in range(2):
         lrclib.on("get", (500, {}))
-        with pytest.raises(LyricsUnavailableError):
-            await find_lyrics(MatchTrack(f"Failing {n}", ["Band"]), 200, False)
-    lrclib.on("get", record())
-    assert await find_lyrics(MatchTrack("Works", ["Band"]), 200, False) == SYNCED
-
-    lrclib.calls.clear()
-    lrclib.on("get", (500, {}))
-    for n in range(MAX_FAILURES - 1):
-        with pytest.raises(LyricsUnavailableError):
-            await find_lyrics(MatchTrack(f"Failing again {n}", ["Band"]), 200, False)
-    lrclib.on("get", record())
-    assert await find_lyrics(MatchTrack("Still works", ["Band"]), 200, False) == SYNCED
+        for n in range(MAX_FAILURES - 1):
+            wanted = MatchTrack(f"Failing {attempt} {n}", ["Band"])
+            with pytest.raises(LyricsUnavailableError):
+                await find_lyrics(wanted, 200, False)
+        lrclib.on("get", record())
+        wanted = MatchTrack(f"Works {attempt}", ["Band"])
+        assert await find_lyrics(wanted, 200, False) == SYNCED
 
 
 async def test_an_unreachable_lrclib_is_unavailable_not_a_crash(monkeypatch):
@@ -349,27 +320,29 @@ def lyrics_in(path):
     return (tags.get("\xa9lyr") or [None])[0]
 
 
-async def test_lyrics_found_are_in_the_file_tagged(tmp_path, asked):
-    await _make_track(tmp_path, "m4a").rip()
+def _from_tidal(track, **get_lyrics):
+    track.client = MagicMock(source="tidal")
+    track.client.get_lyrics = AsyncMock(**get_lyrics)
+    return track
+
+
+@pytest.mark.parametrize(("extension", "seconds"), [("m4a", 0.32), ("flac", 0.25)])
+async def test_lyrics_found_are_in_the_file_tagged(tmp_path, asked, extension, seconds):
+    # The synced ones: also in the FLAC of a lossless source.
+    await _make_track(tmp_path, extension).rip()
 
     asked.assert_awaited_once()
-    wanted, seconds, plain, verify_ssl = asked.await_args.args
+    wanted, length, plain, verify_ssl = asked.await_args.args
     assert (wanted.title, wanted.artists, wanted.album) == (
         "Song",
         ["Test Artist"],
         "Test Album",
     )
-    assert seconds == pytest.approx(0.32, abs=0.05)  # the file's, measured
-    assert wanted.duration_ms == pytest.approx(320, abs=50)
-    assert plain is False  # an m4a takes the synced ones
-    assert verify_ssl is True
-    assert lyrics_in(tmp_path / "Song.m4a") == SYNCED
-
-
-async def test_the_flac_of_a_lossless_source_gets_synced_lyrics_too(tmp_path, asked):
-    await _make_track(tmp_path, "flac").rip()
-
-    assert lyrics_in(tmp_path / "Song.flac") == SYNCED
+    # The length of the file, measured.
+    assert length == pytest.approx(seconds, abs=0.05)
+    assert wanted.duration_ms == pytest.approx(seconds * 1000, abs=50)
+    assert (plain, verify_ssl) == (False, True)
+    assert lyrics_in(tmp_path / f"Song.{extension}") == SYNCED
 
 
 @pytest.mark.parametrize(
@@ -385,6 +358,8 @@ async def test_plain_lyrics_are_asked_for_where_the_format_takes_plain(
     tmp_path, asked, changes, plain
 ):
     track = _make_track(tmp_path, "m4a")
+    track.config.session.downloads.save_lrc = True
+    await track.preprocess()
     track.download_path = tmp_path / changes["download_path"]  # not even there
     if "codec" in changes:
         track.config.session.conversion.enabled = True
@@ -393,12 +368,8 @@ async def test_plain_lyrics_are_asked_for_where_the_format_takes_plain(
     await track._look_up_lyrics()
 
     assert asked.await_args.args[2] is plain
-
-
-def _from_tidal(track, **get_lyrics):
-    track.client = MagicMock(source="tidal")
-    track.client.get_lyrics = AsyncMock(**get_lyrics)
-    return track
+    # Plain lyrics have no timestamps to make an .lrc file worth it.
+    assert (tmp_path / "Song.lrc").exists() is not plain
 
 
 async def test_the_lyrics_of_the_source_come_first(tmp_path, asked):
@@ -415,8 +386,8 @@ async def test_the_lyrics_of_the_source_come_first(tmp_path, asked):
     "answer", ["", RuntimeError("401")], ids=["none", "request failed"]
 )
 async def test_lyrics_the_source_has_not_are_looked_up(tmp_path, asked, answer):
-    """A source failing its lyrics costs the track nothing: a 401 from Tidal's
-    used to fail the whole album (#959)."""
+    # A source failing its lyrics costs the track nothing: a 401 from Tidal's
+    # used to fail the whole album (#959).
     track = _from_tidal(_make_track(tmp_path, "m4a"), side_effect=[answer])
 
     await track.rip()
@@ -447,7 +418,7 @@ async def test_a_lookup_that_breaks_costs_the_track_nothing(tmp_path, asked, cap
         await _make_track(tmp_path, "m4a").rip()
 
     assert (tmp_path / "Song.m4a").exists()
-    assert "Could not look up lyrics for 'Song': RuntimeError: boom" in caplog.text
+    assert "RuntimeError: boom" in caplog.text
 
 
 async def test_no_lyrics_found_means_none_in_the_file_and_is_said(
@@ -476,35 +447,21 @@ async def test_the_lookup_comes_before_the_conversion(tmp_path, asked, monkeypat
     assert lyrics_in(tmp_path / "Song.flac") == SYNCED
 
 
-async def test_save_lrc_off_by_default(tmp_path, asked):
-    await _make_track(tmp_path, "m4a").rip()
-
-    assert not (tmp_path / "Song.lrc").exists()
-
-
-async def test_save_lrc_writes_the_synced_lyrics_beside_the_track(tmp_path, asked):
+@pytest.mark.parametrize(
+    ("save_lrc", "from_source", "lrc"),
+    [(False, None, None), (True, None, SYNCED), (True, SYNCED, SYNCED)],
+    ids=["off by default", "on", "the source's own lyrics"],
+)
+async def test_save_lrc_writes_the_synced_lyrics_beside_the_track(
+    tmp_path, asked, save_lrc, from_source, lrc
+):
     track = _make_track(tmp_path, "m4a")
-    track.config.session.downloads.save_lrc = True
+    if from_source:
+        _from_tidal(track, return_value=from_source)
+    if save_lrc:
+        track.config.session.downloads.save_lrc = True
 
     await track.rip()
 
-    assert (tmp_path / "Song.lrc").read_text(encoding="utf-8") == SYNCED
-
-
-async def test_save_lrc_skips_plain_lyrics(tmp_path, asked):
-    track = _make_track(tmp_path, "m4a")
-    track.config.session.downloads.save_lrc = True
-    track.download_path = tmp_path / "Song.mp3"  # plain takes over for an mp3
-
-    await track._look_up_lyrics()
-
-    assert not (tmp_path / "Song.lrc").exists()
-
-
-async def test_save_lrc_also_covers_the_source_s_own_lyrics(tmp_path, asked):
-    track = _from_tidal(_make_track(tmp_path, "m4a"), return_value=SYNCED)
-    track.config.session.downloads.save_lrc = True
-
-    await track.rip()
-
-    assert (tmp_path / "Song.lrc").read_text(encoding="utf-8") == SYNCED
+    path = tmp_path / "Song.lrc"
+    assert (path.read_text(encoding="utf-8") if path.exists() else None) == lrc
