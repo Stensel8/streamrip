@@ -9,6 +9,7 @@ import uuid
 from typing import Final
 lazy from pathlib import Path
 
+lazy import mutagen
 lazy from mutagen import flac
 lazy from mutagen.id3 import ID3
 lazy from mutagen.oggopus import OggOpus
@@ -283,9 +284,18 @@ class AIFF(Converter):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Keep 16-bit sources 16-bit instead of padding them to 24.
-        if self.bit_depth == 16:
+        # Keep 16-bit sources 16-bit instead of padding them to 24: bit_depth
+        # is the configured cap, not what the source has.
+        if min(_bits_per_sample(self.filename), self.bit_depth or 24) <= 16:
             self.codec_lib = "pcm_s16be"
+
+
+def _bits_per_sample(path: Path) -> int:
+    """The bit depth of a lossless file (FLAC, ALAC, AIFF); 24 if unknown."""
+    try:
+        return mutagen.File(path).info.bits_per_sample
+    except Exception:
+        return 24
 
 
 @functools.cache

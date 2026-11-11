@@ -114,6 +114,18 @@ async def test_conversion(tmp_path, codec, extension):
 
 
 @needs_ffmpeg
+async def test_a_16_bit_source_stays_16_bit_as_aiff(tmp_path):
+    source = tmp_path / "track.flac"
+    shutil.copy("tests/silence.flac", source)
+    assert mutagen.File(source).info.bits_per_sample == 16
+    engine = converter.AIFF(source, bit_depth=24)  # the default cap
+
+    await engine.convert()
+
+    assert mutagen.File(engine.final_fn).info.bits_per_sample == 16
+
+
+@needs_ffmpeg
 async def test_failed_conversion_says_why_and_cleans_up(tmp_path):
     source = tmp_path / "track.flac"
     source.write_bytes(b"not audio")
