@@ -154,6 +154,9 @@ async def _read_token(page) -> tuple[str, str] | None:
     try:
         raw = await page.evaluate("() => localStorage.getItem('localuser')")
     except PlaywrightError:
+        # Closed by the user: no login is coming, so don't wait it out.
+        if page.is_closed():
+            raise QobuzTokenCaptureError("The login window was closed.") from None
         # Qobuz reloads the page on login, which tears down the execution
         # context mid-poll; the next tick runs against the page that comes
         # after, once it's settled.

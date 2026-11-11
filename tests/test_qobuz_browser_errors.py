@@ -16,6 +16,7 @@ def browser_flow(monkeypatch):
     context = browser.new_context.return_value
     page = context.new_page.return_value
     page.evaluate.return_value = '{"id": 123, "token": "test-token"}'
+    page.is_closed = MagicMock(return_value=False)  # sync in Playwright
     manager = AsyncMock()
     manager.__aenter__.return_value.chromium.launch.return_value = browser
     monkeypatch.setattr("playwright.async_api.async_playwright", lambda: manager)
@@ -83,3 +84,25 @@ async def test_polling_retries_after_navigation_error(monkeypatch, browser_flow)
     assert page.evaluate.await_count == 2
     sleep.assert_awaited_once_with(1)
     browser.close.assert_awaited_once()
+
+
+class _GonePage:
+    """A page whose script calls fail: closed, or in the middle of a reload."""
+
+    def __init__(self, closed):
+        self.closed = closed
+
+    async def evaluate(self, _script):
+        raise PlaywrightError("Target page, context or browser has been closed")
+
+    def is_closed(self):
+        return self.closed
+
+
+async def test_a_closed_login_window_stops_the_wait():
+    with pytest.raises(capture.QobuzTokenCaptureError, match="closed"):
+        await capture._read_token(_GonePage(closed=True))
+
+
+async def test_a_page_that_is_reloading_is_polled_again():
+    assert await capture._read_token(_GonePage(closed=False)) is None
