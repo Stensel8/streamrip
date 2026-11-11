@@ -365,6 +365,11 @@ class PendingPlaylist(PendingItem):
         except Exception as e:
             logger.error("Error creating playlist: %s", e)
             return None
+        # A track listed twice is downloaded once, at its first position: two
+        # downloads of it at the same time would write the same file.
+        first: dict[str, int] = {}
+        for position, track_id in enumerate(meta.ids, start=1):
+            first.setdefault(track_id, position)
         tracks = [
             PendingPlaylistTrack(
                 track_id,
@@ -376,7 +381,7 @@ class PendingPlaylist(PendingItem):
                 self.db,
                 total=len(meta.ids),
             )
-            for position, track_id in enumerate(meta.ids, start=1)
+            for track_id, position in first.items()
         ]
         return Playlist(meta.name, self.config, self.client, tracks)
 
