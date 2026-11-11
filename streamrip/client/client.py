@@ -833,7 +833,7 @@ class RequestClient:
                             continue
                         if (
                             resp.status not in RETRY_STATUSES
-                            or attempt == MAX_API_ATTEMPTS
+                            or attempt >= MAX_API_ATTEMPTS
                         ):
                             return await read(resp)
                         if resp.status != 429:
@@ -846,7 +846,7 @@ class RequestClient:
                 aiohttp.ClientConnectionError,
                 aiohttp.ClientPayloadError,
             ) as e:
-                if attempt == MAX_API_ATTEMPTS:
+                if attempt >= MAX_API_ATTEMPTS:
                     raise
                 reason = type(e).__name__
                 delay = 2**attempt + random.random()
