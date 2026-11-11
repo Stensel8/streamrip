@@ -91,3 +91,9 @@ def test_a_symlinked_config_is_written_through(tmp_path):
     assert link.is_symlink()
     assert Config(real).file.deezer.arl == "new-synthetic-cookie"
     assert sorted(p.name for p in repo.iterdir()) == ["config.toml"]
+
+
+def test_a_config_can_be_made_in_a_folder_that_is_not_there_yet(tmp_path):
+    path = tmp_path / "new" / "folder" / "config.toml"
+    set_user_defaults(path)
+    assert path.is_file()
