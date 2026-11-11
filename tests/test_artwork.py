@@ -127,3 +127,27 @@ async def test_a_cover_that_keeps_failing_gives_up(tmp_path, monkeypatch):
     assert result == (None, None)
     assert len(calls) == artwork.ARTWORK_ATTEMPTS
     assert not (tmp_path / "cover.jpg").exists()
+
+
+async def test_a_saved_cover_that_fails_leaves_the_embedded_one(tmp_path, monkeypatch):
+    async def download(self, path, callback):
+        if path.name == "cover.jpg":  # Qobuz's derived original size, a 404
+            raise requests.HTTPError(response=MagicMock(status_code=404))
+        path.write_bytes(b"image")
+
+    monkeypatch.setattr(artwork.BasicDownloadable, "download", download)
+    monkeypatch.setattr(artwork, "_artwork_tempdirs", set())
+    config = Config.defaults().session.artwork
+    config.embed = config.save_artwork = True
+    config.embed_max_width = config.saved_max_width = 0
+    covers = Covers()
+    covers.set_cover("original", "https://example.test/org.jpg", None)
+    covers.set_cover("large", "https://example.test/600.jpg", None)
+
+    embedded, saved = await artwork.download_artwork(
+        MagicMock(), tmp_path, covers, config, False
+    )
+
+    assert saved is None
+    assert embedded.read_bytes() == b"image"
+    artwork.remove_artwork_tempdirs()
