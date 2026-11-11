@@ -234,6 +234,15 @@ async def test_a_refresh_spotify_refuses_asks_for_a_new_login(make_client, spoti
 
 
 @pytest.mark.login
+async def test_a_token_answer_without_a_body_is_a_login_error(make_client, spotify):
+    spotify.on("POST", "/token", (502, None))  # "null": aiohttp reads None
+    client = make_client(token_expiry="")
+
+    with pytest.raises(AuthenticationError):
+        await client.login()
+
+
+@pytest.mark.login
 async def test_the_login_url_carries_a_pkce_challenge_for_its_verifier(make_client):
     client = make_client(redirect_uri="http://127.0.0.1:9900/callback")
 

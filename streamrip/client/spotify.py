@@ -256,7 +256,8 @@ class SpotifyClient(Client):
             TOKEN_URL, data=data, headers=api_headers()
         ) as resp:
             try:
-                payload = await resp.json(content_type=None)
+                # None for an empty body (aiohttp), which has nothing either.
+                payload = await resp.json(content_type=None) or {}
             except ValueError, aiohttp.ClientError:
                 payload = {}
             if resp.status != 200 or "access_token" not in payload:
