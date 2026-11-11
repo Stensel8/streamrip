@@ -394,6 +394,20 @@ def _github_shaped_release(tag: str, wheel_name: str | None = None) -> dict:
     }
 
 
+async def test_the_update_check_gives_up_on_a_silent_network(monkeypatch):
+    async def no_answer(*_):
+        await asyncio.sleep(60)
+
+    monkeypatch.setattr(cli_module, "UPDATE_CHECK_TIMEOUT", 0.3)
+    monkeypatch.setattr(cli_module, "_latest_release", no_answer)
+    monkeypatch.setattr(cli_module, "_default_branch_version", no_answer)
+
+    async with asyncio.timeout(2):
+        version, *_ = await latest_streamrip_version()
+
+    assert version == cli_module.__version__
+
+
 async def test_the_update_check_prefers_github(serve, monkeypatch):
     async def releases(request):
         return web.json_response(_github_shaped_release("v9.0.0", "streamrip.whl"))

@@ -1110,6 +1110,10 @@ async def _default_branch_version(s, url: str) -> str | None:
         return match.group(1) if match else None
 
 
+# Seconds the update check may take in all, whatever the network does.
+UPDATE_CHECK_TIMEOUT = 10
+
+
 async def latest_streamrip_version(
     verify_ssl: bool = True,
 ) -> tuple[str, str | None, bool, str, str | None]:
@@ -1131,8 +1135,13 @@ async def latest_streamrip_version(
         (version, release notes, is a release, host, wheel url)
     """
     try:
-        timeout = aiohttp.ClientTimeout(total=10)
-        async with new_session(verify_ssl=verify_ssl, timeout=timeout) as s:
+        # One limit over every request: on a network that drops packets each
+        # would wait out its own timeout, before the command even starts.
+        timeout = aiohttp.ClientTimeout(total=UPDATE_CHECK_TIMEOUT / 2)
+        async with (
+            asyncio.timeout(UPDATE_CHECK_TIMEOUT),
+            new_session(verify_ssl=verify_ssl, timeout=timeout) as s,
+        ):
             for host, releases_url, _raw_url in _UPDATE_SOURCES:
                 try:
                     found = await _latest_release(s, releases_url)
