@@ -73,3 +73,8 @@ def test_certificate_error_in_any_command_prints_help(capsys):
         command()
     assert ended.value.code == 1
     assert "--no-ssl-verify" in capsys.readouterr().out
+
+
+def test_every_session_shares_one_verifying_context():
+    first, second = (get_aiohttp_connector_kwargs()["ssl"] for _ in range(2))
+    assert first is second
