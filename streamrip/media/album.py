@@ -37,6 +37,8 @@ async def download_booklets(session, booklets: list[dict], folder: Path):
         try:
             await BasicDownloadable(session, url, "pdf").download(path, lambda _: None)
         except Exception as e:
+            # Not a cut-off PDF in its place, which the next run would skip.
+            path.unlink(missing_ok=True)
             # A missing booklet is never worth the album.
             logger.warning(
                 "Could not download booklet %s: %s: %s", url, type(e).__name__, e

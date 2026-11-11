@@ -44,6 +44,8 @@ async def _download_cover(session: aiohttp.ClientSession, url: str, path: Path):
             await BasicDownloadable(session, url, "jpg").download(path, lambda _: None)
         except Exception as e:
             if attempt == ARTWORK_ATTEMPTS or not _worth_retrying(e):
+                # Not a cut-off image in its place, kept for good.
+                path.unlink(missing_ok=True)
                 raise
             delay = 2**attempt
             logger.warning(

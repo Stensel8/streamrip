@@ -170,6 +170,7 @@ class _FakeDownloadable:
 
     async def download(self, path, _callback):
         if "broken" in self.url:
+            path.write_bytes(b"%PD")  # cut off mid-download
             raise ConnectionError("gone")
         type(self).downloaded.append(self.url)
         with path.open("wb") as f:
