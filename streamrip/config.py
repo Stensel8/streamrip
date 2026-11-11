@@ -383,6 +383,7 @@ def _write_config(path: Path, toml: TOMLDocument):
     # A symlinked config (kept in a dotfiles repo, say) is written through, not
     # replaced by a regular file.
     target = path.resolve()
+    target.parent.mkdir(parents=True, exist_ok=True)  # --config-path new/folder/...
     # mkstemp creates the file 0600 whatever the umask, so there is no moment
     # at which the new tokens are readable by others.
     fd, tmp_name = tempfile.mkstemp(dir=target.parent, prefix=".config-", suffix=".tmp")
