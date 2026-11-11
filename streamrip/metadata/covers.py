@@ -37,18 +37,20 @@ class Covers:
 
     def largest(self) -> CoverEntry:
         """The largest cover that has a URL."""
-        return self._first_from(0)
+        return self._first_of(self._covers)
 
     def get_size(self, size: str) -> CoverEntry:
-        """The cover of this size, or else the next smaller one there is."""
-        return self._first_from(self.SIZES.index(size))
+        """The cover of this size, or else the next smaller one there is, or
+        else the next larger (SoundCloud has only one size)."""
+        i = self.SIZES.index(size)
+        return self._first_of([*self._covers[i:], *reversed(self._covers[:i])])
 
-    def _first_from(self, i: int) -> CoverEntry:
-        """The first entry with a URL from size index `i` down; raises if there is none."""
-        for entry in self._covers[i:]:
+    def _first_of(self, entries: list[CoverEntry]) -> CoverEntry:
+        """The first entry that has a URL; raises if there is none."""
+        for entry in entries:
             if entry[1] is not None:
                 return entry
-        raise LookupError(f"No cover of size {self.SIZES[i]} or smaller in {self}")
+        raise LookupError(f"No cover in {self}")
 
     @classmethod
     def from_qobuz(cls, resp):
