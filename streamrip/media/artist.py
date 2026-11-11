@@ -81,9 +81,10 @@ class Artist(Media):
                     albums.append(album)
             except Exception as e:
                 logger.error("Error resolving album: %s: %s", type(e).__name__, e)
+        # The other filters first: repeats picks among what they keep.
+        albums = [a for a in albums if self._wanted(a, filters)]
         if filters.repeats:
             albums = self._filter_repeats(albums)
-        albums = [a for a in albums if self._wanted(a, filters)]
 
         for album in albums:
             try:

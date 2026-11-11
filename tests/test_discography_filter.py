@@ -136,3 +136,29 @@ def test_extras_filter_skips_various_artists_compilations():
     )
     assert not artist._wanted(compilation, filters)
     assert artist._wanted(album, filters)
+
+
+async def test_repeats_choose_among_what_the_other_filters_keep(monkeypatch):
+    ripped = []
+
+    async def rip(self):
+        ripped.append(self.meta.info.id)
+
+    class Pending:
+        def __init__(self, album):
+            self.album = album
+
+        async def resolve(self):
+            return self.album
+
+    monkeypatch.setattr(Album, "rip", rip)
+    plain = create_album("Album X", False, 44.1, 16, id="plain")
+    deluxe = create_album("Album X (Deluxe Edition)", False, 96, 24, id="deluxe")
+    artist = Artist("artist", [Pending(plain), Pending(deluxe)], None, None)  # type: ignore
+    filters = ArtistFilterConfig(
+        extras=True, repeats=True, non_albums=False, features=False, non_remaster=False
+    )
+
+    await artist._resolve_then_download(filters)
+
+    assert ripped == ["plain"]
