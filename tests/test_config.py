@@ -169,6 +169,17 @@ def test_config_update_on_save(tmp_path):
     assert conf2.session.downloads.folder == "new_folder"
 
 
+def test_a_config_saved_with_a_byte_order_mark_loads(tmp_path):
+    # Notepad's "UTF-8 with BOM", and PowerShell 5.1's Set-Content -Encoding UTF8.
+    path = tmp_path / "config.toml"
+    path.write_bytes(b"\xef\xbb\xbf" + Path(SAMPLE_CONFIG).read_bytes())
+
+    assert (
+        Config(path).session.downloads.folder
+        == Config(SAMPLE_CONFIG).session.downloads.folder
+    )
+
+
 def test_config_dont_update_without_set_modified(tmp_path):
     tmp_config_path = tmp_path / "config.toml"
     shutil.copy(SAMPLE_CONFIG, tmp_config_path)

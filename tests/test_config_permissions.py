@@ -135,3 +135,21 @@ def test_app_directory_is_private(tmp_path, already_exists):
         check=True,
     )
     assert mode(app_dir) == 0o700
+
+
+@pytest.mark.login
+def test_a_config_that_cannot_be_made_private_still_loads(
+    tmp_path, monkeypatch, caplog
+):
+    # Another user's file, or one on a FAT stick: chmod fails there.
+    path = tmp_path / "config.toml"
+    set_user_defaults(path)
+    path.chmod(0o644)
+
+    def refused(*_):
+        raise PermissionError(1, "Operation not permitted")
+
+    monkeypatch.setattr(os, "fchmod", refused)
+
+    assert Config(path).file.deezer.arl == ""
+    assert "Others can read" in caplog.text

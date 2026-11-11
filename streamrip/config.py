@@ -329,10 +329,12 @@ class Config:
         """Load the config at path, securing it first if it holds secrets."""
         self.path = path
 
-        with path.open() as toml_file:
+        # utf-8-sig: Notepad and PowerShell 5.1 save "UTF-8" with a BOM, which
+        # TOML takes for an empty key.
+        with path.open(encoding="utf-8-sig") as toml_file:
             # The packaged template is shared, but user configs contain secrets.
             if os.name == "posix" and not path.samefile(BLANK_CONFIG_PATH):
-                os.fchmod(toml_file.fileno(), 0o600)
+                _make_private(path, toml_file.fileno())
             self.file: ConfigData = ConfigData.from_toml(toml_file.read())
 
         self.session: ConfigData = copy.deepcopy(self.file)
@@ -354,6 +356,20 @@ class Config:
 
     def __exit__(self, *_):
         self.save_file()
+
+
+def _make_private(path: Path, fd: int):
+    """Let only the user read the open config `fd`, if others can.
+
+    Said, not raised, where that can't be done (a file of another user, a FAT
+    stick): reading the config must not fail over it.
+    """
+    if not os.fstat(fd).st_mode & 0o077:
+        return
+    try:
+        os.fchmod(fd, 0o600)
+    except OSError as e:
+        logger.warning("Others can read %s, with your logins in it: %s", path, e)
 
 
 def _write_config(path: Path, toml: TOMLDocument):
