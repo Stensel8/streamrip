@@ -159,6 +159,13 @@ async def test_same_cover_is_not_replaced_when_marking_or_changing_track(monkeyp
         assert fetch.await_count == 1
 
 
+def test_resize_before_mount_is_ignored():
+    # Textual sends a Resize before on_mount, when there may be no widgets yet.
+    app = SearchMenu(summaries(), "qobuz", "album", "test")
+    app.on_resize()
+    assert app._preview_resize_timer is None
+
+
 async def test_small_and_resized_layout_never_overlaps_metadata(monkeypatch):
     monkeypatch.setattr(CoverCache, "_fetch", AsyncMock(return_value=png()))
     async with menu(summaries("cover"), size=(60, 24)) as (app, pilot):
