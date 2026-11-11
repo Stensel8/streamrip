@@ -125,6 +125,10 @@ class Track(Media):
             self.meta.album.info.bit_depth,
             self.meta.album.info.sampling_rate,
         )
+        # Downloaded beside the track, and only then put in its place: a retry
+        # resumes this file, never a finished copy already at download_path
+        # (with --no-db), and a download that fails leaves that copy alone.
+        part = self.download_path.with_stem(f"{self.download_path.stem}.part")
         slots = global_download_semaphore(self.config.session.downloads)
         for attempt in range(1, MAX_DOWNLOAD_ATTEMPTS + 1):
             async with slots:
@@ -173,7 +177,7 @@ class Track(Media):
                         await self.downloadable.size(),
                         label,
                     ) as callback:
-                        await self.downloadable.download(self.download_path, callback)
+                        await self.downloadable.download(part, callback)
                 except Exception as e:
                     error = f"{type(e).__name__}: {e}"
                     # A missing ffmpeg does not fix itself in 2-8 seconds.
@@ -185,8 +189,7 @@ class Track(Media):
                             self.meta.title,
                             error,
                         )
-                        if self.download_path.is_file():
-                            self.download_path.unlink()
+                        part.unlink(missing_ok=True)
                         raise TrackDownloadFailedError(
                             f"{self.meta.title} ({self.meta.info.id})"
                         ) from e
@@ -198,6 +201,7 @@ class Track(Media):
                         error,
                     )
                 else:
+                    part.replace(self.download_path)
                     return
             # Outside the slot: a track waiting to retry leaves it to another.
             await asyncio.sleep(delay)

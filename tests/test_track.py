@@ -468,3 +468,25 @@ async def test_only_a_url_that_goes_stale_is_resolved_again(tmp_path, expires):
     await track.download()
 
     assert track.client.get_downloadable.await_count == int(expires)
+
+
+async def test_a_download_that_fails_leaves_a_copy_already_there_alone(
+    tmp_path, monkeypatch
+):
+    # With --no-db a finished copy can be at the path; a retry used to resume
+    # from it, and the last failure deleted it.
+    from streamrip.exceptions import TrackDownloadFailedError
+
+    track = _make_track(tmp_path, "flac")
+    await track.preprocess()
+    track.download_path.write_bytes(b"the good copy")
+    monkeypatch.setattr(
+        FakeDownloadable, "_download", AsyncMock(side_effect=OSError("network down"))
+    )
+    monkeypatch.setattr("streamrip.media.track.asyncio.sleep", AsyncMock())
+
+    with pytest.raises(TrackDownloadFailedError):
+        await track.download()
+
+    assert track.download_path.read_bytes() == b"the good copy"
+    assert [p.name for p in tmp_path.iterdir()] == [track.download_path.name]
