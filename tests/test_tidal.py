@@ -567,6 +567,7 @@ async def test_prompter_logs_both_lanes_in_and_saves_them(monkeypatch):
     assert not prompter.has_creds()
 
     await prompter.prompt_and_login()
+    prompter.save()  # as Main does after every prompt_and_login
 
     assert prompter.has_creds()
     t = cfg.session.tidal
