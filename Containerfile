@@ -51,6 +51,10 @@ FROM docker.io/library/debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d054
 
 COPY --from=ghcr.io/astral-sh/uv:0.13.7@sha256:96f40d3904aad8d0bd010539001d36c8e2188b981e1334471a90c4a1d93bb490 /uv /usr/local/bin/uv
 
+# strip, for the packages below. A layer of its own: a change to streamrip's
+# code doesn't fetch Debian's package lists again.
+RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends binutils
+
 ENV UV_PROJECT_ENVIRONMENT=/opt/streamrip \
     UV_PYTHON_INSTALL_DIR=/opt/python \
     UV_PYTHON_INSTALL_BIN=0 \
@@ -61,18 +65,12 @@ ENV UV_PROJECT_ENVIRONMENT=/opt/streamrip \
 
 WORKDIR /src
 COPY pyproject.toml uv.lock ./
+# The packages, then Python without Tk, IDLE, its tests and pip (20 MiB less),
+# and the packages without their debug symbols: all in the layer that only
+# pyproject.toml and uv.lock change.
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev --no-install-project --python 3.15
-COPY README.md LICENSE ./
-COPY streamrip ./streamrip
-# Reinstalled every time: uv would take streamrip's wheel from the cache as
-# long as pyproject.toml is unchanged, however much of the code changed.
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev --no-editable --reinstall-package streamrip --python 3.15
-
-# Python without Tk, IDLE, its tests and pip (20 MiB less), and the packages
-# without their debug symbols.
-RUN set -eux; \
+    set -eux; \
+    uv sync --locked --no-dev --no-install-project --python 3.15; \
     cd "$(dirname "$(dirname "$(readlink -f /opt/streamrip/bin/python)")")"; \
     rm -rf include share bin/pip* bin/idle* bin/pydoc* bin/*-config \
         lib/pkgconfig lib/*.a lib/libpython* lib/*tcl* lib/*tk* lib/itcl* lib/thread*; \
@@ -85,8 +83,14 @@ RUN set -eux; \
     rm -rf Cryptodome/SelfTest PIL/_avif.* PIL/_imagingcms.* PIL/_imagingft.* PIL/_imagingtk.* \
         pillow.libs/libavif* pillow.libs/liblcms2* pillow.libs/libfreetype* \
         pillow.libs/libharfbuzz* pillow.libs/libpng16* pillow.libs/libbrotli*; \
-    apt-get update -qq && apt-get install -y -qq --no-install-recommends binutils; \
-    find /opt/streamrip -type f \( -name '*.so' -o -name '*.so.*' \) -exec strip --strip-unneeded {} +; \
+    find /opt/streamrip -type f \( -name '*.so' -o -name '*.so.*' \) -exec strip --strip-unneeded {} +
+COPY README.md LICENSE ./
+COPY streamrip ./streamrip
+# Reinstalled every time: uv would take streamrip's wheel from the cache as
+# long as pyproject.toml is unchanged, however much of the code changed.
+RUN --mount=type=cache,target=/root/.cache/uv \
+    set -eux; \
+    uv sync --locked --no-dev --no-editable --reinstall-package streamrip --python 3.15; \
     /opt/streamrip/bin/python -c 'import ssl, sqlite3, lzma, bz2, ctypes, streamrip.rip.cli; \
         from PIL import features; assert all(map(features.check, ("jpg", "zlib", "webp")))'; \
     /opt/streamrip/bin/streamrip --version
