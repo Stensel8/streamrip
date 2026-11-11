@@ -327,7 +327,7 @@ class SpotifyClient(Client):
                 status,
                 "Spotify keeps answering with 'too many requests'. If this is "
                 "its quota, wait a while. Lowering requests_per_minute in "
-                "[downloads] helps too.",
+                "[spotify] helps too.",
             )
         raise SpotifyAPIError(status, f"Spotify error (HTTP {status}): {message}")
 

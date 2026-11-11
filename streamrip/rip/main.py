@@ -18,7 +18,6 @@ from ..client import (
     SpotifyClient,
     TidalClient,
 )
-from ..client.client import HOURLY_DANGER
 from ..console import console, plural
 from ..exceptions import (
     APIError,
@@ -84,8 +83,8 @@ def load_table(clients: list[Client]) -> Table:
     """Each account's load as one line: under the progress bars while a run
     goes, and once more at its end.
 
-    The bar is this clock hour's tracks out of HOURLY_DANGER, streamrip's
-    line a margin under where Tidal began refusing requests (see the notes on
+    The bar is this clock hour's tracks out of the hourly line (HOURLY_DANGER,
+    a margin under where Tidal began refusing requests, or the service's own) (see the notes on
     Tidal in client.client): green within the active tier's own hourly cap,
     yellow past it, red at the line. The text after it says so, then the
     pace, how long until the next track's turn when one waits for it, the
@@ -105,7 +104,7 @@ def load_table(clients: list[Client]) -> Table:
             "green"
             if load.this_hour <= load.cap
             else "yellow"
-            if load.this_hour < HOURLY_DANGER
+            if load.this_hour < load.hourly_line
             else "red"
         )
         risk = {
@@ -115,7 +114,7 @@ def load_table(clients: list[Client]) -> Table:
             "very high": "bold red",
         }[load.risk]
         text = Text.assemble(
-            f"{load.this_hour} of {HOURLY_DANGER} tracks this hour",
+            f"{load.this_hour} of {load.hourly_line} tracks this hour",
             (f" · {pace}", "dim"),
         )
         if load.next_in >= 1:
@@ -131,8 +130,8 @@ def load_table(clients: list[Client]) -> Table:
         table.add_row(
             Text(client.source.capitalize(), "bold"),
             ProgressBar(
-                total=HOURLY_DANGER,
-                completed=min(load.this_hour, HOURLY_DANGER),
+                total=load.hourly_line,
+                completed=min(load.this_hour, load.hourly_line),
                 width=14,
                 complete_style=zone,
                 finished_style="red",

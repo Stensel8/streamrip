@@ -573,3 +573,23 @@ def test_every_client_finds_its_pacing_state(tmp_path):
         assert _real_pacing_state_path(client) == (
             tmp_path / f"pacing-{client.source}.json"
         )
+
+
+def test_a_service_can_have_limits_of_its_own(monkeypatch):
+    monkeypatch.setattr(
+        client_module, "PACE_TRACKS_PER_HOUR", _REAL_PACE_TRACKS_PER_HOUR
+    )
+    config = Config.defaults()
+    q = config.session.qobuz
+    q.requests_per_minute, q.slow_tracks_per_hour = 120, 40
+    q.max_tracks_per_hour, q.full_speed_tracks = 300, 50
+    qobuz, tidal = QobuzClient(config), TidalClient(config)
+
+    assert qobuz.rate_limiter.time_period == pytest.approx(60 / 120)
+    assert tidal.rate_limiter.time_period == pytest.approx(60 / 35)  # [downloads]
+    assert (qobuz._cap("slow"), tidal._cap("slow")) == (40, 80)
+    assert qobuz._gap_mean("slow") == pytest.approx(2 * tidal._gap_mean("slow"))
+    qobuz.pace("auto", 51)  # past its own full_speed_tracks
+    assert (qobuz.load().tier, qobuz.load().cap) == ("slow", 40)
+    assert qobuz.load().hourly_line == 300
+    assert tidal.load().hourly_line == client_module.HOURLY_DANGER

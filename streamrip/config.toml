@@ -58,6 +58,11 @@ save_lrc = false
 # for one run.
 # pacing = "auto"
 
+# A service's own section can set its own limits. Left out, they are the ones
+# measured on Tidal: requests_per_minute (the one above), slow_tracks_per_hour
+# = 80, medium_tracks_per_hour = 150, max_tracks_per_hour = 175 (where full
+# speed warns) and full_speed_tracks = 100 (in 6 hours, for pacing "auto").
+
 [qobuz]
 # 1: 320kbps MP3, 2: 16/44.1, 3: 24/<=96, 4: 24/>=96
 quality = 4
