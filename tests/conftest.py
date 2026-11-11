@@ -77,7 +77,7 @@ def _no_track_pacing(monkeypatch):
 
     Left live, every test that resolves more than one track would spend most
     of its runtime asleep. The pacing itself has its own tests
-    (test_track_pacing.py); here every gap is drawn at 0s, the hour can
+    (test_pacing.py); here every gap is drawn at 0s, the hour can
     never fill, and no state file is read or written: every test's
     Config.defaults() is the packaged template, so they would all share one
     file, inside the package. The tests of the persistence give their own.
