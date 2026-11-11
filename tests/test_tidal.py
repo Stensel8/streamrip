@@ -623,6 +623,26 @@ async def test_device_login_stops_when_tidal_lets_the_link_expire(monkeypatch):
 
 
 @pytest.mark.login
+async def test_device_login_survives_the_wall_clock_jumping_ahead(monkeypatch):
+    """A clock set forward (NTP, a laptop waking up) is not the link expiring."""
+    monkeypatch.setattr("streamrip.rip.prompter.launch", lambda *_: None)
+    monkeypatch.setattr("streamrip.rip.prompter.console", MagicMock())
+    calls = []
+
+    def wall_clock():
+        calls.append(None)
+        return 1000.0 if len(calls) == 1 else 1000.0 + 3600
+
+    monkeypatch.setattr("streamrip.rip.prompter.time.time", wall_clock)
+    cfg = Config.defaults()
+    client = TidalClient(cfg)
+    _mock_login(client)
+
+    await TidalPrompter(cfg, client)._device_login(client)
+    assert client.logged_in
+
+
+@pytest.mark.login
 @pytest.mark.parametrize(
     ("resp", "message"),
     [

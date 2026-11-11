@@ -256,9 +256,9 @@ class TidalPrompter(CredentialPrompter):
         _open_login_link(login_link)
 
         # A few seconds early: Tidal's clock started before its answer arrived.
-        deadline = time.time() + expires_in - 5
+        deadline = time.monotonic() + expires_in - 5
         while True:
-            if time.time() > deadline:
+            if time.monotonic() > deadline:
                 raise AuthenticationError(
                     "The Tidal login link expired before it was used. Run "
                     "streamrip again for a new one."
