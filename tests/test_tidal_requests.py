@@ -209,6 +209,23 @@ async def test_a_lapsed_login_is_renewed_and_the_request_retried(sleeps):
     c._renew_login.assert_awaited_once()
 
 
+@pytest.mark.parametrize(
+    ("sub_status", "refreshed"), [(11003, True), (11002, True), (4005, False)]
+)
+async def test_only_a_401_about_the_login_refreshes_it(sleeps, sub_status, refreshed):
+    # 11003 and 11002: an expired or invalid token; 4005: a track not playable.
+    body = {"status": 401, "subStatus": sub_status, "userMessage": "..."}
+    c = _client(_Response(401, body=body), _Response(body={"id": 1}))
+    c._refresh_access_token = AsyncMock()
+
+    if refreshed:
+        assert await c._api_request("tracks/1") == {"id": 1}
+    else:
+        with pytest.raises(aiohttp.ClientResponseError):
+            await c._api_request("tracks/1")
+    assert c._refresh_access_token.await_count == refreshed
+
+
 async def test_a_401_without_a_renewal_reaches_the_caller(sleeps):
     c = _client(_Response(401))
     c._renew_login = AsyncMock(return_value=False)
