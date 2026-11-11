@@ -32,17 +32,13 @@ class Summary:
     # The preview's (label, value) lines, e.g. ("Tracks", "12").
     details: list[tuple[str, str]] = field(default_factory=list)
     description: str | None = None
-    image_url: str | None = None
-    image_fallback_urls: tuple[str, ...] = ()
+    # Preview covers: the preferred one first, then smaller alternatives.
+    image_urls: tuple[str, ...] = ()
 
     @property
-    def image_urls(self) -> tuple[str, ...]:
-        """Preferred preview URL followed by smaller alternatives."""
-        return tuple(
-            dict.fromkeys(
-                url for url in (self.image_url, *self.image_fallback_urls) if url
-            )
-        )
+    def image_url(self) -> str | None:
+        """The preferred cover."""
+        return self.image_urls[0] if self.image_urls else None
 
     def summarize(self) -> str:
         """The result's line in the menu."""
@@ -227,12 +223,6 @@ def _image_urls(item: dict) -> tuple[str, ...]:
     return ()
 
 
-def _image(item: dict) -> str | None:
-    """The preferred cover URL; retained for callers inspecting summaries."""
-    urls = _image_urls(item)
-    return urls[0] if urls else None
-
-
 def album_summary(item: dict) -> Summary:
     """Summarize an album from any source's search response."""
     title = (item.get("title") or "").strip()
@@ -267,8 +257,7 @@ def album_summary(item: dict) -> Summary:
             ("Quality", _quality(item)),
         ),
         description=_plain(item.get("description")),
-        image_url=_image(item),
-        image_fallback_urls=_image_urls(item)[1:],
+        image_urls=_image_urls(item),
     )
 
 
@@ -305,8 +294,7 @@ def track_summary(item: dict) -> Summary:
             ("Quality", _quality(item)),
         ),
         description=_plain(item.get("description")),
-        image_url=_image(item),
-        image_fallback_urls=_image_urls(item)[1:],
+        image_urls=_image_urls(item),
     )
 
 
@@ -324,8 +312,7 @@ def artist_summary(item: dict) -> Summary:
             ("Roles", ", ".join(r for r in roles if r)),
             ("Popularity", popularity and f"{popularity}/100"),
         ),
-        image_url=_image(item),
-        image_fallback_urls=_image_urls(item)[1:],
+        image_urls=_image_urls(item),
     )
 
 
@@ -366,8 +353,7 @@ def playlist_summary(item: dict) -> Summary:
             ("Updated", _day(updated)),
         ),
         description=_plain(item.get("description")),
-        image_url=_image(item),
-        image_fallback_urls=_image_urls(item)[1:],
+        image_urls=_image_urls(item),
     )
 
 
