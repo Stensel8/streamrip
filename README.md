@@ -48,8 +48,9 @@ A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, SoundCl
 
 ### With Python
 
-Download **Source code (ZIP)** from the [latest release](https://opencommit.eu/Stensel8/streamrip/releases/latest),
-extract it and run the installer in that folder:
+Download **Source code (ZIP)** from the [latest release on GitHub](https://github.com/Stensel8/streamrip/releases/latest)
+and extract it, or `git clone https://opencommit.eu/Stensel8/streamrip`. Then run
+the installer in that folder:
 
 ```bash
 ./install.sh                                              # Linux, macOS
