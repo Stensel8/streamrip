@@ -1,3 +1,4 @@
+import contextlib
 from dataclasses import dataclass
 lazy from collections.abc import Callable
 
@@ -178,13 +179,25 @@ class ProgressManager:
             self.started = True
 
     def _add_task(self, progress: Progress, desc: str, **task) -> Handle:
-        """Add a task to one of the progress bars, hidden again when done."""
+        """Add a task to one of the progress bars, removed again when done.
+
+        Removed, not hidden: Rich keeps a hidden task and its speed samples
+        for good, which a discography's thousands of tracks pile up. A report
+        after done (a download thread winding down) or a second done (resolve
+        rows) is ignored.
+        """
         self._ensure_started()
         task_id = progress.add_task(f"[cyan]{desc}", **task)
-        return Handle(
-            lambda n: progress.update(task_id, advance=n),
-            lambda: progress.update(task_id, visible=False),
-        )
+
+        def update(n: int):
+            with contextlib.suppress(KeyError):
+                progress.update(task_id, advance=n)
+
+        def done():
+            with contextlib.suppress(KeyError):
+                progress.remove_task(task_id)
+
+        return Handle(update, done)
 
     def overall_add(self, n: int):
         """Grow the overall track bar's total by `n`, creating it on first use.

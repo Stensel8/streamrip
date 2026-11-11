@@ -62,7 +62,15 @@ def test_resolve_row_counts_tracks_and_goes_once_all_are_resolved(manager):
     task = manager.resolve_progress.tasks[0]
     assert (task.completed, task.total, task.visible) == (2, 3, True)
     resolved.update(1)
-    assert not task.visible
+    assert manager.resolve_progress.tasks == []
+    resolved.done()  # again, as leaving its block does
+
+
+def test_a_finished_download_row_is_removed_not_kept_hidden(manager):
+    with progress.get_progress_callback(True, 100, "track") as update:
+        update(60)
+    assert manager.progress.tasks == []
+    update(40)  # a download thread's last report, after the row is gone
 
 
 def test_overall_disabled_adds_nothing(manager):
