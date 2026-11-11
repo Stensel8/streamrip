@@ -5,12 +5,15 @@ import builtins
 import io
 import json
 import random
+import sys
 from contextlib import asynccontextmanager
+from types import ModuleType, SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import pytest
 from aiohttp import web
 from PIL import Image
+from rich.control import Control
 from textual.widgets import Input, OptionList, Static
 
 from streamrip.config import Config
@@ -39,8 +42,8 @@ def summaries(*urls):
 
 
 @asynccontextmanager
-async def menu(results=None, *, size=(100, 40), **kwargs):
-    app = SearchMenu(results or summaries(), "qobuz", "album", "test", **kwargs)
+async def menu(results=None, *, source="qobuz", size=(100, 40), **kwargs):
+    app = SearchMenu(results or summaries(), source, "album", "test", **kwargs)
     try:
         async with app.run_test(size=size) as pilot:
             await pilot.pause()
@@ -55,23 +58,44 @@ def png(color="red", size=(32, 32)):
     return buf.getvalue()
 
 
-async def test_selection_survives_filter_and_returns_original_indices():
+@pytest.fixture
+def covers(monkeypatch):
+    """Every cover is a red PNG."""
+    fetch = AsyncMock(return_value=png())
+    monkeypatch.setattr(CoverCache, "_fetch", fetch)
+    return fetch
+
+
+def tty(monkeypatch):
+    # Called in the test, not a fixture: pytest's capture sets its own stdout
+    # between a fixture's setup and the test.
+    monkeypatch.setattr(cover_preview.sys, "stdin", Mock(isatty=lambda: True))
+    monkeypatch.setattr(cover_preview.sys, "stdout", Mock(isatty=lambda: True))
+
+
+def details(app) -> str:
+    return str(app.query_one("#details", Static).content)
+
+
+# --- choosing -----------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("keys", "chosen"),
+    [
+        (("down", "enter"), (1,)),  # no marks: the highlighted one
+        # Marks survive a filter, and give the indices from before it.
+        (("space", "slash", "s", "e", "c", "o", "n", "d", "enter"), (0, 1)),
+        (("space", "down", "enter"), (0, 1)),  # and the highlighted one, as before
+        (("space", "escape"), None),
+        (("space", "ctrl+c"), None),
+    ],
+    ids=["highlighted", "filtered", "marked", "escape", "ctrl+c"],
+)
+async def test_keys_choose_results(keys, chosen):
     async with menu() as (app, pilot):
-        await pilot.press("space", "slash", "s", "e", "c", "o", "n", "d", "enter")
-    assert app.return_value == (0, 1)
-
-
-async def test_enter_without_marks_chooses_highlighted_result():
-    async with menu() as (app, pilot):
-        await pilot.press("down", "enter")
-    assert app.return_value == (1,)
-
-
-@pytest.mark.parametrize("key", ["escape", "ctrl+c"])
-async def test_cancel_never_returns_selected_downloads(key):
-    async with menu() as (app, pilot):
-        await pilot.press("space", key)
-    assert app.return_value is None
+        await pilot.press(*keys)
+    assert app.return_value == chosen
 
 
 async def test_filter_accepts_spaces_and_escape_restores_results():
@@ -97,9 +121,103 @@ async def test_no_matching_results_clears_preview_and_cannot_accept():
         await pilot.pause()
         assert app.current is None
         assert not app.query_one(CoverPane).display
-        assert "No matching results" in str(app.query_one("#details", Static).content)
+        assert "No matching results" in details(app)
         await pilot.press("enter", "enter")
         assert app.is_running
+
+
+async def test_choose_results_detects_before_starting_menu_and_closes_cache(
+    monkeypatch,
+):
+    widget = object()
+    app = Mock(run_async=AsyncMock(return_value=(1,)))
+    app.covers.close = AsyncMock()
+
+    def detect():
+        assert not factory.called
+        assert not app.run_async.called
+        return widget
+
+    factory = Mock(return_value=app)
+    monkeypatch.setattr(search_menu, "image_widget", detect)
+    monkeypatch.setattr(search_menu, "SearchMenu", factory)
+    results = summaries()
+    assert await search_menu.choose_results(
+        results, "qobuz", "album", "test", verify_ssl=True
+    ) == (1,)
+    factory.assert_called_once_with(
+        results, "qobuz", "album", "test", pixel_widget=widget, verify_ssl=True
+    )
+    app.covers.close.assert_awaited_once()
+
+
+async def test_main_queues_original_choices_only(monkeypatch):
+    from streamrip.rip import main as main_module
+    from streamrip.rip.main import Main
+
+    main = Main.__new__(Main)
+    main.config = Config.defaults()
+    main._search = AsyncMock(return_value=summaries())
+    main.add_all_by_id = AsyncMock()
+    choose = AsyncMock(return_value=(2, 0))
+    # main's own (lazily imported) name: patching search_menu's would miss it
+    # once main has bound it, and open the real menu.
+    monkeypatch.setattr(main_module, "choose_results", choose)
+    await main.search_interactive("qobuz", "album", "test")
+    choose.assert_awaited_once_with(
+        main._search.return_value,
+        "qobuz",
+        "album",
+        "test",
+        verify_ssl=main.config.session.downloads.verify_ssl,
+    )
+    main.add_all_by_id.assert_awaited_once_with(
+        [("qobuz", "album", "2"), ("qobuz", "album", "0")]
+    )
+    choose.return_value = None
+    main.add_all_by_id.reset_mock()
+    await main.search_interactive("qobuz", "album", "test")
+    main.add_all_by_id.assert_not_awaited()
+
+
+async def test_deezer_album_details_arrive_once_highlighted(monkeypatch):
+    urls = []
+
+    async def fetch(self, url):
+        urls.append(url)
+        album = {
+            "id": 7,
+            "title": "Visions",
+            "artist": {"name": "The Artist"},
+            "record_type": "album",
+            "nb_tracks": 12,
+            "release_date": "2024-03-08",
+            "duration": 2734,
+            "genres": {"data": [{"name": "Jazz"}]},
+            "label": "Blue Note Records",
+        }
+        return json.dumps(album).encode()
+
+    monkeypatch.setattr(CoverCache, "_fetch", fetch)
+    found = album_summary(
+        {"id": 7, "title": "Visions", "artist": {"name": "The Artist"}, "nb_tracks": 12}
+    )
+    async with menu(SearchResults([found]), source="deezer") as (app, pilot):
+        await pilot.pause(0.3)
+        assert urls == ["https://api.deezer.com/album/7"]
+        assert dict(app.results[0].details) == {
+            "Released": "2024-03-08",
+            "Type": "Album",
+            "Tracks": "12",
+            "Length": "45:34",
+            "Genre": "Jazz",
+            "Label": "Blue Note Records",
+        }
+        prompt = app.query_one(OptionList).get_option_at_index(0).prompt
+        assert "Visions by The Artist (2024)" in str(prompt)
+
+
+# --- covers -------------------------------------------------------------------
 
 
 async def test_cover_arrival_refreshes_without_a_keypress(monkeypatch):
@@ -147,9 +265,7 @@ async def test_new_selection_cancels_old_cover_and_wins(monkeypatch):
         assert "slow" not in app.covers.images
 
 
-async def test_same_cover_is_not_replaced_when_marking_or_changing_track(monkeypatch):
-    fetch = AsyncMock(return_value=png())
-    monkeypatch.setattr(CoverCache, "_fetch", fetch)
+async def test_same_cover_is_not_replaced_when_marking_or_changing_track(covers):
     async with menu(summaries("same", "same")) as (app, pilot):
         await pilot.pause(0.2)
         pane = app.query_one(CoverPane)
@@ -157,136 +273,78 @@ async def test_same_cover_is_not_replaced_when_marking_or_changing_track(monkeyp
         await pilot.press("space", "down")
         await pilot.pause()
         assert pane.children[0] is child
-        assert fetch.await_count == 1
+        assert covers.await_count == 1
 
 
-def test_resize_before_mount_is_ignored():
-    # Textual sends a Resize before on_mount, when there may be no widgets yet.
-    app = SearchMenu(summaries(), "qobuz", "album", "test")
-    app.on_resize()
-    assert app._preview_resize_timer is None
+async def test_background_work_is_cancelled_on_exit(monkeypatch):
+    started, cancelled = asyncio.Event(), asyncio.Event()
 
+    async def fetch(self, url):
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.set()
 
-async def test_small_and_resized_layout_never_overlaps_metadata(monkeypatch):
-    monkeypatch.setattr(CoverCache, "_fetch", AsyncMock(return_value=png()))
-    async with menu(summaries("cover"), size=(60, 24)) as (app, pilot):
-        await pilot.pause(0.2)
-        pane = app.query_one(CoverPane)
-        assert not pane.display
-        await pilot.resize_terminal(140, 50)
-        await pilot.pause(0.2)
-        assert pane.display
-        assert pane.region.right < app.query_one("#details").region.x
-        assert pane.region.bottom <= app.query_one("#preview").region.bottom
-        await pilot.resize_terminal(40, 15)
-        await pilot.pause(0.2)
-        assert not pane.display
-        assert app.query_one("#details").size.width > 0
-
-
-@pytest.mark.parametrize("failure", [OSError("offline"), b"not an image"])
-async def test_bad_cover_leaves_details_and_selection_usable(monkeypatch, failure):
-    fetch = (
-        AsyncMock(side_effect=failure)
-        if isinstance(failure, Exception)
-        else AsyncMock(return_value=failure)
-    )
     monkeypatch.setattr(CoverCache, "_fetch", fetch)
-    async with menu(summaries("broken")) as (app, pilot):
+    async with menu(summaries("slow")) as (_, pilot):
+        await asyncio.wait_for(started.wait(), 2)
+        await pilot.press("escape")
+    assert cancelled.is_set()
+
+
+@pytest.mark.parametrize(
+    ("urls", "fetch"),
+    [
+        (("broken",), AsyncMock(side_effect=OSError("offline"))),
+        (("broken",), AsyncMock(return_value=b"not an image")),
+        ((), AsyncMock()),  # no artwork: nothing to download
+    ],
+    ids=["offline", "not an image", "no artwork"],
+)
+async def test_without_a_cover_details_and_selection_stay_usable(
+    monkeypatch, urls, fetch
+):
+    monkeypatch.setattr(CoverCache, "_fetch", fetch)
+    async with menu(summaries(*urls)) as (app, pilot):
         await pilot.pause(0.2)
         assert app.query_one(CoverPane).image is None
-        assert "First Album" in str(app.query_one("#details", Static).content)
+        assert "First Album" in details(app)
         await pilot.press("enter")
     assert app.return_value == (0,)
+    assert fetch.called is bool(urls)
 
 
-async def test_missing_artwork_does_not_download_and_keeps_metadata(monkeypatch):
-    fetch = AsyncMock()
-    monkeypatch.setattr(CoverCache, "_fetch", fetch)
-    async with menu() as (app, pilot):
+@pytest.mark.parametrize(("urls", "tip"), [(("cover",), True), ((), False)])
+async def test_block_covers_name_terminals_that_show_images(covers, urls, tip):
+    async with menu(summaries(*urls)) as (app, pilot):
         await pilot.pause(0.2)
-        assert "First Album" in str(app.query_one("#details", Static).content)
-        assert app.query_one(CoverPane).image is None
-        await pilot.press("enter")
-    assert app.return_value == (0,)
-    fetch.assert_not_awaited()
+        assert ("Ghostty" in details(app)) is tip
 
 
-async def test_cache_tries_smaller_variant_and_caches_errors_and_success(monkeypatch):
-    fetch = AsyncMock(side_effect=[OSError("missing"), png()])
+async def test_cache_tries_smaller_variant_and_caches_errors_and_success(serve):
+    asked = []
+
+    async def missing(request):
+        asked.append("missing")
+        return web.Response(status=404)
+
+    async def cover(request):
+        asked.append("cover")
+        return web.Response(body=png(), content_type="image/png")
+
+    url = await serve({"/missing": missing, "/cover": cover})
     cache = CoverCache()
-    monkeypatch.setattr(cache, "_fetch", fetch)
-    image = await cache.get(("large", "small"))
-    assert image is not None
-    assert await cache.get(("large", "small")) is image
-    assert fetch.await_count == 2
-    await cache.close()
-
-
-@pytest.mark.parametrize("stream", ["stdin", "stdout"])
-def test_auto_does_not_import_or_probe_image_library_for_redirected_io(
-    monkeypatch, stream
-):
-    original = builtins.__import__
-
-    def guard(name, *args, **kwargs):
-        assert not name.startswith("textual_image")
-        return original(name, *args, **kwargs)
-
-    monkeypatch.setattr(cover_preview.sys, "stdin", Mock(isatty=lambda: True))
-    monkeypatch.setattr(cover_preview.sys, "stdout", Mock(isatty=lambda: True))
-    monkeypatch.setattr(cover_preview.sys, stream, Mock(isatty=lambda: False))
-    monkeypatch.setattr(builtins, "__import__", guard)
-    assert cover_preview.image_widget() is None
-
-
-def test_failed_terminal_probe_automatically_uses_blocks(monkeypatch):
-    original = builtins.__import__
-
-    def fail(name, *args, **kwargs):
-        if name == "textual_image":
-            raise OSError("terminal probe failed")
-        return original(name, *args, **kwargs)
-
-    monkeypatch.setattr(cover_preview.sys, "stdin", Mock(isatty=lambda: True))
-    monkeypatch.setattr(cover_preview.sys, "stdout", Mock(isatty=lambda: True))
-    monkeypatch.setattr(builtins, "__import__", fail)
-    assert cover_preview.image_widget() is None
-
-
-async def test_choose_results_detects_before_starting_menu_and_closes_cache(
-    monkeypatch,
-):
-    widget = object()
-    app = Mock(run_async=AsyncMock(return_value=(1,)))
-    app.covers.close = AsyncMock()
-
-    def detect():
-        assert not factory.called
-        assert not app.run_async.called
-        return widget
-
-    factory = Mock(return_value=app)
-    monkeypatch.setattr(search_menu, "image_widget", detect)
-    monkeypatch.setattr(search_menu, "SearchMenu", factory)
-    results = summaries()
-    assert await search_menu.choose_results(
-        results, "qobuz", "album", "test", verify_ssl=True
-    ) == (1,)
-    factory.assert_called_once_with(
-        results, "qobuz", "album", "test", pixel_widget=widget, verify_ssl=True
-    )
-    app.covers.close.assert_awaited_once()
-
-
-async def test_pixel_renderer_failure_uses_blocks(monkeypatch):
-    monkeypatch.setattr(CoverCache, "_fetch", AsyncMock(return_value=png()))
-    broken_widget = Mock(side_effect=RuntimeError("encoder failed"))
-    async with menu(summaries("cover"), pixel_widget=broken_widget) as (app, pilot):
-        await pilot.pause(0.2)
-        pane = app.query_one(CoverPane)
-        assert pane.query_one(BlockCover)
-        assert pane.pixel_widget is None
+    try:
+        image = await cache.get((url + "missing", url + "cover"))
+        assert image is not None
+        assert await cache.get((url + "missing", url + "cover")) is image
+        assert cache.images[url + "missing"] is None
+        assert asked == ["missing", "cover"]
+        session = cache.session
+    finally:
+        await cache.close()
+    assert session.closed
 
 
 @pytest.mark.parametrize(
@@ -314,40 +372,67 @@ def test_provider_covers_prefer_larger_variant_and_keep_fallbacks(
         assert track_summary({"id": 1, "album": image_fields}).image_urls == expected
 
 
-async def test_main_queues_original_choices_only(monkeypatch):
-    from streamrip.rip import main as main_module
-    from streamrip.rip.main import Main
+# --- layout -------------------------------------------------------------------
 
-    main = Main.__new__(Main)
-    main.config = Config.defaults()
-    main._search = AsyncMock(return_value=summaries())
-    main.add_all_by_id = AsyncMock()
-    choose = AsyncMock(return_value=(2, 0))
-    # main's own (lazily imported) name: patching search_menu's would miss it
-    # once main has bound it, and open the real menu.
-    monkeypatch.setattr(main_module, "choose_results", choose)
-    await main.search_interactive("qobuz", "album", "test")
-    choose.assert_awaited_once_with(
-        main._search.return_value,
-        "qobuz",
-        "album",
-        "test",
-        verify_ssl=main.config.session.downloads.verify_ssl,
-    )
-    main.add_all_by_id.assert_awaited_once_with(
-        [("qobuz", "album", "2"), ("qobuz", "album", "0")]
-    )
-    choose.return_value = None
-    main.add_all_by_id.reset_mock()
-    await main.search_interactive("qobuz", "album", "test")
-    main.add_all_by_id.assert_not_awaited()
+
+def test_resize_before_mount_is_ignored():
+    # Textual sends a Resize before on_mount, when there may be no widgets yet.
+    app = SearchMenu(summaries(), "qobuz", "album", "test")
+    app.on_resize()
+    assert app._preview_resize_timer is None
+
+
+async def test_small_and_resized_layout_never_overlaps_metadata(covers):
+    async with menu(summaries("cover"), size=(60, 24)) as (app, pilot):
+        await pilot.pause(0.2)
+        pane = app.query_one(CoverPane)
+        assert not pane.display
+        await pilot.resize_terminal(140, 50)
+        await pilot.pause(0.2)
+        assert pane.display
+        assert pane.region.right < app.query_one("#details").region.x
+        assert pane.region.bottom <= app.query_one("#preview").region.bottom
+        await pilot.resize_terminal(40, 15)
+        await pilot.pause(0.2)
+        assert not pane.display
+        assert app.query_one("#details").size.width > 0
+
+
+# --- picking an image renderer --------------------------------------------------
+
+
+@pytest.mark.parametrize("stream", ["stdin", "stdout"])
+def test_auto_does_not_import_or_probe_image_library_for_redirected_io(
+    monkeypatch, stream
+):
+    tty(monkeypatch)
+    original = builtins.__import__
+
+    def guard(name, *args, **kwargs):
+        assert not name.startswith("textual_image")
+        return original(name, *args, **kwargs)
+
+    monkeypatch.setattr(cover_preview.sys, stream, Mock(isatty=lambda: False))
+    monkeypatch.setattr(builtins, "__import__", guard)
+    assert cover_preview.image_widget() is None
+
+
+def test_failed_terminal_probe_automatically_uses_blocks(monkeypatch):
+    tty(monkeypatch)
+    original = builtins.__import__
+
+    def fail(name, *args, **kwargs):
+        if name == "textual_image":
+            raise OSError("terminal probe failed")
+        return original(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fail)
+    assert cover_preview.image_widget() is None
 
 
 @pytest.mark.parametrize("protocol", ["sixel", "tgp", "unsupported"])
 def test_auto_selects_only_a_supported_pixel_renderer(monkeypatch, protocol):
-    import sys
-    from types import ModuleType, SimpleNamespace
-
+    tty(monkeypatch)
     sixel, tgp, halfcell, widget = object(), object(), object(), object()
     library = ModuleType("textual_image")
     library.renderable = SimpleNamespace(
@@ -358,14 +443,24 @@ def test_auto_selects_only_a_supported_pixel_renderer(monkeypatch, protocol):
     library.widget = SimpleNamespace(Image=widget)
     monkeypatch.setattr(cover_preview, "_sixel_widget", lambda: widget)
     monkeypatch.setitem(sys.modules, "textual_image", library)
-    monkeypatch.setattr(cover_preview.sys, "stdin", Mock(isatty=lambda: True))
-    monkeypatch.setattr(cover_preview.sys, "stdout", Mock(isatty=lambda: True))
     assert cover_preview.image_widget() is (
         None if protocol == "unsupported" else widget
     )
 
 
-async def test_delayed_encoder_failure_falls_back_for_later_covers(monkeypatch):
+# --- pixel renderers that fail ------------------------------------------------
+
+
+async def test_pixel_renderer_failure_uses_blocks(covers):
+    broken_widget = Mock(side_effect=RuntimeError("encoder failed"))
+    async with menu(summaries("cover"), pixel_widget=broken_widget) as (app, pilot):
+        await pilot.pause(0.2)
+        pane = app.query_one(CoverPane)
+        assert pane.query_one(BlockCover)
+        assert pane.pixel_widget is None
+
+
+async def test_delayed_encoder_failure_falls_back_for_later_covers(covers):
     class FailingImage(Static):
         def __init__(self, image, on_error):
             super().__init__()
@@ -374,7 +469,6 @@ async def test_delayed_encoder_failure_falls_back_for_later_covers(monkeypatch):
         async def on_mount(self):
             await self.mount(self.fallback(OSError("cannot encode")))
 
-    monkeypatch.setattr(CoverCache, "_fetch", AsyncMock(return_value=png()))
     async with menu(summaries("one", "two"), pixel_widget=FailingImage) as (app, pilot):
         # Until the cover is shown, not a fixed time: a busy machine is slower.
         await app.workers.wait_for_complete()
@@ -388,51 +482,10 @@ async def test_delayed_encoder_failure_falls_back_for_later_covers(monkeypatch):
         assert isinstance(pane.children[0], BlockCover)
 
 
-async def test_cache_http_download_failure_and_close(serve):
-    async def cover(request):
-        return web.Response(body=png(), content_type="image/png")
-
-    url = await serve({"/cover": cover})
-    cache = CoverCache()
-    try:
-        assert await cache.get((url + "missing", url + "cover")) is not None
-        assert cache.images[url + "missing"] is None
-        session = cache.session
-    finally:
-        await cache.close()
-    assert session.closed
-
-
-async def test_background_work_is_cancelled_on_exit(monkeypatch):
-    started, cancelled = asyncio.Event(), asyncio.Event()
-
-    async def fetch(self, url):
-        started.set()
-        try:
-            await asyncio.Event().wait()
-        finally:
-            cancelled.set()
-
-    monkeypatch.setattr(CoverCache, "_fetch", fetch)
-    async with menu(summaries("slow")) as (_, pilot):
-        await asyncio.wait_for(started.wait(), 2)
-        await pilot.press("escape")
-    assert cancelled.is_set()
-
-
-async def test_enter_includes_current_result_like_previous_linux_menu():
-    async with menu() as (app, pilot):
-        await pilot.press("space", "down", "enter")
-    assert app.return_value == (0, 1)
-
-
 async def test_real_sixel_adapter_restores_last_row_and_handles_encoder_errors(
-    monkeypatch,
+    monkeypatch, covers
 ):
-    from rich.control import Control
-
     pixel = cover_preview._sixel_widget()
-    monkeypatch.setattr(CoverCache, "_fetch", AsyncMock(return_value=png()))
     async with menu(summaries("one"), pixel_widget=pixel) as (app, pilot):
         await pilot.pause(0.2)
         pane = app.query_one(CoverPane)
@@ -456,57 +509,7 @@ async def test_real_sixel_adapter_restores_last_row_and_handles_encoder_errors(
         assert pane.query_one(BlockCover).size.height > 1
 
 
-async def test_deezer_album_details_arrive_once_highlighted(monkeypatch):
-    urls = []
-
-    async def fetch(self, url):
-        urls.append(url)
-        album = {
-            "id": 7,
-            "title": "Visions",
-            "artist": {"name": "The Artist"},
-            "record_type": "album",
-            "nb_tracks": 12,
-            "release_date": "2024-03-08",
-            "duration": 2734,
-            "genres": {"data": [{"name": "Jazz"}]},
-            "label": "Blue Note Records",
-        }
-        return json.dumps(album).encode()
-
-    monkeypatch.setattr(CoverCache, "_fetch", fetch)
-    found = album_summary(
-        {"id": 7, "title": "Visions", "artist": {"name": "The Artist"}, "nb_tracks": 12}
-    )
-    app = SearchMenu(SearchResults([found]), "deezer", "album", "visions")
-    try:
-        async with app.run_test(size=(100, 40)) as pilot:
-            await pilot.pause(0.3)
-            assert urls == ["https://api.deezer.com/album/7"]
-            assert dict(app.results[0].details) == {
-                "Released": "2024-03-08",
-                "Type": "Album",
-                "Tracks": "12",
-                "Length": "45:34",
-                "Genre": "Jazz",
-                "Label": "Blue Note Records",
-            }
-            prompt = app.query_one(OptionList).get_option_at_index(0).prompt
-            assert "Visions by The Artist (2024)" in str(prompt)
-    finally:
-        await app.covers.close()
-
-
-@pytest.mark.parametrize(("urls", "tip"), [(("cover",), True), ((), False)])
-async def test_block_covers_name_terminals_that_show_images(monkeypatch, urls, tip):
-    async def fetch(self, url):
-        return png()
-
-    monkeypatch.setattr(CoverCache, "_fetch", fetch)
-    results = summaries(*urls) if urls else summaries()
-    async with menu(results) as (app, pilot):
-        await pilot.pause(0.2)
-        assert ("Ghostty" in str(app.query_one("#details", Static).content)) is tip
+# --- block covers -------------------------------------------------------------
 
 
 def _cell_by_brute_force(pixels):

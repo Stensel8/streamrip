@@ -1,13 +1,12 @@
 import pytest
+from rich.console import Console
 
 from streamrip import progress
 
 
 @pytest.fixture
 def manager(monkeypatch):
-    """A fresh progress manager in place of the global one; its display is stopped
-    afterwards.
-    """
+    """A fresh progress manager in place of the global one, stopped afterwards."""
     fresh = progress.ProgressManager()
     monkeypatch.setattr(progress, "_p", fresh)
     yield fresh
@@ -15,55 +14,17 @@ def manager(monkeypatch):
         fresh.live.stop()
 
 
+# --- download and resolve rows ------------------------------------------------
+
+
 @pytest.mark.parametrize(("size", "total"), [(0, None), (1000, 1000)])
 def test_download_bar_total(manager, size, total):
-    """A size of 0 is unknown, and must not look finished.
-
-    Rich takes a total of 0 for a finished task: a full bar with no spinner, on a
-    download that has not started.
-    """
+    # A size of 0 is unknown. Rich takes a total of 0 for a finished task: a
+    # full bar with no spinner, on a download that has not started.
     progress.get_progress_callback(True, size, "track")
     task = manager.progress.tasks[0]
     assert task.total == total
     assert not task.finished
-
-
-def test_overall_bar_counts_tracks(manager):
-    """overall_add grows the total; overall_advance counts tracks done."""
-    progress.overall_add(14)
-    progress.overall_advance()
-    progress.overall_advance(2)
-    task = manager.overall_progress.tasks[0]
-    assert task.total == 14
-    assert task.completed == 3
-
-
-def test_overall_total_grows_across_items(manager):
-    """An artist's albums each add their tracks to the one bar; the total is
-    the running sum, not one album at a time."""
-    progress.overall_add(10)  # first album
-    progress.overall_add(12)  # second album
-    assert manager.overall_progress.tasks[0].total == 22
-    assert len(manager.overall_progress.tasks) == 1  # still one bar
-
-
-def test_overall_add_zero_creates_no_bar(manager):
-    """An empty album (everything already downloaded) adds no bar."""
-    progress.overall_add(0)
-    assert manager.overall_progress.tasks == []
-    assert manager._overall_task is None
-
-
-def test_resolve_row_counts_tracks_and_goes_once_all_are_resolved(manager):
-    """Looking up an album's tracks shows on screen, and stops showing once
-    the last one is looked up, while they download."""
-    resolved = progress.get_resolve_callback(True, 3)
-    resolved.update(2)
-    task = manager.resolve_progress.tasks[0]
-    assert (task.completed, task.total, task.visible) == (2, 3, True)
-    resolved.update(1)
-    assert manager.resolve_progress.tasks == []
-    resolved.done()  # again, as leaving its block does
 
 
 def test_a_finished_download_row_is_removed_not_kept_hidden(manager):
@@ -73,33 +34,56 @@ def test_a_finished_download_row_is_removed_not_kept_hidden(manager):
     update(40)  # a download thread's last report, after the row is gone
 
 
-def test_overall_disabled_adds_nothing(manager):
+def test_resolve_row_counts_tracks_and_goes_once_all_are_resolved(manager):
+    # Looking up an album's tracks shows, until the last one is looked up.
+    resolved = progress.get_resolve_callback(True, 3)
+    resolved.update(2)
+    task = manager.resolve_progress.tasks[0]
+    assert (task.completed, task.total, task.visible) == (2, 3, True)
+    resolved.update(1)
+    assert manager.resolve_progress.tasks == []
+    resolved.done()  # again, as leaving its block does
+
+
+# --- the overall bar ----------------------------------------------------------
+
+
+def test_overall_bar_counts_tracks_across_items(manager):
+    # An artist's albums each add their tracks to the one bar.
+    progress.overall_add(10)
+    progress.overall_add(12)
+    progress.overall_advance()
+    progress.overall_advance(2)
+    assert len(manager.overall_progress.tasks) == 1
+    task = manager.overall_progress.tasks[0]
+    assert (task.total, task.completed) == (22, 3)
+
+
+def test_nothing_to_show_adds_no_bar(manager):
+    progress.overall_add(0)  # an album with everything downloaded already
     progress.overall_add(5, enabled=False)
     progress.overall_advance(enabled=False)
-    assert manager.overall_progress.tasks == []
-
-
-def test_overall_bar_resets_between_runs(manager):
-    """clear_progress drops the bar so a second run starts a fresh total."""
-    progress.overall_add(14)
-    progress.clear_progress()
-    assert manager._overall_task is None
-    progress.overall_add(5)
-    assert manager.overall_progress.tasks[-1].total == 5
-    assert manager.overall_progress.tasks[-1].completed == 0
-
-
-def test_disabled_progress_adds_no_task(manager):
-    """With progress bars off, no task is added."""
     progress.get_progress_callback(False, 1000, "track")
-    assert not manager.progress.tasks
+    assert manager.overall_progress.tasks == []
+    assert manager.progress.tasks == []
+
+
+def test_overall_bar_starts_afresh_on_the_next_run(manager):
+    progress.overall_add(14)
+    progress.clear_progress()  # removes the task; the TaskID counter moves on
+    progress.overall_add(2)
+    # The update path: Rich's task list is reindexed when a task is removed,
+    # so a TaskID from the earlier run was an out-of-range index there.
+    progress.overall_add(2)
+    task = manager.overall_progress.tasks[-1]
+    assert (task.total, task.completed) == (4, 0)
+
+
+# --- the display --------------------------------------------------------------
 
 
 def test_a_new_run_after_the_display_was_cleared_starts_it_again(manager):
-    """A cleared display starts again with the next bar.
-
-    Otherwise a second Main in the same process would show no bars at all.
-    """
+    # Otherwise a second Main in the same process would show no bars at all.
     progress.get_progress_callback(True, 10, "one")
     assert manager.started
 
@@ -110,27 +94,11 @@ def test_a_new_run_after_the_display_was_cleared_starts_it_again(manager):
     assert manager.started
 
 
-def test_overall_total_survives_a_task_removed_in_an_earlier_run(manager):
-    """The running total is kept here, not read from progress.tasks[TaskID]:
-    that list is reindexed when a task is removed, so a stale TaskID would be
-    an out-of-range index (it was, across runs -- an IndexError)."""
-    progress.overall_add(3)
-    progress.clear_progress()  # removes the task; the TaskID counter moves on
-    progress.overall_add(2)
-    progress.overall_add(2)  # the update path, where the index was used
-    assert manager.overall_progress.tasks[-1].total == 4
-
-
 @pytest.mark.parametrize("width", [40, 80, 160])
 def test_the_display_leaves_the_last_column_free(manager, width):
-    """No line of the display fills the terminal's width.
-
-    A terminal that wraps as soon as the last column is written turns a full-width
-    line into two, which Live does not count: each redraw then leaves the previous
-    "Downloading" rule behind.
-    """
-    from rich.console import Console
-
+    # A terminal that wraps as soon as the last column is written turns a
+    # full-width line into two, which Live does not count: each redraw then
+    # leaves the previous "Downloading" rule behind.
     progress.add_title(1, "An album with a title long enough to fill any width " * 4)
     progress.overall_add(3)
     progress.get_progress_callback(True, 1000, "a track " * 30)
