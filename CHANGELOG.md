@@ -5,35 +5,19 @@ upstream issues and pull requests.
 
 ## 2.7.1
 
-A cleanup round: small bugs and slow spots, found by testing more thoroughly
-and pushing streamrip to its limits.
+Small bugs and slow spots, found by testing harder and pushing streamrip to its
+limits.
 
-- fix: a failed conversion or download never deletes or damages a file you
-  already had
-- fix: Tidal artists with over 100 albums and Qobuz artists with over 500 get
-  all of them
-- fix: one bad url no longer stops the rest, and `repair` works for SoundCloud
-  and with the downloads database off
-- fix: no endless retries after a renewed Tidal login, and no endless loop on
-  an empty SoundCloud stream
-- fix: artist filters: `repeats` picks among what the others keep, `features`
-  keeps shared albums, and a dropped album leaves no folder behind
-- fix: no `YEAR=Unknown` or "5/1" tags, Qobuz genres keep their order,
-  SoundCloud tracks get a cover at every size, and a track listed twice in a
-  playlist downloads once
-- fix: closing the Qobuz login window or Ctrl-C at the Spotify login stops at
-  once
-- fix: a config with a BOM, or in a folder that isn't there yet, loads, and
-  `restrict_characters` can't make a Windows device name like `CON`
-- fix: SoundCloud links with `www.` or `m.` work, and AIFF from a 16-bit track
-  stays 16-bit
-- feat: rate limits per service, in its own section of the config; Tidal's
-  measured ones by default, and Deezer keeps to them too
-- perf: Tidal hi-res needs about 65 fewer requests a track; tagging no longer
-  holds up other downloads; Spotify matches each track once; block covers
-  draw twice as fast; a long run no longer piles up memory
-- chore: dependencies updated, and CI tests real accounts from home with a
-  `STREAMRIP_CONFIG` secret
+- fix: a failed conversion or download never touches a file you already had
+- fix: whole discographies: Tidal artists past 100 albums, Qobuz past 500
+- fix: one bad url no longer stops the rest, and `repair`, the artist filters,
+  tags, covers and logins handle their edge cases
+- feat: rate limits per service in the config, Tidal's measured ones by
+  default; Deezer keeps to them too
+- perf: Tidal hi-res needs about 65 fewer requests a track, and tagging no
+  longer holds up other downloads
+- chore: dependencies updated, the tests in 20 files instead of 64, and CI
+  tests real accounts with a `STREAMRIP_CONFIG` secret
 
 ## 2.7.0
 
