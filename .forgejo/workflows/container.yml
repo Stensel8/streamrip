@@ -88,8 +88,10 @@ jobs:
           # The login stays in this run; the build cache stays in the docker daemon.
           export DOCKER_CONFIG="$(mktemp -d)"
           builder="release-$GITHUB_RUN_ID-$arch"
-          trap 'rm -rf "$DOCKER_CONFIG"; docker image rm --force "$image" >/dev/null 2>&1 || true
-                docker buildx rm --force "$builder" >/dev/null 2>&1 || true' EXIT
+          # Builder first: buildx tracks it in $DOCKER_CONFIG, so after that is gone it stays running.
+          trap 'docker buildx rm --force "$builder" >/dev/null 2>&1 || true
+                docker image rm --force "$image" >/dev/null 2>&1 || true
+                rm -rf "$DOCKER_CONFIG"' EXIT
 
           # A release builds in a builder of its own: without the cache that pull
           # requests share in this daemon, and able to push zstd, which docker push is not.
