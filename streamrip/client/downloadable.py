@@ -168,6 +168,10 @@ def _blocking_download(
             report(resume_pos)
         else:
             mode = "wb"
+        # Before the file is made: a download cancelled while it waited for
+        # the answer is not to leave an empty file behind afterwards.
+        if stop.is_set():
+            raise asyncio.CancelledError
         with path.open(mode) as file:
             for chunk in resp.iter_content(chunk_size=chunk_size):
                 if stop.is_set():

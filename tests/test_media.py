@@ -110,6 +110,22 @@ def _make_track(folder: Path, extension: str) -> Track:
     return Track(meta, FakeDownloadable(extension), config, folder, None, database)
 
 
+async def test_a_cancelled_download_leaves_no_part_file(tmp_path):
+    # Ctrl-C: a "Song.part.flac" beside the tracks has an audio extension, so
+    # whatever indexes the library picks it up, and no later run continues it.
+    class CutOff(FakeDownloadable):
+        async def _download(self, path, callback):
+            path.write_bytes(b"fLaC and then half a track")
+            raise asyncio.CancelledError
+
+    track = _make_track(tmp_path, "flac")
+    track.downloadable = CutOff("flac")
+    await track.preprocess()
+    with pytest.raises(asyncio.CancelledError):
+        await track.download()
+    assert [p.name for p in tmp_path.rglob("*") if p.is_file()] == []
+
+
 def _failed_db(tmp_path):
     """A real failed table: the Dummy one never stores anything."""
     return db.Database(db.Dummy(), db.Failed(str(tmp_path / "failed.db")))
@@ -615,6 +631,9 @@ class _BookletDownloadable:
         if "broken" in self.url:
             path.write_bytes(b"%PD")  # cut off mid-download
             raise ConnectionError("gone")
+        if "cancelled" in self.url:
+            path.write_bytes(b"%PD")
+            raise asyncio.CancelledError
         type(self).downloaded.append(self.url)
         with path.open("wb") as f:
             f.write(b"%PDF")
@@ -642,6 +661,15 @@ async def test_booklets_are_saved_as_pdfs(monkeypatch, tmp_path, caplog):
         "Liner Notes.pdf",
     ]
     assert "Could not download booklet https://q/broken.pdf" in caplog.text
+
+
+async def test_a_booklet_cut_off_by_a_cancel_is_not_kept(monkeypatch, tmp_path):
+    # At its final name the next run took the half PDF for the booklet.
+    monkeypatch.setattr(album_module, "BasicDownloadable", _BookletDownloadable)
+    booklets = [{"description": "Booklet", "url": "https://q/cancelled.pdf"}]
+    with pytest.raises(asyncio.CancelledError):
+        await album_module.download_booklets(None, booklets, tmp_path)
+    assert list(tmp_path.iterdir()) == []
 
 
 @pytest.mark.parametrize(
