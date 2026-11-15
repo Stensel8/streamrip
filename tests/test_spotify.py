@@ -521,6 +521,24 @@ async def test_the_tracks_of_a_playlist_need_no_second_request(make_client, spot
     assert spotify.requests("/v1/tracks/in-it") == []
 
 
+@pytest.mark.parametrize(
+    "link",
+    ["http://localhost:1/v1/next", "{base}.evil.example/v1/next", "{base}/v2/next"],
+)
+async def test_a_next_page_link_off_the_api_is_not_followed(make_client, spotify, link):
+    # The access token goes along with every request: not to an address that
+    # only a response says is the next page.
+    spotify.on("GET", f"/v1/artists/{ARTIST}", {"id": ARTIST, "name": "Kevin MacLeod"})
+    spotify.on(
+        "GET",
+        f"/v1/artists/{ARTIST}/albums",
+        {"items": [{"id": "a1"}], "next": link.format(base=spotify.base)},
+    )
+    with pytest.raises(APIError, match="next page link"):
+        await make_client().get_metadata(ARTIST, "artist")
+    assert spotify.requests("/v2/next") == []
+
+
 async def test_an_artist_comes_with_its_own_releases(make_client, spotify):
     next_page = f"{spotify.base}/v1/artists/{ARTIST}/albums?offset=2"
     spotify.on("GET", f"/v1/artists/{ARTIST}", {"id": ARTIST, "name": "Kevin MacLeod"})
