@@ -79,6 +79,19 @@ def _serves(*formats, unlicensed=()):
 
 # The tiers asked for: from the one wanted (within the account) down, until one
 # has a URL.
+async def test_the_file_is_decrypted_as_the_track_it_is_of():
+    # The gateway follows a FALLBACK by itself and answers with that track's
+    # data. Its file is encrypted with a key made from its own id: decrypted
+    # with the id asked for, a third of every block came out as noise.
+    client = _client()
+    client.client.gw.get_track.return_value = _track(0, 100, 100, SNG_ID="222")
+    client.client.get_track_url.return_value = "https://cdn.test/file.mp3"
+    assert (await client.get_downloadable("111", quality=1)).id == "222"
+
+    client.client.gw.get_track.return_value = _track(0, 100, 100)  # no id in it
+    assert (await client.get_downloadable("111", quality=1)).id == "111"
+
+
 @pytest.mark.parametrize(
     ("track", "served", "user", "quality", "asked"),
     [
