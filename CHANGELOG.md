@@ -3,6 +3,34 @@
 All notable changes in this fork of [nathom/streamrip](https://github.com/nathom/streamrip). Numbers can refer to
 upstream issues and pull requests.
 
+## Working development version
+
+Not released yet: a round of bug and security fixes, checked against real
+accounts.
+
+- fix: logins stay with their service: the Qobuz and Tidal tokens no longer go
+  along to download and cover hosts, Spotify's token only follows links on its
+  API, and app secrets and the Tidal device code stay out of the logs
+- fix: the update notice only suggests a command with a real version and a
+  wheel of this repository
+- fix: names, urls and searches with brackets like `[live]` are printed as
+  they are, instead of stopping the album, playlist or list of urls
+- fix: a Deezer track served from another release is decrypted with its own
+  id, instead of coming out as noise
+- fix: `repair` no longer downloads a track again that came through since, a
+  cover that cannot be embedded no longer costs the track, and a track that
+  fails while resolving is recorded as failed
+- fix: Ctrl-C leaves no part file or half booklet behind, and
+  `--no-ssl-verify` reaches the file downloads too
+- fix: CSV and `file` lists: an unclosed quote, a byte order mark or odd JSON
+  give a message instead of a traceback, and a `Track` number column is no
+  longer taken for the title
+- fix: the matcher no longer takes "Part One" for "Part Two", or a video
+  without artists for anyone's song
+- fix: saving the config keeps what you changed in the file meanwhile, `~` in
+  the download folder is your home folder, `search` opens no menu without a
+  terminal, and a silent connection no longer holds up the Spotify login
+
 ## 2.7.1
 
 Small bugs and slow spots, found by testing harder and pushing streamrip to its
