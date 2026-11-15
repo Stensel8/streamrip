@@ -61,7 +61,7 @@ def _duration_ms(record: dict[str, str]) -> int | None:
     if milliseconds := record.get("duration_ms"):
         try:
             return int(float(milliseconds))
-        except ValueError:
+        except ValueError, OverflowError:  # no number, or "inf"
             return None
     return clock_ms(record.get("length"))
 
@@ -116,7 +116,10 @@ def read_tracks(path: Path) -> list[MatchTrack]:
         raise ValueError(
             f"{path} is not UTF-8 encoded. Save it as UTF-8 (in Excel: CSV UTF-8)."
         ) from e
-    rows = list(_rows(text, _delimiter(text)))
+    try:
+        rows = list(_rows(text, _delimiter(text)))
+    except csv.Error as e:  # a quote that is never closed, in a big file
+        raise ValueError(f"{path} cannot be read as CSV: {e}") from e
     if not rows:
         return []
 
@@ -127,7 +130,12 @@ def read_tracks(path: Path) -> list[MatchTrack]:
         columns, body = ["artists", "title"], rows  # no header row: artist,title
     tracks = []
     for row in body:
-        record = {c: v.strip() for c, v in zip(columns, row, strict=False) if c}
+        # The first column of a kind counts: after "Title", a "Track" column
+        # holds the track's number, which is not to replace the title.
+        record: dict[str, str] = {}
+        for column, value in zip(columns, row, strict=False):
+            if column:
+                record.setdefault(column, value.strip())
         if (track := _track(record)) is not None:
             tracks.append(track)
     if skipped := len(body) - len(tracks):
