@@ -580,7 +580,9 @@ class TidalClient(Client):
             "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
             "scope": "r_usr+w_usr+w_sub",
         }
-        logger.debug("Checking with %s", data)
+        # Not the data: with the device code in it, whoever reads a -v log
+        # while the login is open can collect its tokens.
+        logger.debug("Checking whether the device login was approved")
         resp = await self._api_post(f"{AUTH_URL}/token", data, auth=True)
 
         if "status" in resp and resp["status"] != 200:
