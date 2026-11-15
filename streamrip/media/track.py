@@ -506,6 +506,8 @@ async def fetch_downloadable(
 class PendingTrack(Pending):
     """A track of an album whose metadata and cover are already there."""
 
+    is_track = True
+
     id: str
     album: AlbumMetadata
     client: Client
@@ -556,6 +558,8 @@ class PendingSingle(PendingItem):
     """A track downloaded on its own, which brings its album's metadata and
     cover with it.
     """
+
+    is_track = True
 
     async def resolve(self) -> Track | None:
         """Fetch this single's metadata, album info, and cover, into a Track."""

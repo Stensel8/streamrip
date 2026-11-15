@@ -223,6 +223,8 @@ async def searched_playlist(
 
 @dataclass(slots=True)
 class PendingPlaylistTrack(Pending):
+    is_track = True
+
     id: str
     client: Client
     config: Config
