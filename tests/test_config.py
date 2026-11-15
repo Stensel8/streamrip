@@ -263,6 +263,16 @@ def test_only_a_modified_config_is_saved(tmp_path, modified, folder):
     assert Config(path).session.downloads.folder == folder
 
 
+def test_a_tilde_means_the_home_folder_and_stays_in_the_file(tmp_path):
+    path = tmp_path / "config.toml"
+    shutil.copy(SAMPLE_CONFIG, path)
+    path.write_text(path.read_text().replace('"test_folder"', '"~/Music"', 1))
+    config = Config(path)
+
+    assert config.session.downloads.folder == str(Path.home() / "Music")
+    assert config.file.downloads.folder == "~/Music"
+
+
 def test_saving_keeps_what_was_changed_in_the_file_meanwhile(config_path):
     # The config is saved when a run ends, which can be hours after it was
     # read. Written back whole, it undid an edit made in between, and two runs
