@@ -79,7 +79,20 @@ _APOSTROPHES = str.maketrans(
     dict.fromkeys("\u2019\u2018`\u00b4", "'")
 )  # curly quotes, grave, acute
 # Words that services abbreviate differently: "Pt. 2" is "Part 2", "Rock 'n' Roll" is "Rock and Roll".
-# Roman numerals are numbers too, except "i", "v" and "x", which are also words and letters.
+# Numbers become digits, so that "Part One", "Part I" and "Part 1" are one part and "Part Two" another:
+# the words up to ten, and Roman numerals, except "i", "v" and "x", which are also words and letters.
+_NUMBER_WORDS = (
+    "one",
+    "two",
+    "three",
+    "four",
+    "five",
+    "six",
+    "seven",
+    "eight",
+    "nine",
+    "ten",
+)
 _SPELLINGS = frozendict(
     {"pt": "part", "vol": "volume", "n": "and"}
     | dict(
@@ -89,7 +102,26 @@ _SPELLINGS = frozendict(
             strict=True,
         )
     )
+    | {word: str(number) for number, word in enumerate(_NUMBER_WORDS, 1)}
 )
+# Those three letters are numerals too where a number is due: after one of these words ("Pt. I", "Act V") ...
+_ROMAN_LETTERS = frozendict({"i": "1", "v": "5", "x": "10"})
+_NUMBERED = frozenset(
+    {
+        "part",
+        "volume",
+        "chapter",
+        "act",
+        "book",
+        "episode",
+        "no",
+        "number",
+        "op",
+        "opus",
+    }
+)
+# ... and as the number of a movement: "I. Allegro", "V. Presto". Not in "U.N.I.T.Y." or "Mr. X".
+_MOVEMENT = re.compile(r"(?<![\w.])([IVX])\.(?=\s)")
 # What joins several artists in one name: "Macklemore & Ryan Lewis", "Nicky Jam x J Balvin",
 # "Tom Petty and the Heartbreakers" (where the other service may have just "Tom Petty").
 _ARTIST_JOINS = re.compile(
@@ -124,9 +156,16 @@ def _words(text: str) -> str:
 
 @_cached
 def _comparable(text: str) -> str:
-    """Folded words without remaster noise, with the usual abbreviations written out."""
-    words = _words(_NOISE.sub(" ", _fold(text))).split()
-    return " ".join(_SPELLINGS.get(word, word) for word in words)
+    """Folded words without remaster noise, with the usual abbreviations written out and numbers as digits."""
+    text = _MOVEMENT.sub(lambda match: _ROMAN_LETTERS[match[1].lower()], text)
+    words = [
+        _SPELLINGS.get(word, word)
+        for word in _words(_NOISE.sub(" ", _fold(text))).split()
+    ]
+    for at in range(1, len(words)):
+        if words[at] in _ROMAN_LETTERS and words[at - 1] in _NUMBERED:
+            words[at] = _ROMAN_LETTERS[words[at]]
+    return " ".join(words)
 
 
 def simplify_title(title: str) -> str:
@@ -178,8 +217,13 @@ def _tags(title: str) -> frozenset[str]:
 
 
 @_cached
-def _numbers(title: str) -> frozenset[int]:
-    return frozenset(int(number) for number in re.findall(r"\d+", _full(title)))
+def _numbers(title: str) -> frozenset[tuple[int, int]]:
+    """The numbers in a title, each with how often it came before: the 5 of "No. 5" is not the 5 of
+    "V. Finale", so a title that has both is not covered by one that has the first alone."""
+    numbers = [int(number) for number in re.findall(r"\d+", _full(title))]
+    return frozenset(
+        (number, numbers[:at].count(number)) for at, number in enumerate(numbers)
+    )
 
 
 def _title_similarity(wanted: str, candidate: str) -> float:
@@ -238,7 +282,11 @@ def score(wanted: MatchTrack, candidate: MatchTrack) -> float:
     ):  # another version: live, remix, ...
         title *= 0.5
     duration = _duration_score(wanted.duration_ms, candidate.duration_ms)
-    if not wanted.artists or not candidate.artists:
+    if not candidate.artists and wanted.artists:
+        # Nobody to check the artist against (a video whose channel says nothing). The title and the
+        # length alone would let another artist's "Hello" in under this one's tags.
+        return 0.0
+    if not wanted.artists:
         # Nothing to compare the artist with (a CSV of titles only): judge by the title and the length.
         return round(
             (TITLE_WEIGHT * title + DURATION_WEIGHT * duration)
