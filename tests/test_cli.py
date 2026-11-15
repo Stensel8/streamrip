@@ -1043,6 +1043,21 @@ async def test_one_bad_url_costs_only_itself(caplog):
     )
 
 
+async def test_a_url_that_looks_like_markup_is_only_an_invalid_url():
+    """Rich reads "[/x]" as a tag that closes nothing and raises: one such token
+    in a list of urls used to stop every url after it, as a traceback."""
+    main = _main()
+    main.clients["tidal"].logged_in = True
+    await main.add_all(["[/x]", "https://tidal.com/browse/album/1234"])
+    assert [type(p) for p in main.pending] == [PendingAlbum]
+
+
+async def test_a_search_for_text_that_looks_like_markup_finds_nothing(mock_main):
+    mock_main.clients["deezer"].search = AsyncMock(return_value=[{"data": []}])
+    await mock_main.search_take_first("deezer", "track", "[/x] [live]")
+    assert mock_main.pending == []
+
+
 def test_spotify_says_it_is_lossy_and_points_to_music_sync():
     notice = notice_for("spotify")
     assert "lossy" in notice

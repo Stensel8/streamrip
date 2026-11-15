@@ -128,7 +128,7 @@ class QobuzPrompter(CredentialPrompter):
                 await self.client.login()
                 break
             except AuthenticationError as e:
-                console.print(f"[yellow]{e}")
+                console.print(str(e), style="yellow", markup=False)
                 await self._prompt_creds_and_set_session_config()
             except MissingCredentialsError:
                 await self._prompt_creds_and_set_session_config()
@@ -171,7 +171,7 @@ class QobuzPrompter(CredentialPrompter):
             try:
                 user_id, token = await capture_qobuz_auth_token_via_browser()
             except QobuzTokenCaptureError as e:
-                console.print(f"[yellow]{e}")
+                console.print(str(e), style="yellow", markup=False)
             else:
                 self._set_session_creds(user_id, token)
                 return
@@ -180,7 +180,7 @@ class QobuzPrompter(CredentialPrompter):
             try:
                 user_id, token = await capture_qobuz_auth_token()
             except QobuzTokenCaptureError as e:
-                console.print(f"[yellow]{e}")
+                console.print(str(e), style="yellow", markup=False)
             else:
                 self._set_session_creds(user_id, token)
                 return
@@ -339,7 +339,7 @@ class DeezerPrompter(CredentialPrompter):
             try:
                 arl = await capture_deezer_arl_via_browser()
             except DeezerArlCaptureError as e:
-                console.print(f"[yellow]{e}")
+                console.print(str(e), style="yellow", markup=False)
             else:
                 self.config.session.deezer.arl = arl
                 return
@@ -403,7 +403,7 @@ class SpotifyPrompter(CredentialPrompter):
             try:
                 await self._log_in()
             except (SpotifyLoginError, AuthenticationError) as e:
-                console.print(f"[yellow]{e}")
+                console.print(str(e), style="yellow", markup=False)
                 if not Confirm.ask("Try again?", default=True):
                     raise AuthenticationError("Spotify login cancelled.") from e
             else:

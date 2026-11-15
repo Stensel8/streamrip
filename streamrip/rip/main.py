@@ -5,6 +5,7 @@ import sys
 from itertools import starmap
 lazy from pathlib import Path
 
+lazy from rich.markup import escape
 lazy from rich.progress_bar import ProgressBar
 lazy from rich.table import Table
 lazy from rich.text import Text
@@ -202,7 +203,10 @@ class Main:
         jobs = []
         for url in urls:
             if (parsed := parse_url(url)) is None:
-                console.print(f"[red]Found invalid url [cyan]{url}[/cyan], skipping.")
+                # escape: what was typed is text, a "[/x]" in it no markup.
+                console.print(
+                    f"[red]Found invalid url [cyan]{escape(url)}[/cyan], skipping."
+                )
                 continue
             jobs.append((url, parsed, await self.get_logged_in_client(parsed.source)))
         pendings = await asyncio.gather(*starmap(self._pending_or_none, jobs))
@@ -256,7 +260,9 @@ class Main:
 
     async def _reauthenticate(self, source: str, prompter, cause: Exception):
         """Offer a fresh login after stored credentials stop working."""
-        console.print(f"[yellow]{source.title()} login failed: {cause}")
+        console.print(
+            f"{source.title()} login failed: {cause}", style="yellow", markup=False
+        )
 
         # Never block on a prompt nobody is there to answer: streamrip is run from
         # cron and from scripts, where a hidden y/n means hanging forever
@@ -349,12 +355,14 @@ class Main:
             try:
                 pages = await client.search(media_type, query, limit=limit)
             except APIError as e:
-                console.print(f"[red]Search failed: {e}")
+                console.print(f"Search failed: {e}", style="red", markup=False)
                 return None
         # A page can come back with no items in it, so count results, not pages.
         search_results = SearchResults.from_pages(source, media_type, pages)
         if not search_results.results:
-            console.print(f"[red]No search results found for query {query}")
+            console.print(
+                f"No search results found for query {query}", style="red", markup=False
+            )
             return None
         return search_results
 
@@ -402,7 +410,8 @@ class Main:
         await asyncio.to_thread(Path(filepath).write_text, file_contents)
 
         console.print(
-            f"Wrote [purple]{len(search_results.results)}[/purple] results to [cyan]{filepath} as JSON!"
+            f"Wrote [purple]{len(search_results.results)}[/purple] results to "
+            f"[cyan]{escape(str(filepath))}[/cyan] as JSON!"
         )
 
     async def resolve_lastfm(self, playlist_url: str):
