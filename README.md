@@ -19,7 +19,7 @@ A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, SoundCl
 > - **[github.com/Stensel8/streamrip](https://github.com/Stensel8/streamrip)**
 >   -- kept in sync with opencommit.eu
 > - **[repos.codetrunk.eu/Stensel8/streamrip](https://repos.codetrunk.eu/Stensel8/streamrip)**
->   -- copies GitHub automatically every 8 hours
+>   -- copies GitHub automatically every 4 hours
 
 > [!NOTE]
 > A fork of [nathom/streamrip](https://github.com/nathom/streamrip) that I keep
