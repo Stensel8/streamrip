@@ -5,7 +5,7 @@ upstream issues and pull requests.
 
 ## Unreleased
 
-Nothing yet.
+- fix: a Qobuz album's description is tagged as plain text, without its HTML
 
 ## 2.7.2
 

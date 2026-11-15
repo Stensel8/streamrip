@@ -100,6 +100,12 @@ def test_an_album_folder_shows_the_quality_that_is_downloaded(source, tier, fold
     assert m.at_quality(tier, source).format_folder_path(fmt) == Path(folder)
 
 
+def test_a_qobuz_description_is_tagged_without_its_html():
+    html = "<p>Gone are the times <em>Villains</em> &amp; more.</p>"
+    album = AlbumMetadata.from_qobuz(QOBUZ_ALBUM | {"description": html})
+    assert album.description == "Gone are the times Villains & more."
+
+
 def test_qobuz_track():
     album = AlbumMetadata.from_qobuz(QOBUZ_TRACK["album"])
     t = TrackMetadata.from_qobuz(album, QOBUZ_TRACK)

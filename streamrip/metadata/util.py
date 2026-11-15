@@ -1,4 +1,5 @@
 import functools
+import html
 import re
 
 SOURCES = frozenset({"qobuz", "tidal", "deezer", "soundcloud", "spotify"})
@@ -80,6 +81,13 @@ def qobuz_artists(resp: dict) -> list[str]:
     main = qobuz_credited(resp, "mainartist")
     featured = qobuz_credited(resp, "featuredartist")
     return list(dict.fromkeys(main + featured))
+
+
+def plain_text(text: str | None) -> str | None:
+    """A description without Tidal's [wimpLink] or HTML markup."""
+    text = re.sub(r"<br\s*/?>|</?p>", " ", text or "")  # line breaks
+    text = re.sub(r"\[/?wimpLink[^\]]*\]|<[^>]+>", "", text)  # links
+    return " ".join(html.unescape(text).split()) or None
 
 
 def safe_get(dictionary, *keys, default=None):
