@@ -14,7 +14,12 @@ from playwright.async_api import Error as PlaywrightError
 
 from streamrip.client.qobuz import FORMAT_IDS, QobuzClient, file_url_signature
 from streamrip.config import Config
-from streamrip.exceptions import APIError, AuthenticationError, MissingCredentialsError
+from streamrip.exceptions import (
+    APIError,
+    AuthenticationError,
+    InvalidAppSecretError,
+    MissingCredentialsError,
+)
 from streamrip.metadata import PlaylistMetadata
 from streamrip.rip import browser_login
 from streamrip.rip import qobuz_token_capture as capture
@@ -87,6 +92,15 @@ async def test_the_login_goes_with_api_requests_only(serve, monkeypatch, tmp_pat
     assert credentials <= seen["GET /track/getFileUrl"]
     assert not credentials & (seen["HEAD /file"] | seen["GET /file"])
     assert (tmp_path / "track.flac").read_bytes() == b"audio" * 100
+
+
+async def test_app_secrets_that_do_not_work_are_not_printed():
+    # The message is logged as a warning before the secrets are fetched anew.
+    c = _with_creds()
+    c._test_secret = AsyncMock(return_value=None)
+    with pytest.raises(InvalidAppSecretError) as error:
+        await c._get_valid_secret(["s3cret-one", "s3cret-two"])
+    assert "s3cret" not in str(error.value)
 
 
 @pytest.fixture
