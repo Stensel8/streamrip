@@ -1,11 +1,9 @@
 """Search results, the same shape whatever the source, for the menu."""
 
-import html
-import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-from .util import qobuz_artists
+from .util import plain_text, qobuz_artists
 
 TIDAL_IMAGE = "https://resources.tidal.com/images/{uuid}/{size}x{size}.jpg"
 RELEASE_TYPES = frozendict(
@@ -138,13 +136,6 @@ def _key(item: dict) -> str | None:
     return f"{key} {scale.lower()}" if key and scale else key
 
 
-def _plain(text: str | None) -> str | None:
-    """A description without Tidal's [wimpLink] or HTML markup."""
-    text = re.sub(r"<br\s*/?>|</?p>", " ", text or "")  # line breaks
-    text = re.sub(r"\[/?wimpLink[^\]]*\]|<[^>]+>", "", text)  # links
-    return " ".join(html.unescape(text).split()) or None
-
-
 def _quality(item: dict) -> str | None:
     """The best format the source says it has the item in."""
     bits = item.get("maximum_bit_depth")
@@ -256,7 +247,7 @@ def album_summary(item: dict) -> Summary:
             _label(item),
             ("Quality", _quality(item)),
         ),
-        description=_plain(item.get("description")),
+        description=plain_text(item.get("description")),
         image_urls=_image_urls(item),
     )
 
@@ -293,7 +284,7 @@ def track_summary(item: dict) -> Summary:
             ("Key", _key(item)),
             ("Quality", _quality(item)),
         ),
-        description=_plain(item.get("description")),
+        description=plain_text(item.get("description")),
         image_urls=_image_urls(item),
     )
 
@@ -352,7 +343,7 @@ def playlist_summary(item: dict) -> Summary:
             ("Followers", item.get("users_count") or item.get("likes_count")),
             ("Updated", _day(updated)),
         ),
-        description=_plain(item.get("description")),
+        description=plain_text(item.get("description")),
         image_urls=_image_urls(item),
     )
 
