@@ -292,8 +292,16 @@ class SpotifyClient(Client):
     # --- API ---------------------------------------------------------------
 
     async def _api(self, path: str, params: dict | None = None) -> dict:
-        """GET from Spotify's API. `path` may be a "next page" url as it came."""
-        url = path if path.startswith("http") else f"{API_URL}/{path}"
+        """GET from Spotify's API. `path` may be a "next page" url as it came,
+        as long as it is on the API: the access token goes along, and an
+        address that only a response names is not to get it.
+        """
+        if not path.startswith("http"):
+            url = f"{API_URL}/{path}"
+        elif path.startswith(f"{API_URL}/"):
+            url = path
+        else:
+            raise APIError("Spotify sent a next page link that is not on its API.")
         token = await self._fresh_token()
         for attempt in (1, 2):
             status, body = await self._get_json(
