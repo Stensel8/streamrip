@@ -29,7 +29,7 @@ from .stopping import terminate
 # Only the commands that run need these: --help and --version do not.
 lazy from .. import db
 lazy from ..client import new_session
-lazy from ..config import Config, set_user_defaults
+lazy from ..config import Config, expand_home, set_user_defaults
 lazy from ..console import console, err_console, plural
 lazy from ..exceptions import (
     AccountHalt,
@@ -522,7 +522,7 @@ def rip(
     if no_db:
         c.session.database.downloads_enabled = False
     if folder is not None:
-        c.session.downloads.folder = folder
+        c.session.downloads.folder = expand_home(folder)
 
     if quality is not None:
         c.session.qobuz.quality = quality

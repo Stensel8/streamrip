@@ -334,6 +334,11 @@ def update_toml_section_from_config(toml_section, config):
         toml_section[field.name] = value
 
 
+def expand_home(path: str) -> str:
+    """A path that starts with "~" as the one in the home folder it means."""
+    return str(Path(path).expanduser()) if path.startswith("~") else path
+
+
 class Config:
     """A user's config, loaded from a TOML file at path."""
 
@@ -350,6 +355,12 @@ class Config:
             self.file: ConfigData = ConfigData.from_toml(toml_file.read())
 
         self.session: ConfigData = copy.deepcopy(self.file)
+        # "~/Music" is in the home folder, not in a folder named "~" where
+        # streamrip happens to be run. The file keeps it as it was written.
+        downloads, database = self.session.downloads, self.session.database
+        downloads.folder = expand_home(downloads.folder)
+        database.downloads_path = expand_home(database.downloads_path)
+        database.failed_downloads_path = expand_home(database.failed_downloads_path)
         # What the file said when it was read, to tell at saving what this run
         # changed in self.file (a new token, a fetched app id).
         self._loaded: ConfigData = copy.deepcopy(self.file)
