@@ -577,8 +577,13 @@ class DeezerClient(Client):
             )
 
         logger.debug("dz track info: %s", track_info)
+        # The id of the track the data is of, which need not be the one asked
+        # for: the gateway follows a FALLBACK by itself (see _GatewayAPI.call).
+        # The file is encrypted with a key made from that id, so decrypting
+        # with the id asked for would turn it into noise.
+        served_id = str(track_info.get("SNG_ID") or item_id)
         return DeezerDownloadable(
-            self.session, url=url, quality=served, track_id=item_id, sizes=size_map
+            self.session, url=url, quality=served, track_id=served_id, sizes=size_map
         )
 
     def _account_max_quality(self) -> int:
