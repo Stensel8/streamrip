@@ -185,6 +185,11 @@ class Database:
         """Record a track as in the library; new: downloaded by this run."""
         self.downloads.add((download_key(source, item_id),))
         self.downloaded_now += new
+        # And no failure any more. `repair` forgets the download of every
+        # failed track before it retries: left in the table, a track that
+        # failed once and came through on a later run was downloaded again.
+        for failed_id in {str(item_id), track_id(source, item_id)}:
+            self.failed.remove(source=source, media_type="track", id=failed_id)
 
     def forget_downloaded(self, source: str, item_id: str):
         """Drop a track from the library record."""

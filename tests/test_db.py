@@ -102,6 +102,27 @@ def test_a_download_is_recorded_and_forgotten_under_its_key(
     assert database.downloads.all() == []
 
 
+def test_a_track_that_came_through_is_no_failure_any_more(database):
+    # `repair` forgets the download of every failed track and fetches it again.
+    # A track that failed once and came through on a later run stayed in the
+    # failed table, so the next repair downloaded it a second time.
+    for failure in [
+        ("tidal", "track", "1"),
+        ("qobuz", "track", "1"),  # another source's track of the same id
+        ("tidal", "album", "1"),
+        ("soundcloud", "track", "5|https://api.test/x"),
+        ("soundcloud", "track", "6"),
+    ]:
+        database.set_failed(*failure)
+    database.set_downloaded("tidal", "1")
+    database.set_downloaded("soundcloud", "5|https://api.test/x")
+    database.set_downloaded("soundcloud", "6|https://api.test/y", new=False)
+    assert sorted(database.failed.all()) == [
+        ("qobuz", "track", "1"),
+        ("tidal", "album", "1"),
+    ]
+
+
 def test_set_downloaded_counts_only_new_downloads(database):
     database.set_downloaded("tidal", "1")
     database.set_downloaded("tidal", "2", new=False)
