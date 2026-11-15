@@ -160,6 +160,7 @@ class PendingAlbum(PendingItem):
         # by one. Say so once for the album instead, and don't fetch a cover or
         # make a folder for an album with nothing left to download.
         source = self.client.source
+        meta.at_quality(getattr(self.config.session, source).quality, source)
         todo = [t for t in tracklist if not self.db.downloaded(source, t)]
         done = len(tracklist) - len(todo)
         folder = album_folder(self.config, self.client.source, meta)

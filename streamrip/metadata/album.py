@@ -144,6 +144,25 @@ class AlbumMetadata:
 
         return clean_filepath(formatter.format(**info))
 
+    def at_quality(self, tier: int, source: str) -> AlbumMetadata:
+        """This album as a download at quality `tier` gets it, not as the best
+        the service has: the folder name and the labels are about the files.
+        """
+        info = self.info
+        if not (info.bit_depth and info.sampling_rate):
+            return self
+        if tier < 2:
+            info.container = "AAC" if source == "tidal" else "MP3"
+            info.bit_depth = info.sampling_rate = None
+        elif tier == 2:
+            info.bit_depth, info.sampling_rate = 16, 44.1
+        elif tier == 3 and source == "qobuz":
+            # Its tier 3 ends at 96 kHz: a higher rate comes at half of it.
+            halved = {192: 96, 176.4: 88.2}
+            info.sampling_rate = halved.get(info.sampling_rate, info.sampling_rate)
+        info.quality = min(info.quality, tier)
+        return self
+
     @classmethod
     def from_qobuz(cls, resp: dict) -> AlbumMetadata:
         """Build album metadata from a Qobuz API album response."""

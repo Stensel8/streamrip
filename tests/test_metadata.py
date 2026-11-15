@@ -78,6 +78,28 @@ def test_qobuz_album():
     assert (m.barcode, m.releasetype) == ("0603497941032", "album")
 
 
+@pytest.mark.parametrize(
+    ("source", "tier", "folder"),
+    [
+        ("qobuz", 4, "FLAC [24B-192kHz]"),
+        ("qobuz", 3, "FLAC [24B-96kHz]"),
+        ("qobuz", 2, "FLAC [16B-44.1kHz]"),
+        ("qobuz", 1, "MP3"),
+        ("tidal", 3, "FLAC [24B-192kHz]"),
+        ("tidal", 1, "AAC"),
+    ],
+)
+def test_an_album_folder_shows_the_quality_that_is_downloaded(source, tier, folder):
+    # Issue #92: it showed the best the service has, whatever was asked for.
+    if source == "qobuz":
+        m = AlbumMetadata.from_qobuz(QOBUZ_ALBUM | {"maximum_sampling_rate": 192})
+    else:
+        stream = {"bitDepth": 24, "sampleRate": 192000}
+        m = AlbumMetadata.from_tidal(_tidal_album(streamQuality=stream))
+    fmt = "{container} [{bit_depth}B-{sampling_rate}kHz]"
+    assert m.at_quality(tier, source).format_folder_path(fmt) == Path(folder)
+
+
 def test_qobuz_track():
     album = AlbumMetadata.from_qobuz(QOBUZ_TRACK["album"])
     t = TrackMetadata.from_qobuz(album, QOBUZ_TRACK)

@@ -567,6 +567,7 @@ class PendingSingle(PendingItem):
         if meta is None:
             return None
         album, c = meta.album, self.config.session
+        album.at_quality(getattr(c, self.client.source).quality, self.client.source)
         in_album_folder = (
             c.filepaths.add_singles_to_folder and c.downloads.create_album_folder
         )
