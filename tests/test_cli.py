@@ -297,6 +297,33 @@ def test_file_keeps_url_order_when_dropping_repeats(tmp_path, fake_main):
     assert fake_main.added == ["https://c", "https://a", "https://b"]
 
 
+@pytest.mark.parametrize(
+    ("content", "urls"),
+    [
+        ("\ufeffhttps://a\nhttps://b\n", ["https://a", "https://b"]),  # Notepad's BOM
+        ('"https://a"', ['"https://a"']),  # JSON, but no list of items
+        ("1234", ["1234"]),
+        ('{"source": "qobuz"}', ['{"source":', '"qobuz"}']),
+    ],
+)
+def test_a_file_that_is_no_list_of_items_is_a_list_of_urls(
+    tmp_path, fake_main, content, urls
+):
+    path = tmp_path / "urls.txt"
+    path.write_text(content, encoding="utf-8")
+    result = _rip(tmp_path / "config.toml", "file", str(path))
+    assert result.exit_code == 0, result.output
+    assert fake_main.added == urls
+
+
+def test_a_json_file_with_half_an_item_says_what_is_missing(tmp_path, fake_main):
+    path = tmp_path / "items.json"
+    path.write_text('\ufeff[{"source": "qobuz", "id": "1"}]', encoding="utf-8")
+    result = _rip(tmp_path / "config.toml", "file", str(path))
+    assert result.exit_code == 1
+    assert "has no 'media_type'" in result.output
+
+
 @pytest.fixture
 def run(cfg):
     """Invoke `streamrip csv ...` with downloading and logging in left out."""
