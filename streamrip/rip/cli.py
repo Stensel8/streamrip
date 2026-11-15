@@ -578,32 +578,38 @@ async def file(ctx, path):
     """
     _require_config(ctx)
     async with main_session(ctx) as main:
-        content = await asyncio.to_thread(path.read_text)
+        # utf-8-sig: Notepad and PowerShell put a byte order mark in front,
+        # which made the first url an invalid one and JSON no JSON.
+        content = await asyncio.to_thread(path.read_text, encoding="utf-8-sig")
         try:
             items: Any = json.loads(content)
-            loaded = True
         except json.JSONDecodeError:
-            items = content.split()
-            loaded = False
-        if loaded:
+            items = None
+        # A list of search results is JSON; so is one quoted url, or a number.
+        if isinstance(items, list) and all(isinstance(i, dict) for i in items):
             console.print(
                 f"Detected json file. Loading [yellow]{len(items)}[/yellow] items"
             )
-            await main.add_all_by_id(
-                [(i["source"], i["media_type"], i["id"]) for i in items]
-            )
+            try:
+                by_id = [(i["source"], i["media_type"], i["id"]) for i in items]
+            except KeyError as e:
+                raise click.ClickException(
+                    f"{path}: an item has no {e}. Each needs a source, a media_type "
+                    "and an id, as `streamrip search --output-file` writes them."
+                ) from e
+            await main.add_all_by_id(by_id)
         else:
+            urls = content.split()
             # dict, not set: keeps the file's order.
-            unique = list(dict.fromkeys(items))
-            if len(unique) < len(items):
+            unique = list(dict.fromkeys(urls))
+            if len(unique) < len(urls):
                 console.print(
-                    f"Found [yellow]{len(items) - len(unique)}[/yellow] repeated URLs!"
+                    f"Found [yellow]{len(urls) - len(unique)}[/yellow] repeated URLs!"
                 )
-                items = unique
             console.print(
-                f"Detected list of urls. Loading [yellow]{len(items)}[/yellow] items"
+                f"Detected list of urls. Loading [yellow]{len(unique)}[/yellow] items"
             )
-            await main.add_all(items)
+            await main.add_all(unique)
 
         await main.resolve()
         await main.rip()
