@@ -24,7 +24,7 @@ from streamrip.media import playlist as playlist_module
 from streamrip.media.album import RESOLVE_CONCURRENCY, Album, PendingAlbum
 from streamrip.media.artist import Artist, Label, announce
 from streamrip.media.csv_playlist import PendingCsvPlaylist, read_tracks
-from streamrip.media.media import filter_prefer_explicit
+from streamrip.media.media import filter_prefer_explicit, resolve_or_none
 from streamrip.media.playlist import (
     LASTFM_MAX_TRACKS,
     PendingLastfmPlaylist,
@@ -283,6 +283,17 @@ async def test_a_single_without_download_info_is_kept_for_repair(
     pending.client.get_downloadable.side_effect = NonStreamableError("geoblocked")
 
     assert await pending.resolve() is None
+    pending.db.set_failed.assert_called_once_with("qobuz", "track", pending.id)
+
+
+@pytest.mark.parametrize("pending_disc_track", ["single"], indirect=True)
+async def test_a_track_that_fails_while_resolving_is_kept_for_repair(
+    pending_disc_track,
+):
+    pending, _, artwork = pending_disc_track
+    artwork.side_effect = OSError("disk full")
+
+    assert await resolve_or_none(pending) is None
     pending.db.set_failed.assert_called_once_with("qobuz", "track", pending.id)
 
 

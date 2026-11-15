@@ -33,6 +33,9 @@ class Media(ABC):
 class Pending(ABC):
     """A request to download a `Media` whose metadata has not been fetched."""
 
+    # One track, with an id, client and db: see resolve_or_none.
+    is_track = False
+
     @abstractmethod
     async def resolve(self) -> Media | None:
         """Fetch metadata and resolve into a downloadable `Media` object."""
@@ -71,6 +74,10 @@ async def resolve_or_none(pending: Pending) -> Media | None:
     except Exception as e:
         item = getattr(pending, "id", "")
         logger.error("Error resolving %s: %s: %s", item, type(e).__name__, e)
+        if pending.is_track:
+            # As failed as a track that fails later: without this it was in
+            # no summary and `repair` had nothing to retry.
+            pending.db.set_failed(pending.client.source, "track", item)
         return None
 
 
