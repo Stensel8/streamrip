@@ -18,7 +18,12 @@ from click.testing import CliRunner
 from multidict import CIMultiDict
 
 from streamrip import converter
-from streamrip.client.downloadable import _content_range, fast_async_download
+from streamrip.client import new_session
+from streamrip.client.downloadable import (
+    BasicDownloadable,
+    _content_range,
+    fast_async_download,
+)
 from streamrip.config import Config, set_user_defaults
 from streamrip.exceptions import (
     ConversionError,
@@ -185,6 +190,26 @@ async def test_a_first_attempt_never_appends_to_a_file_already_there(server, tmp
     path.write_bytes(b"old, smaller file")
     await fast_async_download(path, server(answer), {}, _ignore)
     assert path.read_bytes() == PAYLOAD[:50_000]
+
+
+@pytest.mark.parametrize("verify_ssl", [True, False])
+async def test_a_file_is_fetched_with_the_certificate_check_of_its_session(
+    monkeypatch, tmp_path, verify_ssl
+):
+    # --no-ssl-verify reached the API requests and not the downloads themselves:
+    # behind a proxy that inspects TLS, everything resolved and every file failed.
+    asked = {}
+
+    def get(url, **kwargs):
+        asked.update(kwargs)
+        raise requests.ConnectionError("far enough")
+
+    monkeypatch.setattr("streamrip.client.downloadable.requests.get", get)
+    async with new_session(verify_ssl=verify_ssl) as session:
+        file = BasicDownloadable(session, "https://cdn.test/file", "flac")
+        with pytest.raises(requests.ConnectionError):
+            await file.download(tmp_path / "file.flac", lambda _: None)
+    assert asked["verify"] is verify_ssl
 
 
 async def test_multidict_headers_are_accepted(server, tmp_path):

@@ -96,7 +96,13 @@ def _content_range(
 
 
 def _blocking_download(
-    path: Path, url, headers, report, stop: threading.Event, resume: bool
+    path: Path,
+    url,
+    headers,
+    report,
+    stop: threading.Event,
+    resume: bool,
+    verify: bool = True,
 ):
     """Stream ``url`` into ``path`` with requests.
 
@@ -113,7 +119,12 @@ def _blocking_download(
         req_headers["Range"] = f"bytes={resume_pos}-"
 
     with requests.get(
-        url, headers=req_headers, allow_redirects=True, stream=True, timeout=60
+        url,
+        headers=req_headers,
+        allow_redirects=True,
+        stream=True,
+        timeout=60,
+        verify=verify,
     ) as resp:
         if resume_pos > 0 and resp.status_code == 416:
             # Range Not Satisfiable: nothing left past resume_pos -- but that
@@ -183,7 +194,15 @@ def _threadsafe(callback):
     return report
 
 
-async def fast_async_download(path: Path, url, headers, callback, resume: bool = False):
+def _verifies(session: aiohttp.ClientSession) -> bool:
+    """Whether `session` checks certificates (verify_ssl, --no-ssl-verify)."""
+    # aiohttp keeps what a connection is checked with here: False is "not".
+    return getattr(session.connector, "_ssl", None) is not False
+
+
+async def fast_async_download(
+    path: Path, url, headers, callback, resume: bool = False, verify: bool = True
+):
     """Download ``url`` to ``path`` without blocking the event loop.
 
     requests with large chunks is much faster than aiohttp's 1KB reads, but
@@ -201,6 +220,7 @@ async def fast_async_download(path: Path, url, headers, callback, resume: bool =
             _threadsafe(callback),
             stop,
             resume,
+            verify,
         )
     except asyncio.CancelledError:
         # The thread cannot be cancelled; tell it to stop at the next chunk.
@@ -256,7 +276,12 @@ class BasicDownloadable(Downloadable):
 
     async def _download(self, path: Path, callback):
         await fast_async_download(
-            path, self.url, self.session.headers, callback, resume=self.resume
+            path,
+            self.url,
+            self.session.headers,
+            callback,
+            resume=self.resume,
+            verify=_verifies(self.session),
         )
 
 
@@ -324,7 +349,12 @@ class DeezerDownloadable(Downloadable):
             if self.is_encrypted.search(self.url) is None:
                 logger.debug("Deezer file at %s not encrypted.", self.url)
                 await fast_async_download(
-                    path, self.url, self.session.headers, callback, resume=self.resume
+                    path,
+                    self.url,
+                    self.session.headers,
+                    callback,
+                    resume=self.resume,
+                    verify=_verifies(self.session),
                 )
             else:
                 blowfish_key = self._generate_blowfish_key(self.id)
@@ -407,7 +437,12 @@ class TidalDownloadable(Downloadable):
     async def _download(self, path: Path, callback):
         """Download the file, and decrypt it if Tidal encrypted it (MQA)."""
         await fast_async_download(
-            path, self.url, self.session.headers, callback, resume=self.resume
+            path,
+            self.url,
+            self.session.headers,
+            callback,
+            resume=self.resume,
+            verify=_verifies(self.session),
         )
         if self.enc_key is not None:
             dec_bytes = await self._decrypt_mqa_file(path, self.enc_key)
@@ -544,7 +579,13 @@ class SoundcloudDownloadable(Downloadable):
         if self.file_type == "hls":
             await self._download_hls(path, callback)
             return
-        await fast_async_download(path, self.url, self.session.headers, callback)
+        await fast_async_download(
+            path,
+            self.url,
+            self.session.headers,
+            callback,
+            verify=_verifies(self.session),
+        )
         if self.file_type == "original":
             await converter.FLAC(path).convert()
 
