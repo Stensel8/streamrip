@@ -403,6 +403,12 @@ def test_the_question_lists_every_source_and_what_it_gives(monkeypatch):
     assert ask.call_args.kwargs["choices"] == list(SOURCES)
 
 
+def test_search_opens_no_menu_without_a_terminal(run, capsys):
+    result = run("search", "tidal", "track", "x")  # CliRunner has no terminal
+    assert result.exit_code == 2
+    assert "needs a terminal" in _output(result, capsys)
+
+
 @pytest.mark.parametrize(
     ("content", "source", "code", "said"),
     [
