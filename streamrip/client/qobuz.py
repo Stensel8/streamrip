@@ -472,7 +472,10 @@ class QobuzClient(Client):
         )
         working_secrets = [r for r in results if r is not None]
         if len(working_secrets) == 0:
-            raise InvalidAppSecretError(secrets)
+            # Not the secrets themselves: this message is logged and shown.
+            raise InvalidAppSecretError(
+                f"Qobuz accepted none of the {len(secrets)} app secrets"
+            )
 
         return working_secrets[0]
 
