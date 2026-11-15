@@ -30,6 +30,9 @@ accounts.
 - fix: saving the config keeps what you changed in the file meanwhile, `~` in
   the download folder is your home folder, `search` opens no menu without a
   terminal, and a silent connection no longer holds up the Spotify login
+- fix: an album folder is named after the quality that is downloaded, not the
+  best the service has: `[24B-96kHz]` at Qobuz quality 3, `[MP3]` at 1
+  ([#92](https://github.com/Stensel8/streamrip/issues/92))
 
 ## 2.7.1
 
