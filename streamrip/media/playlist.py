@@ -344,7 +344,9 @@ class Playlist(Media):
     async def download(self):
         """Resolve and download every track of the playlist."""
         if len(self.tracks) > RESOLVE_CONCURRENCY:
-            console.log(f"Resolving {len(self.tracks)} tracks: {self.name}")
+            console.log(
+                f"Resolving {len(self.tracks)} tracks: {self.name}", markup=False
+            )
         await rip_tracks(
             self.tracks,
             RESOLVE_CONCURRENCY,

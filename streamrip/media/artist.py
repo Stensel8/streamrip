@@ -5,6 +5,8 @@ import re
 from dataclasses import dataclass
 lazy from collections.abc import Callable
 
+from rich.markup import escape
+
 from ..console import console, plural
 from ..metadata import ArtistMetadata, LabelMetadata
 from .album import Album, PendingAlbum
@@ -19,8 +21,9 @@ def announce(name: str, albums: list) -> None:
     """Say what's queued: resolving the albums can take a while before the
     first progress bar appears.
     """
+    # escape: a name is the service's text, and "DJ [/]" is not Rich markup.
     console.print(
-        f"[bold]{name}[/bold]: found {plural(len(albums), 'release')}, "
+        f"[bold]{escape(name)}[/bold]: found {plural(len(albums), 'release')}, "
         "resolving and downloading..."
     )
 
