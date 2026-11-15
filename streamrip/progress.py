@@ -19,6 +19,13 @@ from rich.text import Text
 from .console import console
 
 
+def _description() -> TextColumn:
+    """The column that names a row. Not markup: the name is a track's, and a
+    "[live]" in it is text, a "[/b]" not a tag that fails to close anything.
+    """
+    return TextColumn("{task.description}", style="cyan", markup=False)
+
+
 @dataclass(slots=True)
 class Handle:
     """A progress task: `with handle as update:` advances it, and leaving
@@ -128,14 +135,14 @@ class ProgressManager:
         # without it nothing on screen would move until the first one starts.
         self.resolve_progress = Progress(
             SpinnerColumn(),
-            TextColumn("[cyan]{task.description}"),
+            _description(),
             BarColumn(bar_width=None),
             TextColumn("{task.completed}/{task.total} tracks"),
             console=console,
         )
         self.progress = Progress(
             SpinnerColumn(),
-            TextColumn("[cyan]{task.description}"),
+            _description(),
             BarColumn(bar_width=None),
             "[progress.percentage]{task.percentage:>3.1f}%",
             "•",
@@ -187,7 +194,7 @@ class ProgressManager:
         rows) is ignored.
         """
         self._ensure_started()
-        task_id = progress.add_task(f"[cyan]{desc}", **task)
+        task_id = progress.add_task(desc, **task)
 
         def update(n: int):
             with contextlib.suppress(KeyError):

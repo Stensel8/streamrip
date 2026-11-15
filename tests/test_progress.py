@@ -34,6 +34,16 @@ def test_a_finished_download_row_is_removed_not_kept_hidden(manager):
     update(40)  # a download thread's last report, after the row is gone
 
 
+@pytest.mark.parametrize("name", ["DJ [/] - Mix", "Song [/b]", "Song [live] [bold]"])
+def test_a_track_name_in_a_row_is_text_not_markup(manager, name):
+    # Read as Rich markup, "[/b]" cannot be drawn at all (it closes nothing)
+    # and "[live]" disappears as a style.
+    progress.get_progress_callback(True, 100, name)
+    screen = Console(width=120, record=True, force_terminal=False)
+    screen.print(manager.progress)
+    assert name in screen.export_text()
+
+
 def test_resolve_row_counts_tracks_and_goes_once_all_are_resolved(manager):
     # Looking up an album's tracks shows, until the last one is looked up.
     resolved = progress.get_resolve_callback(True, 3)

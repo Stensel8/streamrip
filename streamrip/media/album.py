@@ -121,7 +121,10 @@ class Album(Media):
         # complete record of the run -- failed tracks log their own errors.
         # (An album with nothing left to download already logged a skip.)
         if self.tracks:
-            console.log(f"Finished {self.meta.albumartist} - {self._title()}")
+            # markup=False: names are the service's text, "[live]" included.
+            console.log(
+                f"Finished {self.meta.albumartist} - {self._title()}", markup=False
+            )
 
     async def postprocess(self):
         progress.remove_title(id(self), self.config.session.cli.progress_bars)

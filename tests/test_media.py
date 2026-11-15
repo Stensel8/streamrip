@@ -16,11 +16,13 @@ from streamrip import db
 from streamrip.client.audio_match import MatchTrack
 from streamrip.client.downloadable import Downloadable
 from streamrip.config import ArtistFilterConfig, Config
+from streamrip.console import console
 from streamrip.exceptions import NonStreamableError, TrackDownloadFailedError
 from streamrip.media import album as album_module
 from streamrip.media import artwork
+from streamrip.media import playlist as playlist_module
 from streamrip.media.album import RESOLVE_CONCURRENCY, Album, PendingAlbum
-from streamrip.media.artist import Artist, Label
+from streamrip.media.artist import Artist, Label, announce
 from streamrip.media.csv_playlist import PendingCsvPlaylist, read_tracks
 from streamrip.media.media import filter_prefer_explicit
 from streamrip.media.playlist import (
@@ -28,6 +30,7 @@ from streamrip.media.playlist import (
     PendingLastfmPlaylist,
     PendingPlaylist,
     PendingPlaylistTrack,
+    Playlist,
     _playlist_folder,
     best_result,
     queries,
@@ -456,6 +459,25 @@ def _album(tracks):
         folder=Path("/x"),
         db=MagicMock(),
     )
+
+
+@pytest.mark.parametrize("name", ["DJ [/]", "my list [/b]", "Album [live] [bold]"])
+async def test_names_from_a_service_are_printed_as_they_are(name, monkeypatch):
+    # Rich reads "[...]" as markup. A "[/b]" with nothing to close raised, which
+    # cost the album, the playlist or the whole discography, and "[live]" was
+    # taken for a style and left out.
+    monkeypatch.setattr(album_module, "rip_tracks", AsyncMock())
+    monkeypatch.setattr(playlist_module, "rip_tracks", AsyncMock())
+    monkeypatch.setattr(console, "_width", 200)  # one line each, not wrapped
+    album = _album([MagicMock()])
+    album.meta.album = album.meta.albumartist = name
+    playlist = Playlist(name, MagicMock(), MagicMock(), [MagicMock()] * 30)
+    with console.capture() as shown:
+        announce(name, [album])
+        await album.download()
+        await playlist.download()
+    # The artist; the album's artist and its title; the playlist.
+    assert shown.get().count(name) == 4
 
 
 async def test_resolves_only_a_few_tracks_at_once():
