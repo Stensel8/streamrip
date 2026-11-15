@@ -105,6 +105,10 @@ class TidalClient(Client):
         # were in flight together all hit the expiry at once.
         self._renew_lock = asyncio.Lock()
         self._last_renewed_at = 0.0
+        # The login, sent with each API request. Not put on the session: the
+        # session also fetches the files, every segment of them and the covers,
+        # from whatever address Tidal's answers name, and those get no login.
+        self._login_headers: dict[str, str] = {}
         if hires_of:
             # The rate limit belongs to the account: both lanes share it.
             self.rate_limiter = hires_of.rate_limiter
@@ -562,10 +566,9 @@ class TidalClient(Client):
         self._update_authorization_from_config()
 
     def _update_authorization_from_config(self):
-        """Point the session's Authorization header at the current access token."""
-        self.session.headers.update(
-            {"authorization": f"Bearer {self.tokens.access_token}"},
-        )
+        """Send API requests with the current access token from now on."""
+        # Changed in place: a request being retried after a renewal reads it.
+        self._login_headers["authorization"] = f"Bearer {self.tokens.access_token}"
 
     async def _get_auth_status(self, device_code) -> tuple[int, dict[str, int | str]]:
         """Whether the device login is done: (0, its tokens), (2, {}) while it
@@ -710,7 +713,9 @@ class TidalClient(Client):
             resp.raise_for_status()
             return await resp.json()
 
-        return await self._get_with_retries(f"{base}/{path}", read, params=params)
+        return await self._get_with_retries(
+            f"{base}/{path}", read, params=params, headers=self._login_headers
+        )
 
     def _pause_owner(self) -> TidalClient:
         # The rate limit belongs to the account, so both lanes wait together.

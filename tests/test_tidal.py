@@ -7,8 +7,13 @@ import time
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from aiohttp import web
 
-from streamrip.client.downloadable import SegmentedMP4Downloadable, TidalDownloadable
+from streamrip.client.downloadable import (
+    BasicDownloadable,
+    SegmentedMP4Downloadable,
+    TidalDownloadable,
+)
 from streamrip.client.tidal import DEFAULT_CLIENT_ID, HIRES_CLIENT_ID, TidalClient
 from streamrip.config import Config
 from streamrip.exceptions import (
@@ -104,6 +109,38 @@ async def test_token_from_other_client_requires_new_login(monkeypatch):
     monkeypatch.setattr("streamrip.client.client.new_session", lambda **_: MagicMock())
     with pytest.raises(MissingCredentialsError):
         await c.login()
+
+
+async def test_the_login_goes_with_api_requests_only(serve, tmp_path):
+    # The session that asks the API also fetches the files and every segment of
+    # them, from whatever address a manifest names. Only the API gets the login.
+    seen: dict[str, set[str]] = {}
+
+    async def answer(request):
+        seen[f"{request.method} {request.path}"] = {
+            name.lower() for name in request.headers
+        }
+        return (
+            web.json_response({})
+            if request.path == "/v1/me"
+            else web.Response(body=b"audio")
+        )
+
+    base = await serve({"/v1/me": answer, "/file": answer})
+    c = _client()
+    c._ensure_session()
+    try:
+        c.tokens.access_token = "ACCESS"
+        c._update_authorization_from_config()
+        await c._api_request("me", base=f"{base}v1")
+        file = BasicDownloadable(c.session, f"{base}file", "flac")
+        await file.size()
+        await file.download(tmp_path / "track.flac", lambda _: None)
+    finally:
+        await c.close()
+
+    assert "authorization" in seen["GET /v1/me"]
+    assert "authorization" not in seen["HEAD /file"] | seen["GET /file"]
 
 
 def _mock_login(lane: TidalClient, expires_in=300, status=0) -> None:

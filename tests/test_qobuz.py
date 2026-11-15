@@ -53,6 +53,42 @@ def session(monkeypatch):
     return session
 
 
+async def test_the_login_goes_with_api_requests_only(serve, monkeypatch, tmp_path):
+    # The session that asks the API also fetches the files, from whatever
+    # address an answer names. Only the API is to get the app id and the login.
+    seen: dict[str, set[str]] = {}
+    login = {"user": {"credential": {"parameters": {"hires": True}}}}
+
+    async def answer(request):
+        seen[f"{request.method} {request.path}"] = {
+            name.lower() for name in request.headers
+        }
+        if request.path == "/file":
+            return web.Response(body=b"audio" * 100)
+        return web.json_response(
+            {**login, "user_auth_token": TOKEN, "url": f"{base}file"}
+        )
+
+    base = await serve(
+        dict.fromkeys(("/user/login", "/track/getFileUrl", "/file"), answer)
+    )
+    monkeypatch.setattr("streamrip.client.qobuz.QOBUZ_BASE_URL", base.rstrip("/"))
+    client = _with_creds()
+    try:
+        await client.login()
+        downloadable = await client.get_downloadable("1", 2)
+        await downloadable.size()
+        await downloadable.download(tmp_path / "track.flac", lambda _: None)
+    finally:
+        await client.close()
+
+    credentials = {"x-app-id", "x-user-auth-token"}
+    assert "x-app-id" in seen["GET /user/login"]  # the token is what it asks for
+    assert credentials <= seen["GET /track/getFileUrl"]
+    assert not credentials & (seen["HEAD /file"] | seen["GET /file"])
+    assert (tmp_path / "track.flac").read_bytes() == b"audio" * 100
+
+
 @pytest.fixture
 def no_wait(monkeypatch):
     monkeypatch.setattr("streamrip.client.qobuz.asyncio.sleep", AsyncMock())
@@ -169,6 +205,7 @@ async def test_an_html_error_page_is_reported_by_status_without_the_url(no_wait)
     """Qobuz takes credentials as URL parameters."""
     c = QobuzClient.__new__(QobuzClient)
     c.rate_limiter = contextlib.nullcontext()
+    c._login_headers = {}
     c.session = MagicMock()
     c.session.get = MagicMock(return_value=_HtmlErrorPage())
     status, page = await c._api_request(

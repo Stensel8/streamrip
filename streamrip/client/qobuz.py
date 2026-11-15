@@ -130,6 +130,10 @@ class QobuzClient(Client):
     def __init__(self, config: Config):
         super().__init__(config)
         self.secret: str | None = None
+        # The app id and the login, sent with each API request. Not put on the
+        # session: the session also fetches the files, covers and booklets,
+        # from whatever address Qobuz's answers name, and those get no login.
+        self._login_headers: dict[str, str] = {}
         # True for a free account (no streaming subscription) that can still
         # download content it has *purchased* from the Qobuz download store.
         # When set, file-url requests use intent=download instead of stream.
@@ -167,7 +171,7 @@ class QobuzClient(Client):
             await self._attempt_login()
         except (InvalidAppIdError, InvalidAppSecretError) as e:
             logger.warning("Login failed with %s, refetching app id/secrets", e)
-            self.session.headers.pop("X-User-Auth-Token", None)
+            self._login_headers.pop("X-User-Auth-Token", None)
             await self._refresh_app_id_and_secrets()
             await self._attempt_login()
 
@@ -184,7 +188,7 @@ class QobuzClient(Client):
 
     async def _attempt_login(self):
         c = self.config
-        self.session.headers.update({"X-App-Id": str(c.app_id)})
+        self._login_headers["X-App-Id"] = str(c.app_id)
 
         params = {
             "user_id": c.user_id,
@@ -221,8 +225,7 @@ class QobuzClient(Client):
                 "purchased download-store content can be downloaded."
             )
 
-        uat = resp["user_auth_token"]
-        self.session.headers.update({"X-User-Auth-Token": uat})
+        self._login_headers["X-User-Auth-Token"] = resp["user_auth_token"]
 
         self.secret = await self._get_valid_secret(c.secrets)
 
@@ -502,4 +505,6 @@ class QobuzClient(Client):
         # Only the endpoint: params carry credentials (user_auth_token)
         # and the request signature.
         logger.debug("api_request: endpoint=%s", epoint)
-        return await self._get_json(f"{QOBUZ_BASE_URL}/{epoint}", params)
+        return await self._get_json(
+            f"{QOBUZ_BASE_URL}/{epoint}", params, self._login_headers
+        )
