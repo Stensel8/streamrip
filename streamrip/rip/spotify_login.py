@@ -47,6 +47,12 @@ class _CallbackServer(HTTPServer):
 
 
 class _CallbackHandler(BaseHTTPRequestHandler):
+    # Seconds a connection gets to send its request. Browsers open spare
+    # connections that say nothing; the server takes one at a time, so without
+    # a limit one of those keeps it from the redirect, past the deadline and
+    # past a cancel too.
+    timeout = 3
+
     def do_GET(self):
         """Take the query of the redirect, and tell the user they can go back."""
         server = cast(_CallbackServer, self.server)
@@ -97,17 +103,20 @@ def _wait_for_redirect(
     """Listen at the redirect URI until the browser comes, the time is up, or
     `stop` is set."""
     target = urlsplit(redirect_uri)
-    host = target.hostname or ""
+    try:
+        host, port = target.hostname or "", target.port or 80
+    except ValueError:  # a port that is no number, or no port number
+        host, port = "", 0
     if host not in _LOOPBACK:
         raise SpotifyLoginError(
             f"streamrip can only catch a login on this computer: the redirect URI "
             f"should be http://127.0.0.1:<port>/..., not {redirect_uri}"
         )
     try:
-        server = _CallbackServer((host, target.port or 80), target.path or "/")
+        server = _CallbackServer((host, port), target.path or "/")
     except OSError as e:
         raise SpotifyLoginError(
-            f"Cannot listen on {host}:{target.port} ({e}). Something else uses "
+            f"Cannot listen on {host}:{port} ({e}). Something else uses "
             "that port: stop it, or choose the other way to log in."
         ) from e
     with server:  # closes the socket on the way out

@@ -1192,6 +1192,25 @@ async def test_the_code_comes_back_through_the_local_port(host):
 
 
 @pytest.mark.login
+async def test_a_connection_that_says_nothing_does_not_hold_up_the_login(monkeypatch):
+    # A browser opens spare connections and can leave one unused. The server
+    # takes one connection at a time, and used to wait on that one for good.
+    assert spotify_login._CallbackHandler.timeout, "a silent connection must time out"
+    monkeypatch.setattr(spotify_login._CallbackHandler, "timeout", 0.2)
+    port = free_port()
+    redirect_uri = f"http://127.0.0.1:{port}/callback"
+
+    async def idle_then_login():
+        with pytest.raises(urllib.error.HTTPError, match="404"):
+            await browse(f"http://127.0.0.1:{port}/favicon.ico")  # it is listening
+        with socket.create_connection(("127.0.0.1", port)):
+            return await browse(f"{redirect_uri}?code=the-code&state=s1")
+
+    code, _ = await asyncio.gather(capture_code(redirect_uri, "s1"), idle_then_login())
+    assert code == "the-code"
+
+
+@pytest.mark.login
 async def test_a_login_for_another_attempt_is_not_accepted():
     redirect_uri = f"http://127.0.0.1:{free_port()}/callback"
 
@@ -1209,6 +1228,7 @@ async def test_a_login_for_another_attempt_is_not_accepted():
         ("a free port", "Timed out"),
         ("a busy port", "Cannot listen"),
         ("https://example.com/callback", "only catch a login on this computer"),
+        ("http://127.0.0.1:99999/callback", "only catch a login on this computer"),
     ],
 )
 async def test_a_login_that_cannot_be_caught_says_why(monkeypatch, where, message):
