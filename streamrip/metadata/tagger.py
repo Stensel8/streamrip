@@ -315,5 +315,12 @@ def _tag_file(path: Path, meta: TrackMetadata, cover_path: Path | None, exclude)
     container.clear_tags(audio)
     container.tag_audio(audio, tags)
     if cover_path is not None and "cover" not in (exclude or ()):
-        container.embed_cover(audio, cover_path)
+        try:
+            container.embed_cover(audio, cover_path)
+        except Exception as e:
+            # A cover too big for a FLAC, or a file that is no image: the track
+            # keeps its tags and counts as downloaded. Raised from here it was
+            # left untagged and recorded as failed, for `repair` to download
+            # again and fail on the same cover.
+            logger.warning("No cover embedded in %s: %s", path.name, e)
     container.save_audio(audio, path)
