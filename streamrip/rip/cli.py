@@ -138,7 +138,9 @@ def coro(f):
         except asyncio.CancelledError, KeyboardInterrupt:
             console.print("[yellow]Stopped.")
         except aiohttp.ClientConnectorCertificateError as e:
-            console.print(f"[red]SSL Certificate verification error: {e}[/red]")
+            console.print(
+                f"SSL Certificate verification error: {e}", style="red", markup=False
+            )
             print_ssl_error_help()
         except (
             FFmpegNotFoundError,
@@ -485,7 +487,8 @@ def rip(
 
     if not config_path.is_file():
         err_console.print(
-            f"No file found at [bold cyan]{config_path}[/bold cyan], creating default config.",
+            f"No file found at [bold cyan]{escape(str(config_path))}[/bold cyan], "
+            "creating default config.",
         )
         set_user_defaults(config_path)
 
@@ -497,7 +500,8 @@ def rip(
         c = Config(config_path)
     except Exception as e:
         console.print(
-            f"Error loading config from [bold cyan]{config_path}[/bold cyan]: {e}\n"
+            f"Error loading config from [bold cyan]{escape(str(config_path))}"
+            f"[/bold cyan]: {escape(str(e))}\n"
             "Try running [bold]streamrip config reset[/bold]",
         )
         ctx.obj["config"] = None
