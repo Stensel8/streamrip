@@ -1501,6 +1501,21 @@ def test_a_length_is_only_taken_when_its_unit_is_clear(tmp_path, duration, expec
     assert read_tracks(path)[0].duration_ms == expected
 
 
+def test_a_csv_the_reader_gives_up_on_is_refused_not_a_traceback(tmp_path):
+    # A quote that is never closed makes the rest of the file one field, which
+    # csv refuses past 128 KiB; "inf" is a number that is no length.
+    text = 'title,artists\n"Unclosed,Artist\n' + "Song,Artist\n" * 12_000
+    with pytest.raises(ValueError, match="cannot be read as CSV"):
+        read_tracks(_write(tmp_path, text))
+    path = _write(tmp_path, "title,duration_ms\nSong,inf\n")
+    assert read_tracks(path)[0].duration_ms is None
+
+
+def test_a_track_number_column_does_not_replace_the_title(tmp_path):
+    path = _write(tmp_path, "Title,Artist,Album,Track\nHeroes,David Bowie,Heroes,3\n")
+    assert read_tracks(path)[0].title == "Heroes"
+
+
 def test_a_file_that_is_not_utf8_is_refused_with_advice(tmp_path):
     path = _write(tmp_path, "title,artists\nCafé,Band\n", encoding="latin-1")
 
