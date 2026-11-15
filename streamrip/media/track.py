@@ -178,6 +178,12 @@ class Track(Media):
                         label,
                     ) as callback:
                         await self.downloadable.download(part, callback)
+                except asyncio.CancelledError:
+                    # Ctrl-C. No later attempt continues this file (a new run
+                    # starts over), and a "Song.part.flac" left beside the
+                    # tracks is picked up by whatever indexes the library.
+                    part.unlink(missing_ok=True)
+                    raise
                 except Exception as e:
                     error = f"{type(e).__name__}: {e}"
                     # A missing ffmpeg does not fix itself in 2-8 seconds.
