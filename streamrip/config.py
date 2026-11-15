@@ -350,14 +350,40 @@ class Config:
             self.file: ConfigData = ConfigData.from_toml(toml_file.read())
 
         self.session: ConfigData = copy.deepcopy(self.file)
+        # What the file said when it was read, to tell at saving what this run
+        # changed in self.file (a new token, a fetched app id).
+        self._loaded: ConfigData = copy.deepcopy(self.file)
 
     def save_file(self):
-        """Write self.file back to path, unless nothing was modified."""
+        """Write what was changed in self.file back to path, unless nothing was.
+
+        Into the file as it is now, not as it was read: saving happens at the
+        end of a run, which can be hours later. Writing the whole of self.file
+        undid whatever was changed in config.toml meanwhile, by hand or by
+        another streamrip saving its own new token.
+        """
         if not self.file.modified:
             return
 
-        self.file.update_toml()
-        _write_config(self.path, self.file.toml)
+        data = self.file
+        try:
+            with self.path.open(encoding="utf-8-sig") as toml_file:
+                current = ConfigData.from_toml(toml_file.read())
+        except Exception as e:
+            # Gone, or no config this version reads any more: ours, as it is.
+            logger.debug("Saving the config over what is at %s: %s", self.path, e)
+        else:
+            for section in _section_fields():
+                ours, loaded, theirs = (
+                    getattr(d, section.name) for d in (self.file, self._loaded, current)
+                )
+                for field in fields(ours):
+                    value = getattr(ours, field.name)
+                    if value != getattr(loaded, field.name):
+                        setattr(theirs, field.name, copy.deepcopy(value))
+            data = current
+        data.update_toml()
+        _write_config(self.path, data.toml)
 
     @classmethod
     def defaults(cls):
