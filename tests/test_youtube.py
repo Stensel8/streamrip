@@ -120,10 +120,37 @@ def test_the_same_recording_matches(wanted, found, at_least):
         # Another number is another song.
         (t("Song 55"), t("Song 5")),
         (t("Nightcall - Part 1"), t("Nightcall - Part 2")),
+        # Also when it is written as a word, or as one of the letters I, V and X.
+        (t("Nightcall - Part One"), t("Nightcall - Part Two")),
+        (t("Alone, Pt. I"), t("Alone, Pt. II")),
+        (
+            t("Symphony No. 5, Op. 67: I. Allegro con brio"),
+            t("Symphony No. 5, Op. 67: II. Andante con moto"),
+        ),
+        (
+            t("Symphony No. 5, Op. 67 - I. Allegro con brio"),
+            t("Symphony No. 5, Op. 67 - V. Finale"),
+        ),
     ],
 )
 def test_another_recording_does_not_match(wanted, found):
     assert score(wanted, found) < 0.8
+
+
+def test_the_same_number_written_differently_is_the_same_song():
+    assert score(t("Nightcall, Pt. One"), t("Nightcall (Part 1)")) >= 0.8
+    assert score(t("Alone, Pt. I"), t("Alone, Part 1")) >= 0.8
+    assert score(t("Suite No. 3: V. Gigue"), t("Suite No. 3: 5. Gigue")) >= 0.8
+    assert score(t("One"), t("One (Remastered)")) >= 0.8
+
+
+def test_a_candidate_nobody_is_named_for_is_not_taken_on_its_title():
+    # A video whose channel says nothing about the artist: the title and the
+    # length alone would let anyone's "Hello" in under Adele's tags.
+    hello = MatchTrack("Hello", ["Adele"], duration_ms=295_000)
+    assert score(hello, MatchTrack("Hello", [], duration_ms=290_000)) == 0.0
+    # A wanted track without artists (a CSV of titles) is still judged that way.
+    assert score(MatchTrack("Hello", [], duration_ms=295_000), hello) >= 0.8
 
 
 @pytest.mark.parametrize(
