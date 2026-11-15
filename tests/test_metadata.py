@@ -759,6 +759,25 @@ async def test_tag_flac_no_cover(sample_metadata, flac_path):
     assert "lyrics" not in file
 
 
+@pytest.mark.parametrize("cover", ["too big", "no image"])
+async def test_a_cover_that_cannot_be_embedded_does_not_cost_the_tags(
+    sample_metadata, flac_path, tmp_path, monkeypatch, caplog, cover
+):
+    # Raised out of tagging, it left the downloaded track untagged and recorded
+    # as failed: `repair` then downloaded it again and failed on the same cover.
+    cover_path = tmp_path / "cover.jpg"
+    if cover == "too big":  # with embed_size = "original"
+        monkeypatch.setattr("streamrip.metadata.tagger.FLAC_MAX_BLOCKSIZE", 100)
+        cover_path.write_bytes(TEST_COVER.read_bytes())
+    else:
+        cover_path.write_text("<html>404</html>")
+
+    await tag_file(flac_path, sample_metadata, cover_path)
+
+    assert FLAC(flac_path)["title"][0] == "testtitle"
+    assert f"No cover embedded in {flac_path.name}" in caplog.text
+
+
 async def test_tag_flac_cover(sample_metadata, flac_path):
     await tag_file(flac_path, sample_metadata, TEST_COVER)
     file = FLAC(flac_path)
