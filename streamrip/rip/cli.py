@@ -81,7 +81,12 @@ def _upgrade_command(
     GitHub that didn't.
     """
     uv = shutil.which("uv")
-    if wheel_url and uv and _is_uv_tool_install():
+    if (
+        wheel_url
+        and uv
+        and _is_uv_tool_install()
+        and _RELEASE_WHEEL.fullmatch(wheel_url)
+    ):
         return f'"{uv}" tool install --upgrade "{wheel_url}"'
     ref = f"v{version}" if is_release else "HEAD"
     target = f"git+https://{host}/{REPOSITORY}.git@{ref}"
@@ -214,10 +219,13 @@ def _print_update_notice(
         f"[/cyan] is available.[/green]\n"
         f"This installation is in [cyan]{escape(sys.prefix)}[/cyan]. Update it with:\n"
         f"[white][bold]"
-        f"{cmd}"
+        f"{escape(cmd)}"
         "[/bold][/white]\n" + ("" if "git+" not in cmd else f"{_git_note()}\n")
     )
     if notes:
+        # Printable text only: the notes are the release's, and an escape
+        # sequence in them could rewrite the lines above, the command included.
+        notes = "".join(c for c in notes if c.isprintable() or c in "\n\t")
         err_console.print(Markdown(notes))
 
 
@@ -382,7 +390,10 @@ class _StreamripGroup(_ColoredHelp, click.Group):
             # would wipe a notice printed too early, and a raised/cancelled
             # command must not also cancel the one thing this was for.
             if notice is not None:
-                _print_update_notice(*notice)
+                try:
+                    _print_update_notice(*notice)
+                except Exception as exc:  # the command itself went as it went
+                    logger.debug("Could not show the update notice: %s", exc)
 
 
 @click.group(
@@ -1058,8 +1069,18 @@ def _version_tuple(version: str) -> tuple[int, ...]:
     return tuple(int(n) for n in re.findall(r"\d+", version.partition("+")[0])[:3])
 
 
+# A version as it may go into the command the notice asks the user to run. A tag
+# is whatever a release was called, and "9.9;curl x|sh" is a legal one.
+_PLAIN_VERSION = re.compile(r"[vV]?\d[0-9A-Za-z.\-]*")
+# The wheel of one of this repository's releases, on a host the check asks.
+_RELEASE_WHEEL = re.compile(
+    rf"https://(?:{re.escape(GITHUB_HOST)}|{re.escape(OPENCOMMIT_HOST)})/"
+    rf"{re.escape(REPOSITORY)}/releases/download/[\w.+-]+/[\w.+-]+\.whl"
+)
+
+
 def is_newer_version(latest: str | None, current: str = __version__) -> bool:
-    if not latest:
+    if not latest or not _PLAIN_VERSION.fullmatch(latest):
         return False
     try:
         return _version_tuple(latest) > _version_tuple(current)
