@@ -949,6 +949,12 @@ async def search(ctx, first, output_file, num_results, source, media_type, query
         elif output_file:
             await main.search_output_file(source, media_type, query, output_file, limit)
         else:
+            if not (sys.stdin.isatty() and sys.stdout.isatty()):
+                # Never open a menu nobody is there to use (cron, scripts, a pipe).
+                raise click.UsageError(
+                    "The search menu needs a terminal. Use --first to download "
+                    "the first result, or --output-file to save the results."
+                )
             await main.search_interactive(source, media_type, query, limit)
         await main.resolve()
         await main.rip()
