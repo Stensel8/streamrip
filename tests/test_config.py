@@ -263,6 +263,32 @@ def test_only_a_modified_config_is_saved(tmp_path, modified, folder):
     assert Config(path).session.downloads.folder == folder
 
 
+def test_saving_keeps_what_was_changed_in_the_file_meanwhile(config_path):
+    # The config is saved when a run ends, which can be hours after it was
+    # read. Written back whole, it undid an edit made in between, and two runs
+    # that both got a new token overwrote each other's.
+    config = _new_token(config_path)  # this run: a new Deezer login
+    other = Config(config_path)  # meanwhile: an edit by hand, another run's token
+    other.file.downloads.max_connections = 2
+    other.file.tidal.access_token = "the-other-run's"
+    other.file.set_modified()
+    other.save_file()
+
+    config.save_file()
+
+    saved = Config(config_path).file
+    assert saved.deezer.arl == "new-synthetic-cookie"
+    assert saved.downloads.max_connections == 2
+    assert saved.tidal.access_token == "the-other-run's"
+
+
+def test_saving_over_a_file_that_is_no_config_any_more_still_saves(config_path):
+    config = _new_token(config_path)
+    config_path.write_text("half an edit [", encoding="utf-8")
+    config.save_file()
+    assert Config(config_path).file.deezer.arl == "new-synthetic-cookie"
+
+
 @pytest.mark.parametrize("turned_on", [False, True])
 def test_saving_leaves_an_option_as_the_user_wrote_it(config_path, turned_on):
     if turned_on:
