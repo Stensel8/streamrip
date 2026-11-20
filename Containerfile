@@ -3,8 +3,8 @@ FROM docker.io/library/debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d054
 
 # Patchbot keeps these four current: a tag of FFmpeg's own git and its commit,
 # and QuickJS-ng's release files with their sha256.
-ARG FFMPEG_VERSION=n9.0.2
-ARG FFMPEG_COMMIT=946fcce07b6dcd0331c8cc609192aeff5e1924f8
+ARG FFMPEG_VERSION=n9.1
+ARG FFMPEG_COMMIT=74e4393595cf2b5857f0da925c4e0dd74ea306e5
 ARG QJS_AMD64=v0.18.0@sha256:85ded23b9fabe8c1644fc40a8d2bbdd71157affcbd807359c618cc717ee24d7d
 ARG QJS_ARM64=v0.18.0@sha256:2c005c7171424a598d31c53c8dc4a0ae2e4958eb6fbb37908c885a307c78187c
 
