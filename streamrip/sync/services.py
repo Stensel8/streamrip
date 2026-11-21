@@ -4,12 +4,15 @@ The command line and the web interface both take one of these, which is also
 what makes them easy to test with fakes.
 """
 
+import json
 import os
 import re
+import tomllib
+from pathlib import Path
 
 import requests
 
-from .auth import ClientCredentials, ConfigTokenStore, OAuthClient, StoredToken
+from .auth import ClientCredentials, ConfigTokenStore, OAuthClient, StoredToken, Token
 from .errors import ConfigError, NotLoggedInError
 from .http import ApiClient
 from .providers.spotify import API as SPOTIFY_API
@@ -143,3 +146,69 @@ class Services:
         )
         user = ApiClient(TIDAL_API, user_token, headers=JSONAPI, session=self.http())
         return TidalProvider(user, catalog, self.country)
+
+
+def music_sync_dir() -> Path:
+    """Where Music-Sync kept its settings and logins."""
+    if os.name == "nt":
+        base = Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming")
+    else:
+        base = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+    return base / "music-sync"
+
+
+def migrate_music_sync(services: Services, folder: Path | None = None) -> list[str]:
+    """Take the apps and logins of Music-Sync's config.toml and tokens.json
+    into streamrip's config, where streamrip has none of its own. Returns what
+    was taken, for people.
+
+    A Spotify login only comes along with its app: a token is the app's own.
+    The redirect URIs do not come along (Music-Sync's were on port 8888, the
+    web interface's): the apps need streamrip's added, which `status` and the
+    Accounts page show.
+    """
+    folder = folder or music_sync_dir()
+    try:
+        settings = tomllib.loads((folder / "config.toml").read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        raise ConfigError(f"No Music-Sync settings in {folder}.") from None
+    except (OSError, tomllib.TOMLDecodeError) as e:
+        raise ConfigError(f"Could not read Music-Sync's settings: {e}") from e
+    try:
+        tokens = json.loads((folder / "tokens.json").read_text(encoding="utf-8"))
+    except OSError, ValueError:
+        tokens = {}
+    if not isinstance(tokens, dict):
+        tokens = {}
+
+    def text(section: str, key: str) -> str:
+        value = (settings.get(section) or {}).get(key, "")
+        return value.strip() if isinstance(value, str) else ""
+
+    config, taken = services.config, []
+    spotify_id, tidal_id = text("spotify", "client_id"), text("tidal", "client_id")
+    ours = config.session
+    same_spotify_app = spotify_id and ours.spotify.client_id in {"", spotify_id}
+    if spotify_id and not ours.spotify.client_id:
+        for data in (config.session, config.file):
+            data.spotify.client_id = spotify_id
+        taken.append("the Spotify app")
+    if tidal_id and not ours.tidal.api_client_id:
+        for data in (config.session, config.file):
+            data.tidal.api_client_id = tidal_id
+            data.tidal.api_client_secret = text("tidal", "client_secret")
+        taken.append("the Tidal app")
+    config.file.set_modified()
+    config.save_file()
+
+    for service, allowed in (("spotify", same_spotify_app), ("tidal", bool(tidal_id))):
+        saved = tokens.get(service)
+        if not allowed or not isinstance(saved, dict) or services.store.load(service):
+            continue
+        try:
+            token = Token(**saved)
+        except TypeError:
+            continue
+        services.store.save(service, token)
+        taken.append(f"the {LABELS[service]} login")
+    return taken

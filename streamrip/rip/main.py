@@ -153,6 +153,10 @@ class Main:
     User input (urls) -> Main --> Download files & Output messages to terminal
     """
 
+    # Not interactive (the web interface): a source without a working login
+    # is an error, never a question asked in the terminal.
+    interactive: bool = True
+
     def __init__(self, config: Config, *, interactive: bool = True):
         """Set up the clients, the databases and an empty pipeline for one run.
 

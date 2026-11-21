@@ -14,11 +14,11 @@ length) and downloads that, tagged with what Spotify says. Because of that:
   not Spotify's own quality. For lossless, use Qobuz, Tidal or Deezer.
 - A track YouTube Music does not have, or has only as another version (live,
   remix, ...), is reported as not found rather than downloaded wrong.
-- **For better quality, move the playlist first.** With
-  [Music-Sync](https://opencommit.eu/Stensel8/Music-Sync) you can move your liked
-  songs and playlists from Spotify to Tidal, or export them to a CSV, and then
-  download them from a lossless source: [`streamrip csv`](csv-lists.md) searches
-  such a CSV on Qobuz, Tidal or Deezer. streamrip reminds you of this the first
+- **For lossless, download the list from another source.**
+  `streamrip playlist download spotify --playlist NAME --source qobuz` (or
+  `--liked`) reads the list from Spotify and finds every track on Qobuz, Tidal
+  or Deezer; `streamrip playlist transfer spotify tidal` moves it to Tidal for
+  good. See [Playlists](playlists.md). streamrip reminds you of this the first
   time you use Spotify in a run.
 - It needs [ffmpeg](https://ffmpeg.org) like every source, and yt-dlp, which
   wants a JavaScript runtime to read YouTube: install [Deno](https://deno.com)
@@ -37,7 +37,7 @@ User Management*. Making the app takes a minute:
    It has to be `127.0.0.1`, not `localhost`; Spotify no longer accepts that.
 3. Under *Which API/SDKs are you planning to use?* tick **Web API** only.
 
-   ![Only Web API is ticked.](https://opencommit.eu/Stensel8/Music-Sync/raw/branch/main/docs/images/spotify-web-api-ticked.avif)
+   ![Only Web API is ticked.](images/spotify-web-api-ticked.avif)
 
 4. Save, open the app's *Settings* and copy its **Client ID**. You do not need
    the client secret.
@@ -47,9 +47,11 @@ ID and opens your browser to log in; it catches the answer itself on
 `127.0.0.1:9900` (if streamrip runs on another machine, it offers to let you paste
 the address you end up on instead). The login is saved in the `[spotify]`
 section of the config and renews itself. If you had to give the Client ID by
-hand, it goes in `client_id` there.
+hand, it goes in `client_id` there. The same app and login serve the
+[playlist tools](playlists.md), and the Accounts page of
+[`streamrip web`](web.md) sets them up too.
 
-![What you see without Premium: "Your application is blocked from accessing the Web API since you do not have a Spotify Premium subscription."](https://opencommit.eu/Stensel8/Music-Sync/raw/branch/main/docs/images/spotify-premium-required.avif)
+![What you see without Premium: "Your application is blocked from accessing the Web API since you do not have a Spotify Premium subscription."](images/spotify-premium-required.avif)
 
 (Without Premium the dashboard shows this banner, and every request fails with
 HTTP 403.)
@@ -81,7 +83,7 @@ matching "song"; turn it off to be strict) and `redirect_uri`.
 The Spotify support in this fork borrows from three projects. Thank you:
 
 - **[Music-Sync](https://opencommit.eu/Stensel8/Music-Sync)** (AGPL-3.0, the same
-  author). The Spotify login and the handling of Spotify's API follow it: OAuth
+  author), which is part of streamrip now as `streamrip playlist`. The Spotify login and the handling of Spotify's API follow it: OAuth
   with PKCE and a loopback redirect (`streamrip/rip/spotify_login.py`,
   `streamrip/client/spotify.py`), token refresh, and the rules for apps in
   development mode since February 2026 (Premium for the app's owner, ten

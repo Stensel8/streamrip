@@ -288,9 +288,15 @@ async def test_the_login_url_carries_a_pkce_challenge_for_its_verifier(make_clie
     assert query["response_type"] == "code"
     assert query["state"] == state
     assert query["code_challenge_method"] == "S256"
+    # Reading playlists for downloads, and the library and playlists for the
+    # playlist tools: one login for both.
     assert set(query["scope"].split()) == {
         "playlist-read-private",
         "playlist-read-collaborative",
+        "user-library-read",
+        "user-library-modify",
+        "playlist-modify-private",
+        "playlist-modify-public",
     }
     digest = hashlib.sha256(verifier.encode()).digest()
     assert (

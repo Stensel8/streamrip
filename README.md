@@ -9,7 +9,9 @@
 [![Mirror: opencommit.eu](https://img.shields.io/badge/mirror-opencommit.eu-blue)](https://opencommit.eu/Stensel8/streamrip)
 [![Mirror: codetrunk.eu](https://img.shields.io/badge/mirror-codetrunk.eu-blue)](https://repos.codetrunk.eu/Stensel8/streamrip)
 
-A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, SoundCloud and Spotify.
+A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, SoundCloud and Spotify,
+that also moves your playlists between Spotify, Tidal and CSV files. On the command line, or
+in your browser.
 
 > [!IMPORTANT]
 > **Bookmark these mirrors.** GitHub has taken down repositories before, so
@@ -43,6 +45,13 @@ A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, SoundCl
 - Tags, cover art and lyrics, and if you like conversion to FLAC, ALAC, AIFF, MP3,
   AAC, OGG or Opus
 - Remembers what it downloaded; `streamrip repair` retries what failed
+- Your liked songs and playlists: transferred between Spotify and Tidal,
+  exported to or imported from CSV, or downloaded from the source you pick, a
+  Spotify playlist in lossless from Qobuz say ([details](docs/playlists.md)).
+  This was [Music-Sync](https://github.com/Stensel8/Music-Sync), now part of
+  streamrip
+- A web interface for all of it, logins included: `streamrip web`
+  ([details](docs/web.md))
 
 ## Install
 
@@ -72,8 +81,8 @@ uv tool install ./streamrip-*.whl
 ```
 
 uv fetches Python 3.15 itself if you don't have it. Add the `browser` and
-`ffmpeg` extras for the automatic-login browser and a bundled ffmpeg:
-`uv tool install "./streamrip-*.whl[browser,ffmpeg]"`.
+`ffmpeg` extras for the automatic-login browser and a bundled ffmpeg, and `web`
+for `streamrip web`: `uv tool install "./streamrip-*.whl[browser,ffmpeg,web]"`.
 
 ### With Podman or Docker
 
@@ -113,6 +122,16 @@ streamrip --codec mp3 url <link>                                # convert while 
 streamrip --quality 2 url <link>                                # at most CD quality
 streamrip repair                                                # retry what failed
 streamrip config open                                           # every option, explained
+streamrip web                                                   # all of it in your browser
+```
+
+And your playlists ([details](docs/playlists.md)):
+
+```bash
+streamrip playlist transfer spotify tidal --liked               # liked songs, Spotify to Tidal
+streamrip playlist download spotify --playlist "Road trip" --source qobuz   # in lossless
+streamrip playlist export spotify --all -o backup/              # every list as CSV
+streamrip playlist import tidal list.csv --playlist "From CSV"  # a CSV into a playlist
 ```
 
 Links from Qobuz, Deezer, SoundCloud and Spotify work the same way, and so do
@@ -146,14 +165,18 @@ in the config. A login that stops working is asked for again.
 | Tidal | A subscription. Log in with a link on any device (twice, for hi-res). |
 | Deezer | The `arl` cookie of a logged-in session: an isolated browser window, or by hand. |
 | SoundCloud | Nothing. |
-| Spotify | An app of your own, and Premium on the account that owns it. The audio comes from YouTube Music and is not lossless. |
+| Spotify | An app of your own, and Premium on the account that owns it. The audio comes from YouTube Music and is not lossless. The same app and login serve the playlist tools. |
 
-Details per source: [Logging in](docs/logging-in.md), [Spotify](docs/spotify.md).
+The playlist tools also need a Tidal developer app for your Tidal playlists
+([how](docs/playlists.md#tidal)). Details per source: [Logging in](docs/logging-in.md),
+[Spotify](docs/spotify.md). `streamrip web` has all of these on its Accounts page.
 
 ## More
 
+- [Playlists](docs/playlists.md): transfer, export, import and download your liked songs and playlists
+- [The web interface](docs/web.md): what it does, and why it is for you alone
 - [Spotify](docs/spotify.md): the app you need, what works, and why it isn't lossless
-- [CSV lists](docs/csv-lists.md): download a list exported from Music-Sync, Exportify or a spreadsheet
+- [CSV lists](docs/csv-lists.md): download a list exported from streamrip, Exportify or a spreadsheet
 - [Lyrics](docs/lyrics.md): where they come from, and how to turn the lookup off
 - [Podman and Docker](docs/container.md): the image, its volume, and building it yourself
 - [Nix](docs/nix.md): the flake and its development shell
@@ -180,7 +203,15 @@ inspired by [rip](https://github.com/nathom/streamrip),
 [Tidal-Media-Downloader](https://github.com/yaronzz/Tidal-Media-Downloader)
 and [scdl](https://github.com/flyingrub/scdl). The lyrics lookup uses
 [LRCLIB](https://lrclib.net). The Spotify support borrows from three projects,
-credited in [docs/spotify.md](docs/spotify.md#credits).
+credited in [docs/spotify.md](docs/spotify.md#credits). The playlist tools and
+the web interface were Music-Sync, which grew out of Roland Behme's csv2tidal
+and spotify_to_tidal ([credits](docs/playlists.md#credits)).
+
+## License
+
+[AGPL-3.0](LICENSE) for the whole, the licence Music-Sync and csv2tidal came
+with; the code from nathom/streamrip is GPL-3.0 as well. [LICENSE](LICENSE)
+says how the two came together.
 
 ## Disclaimer
 

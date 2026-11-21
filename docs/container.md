@@ -47,3 +47,13 @@ Build the image yourself from this checkout with `podman build -t streamrip .`
 A container has no screen, and your browser can't reach it: Qobuz and Deezer
 ask for the login by hand, and for Spotify you paste the address. See
 [Logging in](logging-in.md).
+
+## The web interface
+
+The image has [`streamrip web`](web.md) too. Publish its port on `127.0.0.1`
+only, never to a network:
+
+```bash
+podman run --rm -it -v ./streamrip:/data -v ~/Music:/data/Music \
+  -p 127.0.0.1:8888:8888 opencommit.eu/stensel8/streamrip web --host 0.0.0.0
+```
