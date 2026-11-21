@@ -24,6 +24,7 @@ lazy from rich.traceback import install
 
 from .. import __version__
 from ..config import DEFAULT_CONFIG_PATH, PACES
+from .playlist_cli import playlist
 from .stopping import terminate
 
 # Only the commands that run need these: --help and --version do not.
@@ -1030,7 +1031,7 @@ async def csv_list(ctx, source, fallback_source, path):
     """Download the tracks of a CSV list, found by searching a source.
 
     One track per row: its title and artist, and its album and length if you
-    have them. The columns of Music-Sync (https://github.com/Stensel8/Music-Sync)
+    have them. The columns of `streamrip playlist export` (Music-Sync)
     and of other exporters are understood; a file without a header row is read
     as "artist,title". The tracks go in a folder named after the file.
 
@@ -1209,3 +1210,6 @@ async def latest_streamrip_version(
 
 if __name__ == "__main__":
     rip()
+
+
+rip.add_command(playlist)

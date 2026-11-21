@@ -1,8 +1,10 @@
-"""Log in to Spotify: catch the redirect of the browser login on a local port.
+"""Log in to Spotify (or Tidal's API): catch the redirect of the browser login
+on a local port.
 
 The login is OAuth with PKCE. After the user has allowed streamrip in their
 browser, Spotify sends the browser to the redirect URI, which is a port on this
-computer; this catches that one request. The server and its checks follow the
+computer; this catches that one request. The playlist tools log in to Tidal's
+official API the same way, at another path on the same port. The server and its checks follow the
 CLI login of Music-Sync (https://github.com/Stensel8/Music-Sync,
 musicsync/oauth.py), and the loopback redirect is what spotDL does as well.
 
@@ -21,7 +23,7 @@ from urllib.parse import parse_qs, urlsplit
 _DONE_PAGE = (
     b"<!doctype html><meta charset=utf-8><title>streamrip</title>"
     b"<body style='font-family:sans-serif;text-align:center;margin-top:4rem'>"
-    b"<h2>Done</h2><p>You can close this tab and return to the terminal.</p></body>"
+    b"<h2>Done</h2><p>You can close this tab and go back to streamrip.</p></body>"
 )
 _LOOPBACK = ("127.0.0.1", "localhost", "::1")
 # Seconds to wait for the user to finish logging in.
@@ -71,21 +73,25 @@ class _CallbackHandler(BaseHTTPRequestHandler):
         """Stay quiet: the terminal belongs to streamrip."""
 
 
-def check_redirect(params: dict[str, str], expected_state: str) -> str:
+def check_redirect(
+    params: dict[str, str], expected_state: str, service: str = "Spotify"
+) -> str:
     """The code in the redirect's query; raises SpotifyLoginError if it is no good."""
     if "error" in params:
-        raise SpotifyLoginError(f"Spotify refused the login: {params['error']}")
+        raise SpotifyLoginError(f"{service} refused the login: {params['error']}")
     if params.get("state") != expected_state:
         raise SpotifyLoginError(
             "The login does not belong to this attempt (state mismatch). "
             "Please try again."
         )
     if not params.get("code"):
-        raise SpotifyLoginError("Spotify sent no authorization code.")
+        raise SpotifyLoginError(f"{service} sent no authorization code.")
     return params["code"]
 
 
-def code_from_redirect_url(address: str, expected_state: str) -> str:
+def code_from_redirect_url(
+    address: str, expected_state: str, service: str = "Spotify"
+) -> str:
     """The code in a redirect URL the user pasted."""
     query = urlsplit(address.strip()).query
     params = {key: values[0] for key, values in parse_qs(query).items()}
@@ -94,7 +100,7 @@ def code_from_redirect_url(address: str, expected_state: str) -> str:
             "That address has no login in it. Paste the whole address of the page "
             "you ended up on, starting with the redirect URI."
         )
-    return check_redirect(params, expected_state)
+    return check_redirect(params, expected_state, service)
 
 
 def _wait_for_redirect(
@@ -128,7 +134,9 @@ def _wait_for_redirect(
     return server.params
 
 
-async def capture_code(redirect_uri: str, expected_state: str) -> str:
+async def capture_code(
+    redirect_uri: str, expected_state: str, service: str = "Spotify"
+) -> str:
     """Wait for the browser to come back to redirect_uri, and return the code."""
     # A cancelled await leaves its thread running: Ctrl-C would wait out the
     # whole LOGIN_TIMEOUT, with the port still taken, unless it is told to stop.
@@ -139,4 +147,4 @@ async def capture_code(redirect_uri: str, expected_state: str) -> str:
         )
     finally:
         stop.set()
-    return check_redirect(params, expected_state)
+    return check_redirect(params, expected_state, service)

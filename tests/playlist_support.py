@@ -1,0 +1,208 @@
+"""Test doubles and helpers for the playlist tools (streamrip/sync)."""
+
+import json
+import shutil
+import time
+from typing import TYPE_CHECKING, Any
+from urllib.parse import parse_qs, urlsplit
+lazy from pathlib import Path
+
+lazy from responses import Call
+
+from streamrip.config import BLANK_CONFIG_PATH, Config
+from streamrip.sync.auth import OAuthClient, Token
+from streamrip.sync.models import PlaylistInfo, Track
+from streamrip.sync.providers.base import Provider
+from streamrip.sync.services import Services
+
+if TYPE_CHECKING:
+    from collections.abc import Collection, Iterable, Iterator
+
+# Valid ISRCs: the format is checked when reading files, so tests need real-looking ones.
+ISRC_A, ISRC_B, ISRC_C = "USAAA0000001", "USAAA0000002", "USAAA0000003"
+
+
+def track(
+    title: str,
+    artist: str = "Artist",
+    *,
+    ids: dict[str, str] | None = None,
+    isrc: str | None = None,
+    duration_ms: int | None = 200_000,
+    album: str = "",
+) -> Track:
+    return Track(title, [artist], album, duration_ms, isrc=isrc, ids=ids or {})
+
+
+def config_at(tmp_path: Path, **sections: dict[str, Any]) -> Config:
+    """A config file of its own in `tmp_path`, with `sections` filled in:
+    config_at(tmp_path, spotify={"client_id": "abc"})."""
+    path = tmp_path / "config.toml"
+    if not path.exists():
+        shutil.copy(BLANK_CONFIG_PATH, path)
+    config = Config(path)
+    for name, values in sections.items():
+        for data in (config.session, config.file):
+            for key, value in values.items():
+                setattr(getattr(data, name), key, value)
+    config.file.set_modified()
+    config.save_file()
+    return config
+
+
+def _having(tracks: list[Track], query: str) -> list[Track]:
+    """The tracks whose title and artists hold every word of ``query``: a search engine in one line."""
+    words = query.lower().split()
+    return [
+        t
+        for t in tracks
+        if all(word in f"{t.title} {' '.join(t.artists)}".lower() for word in words)
+    ]
+
+
+class FakeProvider(Provider):
+    """An in-memory service that knows the tracks in its ``catalog``."""
+
+    def __init__(
+        self,
+        name: str = "fake",
+        catalog: Iterable[Track] = (),
+        liked: Iterable[Track] = (),
+        *,
+        readable: bool = True,
+    ):
+        self.name = name
+        self.catalog = list(catalog)
+        self.liked = list(liked)
+        self.albums: list[
+            Track
+        ] = []  # the albums it knows, as Tracks with the album's title
+        self.favorite_albums: list[Track] = []
+        self.album_contents: dict[
+            str, list[Track]
+        ] = {}  # the tracks of each album, by the album's id
+        self.readable = readable  # whether its playlists count as the user's own
+        self.playlists_by_id: dict[str, tuple[str, list[Track]]] = {}
+        self.descriptions: dict[
+            str, str
+        ] = {}  # of the playlists made through create_playlist
+        self.isrc_lookups: list[
+            list[str]
+        ] = []  # one entry per bulk lookup, to check the batching
+        self.searches: list[str] = []  # every search asked
+        self.add_calls = 0
+
+    def liked_tracks(self) -> Iterator[Track]:
+        yield from self.liked
+
+    def playlists(self) -> list[PlaylistInfo]:
+        return [
+            PlaylistInfo(pid, name, len(tracks), self.readable)
+            for pid, (name, tracks) in self.playlists_by_id.items()
+        ]
+
+    def playlist_tracks(self, playlist_id: str) -> Iterator[Track]:
+        yield from self.playlists_by_id[playlist_id][1]
+
+    def lookup_isrcs(self, isrcs: Collection[str]) -> dict[str, list[Track]]:
+        self.isrc_lookups.append(sorted(isrcs))
+        return {
+            isrc: found
+            for isrc in isrcs
+            if (found := [t for t in self.catalog if t.isrc == isrc])
+        }
+
+    def search(self, query: str) -> list[Track]:
+        self.searches.append(query)
+        return _having(self.catalog, query)
+
+    def search_albums(self, query: str) -> list[Track]:
+        self.searches.append(f"album: {query}")
+        return _having(self.albums, query)
+
+    def album_tracks(self, album_id: str) -> list[Track]:
+        return self.album_contents.get(album_id, [])
+
+    def create_playlist(self, name: str, description: str = "") -> str:
+        playlist_id = f"pl{len(self.playlists_by_id) + 1}"
+        self.playlists_by_id[playlist_id] = (name, [])
+        self.descriptions[playlist_id] = description
+        return playlist_id
+
+    def add_to_playlist(self, playlist_id: str, tracks: list[Track]) -> None:
+        self.add_calls += 1
+        self.playlists_by_id[playlist_id][1].extend(tracks)
+
+    def add_favorite_tracks(self, tracks: list[Track]) -> None:
+        self.add_calls += 1
+        self.liked.extend(tracks)
+
+    def add_favorite_albums(self, albums: list[Track]) -> None:
+        self.add_calls += 1
+        self.favorite_albums.extend(albums)
+
+    def existing_playlist(self, name: str, *tracks: Track) -> str:
+        """Test shortcut: a playlist that was already there, so it does not count as an add call."""
+        playlist_id = self.create_playlist(name)
+        self.playlists_by_id[playlist_id][1].extend(tracks)
+        return playlist_id
+
+
+class FakeOAuth(OAuthClient):
+    """Logs in without a network: a fixed authorize URL and a fixed token."""
+
+    name = "spotify"
+    label = "Spotify"
+
+    def __init__(self) -> None:
+        super().__init__("client-id", "http://127.0.0.1:9900/callback")
+        self.exchanged: tuple[str, str] | None = None
+
+    def authorize_url(self, state: str, challenge: str) -> str:
+        return f"https://auth.test/authorize?state={state}&code_challenge={challenge}"
+
+    def exchange(self, code: str, verifier: str) -> Token:
+        self.exchanged = (code, verifier)
+        return Token("ACCESS", "REFRESH", time.time() + 3600)
+
+
+class FakeServices(Services):
+    """Services with fake providers and a fake login, on a config in ``tmp_path`` with both apps set up."""
+
+    def __init__(self, tmp_path: Path, **providers: Provider):
+        super().__init__(
+            config_at(
+                tmp_path,
+                spotify={"client_id": "client-id"},
+                tidal={"api_client_id": "client-id"},
+            )
+        )
+        self.providers = providers
+        self.fake_oauth = FakeOAuth()
+
+    def provider(self, service: str) -> Provider:
+        return self.providers[service]
+
+    def oauth(self, service: str) -> OAuthClient:
+        return self.fake_oauth
+
+
+def _body(call: Call) -> str:
+    body = call.request.body
+    assert isinstance(body, str | bytes)
+    return body.decode() if isinstance(body, bytes) else body
+
+
+def sent_json(call: Call) -> dict[str, Any]:
+    """The JSON body of a request captured by ``responses``."""
+    return json.loads(_body(call))
+
+
+def sent_form(call: Call) -> dict[str, list[str]]:
+    """The form-encoded body of a request captured by ``responses``."""
+    return parse_qs(_body(call))
+
+
+def sent_query(call: Call) -> dict[str, list[str]]:
+    """The query string of a request captured by ``responses``."""
+    return parse_qs(urlsplit(call.request.url or "").query)

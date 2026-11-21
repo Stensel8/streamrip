@@ -469,7 +469,8 @@ class SpotifyPrompter(CredentialPrompter):
         """Write the session's Spotify app and login to the config file."""
         c = self.config.session.spotify
         cf = self.config.file.spotify
-        for name in ("client_id", "access_token", "refresh_token", "token_expiry"):
+        names = ("client_id", "access_token", "refresh_token", "token_expiry", "scope")
+        for name in names:
             setattr(cf, name, getattr(c, name))
         self.config.file.set_modified()
         self._announce_saved()

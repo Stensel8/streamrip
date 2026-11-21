@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
 from dataclasses import MISSING, dataclass, fields, is_dataclass
 from pathlib import Path
 from typing import ClassVar
@@ -71,6 +72,15 @@ class TidalConfig(ServiceLimits):
     hires_refresh_token: str
     hires_token_expiry: str
     hires_token_client_id: str
+    # The developer app and login of Tidal's official API, which the playlist
+    # tools (streamrip/sync) read and change playlists and favourites with.
+    # Not in a config from before they were; the defaults stand in.
+    api_client_id: str = ""
+    api_client_secret: str = ""
+    api_redirect_uri: str = "http://127.0.0.1:9900/tidal/callback"
+    api_access_token: str = ""
+    api_refresh_token: str = ""
+    api_token_expiry: str = ""
 
 
 @dataclass(slots=True)
@@ -107,6 +117,9 @@ class SpotifyConfig(ServiceLimits):
     access_token: str
     refresh_token: str
     token_expiry: str
+    # What the login allows (Spotify says so); the playlist tools need more
+    # than downloading does. Not in a config from before it was.
+    scope: str = ""
     # The audio comes from YouTube Music, in the one quality it has.
     quality: ClassVar[int] = 0
 
@@ -364,15 +377,23 @@ class Config:
         # What the file said when it was read, to tell at saving what this run
         # changed in self.file (a new token, a fetched app id).
         self._loaded: ConfigData = copy.deepcopy(self.file)
+        self._saving = threading.Lock()
 
     def save_file(self):
         """Write what was changed in self.file back to path, unless nothing was.
+
+        Safe from several threads at once (the web interface saves a login
+        while a download saves its own).
 
         Into the file as it is now, not as it was read: saving happens at the
         end of a run, which can be hours later. Writing the whole of self.file
         undid whatever was changed in config.toml meanwhile, by hand or by
         another streamrip saving its own new token.
         """
+        with self._saving:
+            self._save_file()
+
+    def _save_file(self):
         if not self.file.modified:
             return
 
@@ -395,6 +416,11 @@ class Config:
             data = current
         data.update_toml()
         _write_config(self.path, data.toml)
+        # What this run changed is in the file now. A later save compares with
+        # that, or a value set back to what it was at loading (a logout, a
+        # token cleared) would never be written.
+        self._loaded = copy.deepcopy(self.file)
+        self.file._modified = False
 
     @classmethod
     def defaults(cls):

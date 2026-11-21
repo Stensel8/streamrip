@@ -32,7 +32,7 @@ from streamrip.rip.cli import (
     rip,
 )
 from streamrip.rip.main import Main
-from streamrip.rip.notices import MUSIC_SYNC, notice_for
+from streamrip.rip.notices import notice_for
 from streamrip.rip.stopping import terminate
 
 posix_only = pytest.mark.skipif(
@@ -1135,13 +1135,12 @@ async def test_a_search_for_text_that_looks_like_markup_finds_nothing(mock_main)
     assert mock_main.pending == []
 
 
-def test_spotify_says_it_is_lossy_and_points_to_music_sync():
+def test_spotify_says_it_is_lossy_and_how_to_get_lossless():
     notice = notice_for("spotify")
     assert "lossy" in notice
     assert "YouTube Music" in notice
-    assert "Music-Sync" in notice
-    assert MUSIC_SYNC in notice
-    assert "streamrip csv" in notice  # what to do with what Music-Sync exports
+    # The playlist tools (once Music-Sync) read the list and download it elsewhere.
+    assert "streamrip playlist download spotify" in notice
 
 
 @pytest.mark.parametrize("source", ["qobuz", "tidal", "deezer", "soundcloud"])

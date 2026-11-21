@@ -49,6 +49,8 @@ dependencies = [
 browser = ["playwright>=1.64,<2"]
 # A prebuilt ffmpeg, for when there's no system ffmpeg (or none on PATH).
 ffmpeg = ["imageio-ffmpeg>=0.6"]
+# `streamrip web`: downloads, search, playlists and logins in a browser.
+web = ["flask>=3.1,<4"]
 
 [project.scripts]
 streamrip = "streamrip.rip:rip"
@@ -65,6 +67,8 @@ dev = [
   "pytest==9.2.0",
   "pytest-mock==3.17.0",
   "pytest-asyncio==1.5.0",
+  # Fakes the Spotify and Tidal APIs of the playlist tools.
+  "responses>=0.25",
 ]
 
 [tool.pytest.ini_options]

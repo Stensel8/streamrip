@@ -113,6 +113,21 @@ hires_refresh_token = ""
 hires_token_expiry = ""
 hires_token_client_id = ""
 
+# For `streamrip playlist` and the playlist pages of `streamrip web` only:
+# reading and changing your Tidal playlists and favourites goes through Tidal's
+# official API, which needs a developer app of your own (downloading does not).
+# Create it at https://developer.tidal.com/dashboard with the redirect URI
+# below and the scopes collection.read, collection.write, playlists.read,
+# playlists.write and user.read, then copy its Client ID and Client Secret here.
+# docs/playlists.md has the details.
+api_client_id = ""
+api_client_secret = ""
+api_redirect_uri = "http://127.0.0.1:9900/tidal/callback"
+# Do not change: the login of that app
+api_access_token = ""
+api_refresh_token = ""
+api_token_expiry = ""
+
 [deezer]
 # 0: 128kbps MP3, 1: 320kbps MP3, 2: FLAC. Limited to what the account's
 # subscription allows.
@@ -160,6 +175,8 @@ access_token = ""
 refresh_token = ""
 # Unix timestamp of when the access token expires
 token_expiry = ""
+# What the login allows; `streamrip playlist` needs more than downloading does
+scope = ""
 
 [database]
 # Create a database that contains all the track IDs downloaded so far
