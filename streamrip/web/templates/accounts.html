@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% from "_macros.html" import field %}
+{% block title %}Accounts · streamrip{% endblock %}
+
+{% macro status(ready, yes="Logged in", no="Not logged in") %}
+{% if ready %}<span class="badge ok">{{ yes }}</span>{% else %}<span class="badge">{{ no }}</span>{% endif %}
+{% endmacro %}
+
+{% macro copy(text) %}
+<span class="copy"><code>{{ text }}</code><button class="btn tiny" type="button" data-copy="{{ text }}">Copy</button></span>
+{% endmacro %}
+
+{% block content %}
+<h1>Accounts</h1>
+<p class="muted intro">Everything is kept in <code>{{ config_path }}</code>, the same file the command line uses.</p>
+
+<div class="cards single">
+  {% include "_job.html" %}
+</div>
+
+<h2 class="section">Downloading</h2>
+<div class="cards">
+  {% set by = {} %}{% for s in sources %}{% set _ = by.update({s.name: s}) %}{% endfor %}
+
+  <section class="card" id="qobuz">
+    <div class="card-head"><h2>Qobuz</h2>{{ status(by.qobuz.ready) }}</div>
+    <p class="small muted">A subscription, or the albums you bought. Log in at <a class="link" href="https://play.qobuz.com/login" target="_blank" rel="noopener noreferrer">play.qobuz.com</a> with DevTools → Network open, find the <strong>user/login</strong> request and copy <strong>user.id</strong> and <strong>user_auth_token</strong> from its response. (<code>streamrip url</code> on the command line can also catch them for you.)</p>
+    <form method="post" action="{{ url_for('pages.login_qobuz') }}" class="fields">
+      {% call field("User id") %}<input name="user_id" required autocomplete="off">{% endcall %}
+      {% call field("Token") %}<input name="auth_token" type="password" required autocomplete="off">{% endcall %}
+      <div class="actions"><button class="btn primary" type="submit">Log in</button></div>
+    </form>
+  </section>
+
+  <section class="card" id="tidal-downloads">
+    <div class="card-head"><h2>Tidal</h2>{{ status(by.tidal.ready) }}</div>
+    <p class="small muted">A subscription. You get a link to log in with, on any device; with hi-res on (the default) there are two logins, one after the other.</p>
+    <div class="actions"><button class="btn primary" id="tidal-login" data-job-button>{{ "Log in again" if by.tidal.ready else "Log in" }}</button></div>
+  </section>
+
+  <section class="card" id="deezer">
+    <div class="card-head"><h2>Deezer</h2>{{ status(by.deezer.ready) }}</div>
+    <p class="small muted">Log in at <a class="link" href="https://www.deezer.com/login" target="_blank" rel="noopener noreferrer">deezer.com</a>, open DevTools → Application (or Storage) → Cookies and copy the value of the <strong>arl</strong> cookie.</p>
+    <form method="post" action="{{ url_for('pages.login_deezer') }}" class="fields">
+      {% call field("ARL", "wide") %}<input name="arl" type="password" required autocomplete="off">{% endcall %}
+      <div class="actions"><button class="btn primary" type="submit">Log in</button></div>
+    </form>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><h2>SoundCloud</h2><span class="badge ok">No login needed</span></div>
+    <p class="small muted">MP3 or AAC, as SoundCloud has it.</p>
+  </section>
+</div>
+
+<h2 class="section">Downloading and playlists</h2>
+<div class="cards">
+  {% set spotify = accounts[0] %}
+  <section class="card" id="spotify">
+    <div class="card-head"><h2>Spotify</h2>{{ status(spotify.connected) }}</div>
+    <p class="small muted">One app and one login for both: Spotify's track lists and tags for downloads (the audio comes from YouTube Music), and your liked songs and playlists for the playlist tools. <strong>The app's owner needs Premium</strong> (Spotify's rule since February 2026).</p>
+    <ol class="small steps-text">
+      <li>Create an app in the <a class="link" href="{{ dashboards.spotify }}" target="_blank" rel="noopener noreferrer">Spotify developer dashboard</a>.</li>
+      <li>Redirect URI: {{ copy(redirect_uris.spotify) }}</li>
+      <li>Tick <strong>Web API</strong> only, save, and copy the Client ID.</li>
+    </ol>
+    <form method="post" action="{{ url_for('pages.set_app', service='spotify') }}" class="fields">
+      {% call field("Client ID", "wide") %}<input name="client_id" value="{{ '' }}" placeholder="{{ 'saved — paste another to change it' if spotify.configured else '' }}" {{ '' if spotify.configured else 'required' }} autocomplete="off">{% endcall %}
+      <div class="actions"><button class="btn" type="submit">Save the app</button></div>
+    </form>
+    {% if spotify.configured %}
+    <div class="actions row">
+      {% if spotify.connected %}<form method="post" action="{{ url_for('pages.logout', service='spotify') }}"><button class="btn" type="submit">Log out</button></form>{% endif %}
+      <button class="btn spotify" data-browser-login="spotify" data-job-button>{{ "Log in again" if spotify.connected else "Log in" }}</button>
+    </div>
+    {% endif %}
+  </section>
+
+  {% set tidal = accounts[1] %}
+  <section class="card" id="tidal">
+    <div class="card-head"><h2>Tidal playlists</h2>{{ status(tidal.connected) }}</div>
+    <p class="small muted">Reading and changing your Tidal playlists and favourites goes through Tidal's official API, with a developer app of your own. Downloading does not need it.</p>
+    <ol class="small steps-text">
+      <li><em>Create New App</em> in the <a class="link" href="{{ dashboards.tidal }}" target="_blank" rel="noopener noreferrer">TIDAL developer dashboard</a>.</li>
+      <li>Redirect URI: {{ copy(redirect_uris.tidal) }}</li>
+      <li>Scopes: collection.read, collection.write, playlists.read, playlists.write and user.read.</li>
+      <li>Copy the Client ID and the Client Secret.</li>
+    </ol>
+    <form method="post" action="{{ url_for('pages.set_app', service='tidal') }}" class="fields">
+      {% call field("Client ID") %}<input name="client_id" placeholder="{{ 'saved' if tidal.configured else '' }}" required autocomplete="off">{% endcall %}
+      {% call field("Client Secret") %}<input name="client_secret" type="password" placeholder="{{ 'saved' if tidal_secret else '' }}" {{ '' if tidal_secret else 'required' }} autocomplete="off">{% endcall %}
+      <div class="actions"><button class="btn" type="submit">Save the app</button></div>
+    </form>
+    {% if tidal.configured %}
+    <div class="actions row">
+      {% if tidal.connected %}<form method="post" action="{{ url_for('pages.logout', service='tidal') }}"><button class="btn" type="submit">Log out</button></form>{% endif %}
+      <button class="btn primary" data-browser-login="tidal" data-job-button>{{ "Log in again" if tidal.connected else "Log in" }}</button>
+    </div>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

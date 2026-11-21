@@ -153,8 +153,13 @@ class Main:
     User input (urls) -> Main --> Download files & Output messages to terminal
     """
 
-    def __init__(self, config: Config):
-        """Set up the clients, the databases and an empty pipeline for one run."""
+    def __init__(self, config: Config, *, interactive: bool = True):
+        """Set up the clients, the databases and an empty pipeline for one run.
+
+        Not `interactive` (the web interface), a source without a working login
+        is an error, never a question asked in the terminal.
+        """
+        self.interactive = interactive
         # Data pipeline:
         # input URL -> (URL) -> (Pending) -> (Media) -> (Downloadable) -> audio file
         self.pending: list[Pending] = []
@@ -228,6 +233,10 @@ class Main:
             )
         if not client.logged_in:
             prompter = get_prompter(client, self.config)
+            if not prompter.has_creds() and not self.interactive:
+                raise MissingCredentialsError(
+                    f"Not logged in to {source.title()} yet: log in on the Accounts page."
+                )
             if not prompter.has_creds():
                 # Get credentials from user and log into client
                 await prompter.prompt_and_login()
@@ -267,6 +276,10 @@ class Main:
         # Never block on a prompt nobody is there to answer: streamrip is run from
         # cron and from scripts, where a hidden y/n means hanging forever
         # rather than failing.
+        if not self.interactive:
+            raise AuthenticationError(
+                f"{source.title()} needs logging in again: log in on the Accounts page."
+            ) from cause
         if not sys.stdin.isatty():
             raise AuthenticationError(
                 f"{source} needs authorising again. Re-run this from an "

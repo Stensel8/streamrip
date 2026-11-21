@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}streamrip{% endblock %}</title>
+  <link rel="icon" href="{{ url_for('static', filename='icon.svg') }}" type="image/svg+xml">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="{{ url_for('pages.dashboard') }}">
+      <img src="{{ url_for('static', filename='icon.svg') }}" alt="" width="28" height="28">streamrip
+    </a>
+    <nav>
+      {% set here = request.endpoint %}
+      <a href="{{ url_for('pages.dashboard') }}"{{ ' aria-current=page' if here == 'pages.dashboard' }}>Download</a>
+      <a href="{{ url_for('pages.playlists_page') }}"{{ ' aria-current=page' if here == 'pages.playlists_page' }}>Playlists</a>
+      <a href="{{ url_for('pages.accounts') }}"{{ ' aria-current=page' if here == 'pages.accounts' }}>Accounts</a>
+    </nav>
+  </header>
+
+  <main class="page">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}<div class="alert {{ category }} flash">{{ message }}</div>{% endfor %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

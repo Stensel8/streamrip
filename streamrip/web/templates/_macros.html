@@ -1,0 +1,31 @@
+{# A labelled field: the label small, above what it labels. #}
+{% macro field(label, class="") %}
+<label class="field {{ class }}"><span>{{ label }}</span>{{ caller() }}</label>
+{% endmacro %}
+
+{# A choice between a few options: radio buttons that look like one row of buttons. #}
+{% macro choice(label, name, options, class="") %}
+<div class="field {{ class }}"><span>{{ label }}</span>
+  <div class="choice">
+    {% for value, text in options %}
+    <label><input type="radio" name="{{ name }}" value="{{ value }}"{{ " checked" if loop.first }}><span>{{ text }}</span></label>
+    {% endfor %}
+  </div>
+</div>
+{% endmacro %}
+
+{# A select with the download sources, the logged-in ones first. #}
+{% macro source_select(name, sources, optional=False) %}
+<select name="{{ name }}"{{ " required" if not optional }}>
+  {% if optional %}<option value="">None</option>{% else %}<option value="">Choose…</option>{% endif %}
+  {% for s in sources %}<option value="{{ s.name }}">{{ s.label }} — {{ s.note }}{{ "" if s.ready else " (log in first)" }}</option>{% endfor %}
+</select>
+{% endmacro %}
+
+{# A select with the playlist services that are logged in. #}
+{% macro service_select(id, name, accounts) %}
+<select id="{{ id }}" name="{{ name }}" required>
+  <option value="">Choose…</option>
+  {% for a in accounts if a.connected %}<option value="{{ a.name }}">{{ a.label }}</option>{% endfor %}
+</select>
+{% endmacro %}
