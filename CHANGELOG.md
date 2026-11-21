@@ -6,6 +6,10 @@ upstream issues and pull requests.
 ## Unreleased
 
 - fix: a Qobuz album's description is tagged as plain text, without its HTML
+- fix: a track whose download breaks off right away is resumed, not started
+  over, and one that keeps failing at hi-res is downloaded one lossless step
+  lower (24/96 to 16/44.1, never to MP3), with a warning saying so
+  ([#122](https://opencommit.eu/Stensel8/streamrip/issues/122))
 
 ## 2.7.2
 

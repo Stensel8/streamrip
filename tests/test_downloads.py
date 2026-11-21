@@ -8,6 +8,7 @@ import threading
 import time
 import types
 from contextlib import nullcontext
+from functools import partial
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -157,6 +158,34 @@ async def test_an_interrupted_download_resumes_or_starts_over(
         # Removed, so the next attempt starts from scratch instead of resuming
         # onto the same mismatch.
         assert not path.exists()
+
+
+async def test_what_arrived_before_a_break_is_kept_and_resumed(server, tmp_path):
+    """#122: Qobuz's CDN hung up after the first byte of a track, every time.
+    That byte was lost with the chunk it was read into, so the part file
+    stayed empty and every retry was the same request from the start."""
+    asked = []
+
+    def answer(handler):
+        asked.append((handler.headers.get("Range"), handler.headers["Accept-Encoding"]))
+        if handler.headers.get("Range") is None:
+            _reply(handler, 200, PAYLOAD[:1], {"Content-Length": str(TOTAL)})
+            handler.wfile.flush()
+            handler.close_connection = True
+            handler.connection.close()
+        else:
+            _partial()(handler, 1)
+
+    url = server(answer)
+    path = tmp_path / "track.part.flac"
+    with pytest.raises(requests.exceptions.ChunkedEncodingError, match="1 bytes read"):
+        await fast_async_download(path, url, {}, _ignore)
+    assert path.read_bytes() == PAYLOAD[:1]
+
+    await fast_async_download(path, url, {}, _ignore, resume=True)
+    assert hashlib.sha256(path.read_bytes()).digest() == PAYLOAD_SHA
+    # Never compressed on the way: the Range offset is one in the file itself.
+    assert asked == [(None, "identity"), ("bytes=1-", "identity")]
 
 
 @pytest.mark.parametrize(("size", "kept"), [(1000, True), (1200, False)])
@@ -330,6 +359,8 @@ async def test_missing_ffmpeg_is_not_retried():
     track.meta.title = "T"
     track.meta.tracknumber = 1
     track.meta.info.id = "1"
+    track._download_attempts = partial(Track._download_attempts, track)
+    track._lower_quality = partial(Track._lower_quality, track)
     with (
         patch("streamrip.media.track.format_quality", return_value="FLAC"),
         patch("streamrip.media.track.asyncio.sleep", AsyncMock()) as sleep,
@@ -337,8 +368,84 @@ async def test_missing_ffmpeg_is_not_retried():
     ):
         await Track.download(track)
     assert MAX_DOWNLOAD_ATTEMPTS > 1  # or one attempt proves nothing
+    track.client.get_downloadable.assert_not_called()  # nor another quality
     assert track.downloadable.download.await_count == 1
     sleep.assert_not_called()
+
+
+def _failing_track(tmp_path, served: int, configured: int = 4, works_at: int = 2):
+    """A Track whose downloads fail at every quality above `works_at`."""
+    track = object.__new__(Track)
+    track._skip_lossy_duplicate = False
+    track.config = MagicMock()
+    track.config.session.downloads.max_connections = 1
+    track.config.session.cli.progress_bars = False
+    track.config.session.qobuz.quality = configured
+    track.download_path = tmp_path / "Song.flac"
+    track.meta = MagicMock()
+    track.meta.title = "One Love"
+    track.meta.info.id = "6763169"
+    asked = []
+
+    def file_at(tier: int):
+        """What Qobuz serves for `tier`: its best up to it, 24/96 at most."""
+        file = MagicMock()
+        file.quality, file.extension, file.url_expires = min(tier, served), "flac", True
+        file.resolved_at = time.time()
+        file.size = AsyncMock(return_value=0)
+
+        async def download(path, _callback):
+            asked.append(file.quality)
+            if file.quality > works_at:
+                raise requests.exceptions.ChunkedEncodingError("IncompleteRead")
+            path.write_bytes(b"fLaC")
+
+        file.download = download
+        return file
+
+    track.client = MagicMock(source="qobuz")
+    track.client.get_downloadable = AsyncMock(
+        side_effect=lambda _id, tier: file_at(tier)
+    )
+    track.downloadable = file_at(configured)
+    return track, asked
+
+
+@pytest.mark.parametrize(
+    ("served", "tried"),
+    [
+        # Asked for 4, Qobuz serves 24/96: straight to 16/44.1, since asking
+        # for 3 would only get the very file that failed.
+        (3, [3, 2]),
+        (4, [4, 3, 2]),  # 24/192, 24/96, 16/44.1
+    ],
+)
+async def test_a_track_that_keeps_failing_steps_down_one_lossless_quality(
+    tmp_path, caplog, served, tried
+):
+    """#122."""
+    track, asked = _failing_track(tmp_path, served)
+    with (
+        patch("streamrip.media.track.format_quality", return_value="FLAC"),
+        patch("streamrip.media.track.asyncio.sleep", AsyncMock()),
+    ):
+        await track.download()
+    assert track.download_path.read_bytes() == b"fLaC"
+    expected = [t for t in tried[:-1] for _ in range(MAX_DOWNLOAD_ATTEMPTS)]
+    assert asked == [*expected, 2]
+    assert "downloading it at 16 bit, 44.1 kHz instead" in caplog.text
+
+
+async def test_a_failing_track_never_steps_down_to_a_lossy_quality(tmp_path):
+    track, asked = _failing_track(tmp_path, served=3, works_at=1)  # MP3 only
+    with (
+        patch("streamrip.media.track.format_quality", return_value="FLAC"),
+        patch("streamrip.media.track.asyncio.sleep", AsyncMock()),
+        pytest.raises(TrackDownloadFailedError),
+    ):
+        await track.download()
+    assert set(asked) == {3, 2}  # 16/44.1 FLAC at the lowest, never MP3 (1)
+    assert not track.download_path.exists()
 
 
 # --- conversion ---------------------------------------------------------------

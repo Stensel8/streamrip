@@ -429,6 +429,7 @@ class TidalClient(Client):
             and str(item_id) not in self._no_hires
             and (downloadable := await self.hires_lane._try_hires(item_id)) is not None
         ):
+            downloadable.quality = HIRES_TIER
             return downloadable
 
         resp = await self._playback_info(item_id, quality)
@@ -451,7 +452,9 @@ class TidalClient(Client):
         # rather than the usual base64 JSON; handle it instead of silently
         # falling back to a lower quality.
         if resp.get("manifestMimeType") == DASH_MIME:
-            return self._get_downloadable_from_dash(item_id, resp)
+            downloadable = self._get_downloadable_from_dash(item_id, resp)
+            downloadable.quality = actual_tier
+            return downloadable
 
         try:
             manifest = json.loads(base64.b64decode(resp["manifest"]).decode("utf-8"))
@@ -469,13 +472,15 @@ class TidalClient(Client):
         enc_key = manifest.get("keyId")
         if manifest.get("encryptionType") == "NONE":
             enc_key = None
-        return TidalDownloadable(
+        downloadable = TidalDownloadable(
             self.session,
             url=(manifest.get("urls") or [None])[0],
             codec=manifest["codecs"],
             encryption_key=enc_key,
             restrictions=manifest.get("restrictions"),
         )
+        downloadable.quality = actual_tier
+        return downloadable
 
     def _get_downloadable_from_dash(self, track_id: str, resp: dict):
         """Build a downloadable from a Tidal MPEG-DASH manifest.
