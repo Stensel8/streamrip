@@ -186,4 +186,4 @@ which we still borrow ideas from. All three ran on
 [tehkillerbee](https://github.com/tehkillerbee). Sten Tijhuis merged csv2tidal
 with his own prototype into Music-Sync, and Music-Sync into streamrip. The
 colours of the web interface come from [daisyUI](https://daisyui.com). How this
-is licensed: [LICENSE](../LICENSE).
+is licensed: [License](../README.md#license).

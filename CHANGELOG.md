@@ -25,7 +25,7 @@ CSV files is `streamrip playlist`, and its web interface became streamrip's.
 - chore: one matching module and one CSV reader for YouTube Music, CSV lists
   and transfers, the best of both projects
 - chore: licensed AGPL-3.0 as a whole, the code from nathom/streamrip GPL-3.0
-  as well ([LICENSE](LICENSE))
+  as well ([LICENSE](LICENSE), [LICENSES/](LICENSES), [how](README.md#license))
 - fix: a config saved twice in one run (now the web interface's way) dropped a
   value set back to what it was, like a logout
 - fix: a Qobuz album's description is tagged as plain text, without its HTML

@@ -85,6 +85,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
         pillow.libs/libharfbuzz* pillow.libs/libpng16* pillow.libs/libbrotli*; \
     find /opt/streamrip -type f \( -name '*.so' -o -name '*.so.*' \) -exec strip --strip-unneeded {} +
 COPY README.md LICENSE ./
+COPY LICENSES ./LICENSES
 COPY streamrip ./streamrip
 # Reinstalled every time: uv would take streamrip's wheel from the cache as
 # long as pyproject.toml is unchanged, however much of the code changed.

@@ -209,9 +209,29 @@ and spotify_to_tidal ([credits](docs/playlists.md#credits)).
 
 ## License
 
-[AGPL-3.0](LICENSE) for the whole, the licence Music-Sync and csv2tidal came
-with; the code from nathom/streamrip is GPL-3.0 as well. [LICENSE](LICENSE)
-says how the two came together.
+streamrip is free software under the [GNU Affero General Public License,
+version 3 only](LICENSE) (AGPL-3.0-only). It grew out of two projects:
+
+- **[streamrip](https://github.com/nathom/streamrip)** by Nathan Thomas
+  (nathom) and its contributors, under the [GNU General Public License,
+  version 3 only](LICENSES/GPL-3.0-only.txt). The code that comes from there
+  stays available under that licence as well.
+- **[Music-Sync](https://github.com/Stensel8/Music-Sync)** by Sten Tijhuis,
+  under the AGPL-3.0-only. It began as
+  [csv2tidal](https://github.com/Nugman/csv2tidal) by Roland Behme, under the
+  AGPL-3.0. The playlist tools (`streamrip/sync`, `streamrip playlist`) and the
+  web interface come from it.
+
+Section 13 of both licences allows combining a work under the one with a work
+under the other and conveying them as one. streamrip is conveyed under the
+AGPL-3.0, whose section 13 (offering the source to everyone who uses it over a
+network, as `streamrip web` can be used) applies to the whole; every part keeps
+the licence it came with. The licence texts are unchanged copies of those of
+the Free Software Foundation, as their own terms require.
+
+Copyright © Nathan Thomas and the contributors of streamrip; Sten Tijhuis and
+the contributors of this fork; Roland Behme, Sten Tijhuis and the contributors
+of Music-Sync.
 
 ## Disclaimer
 

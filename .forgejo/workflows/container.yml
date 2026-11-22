@@ -20,6 +20,7 @@ on:
       - uv.lock
       - README.md
       - LICENSE
+      - LICENSES/**
       - streamrip/**
   workflow_dispatch:
     inputs:

@@ -18,6 +18,7 @@ on:
       - uv.lock
       - README.md
       - LICENSE
+      - LICENSES/**
       - streamrip/**
       - .github/workflows/container-scan.yml
   pull_request:
@@ -28,6 +29,7 @@ on:
       - uv.lock
       - README.md
       - LICENSE
+      - LICENSES/**
       - streamrip/**
       - .github/workflows/container-scan.yml
   schedule:
