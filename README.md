@@ -55,19 +55,31 @@ in your browser.
 
 ## Why streamrip exists
 
-**You have a right to own the media you pay for.** More and more of it is only
-rented: a "Buy" button that sells a licence the shop can take back, an album
-that drops out of a catalogue overnight, a library that plays only while the
-app is online and the subscription runs. Pay for it, and it is still not yours.
+**You have a right to own the media you pay for.** Most of us pay for music
+every month, and none of it is ours. Stop paying and the library is gone; an
+album leaves the catalogue and drops out of your playlists; the "offline"
+copies only play inside the app, as long as the subscription runs. A music
+subscription of about €11 a month is around €130 a year: seven or eight CDs,
+every year. Ten years of it and you own nothing, where the CDs would still be
+on the shelf.
 
-streamrip is the other way round. What you have a right to listen to, your own
-subscriptions and your own purchases, ends up as a file on your own disk: in
-the best quality the service has, properly tagged, in any player, offline, for
-as long as you like, and no company can take it back. Your playlists are yours
-too, so `streamrip playlist` moves them to wherever you want, instead of
-leaving them locked in one service. It is the idea behind the right to repair
-and the fight for digital ownership, of Louis Rossmann and the FULU Foundation
-among others: what you buy, you own.
+streamrip gives you back what you pay for. The music of your own
+subscriptions and purchases ends up as files on your own disk: in the best
+quality the service has, properly tagged, in any player, offline, for as long
+as you like, and no company can take it back. Your playlists are yours too:
+`streamrip playlist` moves them between services, or downloads them, instead
+of leaving them locked in one.
+
+It is the same idea as [Stop Killing Games](https://en.wikipedia.org/wiki/Stop_Killing_Games),
+which started in 2024 after Ubisoft made a game people had bought unplayable,
+and which 1.29 million Europeans signed; and as the fight for digital
+ownership of [Louis Rossmann](https://en.wikipedia.org/wiki/Louis_Rossmann)'s
+FULU Foundation. What you pay for, you should keep.
+
+**This is not a tool to take what you never paid for.** It is for the music
+you pay for, after you have paid for it, often many times over. Support the
+artists you listen to: buy their records, go to their shows. See the
+[Disclaimer](#disclaimer).
 
 That is also why this fork is kept up. Streaming services change their APIs,
 logins and rules without notice, and every change that breaks streamrip
