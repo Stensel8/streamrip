@@ -3,7 +3,7 @@
 All notable changes in this fork of [nathom/streamrip](https://github.com/nathom/streamrip). Numbers can refer to
 upstream issues and pull requests.
 
-## Unreleased
+## 2.7.3
 
 **Music-Sync is part of streamrip.** Moving playlists between Spotify, Tidal and
 CSV files is `streamrip playlist`, and its web interface became streamrip's.
