@@ -26,6 +26,7 @@ CSV files is `streamrip playlist`, and its web interface became streamrip's.
   and transfers, the best of both projects
 - chore: licensed AGPL-3.0 as a whole, the code from nathom/streamrip GPL-3.0
   as well ([LICENSE](LICENSE), [LICENSES/](LICENSES), [how](README.md#license))
+- docs: why streamrip exists: you have a right to own the media you pay for
 - fix: a config saved twice in one run (now the web interface's way) dropped a
   value set back to what it was, like a logout
 - fix: a Qobuz album's description is tagged as plain text, without its HTML

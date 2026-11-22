@@ -53,6 +53,26 @@ in your browser.
 - A web interface for all of it, logins included: `streamrip web`
   ([details](docs/web.md))
 
+## Why streamrip exists
+
+**You have a right to own the media you pay for.** More and more of it is only
+rented: a "Buy" button that sells a licence the shop can take back, an album
+that drops out of a catalogue overnight, a library that plays only while the
+app is online and the subscription runs. Pay for it, and it is still not yours.
+
+streamrip is the other way round. What you have a right to listen to, your own
+subscriptions and your own purchases, ends up as a file on your own disk: in
+the best quality the service has, properly tagged, in any player, offline, for
+as long as you like, and no company can take it back. Your playlists are yours
+too, so `streamrip playlist` moves them to wherever you want, instead of
+leaving them locked in one service. It is the idea behind the right to repair
+and the fight for digital ownership, of Louis Rossmann and the FULU Foundation
+among others: what you buy, you own.
+
+That is also why this fork is kept up. Streaming services change their APIs,
+logins and rules without notice, and every change that breaks streamrip
+quietly takes that ownership away again. Keeping it working is the point.
+
 ## Install
 
 ### With Python
