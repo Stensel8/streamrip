@@ -27,6 +27,7 @@ streamrip playlist transfer spotify tidal --playlist "Road trip"
 streamrip playlist download spotify --playlist "Road trip" --source qobuz   # lossless, from Qobuz
 streamrip playlist export spotify --liked -o liked.csv
 streamrip playlist export tidal --all -o backup/          # liked songs and every playlist
+streamrip playlist export tidal --all --format m3u8 --library ~/Music -o ~/Music/Playlists
 streamrip playlist import tidal liked.csv --playlist "From CSV"
 streamrip playlist import tidal albums.csv --albums       # artist,album per row, to your favourite albums
 
@@ -51,6 +52,19 @@ audio is encrypted, so a Spotify link downloads YouTube Music's AAC (see
 [Spotify](spotify.md)). This reads the list from Spotify and finds every track
 on Qobuz, Tidal or Deezer instead, the way [`streamrip csv`](csv-lists.md)
 does. Each list goes in a folder of its own.
+
+## M3U8 playlists for your own library
+
+`--format m3u8` writes playlists a player or server reads: Navidrome, Jellyfin,
+Music Assistant, or a plain player on a folder of music, such as the one
+streamrip downloads to. With `--library DIR` each track of a playlist is found
+among the audio files under `DIR` by its ISRC (ripping tools rename files, but
+not that), or else by title, artist and length, and written as the path of
+that file, relative to the playlist (`--absolute-paths` for the other kind).
+When one recording is in the library more than once, the oldest release is
+taken (`-v` says which). What the library lacks is left out, and
+`--unmatched FILE` lists it in a CSV, to download it with `streamrip csv` say.
+Without `--library` a playlist only describes its tracks.
 
 ## Setting up Spotify and Tidal
 

@@ -34,6 +34,7 @@ lazy from ..sync.engine import (
     select_tracks,
 )
 lazy from ..sync.errors import ProviderError, SyncError
+lazy from ..sync.m3u import Library, write_m3u8
 lazy from ..sync.models import Track
 lazy from ..sync.providers.base import Provider
 lazy from ..sync.services import (
@@ -461,32 +462,109 @@ def list_playlists(ctx, service):
     "-o",
     "--output",
     type=click.Path(path_type=Path),
-    help="The CSV file (a folder with --all).",
+    help="The file (a folder with --all).",
+)
+@click.option(
+    "--format",
+    "file_format",
+    type=click.Choice(["csv", "m3u8"]),
+    default="csv",
+    show_default=True,
+    help="CSV, or an M3U8 playlist for a player or server.",
+)
+@click.option(
+    "--library",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    help="m3u8: the music folder whose files the playlists point at.",
+)
+@click.option(
+    "--absolute-paths",
+    is_flag=True,
+    help="m3u8: absolute paths, not relative to the playlist file.",
+)
+@click.option(
+    "--unmatched",
+    type=click.Path(dir_okay=False, path_type=Path),
+    help="m3u8: write the tracks not in the library to this CSV.",
 )
 @click.option("-q", "--quiet", is_flag=True, help="No progress output.")
 @click.pass_context
 @_explained
-def export(ctx, service, liked, playlist, everything, output, quiet):
-    """Save liked songs or playlists as CSV files.
+def export(
+    ctx,
+    service,
+    liked,
+    playlist,
+    everything,
+    output,
+    file_format,
+    library,
+    absolute_paths,
+    unmatched,
+    quiet,
+):
+    """Save liked songs or playlists as CSV or M3U8 files.
 
-    The files read back in with `streamrip playlist import` and `streamrip csv`,
-    and in Exportify's and most other tools' format.
+    A CSV reads back in with `streamrip playlist import` and `streamrip csv`,
+    and in Exportify's and most other tools' format. An M3U8 playlist is for a
+    player or server (Navidrome, Jellyfin, Music Assistant, ...): with
+    --library each entry is a file of your music folder, found by its ISRC or
+    else by title, artist and length; what the folder lacks is left out.
+
+    \b
+        streamrip playlist export tidal --all --format m3u8 --library ~/Music -o ~/Music/Playlists
     """
     _selection(liked, playlist, everything)
+    m3u8 = file_format == "m3u8"
+    if not m3u8 and (library or absolute_paths or unmatched):
+        raise click.UsageError(
+            "--library, --absolute-paths and --unmatched go with --format m3u8."
+        )
     provider = _services(ctx).provider(service)
     selected = _select(provider, liked, playlist, _progress(quiet))
-    if everything:  # one CSV per playlist, in a folder
+    music = None
+    if m3u8 and library:
+        if not quiet:
+            console.print(
+                f"Reading the tags of the music in {library}", highlight=False
+            )
+        music = Library.scan(library)
+        console.print(
+            f"{plural(music.size, 'audio file')} in {library}", highlight=False
+        )
+    elif m3u8:
+        _warn(
+            "No --library: the playlists only describe the tracks, without files a "
+            "player can play."
+        )
+
+    def write(path: Path, tracks: list[Track]) -> str:
+        if not m3u8:
+            return f"{write_tracks(path, tracks)} tracks"
+        written, left_out = write_m3u8(path, tracks, music, absolute=absolute_paths)
+        missing.extend(left_out)
+        return f"{written} tracks" + (
+            f", {len(left_out)} not in the library" if left_out else ""
+        )
+
+    missing: list[Track] = []
+    suffix = ".m3u8" if m3u8 else ".csv"
+    if everything:  # one file per playlist, in a folder
         folder = output or Path("streamrip-export") / service
         taken: set[str] = set()
         for name, tracks in selected:
-            path = folder / f"{free_name(slug(name), taken)}.csv"
-            console.print(
-                f"{write_tracks(path, tracks):>5} tracks -> {path}", highlight=False
-            )
+            path = folder / f"{free_name(slug(name), taken)}{suffix}"
+            console.print(f"{write(path, tracks):>5} -> {path}", highlight=False)
     else:
         ((name, tracks),) = selected
-        path = output or Path(f"{slug(name)}.csv")
-        console.print(f"{write_tracks(path, tracks)} tracks -> {path}", highlight=False)
+        path = output or Path(f"{slug(name)}{suffix}")
+        console.print(f"{write(path, tracks)} -> {path}", highlight=False)
+    if missing and unmatched:
+        write_tracks(unmatched, missing)
+        console.print(
+            f"{plural(len(missing), 'track')} not in the library written to {unmatched}",
+            highlight=False,
+        )
 
 
 @playlist.command("import")

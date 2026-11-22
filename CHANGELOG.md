@@ -12,6 +12,10 @@ CSV files is `streamrip playlist`, and its web interface became streamrip's.
   Spotify and Tidal, exports them to CSV and imports CSV files, as Music-Sync
   did ([docs/playlists.md](docs/playlists.md)); `streamrip playlist migrate`
   takes Music-Sync's apps and logins
+- feat: `streamrip playlist export --format m3u8 --library DIR` writes M3U8
+  playlists whose entries are the files of your own music folder, found by
+  ISRC, for Navidrome, Jellyfin and the like
+  ([Music-Sync#11](https://github.com/Stensel8/Music-Sync/issues/11))
 - feat: `streamrip playlist download` reads a Spotify or Tidal list and
   downloads it from the source you pick: a Spotify playlist in lossless from
   Qobuz, Tidal or Deezer
