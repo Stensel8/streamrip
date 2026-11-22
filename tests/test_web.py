@@ -17,6 +17,7 @@ from playlist_support import ISRC_A, FakeProvider, FakeServices, track
 
 from streamrip import progress
 from streamrip.config import Config
+from streamrip.rip.spotify_login import SpotifyLoginError
 from streamrip.sync.auth import Token
 from streamrip.sync.csvio import parse_csv
 from streamrip.sync.engine import Miss, Step
@@ -323,6 +324,24 @@ def test_a_csv_list_is_searched_on_the_chosen_source(client, runner):
     assert runner.added == [("csv", "mix", ["Song A"], "qobuz", "deezer")]
 
 
+def test_an_uploaded_file_is_named_after_its_name_alone(client, runner):
+    """A browser may send the whole path of the file, of the folders too."""
+    response = client.post(
+        "/download/csv",
+        data={
+            "file": (
+                io.BytesIO(b"Artist A,Song A\n"),
+                "old/browsers/../send/paths/mix.csv",
+            ),
+            "source": "qobuz",
+        },
+        headers=JSON,
+        content_type="multipart/form-data",
+    )
+    wait_for(client, started(response))
+    assert runner.added[0][1] == "mix"
+
+
 def test_a_playlist_is_read_and_downloaded_from_another_source(client, runner):
     response = client.post(
         "/playlists/spotify/download", json={"source": "tidal"}, headers=JSON
@@ -381,6 +400,58 @@ def test_a_download_shows_its_tracks_and_log(services, monkeypatch):
     assert progress._observer is None  # the page stops following once it is over
 
 
+def test_nothing_new_to_download_is_no_failure(services, monkeypatch):
+    """Everything already downloaded: the run is over, not broken."""
+
+    class FakeMain:
+        def __init__(self, config, *, interactive):
+            self.media = []
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_):
+            pass
+
+        async def resolve(self):
+            pass
+
+    async def add(_main):
+        pass
+
+    monkeypatch.setattr(runner_module, "Main", FakeMain)
+    job = Job("id", "download", "x")
+    assert (
+        Runner(services.config).download(job, add)
+        == "Nothing new to download; the log says why."
+    )
+
+
+def test_a_refused_login_leaves_the_one_before(services, monkeypatch):
+    class RefusedError(Exception):
+        pass
+
+    class Refusing:
+        def __init__(self, config):
+            pass
+
+        async def login(self):
+            raise RefusedError("Qobuz did not accept the token")
+
+        async def close(self):
+            pass
+
+    monkeypatch.setattr(runner_module, "QobuzClient", Refusing)
+    qobuz = services.config.session.qobuz
+    qobuz.user_id, qobuz.auth_token = "old-id", "old-token"
+    with pytest.raises(RefusedError):
+        Runner(services.config).login_qobuz("new-id", "new-token")
+    assert (qobuz.user_id, qobuz.auth_token) == ("old-id", "old-token")
+    assert (
+        services.config.session.qobuz is qobuz
+    )  # the same section a download may hold
+
+
 def test_the_observer_follows_titles_and_ignores_lookups():
     job = Job("id", "download", "x")
     observer = JobObserver(job)
@@ -427,15 +498,10 @@ def test_a_browser_login_takes_a_pasted_address(client, services, monkeypatch):
     """The browser is on another device: the redirect cannot arrive, the address is pasted."""
 
     def wait_for_redirect(_uri, _timeout, stop):
-        stop.wait(5)
-        raise runner_module.AuthenticationError("Timed out")
+        stop.wait(5)  # until the address is pasted
+        raise SpotifyLoginError("Timed out waiting for the login to finish.")
 
     monkeypatch.setattr("streamrip.web.logins._wait_for_redirect", wait_for_redirect)
-    monkeypatch.setattr(
-        "streamrip.web.logins.SpotifyLoginError",
-        runner_module.AuthenticationError,
-        raising=True,
-    )
     job_id = started(client.post("/accounts/spotify/login", headers=JSON))
     deadline = time.monotonic() + 5
     while not (job := client.get(f"/jobs/{job_id}", headers=JSON).get_json())["link"]:

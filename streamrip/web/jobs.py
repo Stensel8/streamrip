@@ -21,14 +21,16 @@ logger = logging.getLogger("streamrip")
 
 # The steps each kind of job goes through, in order. The page shows them as a
 # row of numbered steps.
-PHASES: dict[str, tuple[str, ...]] = {
-    "export": ("read",),
-    "import": ("check", "match", "add"),
-    "transfer": ("read", "check", "match", "add"),
-    "download": ("find", "download"),
-    "playlist-download": ("read", "find", "download"),
-    "login": ("login",),
-}
+PHASES = frozendict(
+    {
+        "export": ("read",),
+        "import": ("check", "match", "add"),
+        "transfer": ("read", "check", "match", "add"),
+        "download": ("find", "download"),
+        "playlist-download": ("read", "find", "download"),
+        "login": ("login",),
+    }
+)
 SHOWN_MISSES = 50  # tracks not found that the page lists; the CSV has them all
 LOG_LINES = 200  # of a download's log, the last this many
 
@@ -228,8 +230,3 @@ class JobManager:
     def get(self, job_id: str) -> Job | None:
         with self._lock:
             return self._jobs.get(job_id)
-
-    def running(self) -> list[Job]:
-        """The jobs that have not ended yet, oldest first."""
-        with self._lock:
-            return [job for job in self._jobs.values() if job.status == "running"]

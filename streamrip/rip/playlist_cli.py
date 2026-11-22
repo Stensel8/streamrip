@@ -21,7 +21,6 @@ import click
 lazy from ..client.spotify import SpotifyClient
 lazy from ..config import Config
 lazy from ..console import console, err_console, plural
-lazy from ..exceptions import AuthenticationError
 lazy from ..sync.auth import pkce_pair
 lazy from ..sync.csvio import read_tracks, slug, write_tracks
 lazy from ..sync.engine import (
@@ -45,7 +44,7 @@ lazy from ..sync.services import (
     migrate_music_sync,
     music_sync_dir,
 )
-lazy from .cli import _ask_source, main_session
+lazy from .cli import _ask_source, coro, main_session
 lazy from .interactive import Prompt
 lazy from .prompter import SpotifyPrompter, has_screen, launch
 lazy from .spotify_login import capture_code, code_from_redirect_url
@@ -356,10 +355,9 @@ def login(ctx, service):
     """
     services = _services(ctx)
     if service == "spotify":
-        try:
-            asyncio.run(_spotify_login(services.config))
-        except AuthenticationError as e:
-            raise click.ClickException(str(e)) from e
+        # As every command that logs in: Ctrl-C stops it cleanly, and a
+        # refused login is a message, not a traceback.
+        coro(_spotify_login)(services.config)
         services.config.save_file()
     else:
         login_tidal_api(services)
@@ -667,7 +665,9 @@ def download(ctx, service, liked, playlist, everything, source, fallback_source,
                 await main.resolve_csv(name, tracks, source, fallback_source)
             await main.rip()
 
-    asyncio.run(rip())
+    # The download commands' own handling: Ctrl-C and SIGTERM stop it cleanly,
+    # a missing ffmpeg or a lapsed login is a message and exit code 1.
+    coro(rip)()
 
 
 # --- checking the setup -----------------------------------------------------------

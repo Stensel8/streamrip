@@ -2,6 +2,7 @@
 playlist tools, and the logins of every service."""
 
 import io
+from pathlib import PureWindowsPath
 from urllib.parse import quote
 lazy from collections.abc import Callable
 
@@ -40,20 +41,24 @@ playlist_pages = Blueprint(
     "playlist", __name__, url_prefix=f"/playlists/<any({','.join(SERVICES)}):service>"
 )
 
-SOURCE_LABELS = {
-    "qobuz": "Qobuz",
-    "tidal": "Tidal",
-    "deezer": "Deezer",
-    "soundcloud": "SoundCloud",
-    "spotify": "Spotify",
-}
-SOURCE_NOTES = {
-    "qobuz": "FLAC up to 24/192",
-    "tidal": "FLAC up to 24/192",
-    "deezer": "FLAC 16/44.1",
-    "soundcloud": "MP3 or AAC, no login",
-    "spotify": "AAC from YouTube Music",
-}
+SOURCE_LABELS = frozendict(
+    {
+        "qobuz": "Qobuz",
+        "tidal": "Tidal",
+        "deezer": "Deezer",
+        "soundcloud": "SoundCloud",
+        "spotify": "Spotify",
+    }
+)
+SOURCE_NOTES = frozendict(
+    {
+        "qobuz": "FLAC up to 24/192",
+        "tidal": "FLAC up to 24/192",
+        "deezer": "FLAC 16/44.1",
+        "soundcloud": "MP3 or AAC, no login",
+        "spotify": "AAC from YouTube Music",
+    }
+)
 
 
 def _services() -> Services:
@@ -118,7 +123,8 @@ def _uploaded_tracks() -> tuple[str, list[Track]]:
     tracks = parse_csv(decode(upload.stream.read(), upload.filename), upload.filename)
     if not tracks:
         raise CsvError("There are no tracks in this file.")
-    return upload.filename.rsplit(".", 1)[0] or "CSV list", tracks
+    # Only the name: a browser may send a whole path, with either separator.
+    return PureWindowsPath(upload.filename).stem or "CSV list", tracks
 
 
 def _accounts() -> list[dict]:
@@ -480,6 +486,9 @@ def browser_login(service: str) -> tuple[Response, int]:
     services = _services()
     login = BrowserLogin(services.oauth(service), services.store)
     logins = current_app.extensions["logins"]
+    # One login at a time: one given up on would keep the port for minutes.
+    for earlier in list(logins.values()):
+        earlier.cancel()
 
     def work(job: Job) -> str:
         logins[job.id] = login

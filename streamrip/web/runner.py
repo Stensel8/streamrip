@@ -13,9 +13,8 @@ lazy from collections.abc import Awaitable, Callable, Coroutine
 lazy from typing import Any
 
 from .. import progress
-from ..client import DeezerClient, QobuzClient, SpotifyClient, TidalClient
+from ..client import DeezerClient, QobuzClient, TidalClient
 from ..console import plural
-from ..exceptions import AuthenticationError, MissingCredentialsError
 from ..metadata import SearchResults
 from ..rip.main import Main
 from ..rip.prompter import DeezerPrompter, QobuzPrompter, TidalPrompter
@@ -95,9 +94,8 @@ class Runner:
                 await add(main)
                 await main.resolve()
                 if not main.media:
-                    raise MissingCredentialsError(
-                        "Nothing to download: see the log below for why."
-                    )
+                    # Already downloaded, or not found: the log says which.
+                    return "Nothing new to download; the log says why."
                 job.enter("download", "Downloading")
                 await main.rip()
                 d = main.database
@@ -157,24 +155,27 @@ class Runner:
 
     def login_qobuz(self, user_id: str, token: str):
         """Log in to Qobuz with a user id and token, and keep them if they work."""
-        self.call(self._login(QobuzClient, QobuzPrompter, qobuz=(user_id, token)))
+        values = {"user_id": user_id, "auth_token": token}
+        self.call(self._login(QobuzClient, QobuzPrompter, "qobuz", values))
 
     def login_deezer(self, arl: str):
         """Log in to Deezer with an ARL cookie, and keep it if it works."""
-        self.call(self._login(DeezerClient, DeezerPrompter, deezer=arl))
+        self.call(self._login(DeezerClient, DeezerPrompter, "deezer", {"arl": arl}))
 
-    async def _login(self, client_type, prompter_type, **given):
-        c = self.config.session
-        before = (c.qobuz.user_id, c.qobuz.auth_token, c.deezer.arl)
+    async def _login(self, client_type, prompter_type, section: str, values: dict):
+        """Try a login in the session's [section], and save it if the source
+        takes it. One it refuses leaves the old one in place: the section
+        itself stays the same object, which a running download may hold."""
+        c = getattr(self.config.session, section)
+        before = {name: getattr(c, name) for name in values}
+        for name, value in values.items():
+            setattr(c, name, value)
         client = client_type(self.config)
         try:
-            if "qobuz" in given:
-                c.qobuz.user_id, c.qobuz.auth_token = given["qobuz"]
-            else:
-                c.deezer.arl = given["deezer"]
             await client.login()
         except Exception:
-            c.qobuz.user_id, c.qobuz.auth_token, c.deezer.arl = before
+            for name, value in before.items():
+                setattr(c, name, value)
             raise
         finally:
             await client.close()
@@ -208,9 +209,3 @@ class Runner:
         job.enter("login", "Asking Tidal for a login link")
         self.call(log_in())
         return "Logged in to Tidal."
-
-    def spotify_client(self) -> SpotifyClient:
-        return SpotifyClient(self.config)
-
-
-EXPLAINED = (AuthenticationError, MissingCredentialsError)

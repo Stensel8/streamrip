@@ -6,8 +6,10 @@ work (the browser is on another device), the page takes the address the
 browser ended up on instead.
 """
 
+import itertools
 import secrets
 import threading
+import time
 
 from ..rip.spotify_login import (
     LOGIN_TIMEOUT,
@@ -19,6 +21,9 @@ from ..rip.spotify_login import (
 from ..sync.auth import pkce_pair
 lazy from ..sync.auth import ConfigTokenStore, OAuthClient
 lazy from .jobs import Job
+
+# Tries to take the login port, half a second apart.
+BIND_ATTEMPTS = 6
 
 
 class BrowserLogin:
@@ -44,9 +49,7 @@ class BrowserLogin:
         job.link, job.pasteable = self.url, True
         params: dict[str, str] = {}
         try:
-            params = _wait_for_redirect(
-                self.oauth.redirect_uri, LOGIN_TIMEOUT, self._stop
-            )
+            params = self._wait()
         except SpotifyLoginError as e:
             if self._pasted is None and "Cannot listen" in str(e):
                 # Something else has the port (a login on the command line):
@@ -59,6 +62,20 @@ class BrowserLogin:
         job.text = f"Finishing the {label} login"
         self.store.save(self.oauth.name, self.oauth.exchange(code, self.verifier))
         return f"Logged in to {label}."
+
+    def _wait(self) -> dict[str, str]:
+        """Listen for the browser. A login given up on a moment ago may still
+        hold the port for a second: try again briefly before giving up."""
+        for attempt in itertools.count(1):
+            try:
+                return _wait_for_redirect(
+                    self.oauth.redirect_uri, LOGIN_TIMEOUT, self._stop
+                )
+            except SpotifyLoginError as e:
+                if "Cannot listen" not in str(e) or attempt >= BIND_ATTEMPTS:
+                    raise
+            time.sleep(0.5)
+        raise AssertionError  # itertools.count() never ends
 
     def cancel(self):
         self._stop.set()

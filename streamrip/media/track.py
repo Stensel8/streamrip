@@ -142,8 +142,7 @@ class Track(Media):
                         error,
                     )
                     raise
-                served = self.downloadable.quality
-                tier, self.downloadable = lower
+                served, tier, self.downloadable = lower
                 logger.warning(
                     "Persistent error downloading track '%s' at %s, downloading it "
                     "at %s instead: %s",
@@ -162,8 +161,9 @@ class Track(Media):
         section = getattr(self.config.session, self.client.source, None)
         return getattr(section, "quality", None)
 
-    async def _lower_quality(self, cause) -> tuple[int, Downloadable] | None:
-        """The next lossless quality down and its file, when there is one.
+    async def _lower_quality(self, cause) -> tuple[int, int, Downloadable] | None:
+        """The quality that failed, the next lossless one down and its file,
+        when there is one.
 
         Never lossy: a FLAC that fails is not replaced with an MP3 or AAC.
         A quality the source answers with the very file that failed (Qobuz
@@ -193,7 +193,7 @@ class Track(Media):
             if fresh.quality is not None and fresh.quality >= served:
                 continue
             fresh.resolved_at = time.time()
-            return tier, fresh
+            return served, tier, fresh
         return None
 
     async def _download_attempts(self, tier: int | None):
@@ -227,9 +227,14 @@ class Track(Media):
                     )
                 ):
                     try:
+                        if tier is None:
+                            tier_now = getattr(
+                                self.config.session, self.client.source
+                            ).quality
+                        else:
+                            tier_now = tier
                         fresh = await self.client.get_downloadable(
-                            self.meta.info.id,
-                            self._configured_tier() if tier is None else tier,
+                            self.meta.info.id, tier_now
                         )
                         fresh.resolved_at = time.time()
                         self.downloadable = fresh
@@ -530,7 +535,7 @@ async def fetch_track_meta(
     try:
         resp = await client.get_metadata(track_id, "track")
         album = album or AlbumMetadata.from_track_resp(resp, source)
-        meta = album and TrackMetadata.from_resp(album, source, resp)
+        meta = TrackMetadata.from_resp(album, source, resp) if album else None
         # Disc numbers become directory components in both album and single
         # downloads. Reject malformed provider values before any filesystem I/O.
         if meta is not None and (

@@ -369,7 +369,7 @@ def test_download_hands_each_list_to_the_downloads(tmp_path, monkeypatch, capsys
         async def __aexit__(self, *_):
             pass
 
-    monkeypatch.setattr("streamrip.rip.cli.main_session", Session)
+    monkeypatch.setattr(playlist_cli, "main_session", Session)
     args = ["download", "spotify", "--all", "-q", "--source", "qobuz", "-fs", "deezer"]
     code, _, _ = run(
         tmp_path, monkeypatch, capsys, args, FakeServices(tmp_path, spotify=spotify)
@@ -480,3 +480,30 @@ def test_a_spotify_login_of_another_app_is_not_taken(tmp_path, monkeypatch, caps
     assert code == 0
     assert "Nothing to take" in stdout
     assert Config(tmp_path / "config.toml").file.spotify.refresh_token == ""
+
+
+def test_a_download_without_ffmpeg_is_a_message_not_a_traceback(
+    tmp_path, monkeypatch, capsys
+):
+    """As every download command: through `coro`, which explains it."""
+    from streamrip.exceptions import FFmpegNotFoundError
+
+    class NoFFmpeg:
+        def __init__(self, _ctx):
+            pass
+
+        async def __aenter__(self):
+            raise FFmpegNotFoundError("No ffmpeg installation found")
+
+        async def __aexit__(self, *_):
+            pass
+
+    monkeypatch.setattr(playlist_cli, "main_session", NoFFmpeg)
+    spotify = FakeProvider("spotify", liked=[track("Song A")])
+    args = ["download", "spotify", "--liked", "-q", "--source", "qobuz"]
+    code, stdout, stderr = run(
+        tmp_path, monkeypatch, capsys, args, FakeServices(tmp_path, spotify=spotify)
+    )
+    assert code == 1
+    assert "No ffmpeg installation found" in stdout + stderr
+    assert "Traceback" not in stdout + stderr
