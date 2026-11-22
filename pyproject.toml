@@ -40,7 +40,7 @@ dependencies = [
   "yt-dlp-ejs==0.8.0",
   "websockets>=17",
   # The CA bundle every connection is checked against, on every system alike.
-  "certifi>=2026.10.19",
+  "certifi>=2026.11.20",
 ]
 
 [project.optional-dependencies]
@@ -65,12 +65,12 @@ Upstream = "https://github.com/nathom/streamrip"
 
 [dependency-groups]
 dev = [
-  "ruff==0.17.5",
+  "ruff==0.17.6",
   "pytest==9.2.0",
   "pytest-mock==3.17.0",
   "pytest-asyncio==1.5.0",
   # Fakes the Spotify and Tidal APIs of the playlist tools.
-  "responses>=0.25",
+  "responses>=0.26",
 ]
 
 [tool.pytest.ini_options]
