@@ -65,10 +65,20 @@ on the shelf.
 
 streamrip gives you back what you pay for. The music of your own
 subscriptions and purchases ends up as files on your own disk: in the best
-quality the service has, properly tagged, in any player, offline, for as long
-as you like, and no company can take it back. Your playlists are yours too:
-`streamrip playlist` moves them between services, or downloads them, instead
-of leaving them locked in one.
+quality the service has, properly tagged, offline, for as long as you like,
+and no company can take it back.
+
+**And you are never stuck with one company again.** streamrip is built for
+compatibility and interoperability: it writes open, standard formats (FLAC,
+M4A, MP3, with the tags every player reads, and CSV for lists) that work in
+any player, on a NAS, in Jellyfin or Plex, in the car, today and in twenty
+years. Your playlists move with you: `streamrip playlist` takes them from
+Spotify to Tidal and back, into a CSV, or onto your disk. A service raises
+its prices, drops your favourite album or treats you badly? Take your music
+and your playlists, and go wherever you like. In the EU, taking the data you
+gave a service to another one is even your right
+([GDPR, article 20](https://gdpr-info.eu/art-20-gdpr/)); streamrip does it
+for your playlists in one command.
 
 It is the same idea as [Stop Killing Games](https://en.wikipedia.org/wiki/Stop_Killing_Games),
 which started in 2024 after Ubisoft made a game people had bought unplayable,
@@ -83,7 +93,8 @@ artists you listen to: buy their records, go to their shows. See the
 
 That is also why this fork is kept up. Streaming services change their APIs,
 logins and rules without notice, and every change that breaks streamrip
-quietly takes that ownership away again. Keeping it working is the point.
+quietly takes that ownership and that freedom away again. Keeping it working
+is the point.
 
 ## Install
 
