@@ -81,11 +81,14 @@ gave a service to another one is even your right
 for your playlists in one command.
 
 There was no good, universal tool for this. The services that move playlists
-(Soundiiz, TuneMyMusic and the like) run online, often charge for more than a
-few lists, get access to your accounts, and move only the lists, never the
-music. streamrip is one free, open tool on your own computer for all of it:
-your music and your playlists, between the services and onto your own disk,
-back and forth, as often as you like.
+(Soundiiz, TuneMyMusic and the like) are closed-source and commercial: they
+run on their servers, often charge for more than a few lists, get access to
+your accounts, and move only the lists, never the music. streamrip is free and
+open-source software ([AGPL-3.0](#license)), on your own computer: one tool
+for your music and your playlists, between the services and onto your own
+disk, back and forth, as often as you like. No account with us, no
+subscription to yet another service, and code anyone can read, check and
+improve.
 
 It is the same idea as [Stop Killing Games](https://en.wikipedia.org/wiki/Stop_Killing_Games),
 which started in 2024 after Ubisoft made a game people had bought unplayable,
