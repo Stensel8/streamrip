@@ -178,18 +178,18 @@ semicolons or tabs. A file without a header row is read as `artist,title`. With
 ## Credits
 
 The playlist tools come from Music-Sync, which started as
-[csv2tidal](https://github.com/Nugman/csv2tidal), a small script by Roland Behme
-([Nugman](https://github.com/Nugman)) that added a list of albums to your Tidal
+[csv2tidal](https://github.com/Nugman/csv2tidal), a small script by
+[Nugman](https://github.com/Nugman) that added a list of albums to your Tidal
 favourites. He got the idea from
 [a gist by RZetko](https://gist.github.com/RZetko/71801a20188e842ef03bed3b6d7a297f)
 and the login code from [spotify_to_tidal](https://github.com/spotify2tidal/spotify_to_tidal)
-by [Tim Rae](https://github.com/timrae) and
+by [timrae](https://github.com/timrae) and
 [its contributors](https://github.com/spotify2tidal/spotify_to_tidal/graphs/contributors).
 We still borrow ideas from it. All three were built on
 [python-tidal](https://github.com/EbbLabs/python-tidal), started by
-[Thomas Amland](https://github.com/tamland) and kept alive by
+[tamland](https://github.com/tamland) and kept alive by
 [morguldir](https://github.com/morguldir) and
-[tehkillerbee](https://github.com/tehkillerbee). Sten Tijhuis combined csv2tidal
+[tehkillerbee](https://github.com/tehkillerbee). [Stensel8](https://github.com/Stensel8) combined csv2tidal
 with his own prototype into Music-Sync, and later merged Music-Sync into
 streamrip. The colours of the web interface come from
 [daisyUI](https://daisyui.com). For the licence, see

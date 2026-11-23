@@ -251,7 +251,7 @@ streamrip was inspired by [rip](https://github.com/nathom/streamrip),
 and [scdl](https://github.com/flyingrub/scdl). Lyrics come from
 [LRCLIB](https://lrclib.net). The Spotify support borrows from three projects
 ([credits](docs/spotify.md#credits)). The playlist tools and the web interface
-come from Music-Sync, which grew out of Roland Behme's csv2tidal and borrows
+come from Music-Sync, which grew out of csv2tidal by Nugman and borrows
 from spotify_to_tidal ([credits](docs/playlists.md#credits)).
 
 ## License
@@ -259,13 +259,13 @@ from spotify_to_tidal ([credits](docs/playlists.md#credits)).
 streamrip is free software under the [GNU Affero General Public License,
 version 3 only](LICENSE) (AGPL-3.0-only). It grew out of two projects:
 
-- **[streamrip](https://github.com/nathom/streamrip)** by Nathan Thomas
-  (nathom) and its contributors, under the [GNU General Public License,
-  version 3 only](LICENSES/GPL-3.0-only.txt). The code that comes from there
+- **[streamrip](https://github.com/nathom/streamrip)** by nathom and its
+  contributors, under the [GNU General Public License, version 3
+  only](LICENSES/GPL-3.0-only.txt). The code that comes from there
   stays available under that licence as well.
-- **[Music-Sync](https://github.com/Stensel8/Music-Sync)** by Sten Tijhuis,
+- **[Music-Sync](https://github.com/Stensel8/Music-Sync)** by Stensel8,
   under the AGPL-3.0-only. It began as
-  [csv2tidal](https://github.com/Nugman/csv2tidal) by Roland Behme, under the
+  [csv2tidal](https://github.com/Nugman/csv2tidal) by Nugman, under the
   AGPL-3.0. The playlist tools (`streamrip/sync`, `streamrip playlist`) and the
   web interface come from it.
 
@@ -276,9 +276,8 @@ network, which `streamrip web` makes possible) applies to the whole. Every part
 keeps the licence it came with. The licence texts are unchanged copies of those
 of the Free Software Foundation, as their own terms require.
 
-Copyright © Nathan Thomas and the contributors of streamrip; Sten Tijhuis and
-the contributors of this fork; Roland Behme, Sten Tijhuis and the contributors
-of Music-Sync.
+Copyright © nathom and the contributors of streamrip; Stensel8 and the
+contributors of this fork; Nugman, Stensel8 and the contributors of Music-Sync.
 
 ## Disclaimer
 
