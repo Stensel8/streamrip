@@ -6,6 +6,7 @@ import subprocess
 import sys
 import time
 from abc import ABC, abstractmethod
+lazy from collections.abc import Callable
 
 import click
 
@@ -221,6 +222,9 @@ class QobuzPrompter(CredentialPrompter):
 
 class TidalPrompter(CredentialPrompter):
     client: TidalClient
+    # Where the login link goes, with the minutes it lasts and which login it
+    # is: None prints it and opens a browser; the web interface shows it.
+    show_link: Callable[[str, int, str], None] | None = None
 
     def has_creds(self) -> bool:
         return all(lane.tokens.access_token for lane in self.client.lanes())
@@ -239,20 +243,24 @@ class TidalPrompter(CredentialPrompter):
 
     async def _device_login(self, lane: TidalClient):
         """Walk the user through Tidal's device login flow for one lane."""
-        if len(self.client.lanes()) > 1:
+        which = "CD quality" if lane is self.client else "hi-res"
+        if len(self.client.lanes()) > 1 and self.show_link is None:
             console.print(
                 "Tidal serves hi-res and CD quality through two separate logins. "
-                f"This one is for {'CD quality' if lane is self.client else 'hi-res'}."
+                f"This one is for {which}."
             )
         device_code, uri, expires_in = await lane._get_device_code()
         login_link = uri if uri.startswith("http") else f"https://{uri}"
 
         # Tidal says how long the link stays valid (5 minutes, lately).
-        console.print(
-            f"Go to [blue underline]{login_link}[/blue underline] to log into Tidal "
-            f"within {expires_in // 60} minutes.",
-        )
-        _open_login_link(login_link)
+        if self.show_link is not None:
+            self.show_link(login_link, expires_in // 60, which)
+        else:
+            console.print(
+                f"Go to [blue underline]{login_link}[/blue underline] to log into "
+                f"Tidal within {expires_in // 60} minutes.",
+            )
+            _open_login_link(login_link)
 
         # A few seconds early: Tidal's clock started before its answer arrived.
         deadline = time.monotonic() + expires_in - 5
@@ -469,7 +477,8 @@ class SpotifyPrompter(CredentialPrompter):
         """Write the session's Spotify app and login to the config file."""
         c = self.config.session.spotify
         cf = self.config.file.spotify
-        for name in ("client_id", "access_token", "refresh_token", "token_expiry"):
+        names = ("client_id", "access_token", "refresh_token", "token_expiry", "scope")
+        for name in names:
             setattr(cf, name, getattr(c, name))
         self.config.file.set_modified()
         self._announce_saved()

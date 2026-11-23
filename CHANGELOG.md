@@ -3,9 +3,41 @@
 All notable changes in this fork of [nathom/streamrip](https://github.com/nathom/streamrip). Numbers can refer to
 upstream issues and pull requests.
 
-## Unreleased
+## 2.7.3
 
+**Music-Sync is part of streamrip.** Moving playlists between Spotify, Tidal and
+CSV files is `streamrip playlist`, and its web interface became streamrip's.
+
+- feat: `streamrip playlist` transfers liked songs and playlists between
+  Spotify and Tidal, exports them to CSV and imports CSV files, as Music-Sync
+  did ([docs/playlists.md](docs/playlists.md)); `streamrip playlist migrate`
+  takes Music-Sync's apps and logins
+- feat: `streamrip playlist export --format m3u8 --library DIR` writes M3U8
+  playlists whose entries are the files of your own music folder, found by
+  ISRC, for Navidrome, Jellyfin and the like
+  ([Music-Sync#11](https://github.com/Stensel8/Music-Sync/issues/11))
+- feat: `streamrip playlist download` reads a Spotify or Tidal list and
+  downloads it from the source you pick: a Spotify playlist in lossless from
+  Qobuz, Tidal or Deezer
+- feat: `streamrip web`, a web interface for downloads (links, search with
+  covers, CSV lists), the playlist tools and the logins of every service
+  ([docs/web.md](docs/web.md)); the installers, the image and the flake include
+  its `web` extra
+- feat: one Spotify app and login for downloads and playlists alike. It asks
+  for a little more than before (your library), so the playlist tools ask for
+  it once again
+- chore: one matching module and one CSV reader for YouTube Music, CSV lists
+  and transfers, the best of both projects
+- chore: licensed AGPL-3.0 as a whole, the code from nathom/streamrip GPL-3.0
+  as well ([LICENSE](LICENSE), [LICENSES/](LICENSES), [how](README.md#license))
+- docs: why streamrip exists: you have a right to own the media you pay for
+- fix: a config saved twice in one run (now the web interface's way) dropped a
+  value set back to what it was, like a logout
 - fix: a Qobuz album's description is tagged as plain text, without its HTML
+- fix: a track whose download breaks off right away is resumed, not started
+  over, and one that keeps failing at hi-res is downloaded one lossless step
+  lower (24/96 to 16/44.1, never to MP3), with a warning saying so
+  ([#122](https://opencommit.eu/Stensel8/streamrip/issues/122))
 
 ## 2.7.2
 

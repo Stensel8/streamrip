@@ -6,6 +6,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import threading
 import tomllib
 from contextlib import asynccontextmanager, closing
 from functools import wraps
@@ -24,6 +25,7 @@ lazy from rich.traceback import install
 
 from .. import __version__
 from ..config import DEFAULT_CONFIG_PATH, PACES
+from .playlist_cli import playlist
 from .stopping import terminate
 
 # Only the commands that run need these: --help and --version do not.
@@ -39,8 +41,10 @@ lazy from ..exceptions import (
 )
 lazy from ..media.csv_playlist import read_tracks
 lazy from ..utils.ssl_utils import print_ssl_error_help
+lazy from ..web import create_app
 lazy from .interactive import Confirm, Prompt
 lazy from .main import Main
+lazy from .prompter import has_screen, launch
 
 logger = logging.getLogger("streamrip")
 
@@ -1030,7 +1034,7 @@ async def csv_list(ctx, source, fallback_source, path):
     """Download the tracks of a CSV list, found by searching a source.
 
     One track per row: its title and artist, and its album and length if you
-    have them. The columns of Music-Sync (https://github.com/Stensel8/Music-Sync)
+    have them. The columns of `streamrip playlist export` (Music-Sync)
     and of other exporters are understood; a file without a header row is read
     as "artist,title". The tracks go in a folder named after the file.
 
@@ -1209,3 +1213,55 @@ async def latest_streamrip_version(
 
 if __name__ == "__main__":
     rip()
+
+
+rip.add_command(playlist)
+
+
+LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
+
+
+@rip.command()
+@click.option("--port", default=8888, show_default=True, help="The port to listen on.")
+@click.option(
+    "--host",
+    default="127.0.0.1",
+    show_default=True,
+    help=(
+        "The address to listen on. Leave it, unless streamrip runs in a container: "
+        "there 0.0.0.0, with the port published on 127.0.0.1 only."
+    ),
+)
+@click.option("--no-browser", is_flag=True, help="Do not open the page in a browser.")
+@click.pass_context
+def web(ctx, port, host, no_browser):
+    """Downloads, search, playlists and logins in your browser.
+
+    A page on this computer with what the commands do: download links, search
+    and pick, download a CSV list, move and download playlists, and log in to
+    every service. It has no password: it only answers to 127.0.0.1 and
+    localhost, and must not be reachable from a network.
+
+    Needs the web extra: uv tool install "streamrip[web]" (the installers
+    include it).
+    """
+    config = _require_config(ctx)
+    try:
+        app = create_app(config)
+    except ImportError as e:
+        raise click.ClickException(
+            "The web interface needs Flask: install streamrip with the web extra, "
+            'e.g. uv tool install "./streamrip-*.whl[web]"'
+        ) from e
+    if host not in LOOPBACK_HOSTS:
+        err_console.print(
+            f"[yellow]Listening on {escape(host)}. The page has no password: publish "
+            "the port on 127.0.0.1 only, never to a network.[/yellow]"
+        )
+    url = f"http://127.0.0.1:{port}"
+    console.print(f"streamrip web: [bold]{url}[/bold]  (Ctrl+C to stop)")
+    if not no_browser and host in LOOPBACK_HOSTS and has_screen():
+        threading.Timer(1.0, launch, [url]).start()
+    # Not a line per request (the page asks how a job is doing twice a second).
+    logging.getLogger("werkzeug").setLevel(logging.WARNING)
+    app.run(host=host, port=port, debug=False, threaded=True)

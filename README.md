@@ -9,7 +9,9 @@
 [![Mirror: opencommit.eu](https://img.shields.io/badge/mirror-opencommit.eu-blue)](https://opencommit.eu/Stensel8/streamrip)
 [![Mirror: codetrunk.eu](https://img.shields.io/badge/mirror-codetrunk.eu-blue)](https://repos.codetrunk.eu/Stensel8/streamrip)
 
-A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, SoundCloud and Spotify.
+A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, SoundCloud and Spotify,
+that also moves your playlists between Spotify, Tidal and CSV files. On the command line, or
+in your browser.
 
 > [!IMPORTANT]
 > **Bookmark these mirrors.** GitHub has taken down repositories before, so
@@ -43,6 +45,66 @@ A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, SoundCl
 - Tags, cover art and lyrics, and if you like conversion to FLAC, ALAC, AIFF, MP3,
   AAC, OGG or Opus
 - Remembers what it downloaded; `streamrip repair` retries what failed
+- Your liked songs and playlists: transferred between Spotify and Tidal,
+  exported to or imported from CSV, or downloaded from the source you pick, a
+  Spotify playlist in lossless from Qobuz say ([details](docs/playlists.md)).
+  This was [Music-Sync](https://github.com/Stensel8/Music-Sync), now part of
+  streamrip
+- A web interface for all of it, logins included: `streamrip web`
+  ([details](docs/web.md))
+
+## Why streamrip exists
+
+**You have a right to own the media you pay for.** Most of us pay for music
+every month, and none of it is ours. Stop paying and the library is gone; an
+album leaves the catalogue and drops out of your playlists; the "offline"
+copies only play inside the app, as long as the subscription runs. A music
+subscription of about €11 a month is around €130 a year: seven or eight CDs,
+every year. Ten years of it and you own nothing, where the CDs would still be
+on the shelf.
+
+streamrip gives you back what you pay for. The music of your own
+subscriptions and purchases ends up as files on your own disk: in the best
+quality the service has, properly tagged, offline, for as long as you like,
+and no company can take it back.
+
+**And you are never stuck with one company again.** streamrip is built for
+compatibility and interoperability: it writes open, standard formats (FLAC,
+M4A, MP3, with the tags every player reads, and CSV for lists) that work in
+any player, on a NAS, in Jellyfin or Plex, in the car, today and in twenty
+years. Your playlists move with you: `streamrip playlist` takes them from
+Spotify to Tidal and back, into a CSV, or onto your disk. A service raises
+its prices, drops your favourite album or treats you badly? Take your music
+and your playlists, and go wherever you like. In the EU, taking the data you
+gave a service to another one is even your right
+([GDPR, article 20](https://gdpr-info.eu/art-20-gdpr/)); streamrip does it
+for your playlists in one command.
+
+There was no good, universal tool for this. The services that move playlists
+(Soundiiz, TuneMyMusic and the like) are closed-source and commercial: they
+run on their servers, often charge for more than a few lists, get access to
+your accounts, and move only the lists, never the music. streamrip is free and
+open-source software ([AGPL-3.0](#license)), on your own computer: one tool
+for your music and your playlists, between the services and onto your own
+disk, back and forth, as often as you like. No account with us, no
+subscription to yet another service, and code anyone can read, check and
+improve.
+
+It is the same idea as [Stop Killing Games](https://en.wikipedia.org/wiki/Stop_Killing_Games),
+which started in 2024 after Ubisoft made a game people had bought unplayable,
+and which 1.29 million Europeans signed; and as the fight for digital
+ownership of [Louis Rossmann](https://en.wikipedia.org/wiki/Louis_Rossmann)'s
+FULU Foundation. What you pay for, you should keep.
+
+**This is not a tool to take what you never paid for.** It is for the music
+you pay for, after you have paid for it, often many times over. Support the
+artists you listen to: buy their records, go to their shows. See the
+[Disclaimer](#disclaimer).
+
+That is also why this fork is kept up. Streaming services change their APIs,
+logins and rules without notice, and every change that breaks streamrip
+quietly takes that ownership and that freedom away again. Keeping it working
+is the point.
 
 ## Install
 
@@ -72,8 +134,8 @@ uv tool install ./streamrip-*.whl
 ```
 
 uv fetches Python 3.15 itself if you don't have it. Add the `browser` and
-`ffmpeg` extras for the automatic-login browser and a bundled ffmpeg:
-`uv tool install "./streamrip-*.whl[browser,ffmpeg]"`.
+`ffmpeg` extras for the automatic-login browser and a bundled ffmpeg, and `web`
+for `streamrip web`: `uv tool install "./streamrip-*.whl[browser,ffmpeg,web]"`.
 
 ### With Podman or Docker
 
@@ -113,6 +175,16 @@ streamrip --codec mp3 url <link>                                # convert while 
 streamrip --quality 2 url <link>                                # at most CD quality
 streamrip repair                                                # retry what failed
 streamrip config open                                           # every option, explained
+streamrip web                                                   # all of it in your browser
+```
+
+And your playlists ([details](docs/playlists.md)):
+
+```bash
+streamrip playlist transfer spotify tidal --liked               # liked songs, Spotify to Tidal
+streamrip playlist download spotify --playlist "Road trip" --source qobuz   # in lossless
+streamrip playlist export spotify --all -o backup/              # every list as CSV
+streamrip playlist import tidal list.csv --playlist "From CSV"  # a CSV into a playlist
 ```
 
 Links from Qobuz, Deezer, SoundCloud and Spotify work the same way, and so do
@@ -146,14 +218,18 @@ in the config. A login that stops working is asked for again.
 | Tidal | A subscription. Log in with a link on any device (twice, for hi-res). |
 | Deezer | The `arl` cookie of a logged-in session: an isolated browser window, or by hand. |
 | SoundCloud | Nothing. |
-| Spotify | An app of your own, and Premium on the account that owns it. The audio comes from YouTube Music and is not lossless. |
+| Spotify | An app of your own, and Premium on the account that owns it. The audio comes from YouTube Music and is not lossless. The same app and login serve the playlist tools. |
 
-Details per source: [Logging in](docs/logging-in.md), [Spotify](docs/spotify.md).
+The playlist tools also need a Tidal developer app for your Tidal playlists
+([how](docs/playlists.md#tidal)). Details per source: [Logging in](docs/logging-in.md),
+[Spotify](docs/spotify.md). `streamrip web` has all of these on its Accounts page.
 
 ## More
 
+- [Playlists](docs/playlists.md): transfer, export, import and download your liked songs and playlists
+- [The web interface](docs/web.md): what it does, and why it is for you alone
 - [Spotify](docs/spotify.md): the app you need, what works, and why it isn't lossless
-- [CSV lists](docs/csv-lists.md): download a list exported from Music-Sync, Exportify or a spreadsheet
+- [CSV lists](docs/csv-lists.md): download a list exported from streamrip, Exportify or a spreadsheet
 - [Lyrics](docs/lyrics.md): where they come from, and how to turn the lookup off
 - [Podman and Docker](docs/container.md): the image, its volume, and building it yourself
 - [Nix](docs/nix.md): the flake and its development shell
@@ -180,7 +256,35 @@ inspired by [rip](https://github.com/nathom/streamrip),
 [Tidal-Media-Downloader](https://github.com/yaronzz/Tidal-Media-Downloader)
 and [scdl](https://github.com/flyingrub/scdl). The lyrics lookup uses
 [LRCLIB](https://lrclib.net). The Spotify support borrows from three projects,
-credited in [docs/spotify.md](docs/spotify.md#credits).
+credited in [docs/spotify.md](docs/spotify.md#credits). The playlist tools and
+the web interface were Music-Sync, which grew out of Roland Behme's csv2tidal
+and spotify_to_tidal ([credits](docs/playlists.md#credits)).
+
+## License
+
+streamrip is free software under the [GNU Affero General Public License,
+version 3 only](LICENSE) (AGPL-3.0-only). It grew out of two projects:
+
+- **[streamrip](https://github.com/nathom/streamrip)** by Nathan Thomas
+  (nathom) and its contributors, under the [GNU General Public License,
+  version 3 only](LICENSES/GPL-3.0-only.txt). The code that comes from there
+  stays available under that licence as well.
+- **[Music-Sync](https://github.com/Stensel8/Music-Sync)** by Sten Tijhuis,
+  under the AGPL-3.0-only. It began as
+  [csv2tidal](https://github.com/Nugman/csv2tidal) by Roland Behme, under the
+  AGPL-3.0. The playlist tools (`streamrip/sync`, `streamrip playlist`) and the
+  web interface come from it.
+
+Section 13 of both licences allows combining a work under the one with a work
+under the other and conveying them as one. streamrip is conveyed under the
+AGPL-3.0, whose section 13 (offering the source to everyone who uses it over a
+network, as `streamrip web` can be used) applies to the whole; every part keeps
+the licence it came with. The licence texts are unchanged copies of those of
+the Free Software Foundation, as their own terms require.
+
+Copyright © Nathan Thomas and the contributors of streamrip; Sten Tijhuis and
+the contributors of this fork; Roland Behme, Sten Tijhuis and the contributors
+of Music-Sync.
 
 ## Disclaimer
 

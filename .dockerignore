@@ -2,6 +2,7 @@
 !pyproject.toml
 !uv.lock
 !LICENSE
+!LICENSES
 !README.md
 !streamrip
 **/__pycache__

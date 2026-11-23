@@ -526,3 +526,16 @@ class TestPrivateFiles:
 
         assert Config(config_path).file.deezer.arl == ""
         assert "Others can read" in caplog.text
+
+
+def test_a_value_set_back_is_saved_on_a_later_save(tmp_path):
+    """The web interface saves after every login; a logout set a token back to
+    what it was at loading, which the next save then left out."""
+    path = tmp_path / "config.toml"
+    set_user_defaults(path)
+    config = Config(path)
+    for value in ("token", ""):
+        config.file.tidal.api_access_token = value
+        config.file.set_modified()
+        config.save_file()
+        assert Config(path).file.tidal.api_access_token == value

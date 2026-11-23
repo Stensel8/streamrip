@@ -39,6 +39,11 @@ MAX_DOWNLOAD_ATTEMPTS = 4
 # as a backstop if the margin guesses wrong.
 STALE_DOWNLOADABLE_AFTER = 45
 
+# Quality tiers 2 and up are lossless on every source that has tiers
+# (Qobuz, Tidal, Deezer); a failing track never steps down below this.
+LOWEST_LOSSLESS_TIER = 2
+QUALITY_NAMES = {2: "16 bit, 44.1 kHz", 3: "24 bit", 4: "24 bit, up to 192 kHz"}
+
 # Formats a track is downloaded in. A lossless copy of a track makes a lossy
 # copy of the same track redundant, so only one of them is kept.
 DEDUP_EXTENSIONS = ("flac", "m4a", "mp3")
@@ -115,11 +120,88 @@ class Track(Media):
     async def download(self):
         """Skip redundant lossy copies or download with progress and retries.
 
-        Missing ffmpeg fails without retrying. On final failure, remove partial
-        output and raise TrackDownloadFailedError, which rip() records.
+        Missing ffmpeg fails without retrying. A track that keeps failing at
+        a lossless quality is tried once more one lossless step lower (#122:
+        a Qobuz file that its CDN broke off after one byte, every time). On
+        final failure, remove partial output and raise
+        TrackDownloadFailedError, which rip() records.
         """
         if self._skip_lossy_duplicate:
             return
+        tier = None  # the configured one
+        while True:
+            try:
+                await self._download_attempts(tier)
+            except TrackDownloadFailedError as e:
+                lower = await self._lower_quality(e.__cause__)
+                error = f"{type(e.__cause__).__name__}: {e.__cause__}"
+                if lower is None:
+                    logger.error(
+                        "Persistent error downloading track '%s', skipping: %s",
+                        self.meta.title,
+                        error,
+                    )
+                    raise
+                served, tier, self.downloadable = lower
+                logger.warning(
+                    "Persistent error downloading track '%s' at %s, downloading it "
+                    "at %s instead: %s",
+                    self.meta.title,
+                    QUALITY_NAMES.get(served, f"quality {served}"),
+                    QUALITY_NAMES.get(tier, f"quality {tier}"),
+                    error,
+                )
+            else:
+                return
+
+    def _configured_tier(self) -> int | None:
+        """The quality this track's source is set to download, if it has one."""
+        if self.client is None:
+            return None
+        section = getattr(self.config.session, self.client.source, None)
+        return getattr(section, "quality", None)
+
+    async def _lower_quality(self, cause) -> tuple[int, int, Downloadable] | None:
+        """The quality that failed, the next lossless one down and its file,
+        when there is one.
+
+        Never lossy: a FLAC that fails is not replaced with an MP3 or AAC.
+        A quality the source answers with the very file that failed (Qobuz
+        serves 24/96 for both 3 and 4 when there is no 24/192) is skipped.
+        """
+        if self.client is None or isinstance(cause, FFmpegNotFoundError):
+            return None
+        served = self.downloadable.quality
+        if served is None:
+            served = self._configured_tier()
+        if served is None:
+            return None
+        for tier in range(served - 1, LOWEST_LOSSLESS_TIER - 1, -1):
+            try:
+                fresh = await self.client.get_downloadable(self.meta.info.id, tier)
+            except Exception as e:
+                logger.debug(
+                    "No quality %s for '%s': %s: %s",
+                    tier,
+                    self.meta.title,
+                    type(e).__name__,
+                    e,
+                )
+                return None
+            if fresh.extension != self.downloadable.extension:
+                return None  # another container than download_path was made for
+            if fresh.quality is not None and fresh.quality >= served:
+                continue
+            fresh.resolved_at = time.time()
+            return served, tier, fresh
+        return None
+
+    async def _download_attempts(self, tier: int | None):
+        """Download at `tier` (None: the configured quality), retrying.
+
+        Raises TrackDownloadFailedError, from the last error, when every
+        attempt failed; the part file is gone by then.
+        """
         quality = format_quality(
             self.meta.album.info.container,
             self.meta.album.info.bit_depth,
@@ -144,10 +226,15 @@ class Track(Media):
                         > STALE_DOWNLOADABLE_AFTER
                     )
                 ):
-                    tier = getattr(self.config.session, self.client.source).quality
                     try:
+                        if tier is None:
+                            tier_now = getattr(
+                                self.config.session, self.client.source
+                            ).quality
+                        else:
+                            tier_now = tier
                         fresh = await self.client.get_downloadable(
-                            self.meta.info.id, tier
+                            self.meta.info.id, tier_now
                         )
                         fresh.resolved_at = time.time()
                         self.downloadable = fresh
@@ -167,7 +254,8 @@ class Track(Media):
                 # matters for labels, and for features on an artist's page.
                 label = (
                     f"{self.meta.album.albumartist} - "
-                    f"Track {self.meta.tracknumber} {quality}"
+                    f"Track {self.meta.tracknumber} "
+                    f"{quality if tier is None else QUALITY_NAMES.get(tier, '')}"
                 )
                 if attempt > 1:
                     label += f" (retry {attempt - 1})"
@@ -185,26 +273,21 @@ class Track(Media):
                     part.unlink(missing_ok=True)
                     raise
                 except Exception as e:
-                    error = f"{type(e).__name__}: {e}"
                     # A missing ffmpeg does not fix itself in 2-8 seconds.
                     if attempt == MAX_DOWNLOAD_ATTEMPTS or isinstance(
                         e, FFmpegNotFoundError
                     ):
-                        logger.error(
-                            "Persistent error downloading track '%s', skipping: %s",
-                            self.meta.title,
-                            error,
-                        )
                         part.unlink(missing_ok=True)
                         raise TrackDownloadFailedError(
                             f"{self.meta.title} ({self.meta.info.id})"
                         ) from e
                     delay = 2**attempt  # 2s, 4s, 8s
                     logger.warning(
-                        "Error downloading track '%s', retrying in %ss: %s",
+                        "Error downloading track '%s', retrying in %ss: %s: %s",
                         self.meta.title,
                         delay,
-                        error,
+                        type(e).__name__,
+                        e,
                     )
                 else:
                     part.replace(self.download_path)
@@ -452,7 +535,7 @@ async def fetch_track_meta(
     try:
         resp = await client.get_metadata(track_id, "track")
         album = album or AlbumMetadata.from_track_resp(resp, source)
-        meta = album and TrackMetadata.from_resp(album, source, resp)
+        meta = TrackMetadata.from_resp(album, source, resp) if album else None
         # Disc numbers become directory components in both album and single
         # downloads. Reject malformed provider values before any filesystem I/O.
         if meta is not None and (

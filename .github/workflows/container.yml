@@ -16,6 +16,7 @@ on:
       - uv.lock
       - README.md
       - LICENSE
+      - LICENSES/**
       - streamrip/**
   release:
     types: [published]

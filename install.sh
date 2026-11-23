@@ -22,7 +22,7 @@ if ! command -v uv >/dev/null 2>&1; then
 fi
 
 echo "Installing streamrip into .venv..."
-uv sync --locked --no-dev --no-editable --extra browser --extra ffmpeg
+uv sync --locked --no-dev --no-editable --extra browser --extra ffmpeg --extra web
 
 echo
 if "$streamrip_path" --version >/dev/null 2>&1; then

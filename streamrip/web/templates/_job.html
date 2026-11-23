@@ -1,0 +1,31 @@
+{# The progress of a download, transfer or login. static/app.js fills it in. #}
+<section id="job" class="card job" hidden>
+  <div class="card-head">
+    <h2 id="job-title">Starting</h2>
+    <span id="job-clock" class="muted small" title="Time taken"></span>
+  </div>
+  <ol id="job-steps" class="steps" hidden></ol>
+  <p id="job-text" class="small"></p>
+  <div id="job-login" hidden>
+    <p><a id="job-link" class="btn primary" target="_blank" rel="noopener noreferrer">Open the login page</a></p>
+    <form id="job-paste" class="row" hidden>
+      <input name="address" placeholder="On another device? Paste the address you end up on" class="grow" autocomplete="off">
+      <button class="btn" type="submit">Use it</button>
+    </form>
+  </div>
+  <progress id="job-bar" aria-label="Progress"></progress>
+  <p id="job-numbers" class="small muted"></p>
+  <p id="job-current" class="tiny muted current-track"></p>
+  <ul id="job-rows" class="rows" hidden></ul>
+  <p id="job-download" hidden><a id="job-download-link" class="btn primary">Download the CSV again</a></p>
+  <div id="job-unmatched" hidden>
+    <p id="job-unmatched-title" class="small strong"></p>
+    <ul id="job-unmatched-list" class="list"></ul>
+    <p id="job-unmatched-more" class="tiny muted"></p>
+    <p><a id="job-unmatched-link" class="btn tiny">Download all (CSV)</a></p>
+  </div>
+  <details id="job-log" hidden>
+    <summary class="small">Log</summary>
+    <ol id="job-log-lines" class="log"></ol>
+  </details>
+</section>

@@ -48,6 +48,52 @@ class Handle:
 NO_PROGRESS = Handle(lambda _: None, lambda: None)
 
 
+class Observer:
+    """Follows the progress of a run apart from the terminal's bars, whether
+    those are shown or not: the web interface shows it on its page. Each
+    method does nothing here; a subclass does what it likes."""
+
+    def row(self, kind: str, desc: str, total: int | None) -> Handle:
+        """A row of progress: "download" (bytes of one track) or "resolve"
+        (tracks looked up)."""
+        return NO_PROGRESS
+
+    def overall_add(self, n: int):
+        """`n` more tracks to do."""
+
+    def overall_advance(self, n: int):
+        """`n` more tracks done."""
+
+    def title(self, key: int, title: str | None):
+        """The album or playlist under `key` started (a title) or ended (None)."""
+
+
+_observer: Observer | None = None
+
+
+def observe(observer: Observer | None):
+    """Report progress to `observer` from now on, or (None) to no one."""
+    global _observer
+    _observer = observer
+
+
+def _also_observed(handle: Handle, kind: str, desc: str, total: int | None) -> Handle:
+    """`handle`, and the observer's row for the same, if there is an observer."""
+    if _observer is None:
+        return handle
+    row = _observer.row(kind, desc, total)
+
+    def update(n: int):
+        handle.update(n)
+        row.update(n)
+
+    def done():
+        handle.done()
+        row.done()
+
+    return Handle(update, done)
+
+
 @dataclass(slots=True)
 class _Redrawn:
     """A renderable made anew at every refresh of the Live display."""
@@ -289,18 +335,26 @@ def get_progress_callback(enabled: bool, total: int, desc: str) -> Handle:
     A total of 0 means the size is unknown. Rich takes total=0 for a finished
     task (a full bar, no spinner), so it becomes None, a pulsing bar.
     """
-    if not enabled:
-        return NO_PROGRESS
-    return _p._add_task(_p.progress, desc, total=total or None)
+    handle = (
+        _p._add_task(_p.progress, desc, total=total or None) if enabled else NO_PROGRESS
+    )
+    return _also_observed(handle, "download", desc, total or None)
 
 
 def get_resolve_callback(enabled: bool, total: int) -> Handle:
     """A row counting the tracks looked up so far, or a no-op Handle if
     disabled. It hides once all `total` are, or when its block is left.
     """
-    if not enabled or total <= 0:
+    if total <= 0:
         return NO_PROGRESS
-    row = _p._add_task(_p.resolve_progress, "Fetching track info", total=total)
+    if not enabled:
+        return _also_observed(NO_PROGRESS, "resolve", "Fetching track info", total)
+    row = _also_observed(
+        _p._add_task(_p.resolve_progress, "Fetching track info", total=total),
+        "resolve",
+        "Fetching track info",
+        total,
+    )
     left = total
 
     def update(n: int):
@@ -317,24 +371,32 @@ def overall_add(n: int, enabled: bool = True):
     """Add `n` tracks to the overall progress bar, unless disabled."""
     if enabled:
         _p.overall_add(n)
+    if _observer is not None:
+        _observer.overall_add(n)
 
 
 def overall_advance(n: int = 1, enabled: bool = True):
     """Count `n` more tracks done on the overall bar, unless disabled."""
     if enabled:
         _p.overall_advance(n)
+    if _observer is not None:
+        _observer.overall_advance(n)
 
 
 def add_title(key: int, title: str, enabled: bool = True):
     """Show title as the active album/playlist, unless disabled."""
     if enabled:
         _p.add_title(key, title)
+    if _observer is not None:
+        _observer.title(key, title)
 
 
 def remove_title(key: int, enabled: bool = True):
     """Stop showing the title registered under key, unless disabled."""
     if enabled:
         _p.remove_title(key)
+    if _observer is not None:
+        _observer.title(key, None)
 
 
 def clear_screen(enabled: bool = True):

@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Error · streamrip{% endblock %}
+
+{% block content %}
+<div class="notice">
+  <div class="alert error"><strong>Error {{ status }}.</strong> {{ message }}</div>
+  <a class="btn" href="{{ url_for('pages.dashboard') }}">Back</a>
+</div>
+{% endblock %}

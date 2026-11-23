@@ -21,6 +21,7 @@ from ..metadata import (
     Summary,
     TrackMetadata,
 )
+from ..sync.csvio import clock_ms
 from .artwork import download_artwork
 from .media import Media, Pending, PendingItem, rip_tracks
 from .track import Track, fetch_downloadable, fetch_track_meta
@@ -58,19 +59,6 @@ def _playlist_folder(config: Config, name: str) -> Path:
     if path == root or not path.is_relative_to(root):
         raise ValueError(f"Invalid playlist folder outside download root: {name!r}")
     return path
-
-
-def clock_ms(text: str | None) -> int | None:
-    """ "3:45" or "1:02:03" in milliseconds, or None for anything else.
-
-    A bare number could be seconds or milliseconds, so it says nothing.
-    """
-    if not text or not re.fullmatch(r"\d+(?::\d{1,2}){1,2}", text):
-        return None
-    seconds = 0
-    for part in text.split(":"):
-        seconds = seconds * 60 + int(part)
-    return seconds * 1000
 
 
 def _as_track(result: Summary) -> MatchTrack:

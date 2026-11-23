@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% from "_macros.html" import field, source_select %}
+{% block title %}Download · streamrip{% endblock %}
+
+{% block content %}
+<h1>Download</h1>
+{% if not sources|selectattr("ready")|rejectattr("name", "equalto", "soundcloud")|list %}
+<div class="alert warn intro">No source is logged in yet. <a class="link" href="{{ url_for('pages.accounts') }}">Log in on the Accounts page</a> first; SoundCloud works without.</div>
+{% endif %}
+
+<div class="cards single">
+  {% include "_job.html" %}
+
+  <section class="card">
+    <h2>Links</h2>
+    <p class="muted small">Albums, tracks, playlists, artists or labels from Qobuz, Tidal, Deezer, SoundCloud or Spotify, one per line. They go to <code>{{ folder }}</code>.</p>
+    <form id="urls-form" class="fields">
+      <label class="field wide"><span>Links</span><textarea name="urls" rows="3" required placeholder="https://tidal.com/browse/album/234793"></textarea></label>
+      <div class="actions"><button class="btn primary" type="submit" data-job-button>Download</button></div>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>Search</h2>
+    <form id="search-form" class="fields">
+      {% call field("Source") %}<select name="source" required>{% for s in sources %}<option value="{{ s.name }}">{{ s.label }}</option>{% endfor %}</select>{% endcall %}
+      {% call field("Kind") %}<select name="media_type">{% for t in media_types %}<option value="{{ t }}"{{ " selected" if t == "album" }}>{{ t.title() }}</option>{% endfor %}</select>{% endcall %}
+      {% call field("Search for", "wide") %}<input name="query" required placeholder="linkin park meteora" autocomplete="off">{% endcall %}
+      <div class="actions"><button class="btn" type="submit" id="search-button">Search</button></div>
+    </form>
+    <p id="search-status" class="small muted" hidden></p>
+    <ul id="search-results" class="results" hidden></ul>
+    <div id="search-actions" class="actions" hidden><button class="btn primary" id="search-download" data-job-button>Download the chosen</button></div>
+  </section>
+
+  <section class="card">
+    <h2>CSV list</h2>
+    <p class="muted small">A list of tracks (from <a class="link" href="{{ url_for('pages.playlists_page') }}">Playlists</a>, Exportify or a spreadsheet), each searched on the source you pick.</p>
+    <form id="csv-form" class="fields">
+      {% call field("File") %}<input type="file" name="file" accept=".csv,.tsv,.txt,text/csv" required>{% endcall %}
+      {% call field("Download from") %}{{ source_select("source", sources) }}{% endcall %}
+      {% call field("Else from") %}{{ source_select("fallback", sources, optional=True) }}{% endcall %}
+      <div class="actions"><button class="btn primary" type="submit" data-job-button>Download</button></div>
+    </form>
+  </section>
+</div>
+{% endblock %}

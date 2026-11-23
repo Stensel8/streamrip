@@ -367,9 +367,16 @@ class QobuzClient(Client):
                 raise NonStreamableError(restriction_message(code) + ".")
             raise NonStreamableError
 
-        return BasicDownloadable(
+        downloadable = BasicDownloadable(
             self.session, stream_url, "flac" if quality > 1 else "mp3", source="qobuz"
         )
+        # Qobuz serves the best it has up to the asked format: 24/96 for a
+        # quality 4 request of an album without 24/192.
+        served = resp_json.get("format_id")
+        downloadable.quality = (
+            FORMAT_IDS.index(served) + 1 if served in FORMAT_IDS else quality
+        )
+        return downloadable
 
     async def _request_ok(self, epoint: str, params: dict) -> dict:
         """_api_request that insists on HTTP 200, retrying once if search blips.

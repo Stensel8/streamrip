@@ -43,9 +43,17 @@ logger = logging.getLogger("streamrip")
 API_URL = "https://api.spotify.com/v1"
 AUTHORIZE_URL = "https://accounts.spotify.com/authorize"
 TOKEN_URL = "https://accounts.spotify.com/api/token"
-# Only what reading the user's own and shared playlists takes. Tracks, albums,
-# artists and search need no scope.
-SCOPES = ("playlist-read-private", "playlist-read-collaborative")
+# Reading the user's own and shared playlists, for downloads (tracks, albums,
+# artists and search need no scope); and reading and changing the liked songs
+# and playlists, for `streamrip playlist`. One login does both.
+SCOPES = (
+    "playlist-read-private",
+    "playlist-read-collaborative",
+    "user-library-read",
+    "user-library-modify",
+    "playlist-modify-private",
+    "playlist-modify-public",
+)
 
 PAGE_SIZE = 50
 # Apps in development mode get at most 10 results per search request, and the
@@ -273,10 +281,12 @@ class SpotifyClient(Client):
         expiry = str(int(time.time() + float(payload.get("expires_in", 3600))))
         # Spotify only sends a new refresh token when it rotates them.
         refresh = payload.get("refresh_token") or self.config.refresh_token
+        scope = payload.get("scope") or self.config.scope
         for c in (self.config, self.global_config.file.spotify):
             c.access_token = payload["access_token"]
             c.refresh_token = refresh
             c.token_expiry = expiry
+            c.scope = scope
         self.global_config.file.set_modified()
 
     async def _fresh_token(self, stale: str | None = None) -> str:

@@ -1,0 +1,425 @@
+"""Bringing tracks to a service: find each one there, then add the matches to a playlist."""
+
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass, field
+from functools import partial
+from itertools import batched
+from typing import Literal
+
+from ..client.audio_match import best_match, rejection, song_key
+from .errors import ApiError, ProviderError
+from .models import Match, PlaylistInfo, Track
+from .providers.base import UNLOOKUPABLE, Provider
+
+LIKED = "Liked Songs"  # our name for a service's liked / saved tracks
+DESCRIPTION = "Imported with streamrip: https://opencommit.eu/Stensel8/streamrip"  # of the playlists it creates
+CHUNK = 20  # tracks per bulk ISRC lookup: what Tidal takes in one request
+
+# Reading the source, checking what the target playlist already has, finding the other tracks there, adding.
+type Phase = Literal["read", "match", "check", "add"]
+
+
+@dataclass(frozen=True, slots=True)
+class Miss:
+    """A track that was not found, why, and what came closest when that is worth showing."""
+
+    track: Track
+    reason: str  # for people: "score too low for a match (0.75, needs 0.80)"
+    closest: Match | None = None
+
+    @property
+    def why(self) -> str:
+        """The reason, with what came closest: "only another version; closest: Artist - Song (Live)"."""
+        return (
+            f"{self.reason}; closest: {self.closest.track}"
+            if self.closest
+            else self.reason
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class Step:
+    """A progress report: ``done`` of ``total`` tracks through one step of the work. ``total`` is None
+    while nobody knows it yet (Tidal does not say how many liked songs you have)."""
+
+    phase: Phase
+    text: str  # what is happening, for people: "Reading Road trip from Spotify"
+    done: int
+    total: int | None
+    track: Track | None = None  # "match": the track just looked up
+    found: int = 0  # "match": how many of the ``done`` tracks were found
+    miss: Miss | None = None  # "match": why the track just looked up was not found
+
+
+type Progress = Callable[[Step], None]
+
+
+def remaining(done: int, total: int | None, elapsed: float) -> float | None:
+    """Seconds still to go at the pace so far, once there is a pace to go by."""
+    if total is None or done < 3 or elapsed < 2 or done >= total:
+        return None
+    return elapsed / done * (total - done)
+
+
+@dataclass(slots=True)
+class ImportResult:
+    playlist_name: str
+    playlist_id: str | None = None
+    matched: list[Match] = field(default_factory=list)
+    misses: list[Miss] = field(default_factory=list)  # the tracks that were not found
+    duplicates: int = 0  # repeated within the input
+    already_there: int = 0  # already in the target playlist
+    added: int = 0
+    dry_run: bool = False
+
+    def summary(self) -> str:
+        """One line: what was found, and what was (or would be) added."""
+        verb = "would add" if self.dry_run else "added"
+        counts = [
+            (self.already_there, "already there"),
+            (self.duplicates, "repeated in the input"),
+        ]
+        parts = [f"{verb} {self.added}", *(f"{n} {what}" for n, what in counts if n)]
+        return f"{self.playlist_name}: {len(self.matched)} matched, {len(self.misses)} not found; {', '.join(parts)}"
+
+
+def _read(
+    tracks: Iterable[Track],
+    text: str,
+    total: int | None,
+    progress: Progress | None,
+    phase: Phase = "read",
+) -> list[Track]:
+    """All of ``tracks``, reporting each one read. ``total`` is what the service said to expect; the last
+    report gives the real number, which differs when that was not known or out of date."""
+    found: list[Track] = []
+    for track in tracks:
+        found.append(track)
+        if progress:
+            progress(
+                Step(
+                    phase,
+                    text,
+                    len(found),
+                    None if total is None else max(total, len(found)),
+                )
+            )
+    if progress and total != len(found):
+        progress(Step(phase, text, len(found), len(found)))
+    return found
+
+
+def select_tracks(
+    provider: Provider,
+    *,
+    liked: bool = False,
+    playlist: str | None = None,
+    on_skip: Callable[[str], None] | None = None,
+    progress: Progress | None = None,
+) -> list[tuple[str, list[Track]]]:
+    """The (name, tracks) pairs to work on: liked songs, one playlist (by name or id), or, with
+    neither asked for, the liked songs plus every playlist that can be read.
+    Empty ones are left out: asking for one is an error, and among the rest they are reported to ``on_skip``."""
+
+    def read_liked() -> tuple[str, list[Track]]:
+        total = (
+            provider.liked_count() if progress else None
+        )  # it can cost a request: only when it is shown
+        return LIKED, _read(
+            provider.liked_tracks(),
+            f"Reading {LIKED} from {provider.label}",
+            total,
+            progress,
+        )
+
+    def read(info: PlaylistInfo) -> tuple[str, list[Track]]:
+        text = f"Reading {info.name} from {provider.label}"
+        return info.name, _read(
+            provider.playlist_tracks(info.id), text, info.track_count, progress
+        )
+
+    if liked:
+        found = [read_liked()]
+    elif playlist:
+        info = provider.find_playlist(playlist)
+        if info is None:
+            raise ProviderError(
+                f"No playlist with name or id {playlist!r} on {provider.name}."
+            )
+        if not info.readable:
+            raise ProviderError(
+                f'"{info.name}" is not yours to read (you neither own nor collaborate on it).'
+            )
+        found = [read(info)]
+    else:
+        found = [read_liked()]
+        for info in provider.playlists():
+            if info.readable:
+                found.append(read(info))
+            elif on_skip:
+                on_skip(
+                    f"skipping {info.name!r}: you neither own nor collaborate on it"
+                )
+
+    empty = [name for name, tracks in found if not tracks]
+    if empty and (liked or playlist):
+        raise ProviderError(f'"{empty[0]}" is empty.')
+    for name in empty:
+        if on_skip:
+            on_skip(f"skipping {name!r}: it is empty")
+    return [(name, tracks) for name, tracks in found if tracks]
+
+
+def _miss(
+    track: Track,
+    closest: Match | None,
+    provider: Provider,
+    min_score: float,
+    what: str = "songs",
+) -> Miss:
+    """Why ``track`` was not found, given the candidate that came closest (if any)."""
+    if closest is None:
+        return Miss(track, f"not on {provider.label}")
+    match rejection(track, closest.track):
+        case "other song":  # only the artist is the same: that candidate says nothing
+            return Miss(track, f"only other {what} on {provider.label}")
+        case "other version":
+            return Miss(track, "only another version", closest)
+        case _:
+            return Miss(
+                track,
+                f"score too low for a match ({closest.score:.2f}, needs {min_score:.2f})",
+                closest,
+            )
+
+
+class _Playlist:
+    """The tracks already in the target playlist, by id, ISRC and song, so that a source track that is
+    there needs no lookup. On a second run that is nearly every track (an idea from spotify_to_tidal)."""
+
+    def __init__(self, provider: Provider, tracks: Iterable[Track]):
+        self.provider = provider
+        self.by_id: dict[str, Track] = {}
+        self.by_isrc: dict[str, Track] = {}
+        self.by_song: dict[tuple[str, str], list[Track]] = {}
+        for track in tracks:
+            if native := provider.native_id(track):
+                self.by_id.setdefault(native, track)
+            if track.isrc:
+                self.by_isrc.setdefault(track.isrc.upper(), track)
+            self.by_song.setdefault(song_key(track), []).append(track)
+
+    def find(self, track: Track, min_score: float) -> Match | None:
+        if (native := self.provider.native_id(track)) and native in self.by_id:
+            return Match(self.by_id[native], 1.0, "playlist")
+        if track.isrc and (there := self.by_isrc.get(track.isrc.upper())):
+            return Match(there, 1.0, "playlist")
+        hit = best_match(track, self.by_song.get(song_key(track), []), min_score)
+        return Match(hit[0], hit[1], "playlist") if hit else None
+
+
+def resolve_tracks(
+    provider: Provider,
+    tracks: list[Track],
+    min_score: float = 0.8,
+    progress: Progress | None = None,
+    present: Iterable[Track] = (),
+) -> tuple[list[Match], list[Miss]]:
+    """Look every track up on ``provider``, except the ones in ``present`` (the target playlist), which are
+    matched to those. Returns the matches, and the tracks that were not found with why."""
+    playlist = _Playlist(provider, present)
+    matches: list[Match] = []
+    misses: list[Miss] = []
+    text = f"Finding the tracks on {provider.label}"
+    for chunk in batched(tracks, CHUNK, strict=False):
+        there = [playlist.find(track, min_score) for track in chunk]
+        # One request for the ISRCs of a whole chunk instead of one per track, for the tracks still to find.
+        isrcs = {
+            track.isrc.upper()
+            for track, match in zip(chunk, there, strict=True)
+            if track.isrc and not match and not provider.native_id(track)
+        }
+        known = provider.lookup_isrcs(isrcs) if isrcs else {}
+        for track, in_playlist in zip(chunk, there, strict=True):
+            match, miss = in_playlist, None
+            if match is None:
+                # Not in the playlist yet: look it up (find handles a search
+                # the service refuses).
+                found = provider.find(track, known)
+                match = found if found and found.score >= min_score else None
+                miss = None if match else _miss(track, found, provider, min_score)
+            if match:
+                matches.append(match)
+            if miss:
+                misses.append(miss)
+            if progress:
+                progress(
+                    Step(
+                        "match",
+                        text,
+                        len(matches) + len(misses),
+                        len(tracks),
+                        track,
+                        len(matches),
+                        miss,
+                    )
+                )
+    return matches, misses
+
+
+def _unique(provider: Provider, matches: list[Match]) -> dict[str, Match]:
+    """The matches by their id on ``provider``. Different source tracks can resolve to the same track on the
+    target; the first of each is kept."""
+    unique: dict[str, Match] = {}
+    for match in matches:
+        if native := provider.native_id(match.track):
+            unique.setdefault(native, match)
+    return unique
+
+
+def _add(
+    add: Callable[[list[Track]], None],
+    tracks: list[Track],
+    size: int,
+    text: str,
+    progress: Progress | None,
+):
+    """``add`` the tracks in batches of ``size`` (one request each), reporting each batch."""
+    if progress:
+        progress(Step("add", text, 0, len(tracks)))
+    added = 0
+    for batch in batched(tracks, size, strict=False):
+        add(list(batch))
+        added += len(batch)
+        if progress:
+            progress(Step("add", text, added, len(tracks)))
+
+
+def import_tracks(
+    provider: Provider,
+    tracks: list[Track],
+    playlist: str | None,
+    *,
+    min_score: float = 0.8,
+    dry_run: bool = False,
+    description: str = DESCRIPTION,
+    progress: Progress | None = None,
+) -> ImportResult:
+    """Add ``tracks`` to the playlist called ``playlist`` (created if missing), or with None to the liked
+    songs, skipping what is already there."""
+    existing = None
+    if (
+        playlist is None
+    ):  # to the favourites (liked songs), like spotify_to_tidal --sync-favorites
+        text, total = (
+            f"Checking your liked songs on {provider.label}",
+            provider.liked_count() if progress else None,
+        )
+        already = _read(provider.liked_tracks(), text, total, progress, "check")
+    elif existing := provider.find_playlist(playlist):
+        if not existing.readable:
+            raise ProviderError(
+                f'"{existing.name}" is not yours to change (you neither own nor collaborate on it).'
+            )
+        text = f"Checking what is already in {existing.name} on {provider.label}"
+        already = _read(
+            provider.playlist_tracks(existing.id),
+            text,
+            existing.track_count,
+            progress,
+            "check",
+        )
+    else:
+        already = []
+
+    matches, misses = resolve_tracks(provider, tracks, min_score, progress, already)
+    result = ImportResult(
+        playlist or LIKED,
+        existing.id if existing else None,
+        misses=misses,
+        dry_run=dry_run,
+    )
+
+    unique = _unique(provider, matches)
+    result.matched = list(unique.values())
+    result.duplicates = len(matches) - len(unique)
+
+    present = {native for track in already if (native := provider.native_id(track))}
+    new = [match.track for native, match in unique.items() if native not in present]
+    result.already_there = len(unique) - len(new)
+    result.added = len(new)
+    if new and not dry_run:
+        if playlist is None:
+            add, size = provider.add_favorite_tracks, provider.favorite_batch
+        else:
+            result.playlist_id = result.playlist_id or provider.create_playlist(
+                playlist, description
+            )
+            add, size = (
+                partial(provider.add_to_playlist, result.playlist_id),
+                provider.add_batch,
+            )
+        _add(
+            add,
+            new,
+            size,
+            f"Adding to {result.playlist_name} on {provider.label}",
+            progress,
+        )
+    return result
+
+
+def import_albums(
+    provider: Provider,
+    rows: list[Track],
+    *,
+    min_score: float = 0.8,
+    dry_run: bool = False,
+    progress: Progress | None = None,
+) -> ImportResult:
+    """Add the albums of ``rows`` (a CSV with an album per row: its album column, else its title) to the
+    favourites, as csv2tidal did. Saving an album that is already there changes nothing, so no check first."""
+    albums = [
+        Track(row.album or row.title, row.artists) for row in rows
+    ]  # a Track with the album's title
+    result = ImportResult("Favourite albums", dry_run=dry_run)
+    matches: list[Match] = []
+    text = f"Finding the albums on {provider.label}"
+    for done, album in enumerate(albums, start=1):
+        try:
+            hit = best_match(
+                album,
+                provider.search_albums(f"{album.title} {album.artist}".strip()),
+                min_score=0,
+            )
+        except ApiError as exc:
+            if exc.status not in UNLOOKUPABLE:
+                raise
+            hit = None  # the service could not handle this search
+        closest = Match(hit[0], hit[1], "search") if hit and hit[1] > 0 else None
+        miss = (
+            None
+            if closest and closest.score >= min_score
+            else _miss(album, closest, provider, min_score, "albums")
+        )
+        if miss:
+            result.misses.append(miss)
+        elif closest:
+            matches.append(closest)
+        if progress:
+            progress(Step("match", text, done, len(albums), album, len(matches), miss))
+
+    unique = _unique(provider, matches)
+    result.matched = list(unique.values())
+    result.duplicates = len(matches) - len(unique)
+    result.added = len(unique)
+    if unique and not dry_run:
+        text = f"Adding to your favourite albums on {provider.label}"
+        _add(
+            provider.add_favorite_albums,
+            [m.track for m in result.matched],
+            provider.favorite_batch,
+            text,
+            progress,
+        )
+    return result

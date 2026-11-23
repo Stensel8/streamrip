@@ -1,9 +1,13 @@
-"""Decide whether a YouTube Music result is the Spotify track we want.
+"""Decide whether a search result is the track we want.
 
-Adapted from the matching of Music-Sync (https://github.com/Stensel8/Music-Sync,
-musicsync/matching.py), written by the same author. The idea of looking a track
-up by its ISRC first and then scoring the candidates on name, artist, album and
-length comes from spotDL (https://github.com/spotDL/spotify-downloader).
+One module for every place streamrip compares tracks: a Spotify track with
+YouTube Music's results, a row of a CSV list with a source's search results,
+and a track of one service's playlist with another's (`streamrip playlist`).
+It comes from Music-Sync (https://github.com/Stensel8/Music-Sync,
+musicsync/matching.py), by the same author, which became part of streamrip.
+The idea of looking a track up by its ISRC first and then scoring the
+candidates on name, artist, album and length comes from spotDL
+(https://github.com/spotDL/spotify-downloader).
 """
 
 import re
@@ -12,10 +16,21 @@ from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from functools import lru_cache
 
+# ISO 3901: two letters (country), three letters or digits (registrant), seven
+# digits (year and code).
+_ISRC = re.compile(r"[A-Z]{2}[A-Z0-9]{3}\d{7}")
+
+
+def normalize_isrc(value: str | None) -> str | None:
+    """The canonical form of an ISRC ("gb-abc-12-34567" gives "GBABC1234567"),
+    or None if it is not one."""
+    cleaned = (value or "").replace("-", "").replace(" ", "").upper()
+    return cleaned if _ISRC.fullmatch(cleaned) else None
+
 
 @dataclass(slots=True)
 class MatchTrack:
-    """One recording as a service lists it: the wanted Spotify track, or a candidate."""
+    """One recording as a service lists it: the track wanted, or a candidate."""
 
     title: str
     artists: list[str] = field(default_factory=list)
@@ -25,6 +40,11 @@ class MatchTrack:
     # Which service's id, and what kind of result a candidate is.
     video_id: str = ""
     is_song: bool = False
+    # Identifies the recording itself, so it is the best way to find it again.
+    isrc: str | None = None
+    # Each service's own id for it, by service: {"spotify": "spotify:track:...",
+    # "tidal": "123"}.
+    ids: dict[str, str] = field(default_factory=dict)
 
     @property
     def artist(self) -> str:
@@ -130,6 +150,8 @@ _ARTIST_JOINS = re.compile(
 
 # Weights of the three signals; they add up to 1.
 TITLE_WEIGHT, ARTIST_WEIGHT, DURATION_WEIGHT = 0.5, 0.4, 0.1
+# From this on two titles are the same song, whatever version each one is.
+SAME_SONG = 0.6
 # Below this the artist is simply someone else, whatever the title says. Names that share a few letters,
 # like "Roy Blair" and "Radio Blazers" (0.64), stay under it.
 MIN_ARTIST_SCORE = 0.7
@@ -166,6 +188,12 @@ def _comparable(text: str) -> str:
         if words[at] in _ROMAN_LETTERS and words[at - 1] in _NUMBERED:
             words[at] = _ROMAN_LETTERS[words[at]]
     return " ".join(words)
+
+
+def searchable(text: str) -> str:
+    """`text` without accents and punctuation: another way to put it to a search
+    engine."""
+    return _words(_fold(text))
 
 
 def simplify_title(title: str) -> str:
@@ -314,3 +342,30 @@ def rank(wanted: MatchTrack, candidate: MatchTrack) -> tuple[float, float, float
         similarity(_full(wanted.title), _full(candidate.title)),
         album,
     )
+
+
+def song_key(track: MatchTrack) -> tuple[str, str]:
+    """The main title and the first artist in comparable form: a quick way to
+    find the same song among many."""
+    return normalize(track.title), _artist_key(_fold(track.artist))
+
+
+def rejection(wanted: MatchTrack, candidate: MatchTrack) -> str:
+    """Why `candidate`, which scored too low, is not `wanted`: "other song"
+    (only the artist is the same), "other version" (live, remix and the like)
+    or "low score" (close, but not close enough)."""
+    if _title_similarity(wanted.title, candidate.title) < SAME_SONG:
+        return "other song"
+    if _tags(wanted.title) != _tags(candidate.title):
+        return "other version"
+    return "low score"
+
+
+def best_match(
+    wanted: MatchTrack, candidates: list[MatchTrack], min_score: float = 0.8
+) -> tuple[MatchTrack, float] | None:
+    """The best candidate and its score, if it is good enough."""
+    best = max(candidates, key=lambda candidate: rank(wanted, candidate), default=None)
+    if best is None or (found := score(wanted, best)) < min_score:
+        return None
+    return best, found

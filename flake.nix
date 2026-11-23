@@ -35,7 +35,7 @@
         workspaceRoot = lib.fileset.toSource {
           root = ./.;
           fileset = lib.fileset.unions
-            [ ./pyproject.toml ./uv.lock ./README.md ./LICENSE ./streamrip ];
+            [ ./pyproject.toml ./uv.lock ./README.md ./LICENSE ./LICENSES ./streamrip ];
         };
       };
       pythonSet =
@@ -56,8 +56,9 @@
         ]);
       inherit (pythonSet.streamrip) version;
 
-      # The browser extra drives the Chromium below for the Qobuz and Deezer logins.
-      venv = pythonSet.mkVirtualEnv "streamrip-env" { streamrip = [ "browser" ]; };
+      # The browser extra drives the Chromium below for the Qobuz and Deezer logins;
+      # the web extra is `streamrip web`.
+      venv = pythonSet.mkVirtualEnv "streamrip-env" { streamrip = [ "browser" "web" ]; };
       runtimeTools = [ pkgs.ffmpeg-headless pkgs.deno pkgs.chromium ];
 
       streamrip = pkgs.runCommand "streamrip-${version}" {
@@ -65,7 +66,7 @@
         meta = {
           inherit (project) description;
           homepage = project.urls.Homepage;
-          license = lib.licenses.gpl3Only;
+          license = [ lib.licenses.agpl3Only lib.licenses.gpl3Only ];
           mainProgram = "streamrip";
           platforms = [ system ];
         };

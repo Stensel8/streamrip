@@ -21,6 +21,7 @@ lazy from collections.abc import Callable
 
 lazy import aiohttp
 lazy import requests
+lazy import urllib3
 lazy from Cryptodome.Cipher import AES, Blowfish
 lazy from Cryptodome.Util import Counter
 lazy from yt_dlp import YoutubeDL
@@ -114,7 +115,10 @@ def _blocking_download(
     """
     chunk_size = 2**17  # 131 KB
     resume_pos = path.stat().st_size if resume and path.exists() else 0
-    req_headers = dict(headers)
+    # Audio is compressed already, and a resumed download asks for a byte
+    # offset in the file itself: one compressed on the way would make that
+    # offset meaningless. requests asks for gzip, deflate and zstd otherwise.
+    req_headers = {**headers, "Accept-Encoding": "identity"}
     if resume_pos > 0:
         req_headers["Range"] = f"bytes={resume_pos}-"
 
@@ -173,7 +177,7 @@ def _blocking_download(
         if stop.is_set():
             raise asyncio.CancelledError
         with path.open(mode) as file:
-            for chunk in resp.iter_content(chunk_size=chunk_size):
+            for chunk in _arriving(resp, chunk_size):
                 if stop.is_set():
                     raise asyncio.CancelledError
                 file.write(chunk)
@@ -184,6 +188,30 @@ def _blocking_download(
         raise IncompleteDownloadError(
             f"resumed file is {size} bytes, the server announced {expected_size}"
         )
+
+
+def _arriving(resp, chunk_size: int):
+    """The body of `resp`, each piece as soon as it is in.
+
+    `iter_content` waits for a whole chunk, and a connection that breaks
+    first takes what it had with it: a CDN that hangs up after the first
+    byte left an empty part file, so every retry was the very same request
+    from the start instead of one that resumes (#122). What did arrive is
+    handed out here, and so written, before the error that ends it. That
+    error is raised as requests raises it, so the messages stay the same.
+    """
+    raw = resp.raw
+    try:
+        while chunk := raw.read1(chunk_size, decode_content=True):
+            yield chunk
+    except urllib3.exceptions.ProtocolError as e:
+        raise requests.exceptions.ChunkedEncodingError(e) from e
+    except urllib3.exceptions.DecodeError as e:
+        raise requests.exceptions.ContentDecodingError(e) from e
+    except urllib3.exceptions.ReadTimeoutError as e:
+        raise requests.exceptions.ConnectionError(e) from e
+    except urllib3.exceptions.SSLError as e:
+        raise requests.exceptions.SSLError(e) from e
 
 
 def _threadsafe(callback):
@@ -245,6 +273,9 @@ class Downloadable(ABC):
     resolved_at: float = 0.0
     # Whether the url goes stale like that at all.
     url_expires: bool = True
+    # The quality tier the file is served at, where the source says so: a
+    # track that keeps failing steps down from this one (see Track).
+    quality: int | None = None
 
     async def download(self, path: Path, callback: Callable[[int], Any]):
         await self._download(path, callback)

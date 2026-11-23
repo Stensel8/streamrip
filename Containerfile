@@ -70,7 +70,7 @@ COPY pyproject.toml uv.lock ./
 # pyproject.toml and uv.lock change.
 RUN --mount=type=cache,target=/root/.cache/uv \
     set -eux; \
-    uv sync --locked --no-dev --no-install-project --python 3.15; \
+    uv sync --locked --no-dev --no-install-project --extra web --python 3.15; \
     cd "$(dirname "$(dirname "$(readlink -f /opt/streamrip/bin/python)")")"; \
     rm -rf include share bin/pip* bin/idle* bin/pydoc* bin/*-config \
         lib/pkgconfig lib/*.a lib/libpython* lib/*tcl* lib/*tk* lib/itcl* lib/thread*; \
@@ -85,13 +85,14 @@ RUN --mount=type=cache,target=/root/.cache/uv \
         pillow.libs/libharfbuzz* pillow.libs/libpng16* pillow.libs/libbrotli*; \
     find /opt/streamrip -type f \( -name '*.so' -o -name '*.so.*' \) -exec strip --strip-unneeded {} +
 COPY README.md LICENSE ./
+COPY LICENSES ./LICENSES
 COPY streamrip ./streamrip
 # Reinstalled every time: uv would take streamrip's wheel from the cache as
 # long as pyproject.toml is unchanged, however much of the code changed.
 RUN --mount=type=cache,target=/root/.cache/uv \
     set -eux; \
-    uv sync --locked --no-dev --no-editable --reinstall-package streamrip --python 3.15; \
-    /opt/streamrip/bin/python -c 'import ssl, sqlite3, lzma, bz2, ctypes, streamrip.rip.cli; \
+    uv sync --locked --no-dev --no-editable --extra web --reinstall-package streamrip --python 3.15; \
+    /opt/streamrip/bin/python -c 'import ssl, sqlite3, lzma, bz2, ctypes, streamrip.rip.cli, streamrip.web; \
         from PIL import features; assert all(map(features.check, ("jpg", "zlib", "webp")))'; \
     /opt/streamrip/bin/streamrip --version
 
@@ -102,7 +103,7 @@ FROM gcr.io/distroless/cc-debian13:latest@sha256:dac90a25ffe03ebaace90cda886b081
 LABEL org.opencontainers.image.title="streamrip" \
       org.opencontainers.image.description="A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, SoundCloud, and Spotify." \
       org.opencontainers.image.source="https://github.com/Stensel8/streamrip" \
-      org.opencontainers.image.licenses="GPL-3.0-only"
+      org.opencontainers.image.licenses="AGPL-3.0-only AND GPL-3.0-only"
 
 COPY --from=build /opt/python /opt/python
 COPY --from=tools /usr/local/bin/ffmpeg /usr/local/bin/qjs /usr/local/bin/
@@ -118,5 +119,7 @@ ENV PATH=/opt/streamrip/bin:$PATH \
     STREAMRIP_NO_UPDATE_CHECK=1
 WORKDIR /data
 VOLUME /data
+# streamrip web --host 0.0.0.0, published on the host's 127.0.0.1 only.
+EXPOSE 8888
 
 ENTRYPOINT ["streamrip"]
