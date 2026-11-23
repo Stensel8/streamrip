@@ -10,7 +10,11 @@ from mutagen.flac import FLAC
 
 from .. import converter, lyrics
 from ..client.audio_match import MatchTrack
-from ..exceptions import FFmpegNotFoundError, TrackDownloadFailedError
+from ..exceptions import (
+    FFmpegNotFoundError,
+    NonStreamableError,
+    TrackDownloadFailedError,
+)
 from ..filepath_utils import (
     clean_filename,
     clean_filepath,
@@ -207,6 +211,9 @@ class Track(Media):
             self.meta.album.info.bit_depth,
             self.meta.album.info.sampling_rate,
         )
+        # The spotify backend refused this track: re-downloading it on the
+        # youtube backend only happens once, when _fallback_to_youtube does it.
+        self._fallback_used = False
         # Downloaded beside the track, and only then put in its place: a retry
         # resumes this file, never a finished copy already at download_path
         # (with --no-db), and a download that fails leaves that copy alone.
@@ -273,6 +280,32 @@ class Track(Media):
                     part.unlink(missing_ok=True)
                     raise
                 except Exception as e:
+                    error = f"{type(e).__name__}: {e}"
+                    # The spotify backend refused the audio (e.g. Spotify's
+                    # audio-key cutoff for new accounts): the track is not
+                    # streamable there, but it may be on YouTube Music.
+                    # Re-download it from there, once.
+                    if self._fallback_to_youtube(e):
+                        # Wait for the re-resolution: the next attempt must
+                        # use the youtube backend's downloadable, not the one
+                        # Spotify just refused.
+                        await self._fallback_task
+                        delay = 2**attempt
+                        logger.warning(
+                            "Error downloading track '%s' from Spotify's CDN, "
+                            "re-downloading it from YouTube Music in %ss: %s",
+                            self.meta.title,
+                            delay,
+                            error,
+                        )
+                        part.unlink(missing_ok=True)
+                        # The re-resolution may have renamed the file (the
+                        # youtube backend's extension); the next attempt
+                        # continues that file, not the one just refused.
+                        part = self.download_path.with_stem(
+                            f"{self.download_path.stem}.part"
+                        )
+                        continue
                     # A missing ffmpeg does not fix itself in 2-8 seconds.
                     if attempt == MAX_DOWNLOAD_ATTEMPTS or isinstance(
                         e, FFmpegNotFoundError
@@ -294,6 +327,51 @@ class Track(Media):
                     return
             # Outside the slot: a track waiting to retry leaves it to another.
             await asyncio.sleep(delay)
+
+    def _fallback_to_youtube(self, error: Exception) -> bool:
+        """Whether this track should be re-downloaded from YouTube Music.
+
+        Only the spotify backend fails this way: Spotify refuses the audio
+        (NonStreamableError), and the config still asks for the spotify
+        backend, so the refusal is the account's, not a fluke. The re-fetch
+        from the youtube backend happens once: after it, the track is no
+        longer a spotify one, and the failure is recorded as usual.
+        """
+        if (
+            not isinstance(error, NonStreamableError)
+            or self._fallback_used
+            or self.client is None
+            or self.client.source != "spotify"
+            or self.config.session.spotify.backend != "spotify"
+        ):
+            return False
+        self._fallback_used = True
+        tier = getattr(self.config.session, self.client.source).quality
+        self._fallback_task = asyncio.ensure_future(
+            self._re_download_from_youtube(tier)
+        )
+        return True
+
+    async def _re_download_from_youtube(self, tier: int) -> None:
+        """Swap this track's downloadable for the one the youtube backend
+        resolves. The download loop continues with it on its next attempt."""
+        try:
+            fresh = await self.client.get_downloadable(self.meta.info.id, tier)
+        except Exception as e:
+            logger.debug(
+                "Could not re-resolve '%s' for the youtube backend: %s: %s",
+                self.meta.title,
+                type(e).__name__,
+                e,
+            )
+            return
+        fresh.resolved_at = time.time()
+        self.downloadable = fresh
+        # The refusal came from the spotify backend; the bytes are the
+        # youtube backend's, so the name must be too: a "T.flac" that holds
+        # an m4a is what makes the tagger fail.
+        if self.download_path.suffix.lower().removeprefix(".") != fresh.extension:
+            self.download_path = self.download_path.with_suffix(f".{fresh.extension}")
 
     async def postprocess(self):
         """Tag, convert, and dedup the downloaded file, then mark it downloaded."""

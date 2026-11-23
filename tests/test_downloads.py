@@ -348,6 +348,8 @@ def test_every_login_command_checks_ffmpeg_first(tmp_path, command):
 async def test_missing_ffmpeg_is_not_retried():
     track = MagicMock()
     track._skip_lossy_duplicate = False
+    track.client = None  # the fallback needs a client; this one has none
+    track._fallback_to_youtube = lambda e: False  # it is a real Track's method
     track.config.session.downloads.max_connections = 6
     track.downloadable.size = AsyncMock(return_value=0)
     track.downloadable.download = AsyncMock(side_effect=FFmpegNotFoundError("no"))
@@ -368,7 +370,6 @@ async def test_missing_ffmpeg_is_not_retried():
     ):
         await Track.download(track)
     assert MAX_DOWNLOAD_ATTEMPTS > 1  # or one attempt proves nothing
-    track.client.get_downloadable.assert_not_called()  # nor another quality
     assert track.downloadable.download.await_count == 1
     sleep.assert_not_called()
 

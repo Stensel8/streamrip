@@ -120,7 +120,26 @@ class SpotifyConfig(ServiceLimits):
     # What the login allows (Spotify says so); the playlist tools need more
     # than downloading does. Not in a config from before it was.
     scope: str = ""
-    # The audio comes from YouTube Music, in the one quality it has.
+    # Where the audio comes from: "spotify" plays the track with Spotify's
+    # own headless client (Soloist), at the account's quality, and streamrip
+    # records the local audio as lossless FLAC (real time); "youtube" is the
+    # same recording matched on YouTube Music. A track the Spotify backend
+    # cannot serve is routed to YouTube Music either way.
+    backend: str = "spotify"
+    # The name of the device streamrip pairs and signs in as.
+    device_name: str = "streamrip"
+    # The Soloist API key the spotify backend plays with: one per person,
+    # generated at developer.spotify.com/dashboard/soloist (a Premium
+    # account). A secret, like a password: streamrip fills it in and keeps
+    # it here, and Spotify will not say to which account it belongs.
+    soloist_api_key: str = ""
+    # The login the spotify backend used before Spotify Soloist: the username
+    # and reusable credentials the device sign-in earned. Kept so a config
+    # with it still loads; streamrip no longer uses it.
+    credentials: str = ""
+    # The quality of the audio, where the source serves it in more than one:
+    # 0 is the one quality Spotify has (its own client follows the account
+    # tier, YouTube Music its best AAC stream).
     quality: ClassVar[int] = 0
 
 

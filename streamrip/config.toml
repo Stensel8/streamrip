@@ -145,12 +145,21 @@ client_id = ""
 app_version = ""
 
 [spotify]
-# Spotify gives streamrip the track list, tags and cover art; the audio itself
-# is found on YouTube Music (matched by ISRC, title, artist and length) and
-# downloaded from there, so it is AAC or MP3, never lossless.
+# Spotify gives streamrip the track list, tags and cover art.
 #
-# You need your own Spotify app, and Spotify only lets an app whose owner has
-# Premium use its API. Create it at https://developer.spotify.com/dashboard:
+# The audio comes from one of two backends. "spotify" plays each track in
+# real time with Spotify's official headless client, Soloist, and records the
+# local audio while it plays: bit-exact, and the account's own quality --
+# lossless FLAC on Premium. It needs a Soloist API key (one per person,
+# below), one pairing with a Spotify app on the same network, and so far runs
+# on Linux only. "youtube" finds the same recording on YouTube Music
+# (matched by ISRC, title, artist and length) and downloads it from there, so
+# it is AAC or MP3, never lossless. A track the spotify backend cannot serve
+# is routed to youtube either way, so nothing is lost by choosing it.
+#
+# You need your own Spotify app for the metadata, and Spotify only lets an
+# app whose owner has Premium use its API. Create it at
+# https://developer.spotify.com/dashboard:
 #   - Redirect URI: exactly the redirect_uri below
 #   - "Which API/SDKs are you planning to use?": tick Web API only
 # Then copy its Client ID here (no client secret is needed), or leave it empty
@@ -162,6 +171,7 @@ client_id = ""
 redirect_uri = "http://127.0.0.1:9900/callback"
 # What the downloaded files are: "m4a" (AAC, tagged with cover art) or "mp3".
 # YouTube Music's best AAC stream is used as it is; anything else is re-encoded.
+# (Ignored for the spotify backend, whose audio is FLAC.)
 audio_format = "m4a"
 # kbps, only for audio that has to be re-encoded to audio_format.
 audio_bitrate = 256
@@ -169,6 +179,16 @@ audio_bitrate = 256
 # connections only show videos), accept an official video whose title, artist
 # and length match. Turn it off to download only exact song matches.
 match_videos = true
+# Where the audio comes from: "spotify" (Soloist, played and recorded) or
+# "youtube".
+backend = "spotify"
+# The name of the device the Spotify app on this network picks to pair with,
+# and that streamrip plays to.
+device_name = "streamrip"
+# The Soloist API key: one per person, for a Premium account, made at
+# developer.spotify.com/dashboard/soloist. A secret, like a password:
+# streamrip never prints it, logs it, or sends it anywhere but Spotify.
+soloist_api_key = ""
 
 # Do not change any of the fields below
 access_token = ""
@@ -177,6 +197,9 @@ refresh_token = ""
 token_expiry = ""
 # What the login allows; `streamrip playlist` needs more than downloading does
 scope = ""
+# The login the spotify backend earned before Spotify Soloist: streamrip no
+# longer reads it; a config that has it still loads.
+credentials = ""
 
 [database]
 # Create a database that contains all the track IDs downloaded so far

@@ -268,7 +268,8 @@ class Main:
         if source in self._announced:
             return
         self._announced.add(source)
-        if (notice := notice_for(source)) is not None:
+        backend = self.config.session.spotify.backend if source == "spotify" else None
+        if (notice := notice_for(source, backend)) is not None:
             console.print(notice)
 
     async def _reauthenticate(self, source: str, prompter, cause: Exception):

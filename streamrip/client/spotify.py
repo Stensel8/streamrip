@@ -1,8 +1,12 @@
-"""Spotify: the track lists, tags and covers. The audio comes from YouTube Music.
+"""Spotify: the track lists, tags and covers, and the audio.
 
-Spotify encrypts its own audio, so this client only reads Spotify's Web API for
-what a track *is*, then finds the same recording on YouTube Music
-(see `ytmusic`) for yt-dlp to download, the way spotDL does.
+The track lists, tags and covers come from Spotify's Web API. The audio comes
+from one of two backends (the config's `backend`): "spotify" plays the track
+with Spotify's own headless client (Soloist, see `soloist`), at the account's
+quality, and streamrip records the local audio as lossless FLAC; "youtube"
+finds the same recording on YouTube Music (see `ytmusic`) for yt-dlp to
+download, the way spotDL does. A track the Spotify backend cannot serve is
+routed to YouTube Music either way.
 
 How the login and the API are used follows the rules for apps in development
 mode that Spotify has had since February 2026, as Music-Sync
@@ -34,9 +38,10 @@ from ..exceptions import (
 )
 from .audio_match import MatchTrack
 from .client import Client, api_headers
-from .downloadable import YtDlpDownloadable
+from .downloadable import SoloistDownloadable, YtDlpDownloadable
 from .ytmusic import YouTubeMusicMatcher
 lazy from ..config import Config
+lazy from . import soloist
 
 logger = logging.getLogger("streamrip")
 
@@ -172,7 +177,9 @@ def summary_item(media_type: str, item: dict) -> dict:
 
 
 class SpotifyClient(Client):
-    """Spotify: the user's own Spotify app, with the audio from YouTube Music."""
+    """Spotify: the user's own Spotify app; the audio from Spotify itself
+    (the `spotify` backend, its official client, recorded locally) or a
+    YouTube Music match (the `youtube` one)."""
 
     source = "spotify"
 
@@ -183,11 +190,54 @@ class SpotifyClient(Client):
         # and a track is fetched once for its tags and once for its audio.
         self._tracks: dict[str, dict] = {}
         self._token_lock = asyncio.Lock()
+        # The Soloist backend this process uses for Spotify's own audio,
+        # or None: built on first use; it keeps nothing open between runs.
+        self._soloist_backend = None
 
     @property
     def container(self) -> str:
         """The container the downloaded audio ends up in, as albums name it."""
         return "MP3" if self.config.audio_format.lower() == "mp3" else "AAC"
+
+    # --- Spotify's own audio (the `spotify` backend) ---------------------------
+
+    @property
+    def soloist_backend(self):
+        """This client's Soloist backend, or None: the backend off, or the
+        Soloist API key not in the config, and then the audio goes to
+        YouTube Music instead."""
+        c = self.config
+        if c.backend != "spotify" or not c.soloist_api_key:
+            return None
+        if self._soloist_backend is None:
+            self._soloist_backend = soloist.SoloistBackend(c)
+        return self._soloist_backend
+
+    @property
+    def backend_available(self) -> bool:
+        """Whether the Spotify backend can serve audio at all."""
+        return self.soloist_backend is not None
+
+    async def pair_soloist(self, api_key: str) -> str:
+        """Pair the Soloist device once, and keep its API key in the config.
+
+        The Web-API login already happened; this only adds the pairing the
+        Spotify backend plays back. The prompter says the steps; the pairing
+        itself blocks, so it runs in a worker thread. Returns the username.
+        """
+        self.config.soloist_api_key = api_key
+        # A backend built without the key would keep its empty one.
+        self._soloist_backend = None
+        backend = self.soloist_backend
+        if backend is None:
+            raise AuthenticationError(
+                "Spotify's own audio needs the Soloist API key in the config."
+            )
+        return await asyncio.to_thread(backend.pair)
+
+    async def close(self):
+        """The Spotify backend keeps nothing open between runs: nothing to close."""
+        await super().close()
 
     # --- login -------------------------------------------------------------
 
@@ -347,6 +397,21 @@ class SpotifyClient(Client):
                 "its quota, wait a while. Lowering requests_per_minute in "
                 "[spotify] helps too.",
             )
+        if status == 410:
+            # 410 is final, on purpose: it is not in RETRY_STATUSES, so this
+            # answer costs one request. Retrying in a row only extends the
+            # block, so say wait -- not "try again".
+            raise SpotifyAPIError(
+                status,
+                "Spotify is answering with HTTP 410 (Gone): it is "
+                "temporarily refusing this app and account from this "
+                "address. The account is fine -- if you can still stream "
+                "on open.spotify.com, this is a temporary block, not a "
+                "login problem. Do not retry now; repeated attempts extend "
+                "the block. Wait a few hours and try again. If it holds on, "
+                "make a fresh app in the developer dashboard and log in "
+                "with it.",
+            )
         raise SpotifyAPIError(status, f"Spotify error (HTTP {status}): {message}")
 
     async def _pages(self, path: str, params: dict | None = None):
@@ -484,8 +549,22 @@ class SpotifyClient(Client):
     # --- audio -------------------------------------------------------------
 
     async def get_downloadable(self, item_id: str, quality: int):
-        """The audio of a track: its best match on YouTube Music, for yt-dlp."""
+        """The audio of a track: from Spotify itself where the backend is
+        `spotify` (its official client plays the track, streamrip records
+        it), else its best match on YouTube Music, for yt-dlp."""
         track = await self._get_track(plain_id(item_id))
+        # The backend remembers the tracks Spotify refused to play; those go
+        # straight to YouTube Music, even mid-run.
+        if (backend := self.soloist_backend) is not None and plain_id(
+            item_id
+        ) not in backend.refused:
+            # The audio is what Spotify plays for the account, whatever
+            # audio_format is; it ends up FLAC: stamp the album's quality
+            # bracket so the folder name says so.
+            track.setdefault("album", {})["container"] = "FLAC"
+            return SoloistDownloadable(
+                backend, plain_id(item_id), track.get("duration_ms") or 0, self.source
+            )
         album = track.get("album") or {}
         wanted = MatchTrack(
             title=track.get("name") or "",

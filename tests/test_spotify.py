@@ -378,6 +378,15 @@ PLAYLIST_ITEMS = f"/v1/playlists/{PLAYLIST}/items"
             "too many requests",
             4,  # the usual retries
         ),
+        # 410 is final: one request, no retries -- they would only extend
+        # the block. The message says wait, and that the account is fine.
+        (
+            {f"/v1/tracks/{TRACK}": (410, {"error": {"message": "gone"}})},
+            "track",
+            SpotifyAPIError,
+            "Do not retry now",
+            1,
+        ),
         # Only playlists the user owns or collaborates on can be read.
         (
             PLAYLIST_FOUND | {PLAYLIST_ITEMS: (403, {"error": {"message": "no"}})},
@@ -405,6 +414,7 @@ PLAYLIST_ITEMS = f"/v1/playlists/{PLAYLIST}/items"
         "premium",
         "missing",
         "rate limited",
+        "gone (410)",
         "not my playlist (403)",
         "not my playlist (404)",
         "premium, not a private playlist",

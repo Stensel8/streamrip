@@ -829,6 +829,54 @@ class YtDlpDownloadable(Downloadable):
             shutil.rmtree(directory, ignore_errors=True)
 
 
+class SoloistDownloadable(Downloadable):
+    """Spotify's own audio, played by its official client and recorded
+    locally (see client.soloist): one track at a time, in real time.
+
+    `backend` is the client's SoloistBackend (or a stand-in with the same
+    `play_and_capture` and `estimate_size`): it owns the binary, the sink and
+    the refusal of tracks, so this class never touches them directly.
+    """
+
+    # A device that plays a stored session has no url to expire.
+    url_expires = False
+
+    def __init__(
+        self, backend, track_id: str, duration_ms: int, source: str = "spotify"
+    ):
+        """The track `track_id`, played by `backend` and recorded as FLAC."""
+        self.session = None  # not an HTTP download; the ABC asks for one
+        self.url = ""
+        self.extension = "flac"
+        self.source = source
+        self.backend = backend
+        self.track_id = track_id
+        self.duration_ms = duration_ms
+        # A rough size of the FLAC to come: it sizes the progress bar.
+        self._size = backend.estimate_size(duration_ms / 1000)
+
+    async def size(self) -> int:
+        """The estimate: the FLAC only knows its length once encoded."""
+        return self._size or 0
+
+    async def _download(self, path: Path, callback):
+        """Play the track and record it into path.
+
+        The play is real time and the recorder is a blocking subprocess, so
+        it runs in a worker thread, reporting progress back to the loop
+        (rich's display is not thread-safe). A NonStreamableError is the
+        backend's refusal, and the cue for the youtube backend to take over.
+        """
+        await asyncio.to_thread(self._download_blocking, path, _threadsafe(callback))
+
+    def _download_blocking(self, path: Path, report):
+        """The blocking part, in the worker thread: one track at a time, the
+        way the device wants it."""
+        self.backend.play_and_capture(
+            f"spotify:track:{self.track_id}", self.duration_ms / 1000, path, report
+        )
+
+
 async def concat_audio_files(
     paths: list[Path], out: Path, ext: str, max_files_open=128, max_processes=4
 ):

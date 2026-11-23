@@ -415,7 +415,65 @@ class SpotifyPrompter(CredentialPrompter):
                 if not Confirm.ask("Try again?", default=True):
                     raise AuthenticationError("Spotify login cancelled.") from e
             else:
-                return
+                break
+        await self._offer_spotify_backend()
+
+    async def _offer_spotify_backend(self):
+        """After the Web-API login: sign in to Spotify's own audio too.
+
+        A bonus on top of the login, so it never fails or blocks it: no
+        terminal, or a declined question, or a failed sign-in, just leaves
+        the login as it is.
+        """
+        c = self.config.session.spotify
+        if c.backend != "spotify":
+            return
+        # Never block on a prompt nobody is there to answer: streamrip is run
+        # from cron and from scripts, where a hidden y/n means hanging forever.
+        if not sys.stdin.isatty():
+            return
+        if not Confirm.ask(
+            "Also sign in to Spotify's own audio? Each track is then played "
+            "in real time by Spotify's official client, Soloist, and "
+            "streamrip records it here, as lossless FLAC on Premium.",
+            default=True,
+        ):
+            return
+        key = c.soloist_api_key
+        if not key:
+            console.print(
+                "\nSpotify's own audio needs a [bold]Soloist API key[/bold]: one "
+                "per person, free for Premium accounts, made at\n"
+                "[blue underline]https://developer.spotify.com/dashboard/soloist"
+                "[/blue underline]\n"
+                "It is a secret, like a password: streamrip never prints it, "
+                "logs it or sends it anywhere but Spotify."
+            )
+            while not key:
+                key = Prompt.ask("Enter the Soloist API key", password=True).strip()
+            c.soloist_api_key = key
+        backend = self.client.soloist_backend
+        if backend is None:
+            console.print(
+                "[yellow]The [spotify] backend is on, but no Soloist API key "
+                "is in the config; the audio will come from YouTube "
+                "Music.[/yellow]"
+            )
+            return
+        if not backend.paired():
+            console.print(
+                f"\nPair this device once, in the Spotify app on a device on "
+                f"this network:\n"
+                "  1. Open the app and press play\n"
+                "  2. Tap [italic]Connect to a device[/italic]\n"
+                f"  3. Pick [bold]{backend.device_name}[/bold] and play a track"
+            )
+        try:
+            username = await self.client.pair_soloist(key)
+        except Exception as e:
+            console.print(str(e), style="yellow", markup=False)
+            return
+        console.print(f"Signed in to Spotify's own audio as {username}.")
 
     def _explain_app(self):
         """Say what the user has to make, and where, before streamrip can log in."""
@@ -477,8 +535,17 @@ class SpotifyPrompter(CredentialPrompter):
         """Write the session's Spotify app and login to the config file."""
         c = self.config.session.spotify
         cf = self.config.file.spotify
-        names = ("client_id", "access_token", "refresh_token", "token_expiry", "scope")
-        for name in names:
+        for name in (
+            "client_id",
+            "access_token",
+            "refresh_token",
+            "token_expiry",
+            "scope",
+            "backend",
+            "device_name",
+            "soloist_api_key",
+            "credentials",
+        ):
             setattr(cf, name, getattr(c, name))
         self.config.file.set_modified()
         self._announce_saved()
