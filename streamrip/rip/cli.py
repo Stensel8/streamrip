@@ -478,7 +478,7 @@ def rip(
     no_ssl_verify,
     verbose,
 ):
-    """A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, SoundCloud, and Spotify."""
+    """Download your music from Qobuz, Tidal, Deezer, SoundCloud and Spotify, and move your playlists between Spotify, Tidal and CSV."""
     logging.basicConfig(
         level="INFO",
         format="%(message)s",

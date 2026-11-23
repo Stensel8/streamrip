@@ -3,9 +3,9 @@
 # Playlists
 
 `streamrip playlist` moves your liked songs and playlists between Spotify, Tidal
-and CSV files, and downloads them from the source you pick. It was
-[Music-Sync](https://github.com/Stensel8/Music-Sync), which is part of streamrip
-now; the same is on the *Playlists* page of [`streamrip web`](web.md).
+and CSV files, and can download them from a source of your choice. It used to be
+[Music-Sync](https://github.com/Stensel8/Music-Sync). Everything here is also on
+the *Playlists* page of [`streamrip web`](web.md).
 
 | From \ to   | CSV      | Spotify    | Tidal      | Your music folder |
 | ----------- | -------- | ---------- | ---------- | ----------------- |
@@ -13,9 +13,9 @@ now; the same is on the *Playlists* page of [`streamrip web`](web.md).
 | **Tidal**   | `export` | `transfer` |            | `download`        |
 | **CSV**     |          | `import`   | `import`   | `streamrip csv`   |
 
-Each track is found by its ISRC, or else by title, artist and length, and a live
-version is never taken for the studio one. Running a transfer twice adds
-nothing twice.
+Tracks are matched by ISRC, or by title, artist and length, and a live version
+never counts as the studio recording ([details](#how-tracks-are-matched)).
+Running the same transfer again doesn't add duplicates.
 
 ```bash
 streamrip playlist login spotify                          # once per service
@@ -38,73 +38,64 @@ streamrip playlist doctor                                 # tries the real APIs
 
 | Option              | What it does                                                          |
 | ------------------- | --------------------------------------------------------------------- |
-| `--dry-run`         | Look everything up, change nothing                                    |
-| `--unmatched FILE`  | Save the tracks that were not found to a CSV                          |
+| `--dry-run`         | Look everything up, but change nothing                                |
+| `--unmatched FILE`  | Save the tracks that weren't found to a CSV                           |
 | `--min-score 0.8`   | How sure a match must be (0 to 1)                                     |
 | `--to-playlist NAME`| The playlist to fill (transfer)                                       |
 | `--to-favorites`    | Add to your favourites (liked songs) instead of a playlist (import)   |
-| `--albums`          | The CSV lists albums, not tracks; add them to your favourites (import)|
-| `-s`, `-fs`         | The source to download from, and the one for what it lacks (download) |
+| `--albums`          | The CSV lists albums; add them to your favourites (import)            |
+| `-s`, `-fs`         | The source to download from, and a fallback for what it lacks (download) |
 | `-q`                | No progress output                                                    |
 
-`streamrip playlist download` is what a Spotify link cannot do: Spotify's own
-audio is encrypted, so a Spotify link downloads YouTube Music's AAC (see
-[Spotify](spotify.md)). This reads the list from Spotify and finds every track
-on Qobuz, Tidal or Deezer instead, the way [`streamrip csv`](csv-lists.md)
-does. Each list goes in a folder of its own.
+`streamrip playlist download` covers what a Spotify link can't. Spotify encrypts
+its audio, so a Spotify link gets you YouTube Music's AAC (see
+[Spotify](spotify.md)). This command reads the list from Spotify and finds each
+track on Qobuz, Tidal or Deezer instead, the same way
+[`streamrip csv`](csv-lists.md) does. Each list gets its own folder.
 
 ## M3U8 playlists for your own library
 
-`--format m3u8` writes playlists a player or server reads: Navidrome, Jellyfin,
-Music Assistant, or a plain player on a folder of music, such as the one
-streamrip downloads to. With `--library DIR` each track of a playlist is found
-among the audio files under `DIR` by its ISRC (ripping tools rename files, but
-not that), or else by title, artist and length, and written as the path of
-that file, relative to the playlist (`--absolute-paths` for the other kind).
-When one recording is in the library more than once, the oldest release is
-taken (`-v` says which). What the library lacks is left out, and
-`--unmatched FILE` lists it in a CSV, to download it with `streamrip csv` say.
-Without `--library` a playlist only describes its tracks.
+`--format m3u8` writes playlist files for Navidrome, Jellyfin, Music Assistant,
+or any player that reads a music folder, like the one streamrip downloads to.
+
+With `--library DIR`, streamrip looks for each track among the audio files in
+`DIR`. It checks the ISRC first (ripping tools rename files, but the ISRC stays)
+and otherwise title, artist and length. The playlist then points to that file,
+with a path relative to the playlist (`--absolute-paths` for absolute ones). If a
+recording is in your library more than once, the oldest release is used (`-v`
+tells you which). Tracks you don't have are left out. `--unmatched FILE` writes
+them to a CSV, which you can then download with `streamrip csv`.
+
+Without `--library`, the playlist only describes the tracks.
 
 ## Setting up Spotify and Tidal
 
 ### Spotify
 
-One app and one login, for downloading and for the playlist tools alike: the
-app is the one in [Spotify](spotify.md), and `streamrip playlist login spotify`
-is the same login as a Spotify link asks for. It asks for a little more than
-downloading needs (reading and changing your liked songs and playlists), so a
-login made before streamrip had these tools is asked for again once.
-
-> [!IMPORTANT]
-> Since February 2026 Spotify's API only works for apps whose owner has
-> **Premium**. Without it every request fails with HTTP 403. Someone with
-> Premium can make the app and add you under *Settings > User Management*.
-
-1. Create an app in the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard).
-2. Redirect URI: `http://127.0.0.1:9900/callback` (`127.0.0.1`, not `localhost`).
-3. Under *Which API/SDKs are you planning to use?* tick **Web API** only.
-4. Copy the Client ID. The client secret is not needed.
-
-![Only Web API is ticked.](images/spotify-web-api-ticked.avif)
+Downloading and the playlist tools share one Spotify app and one login. Set up
+the app as described in [Spotify](spotify.md#setting-up-a-spotify-app); the
+account that owns it needs Premium. `streamrip playlist login spotify` is the
+same login a Spotify link asks for. The playlist tools need a bit more access
+(reading and changing your liked songs and playlists), so if you logged in
+before streamrip had them, you'll be asked once more.
 
 ### Tidal
 
-Downloading from Tidal uses the login Tidal's own apps use; your playlists and
-favourites are only reachable through Tidal's official API, which needs a
-developer app of your own and a login of its own.
+For downloading, streamrip uses the same login as Tidal's own apps. Your
+playlists and favourites are only available through Tidal's official API, and
+that needs a developer app of your own with a separate login.
 
 1. Click *Create New App* in the [TIDAL developer dashboard](https://developer.tidal.com/dashboard).
-2. Redirect URI: `http://127.0.0.1:9900/tidal/callback`.
-3. Scopes: `collection.read`, `collection.write`, `playlists.read`,
+2. Set the redirect URI to `http://127.0.0.1:9900/tidal/callback`.
+3. Add the scopes `collection.read`, `collection.write`, `playlists.read`,
    `playlists.write` and `user.read`.
-4. Copy the Client ID and the Client Secret. The secret lets streamrip search
+4. Copy the Client ID and the Client Secret. streamrip uses the secret to search
    Tidal's catalogue.
 
 ![The Scopes panel of a TIDAL app.](images/tidal-scopes.avif)
 
-`streamrip playlist login tidal` asks for both the first time, or put them in
-`config.toml` (`streamrip config open`):
+`streamrip playlist login tidal` asks for both the first time. You can also put
+them in `config.toml` (`streamrip config open`):
 
 ```toml
 [spotify]
@@ -115,10 +106,10 @@ api_client_id = "..."
 api_client_secret = "..."
 ```
 
-The Tidal catalogue searched is that of the country of your Tidal download
-login, or else of your system. Every login is kept in `config.toml`, like the
-download logins: keep that file private (streamrip makes it readable to you
-alone).
+streamrip searches the Tidal catalogue of the country of your Tidal download
+login, or of your system if you don't have one. All logins are stored in
+`config.toml`, like the download logins, so keep that file private. streamrip
+makes it readable only by you.
 
 ### Coming from Music-Sync
 
@@ -126,78 +117,80 @@ alone).
 streamrip playlist migrate
 ```
 
-takes the apps and logins from Music-Sync's settings (`~/.config/music-sync/`, on
-Windows `%APPDATA%\music-sync`) where streamrip has none of its own. Then add
-streamrip's redirect URIs to both apps: Music-Sync used port 8888, streamrip
-9900. `streamrip playlist status` shows them. The `music-sync` commands are
-`streamrip playlist` commands now (`playlists` is `list`), and `music-sync web`
-is [`streamrip web`](web.md).
+copies the apps and logins from Music-Sync's settings (`~/.config/music-sync/`,
+or `%APPDATA%\music-sync` on Windows) for anything streamrip doesn't have yet.
+After that, add streamrip's redirect URIs to both apps. Music-Sync used port
+8888, streamrip uses 9900, and `streamrip playlist status` shows the URIs. The
+`music-sync` commands are now `streamrip playlist` commands (`playlists` became
+`list`), and `music-sync web` is now [`streamrip web`](web.md).
 
 ## How tracks are matched
 
-A track that is already in the target playlist is recognised without a lookup,
-so a second run is quick. Any other track is found by its id on the target
-service (a CSV exported from it), else by its ISRC, else by searching for title
-and artist, and as a last resort in the tracklist of its album, as
-spotify_to_tidal does. Each search result gets a score from 0 to 1: half for the
-title, 0.4 for the artist and 0.1 for the length. From 0.8 on (`--min-score`) it
-is a match.
+Tracks that are already in the target playlist are recognised without a lookup,
+so a second run is quick. Other tracks are looked up by their id on the target
+service (when the CSV was exported from it), then by ISRC, then by searching for
+title and artist. As a last resort streamrip searches the album's tracklist, like
+spotify_to_tidal does.
 
-Remaster notes, "feat." parts, spelling and punctuation do not count. Another
-version does: live, remix, acoustic, instrumental, sped up, "(Taylor's Version)"
-and the like, and other numbers ("Part 1" is not "Part 2"). A track that is not
-found says why:
+Each search result gets a score from 0 to 1. The title counts for half, the
+artist for 0.4 and the length for 0.1. From 0.8 (`--min-score`) it's a match.
+
+streamrip ignores remaster notes, "feat." credits, spelling and punctuation. It
+does keep versions apart: live, remix, acoustic, instrumental, sped up,
+"(Taylor's Version)" and so on, and numbers too ("Part 1" isn't "Part 2"). When a
+track isn't found, streamrip tells you why:
 
 | Reason                                       | What it means                                                       |
 | -------------------------------------------- | ------------------------------------------------------------------- |
-| not on Tidal                                 | Nothing by this artist came up: probably not in your country's catalogue |
-| only other songs on Tidal                    | The artist is there, this song is not                               |
-| only another version                         | Only a live version, remix and the like                             |
-| score too low for a match (0.75, needs 0.80) | Close, but not sure enough; often the length differs                |
+| not on Tidal                                 | Nothing by this artist turned up. It's probably not in your country's catalogue |
+| only other songs on Tidal                    | The artist is there, but this song isn't                            |
+| only another version                         | Only a live version, a remix or similar                             |
+| score too low for a match (0.75, needs 0.80) | Close, but not close enough. Often the length differs               |
 
-The same matching decides which YouTube Music result is a Spotify track, and
-which search result is a row of a CSV list.
+The same matching picks the YouTube Music result for a Spotify track, and the
+search result for each row of a CSV list.
 
 ## CSV format
 
 | Column                     | Contents                                          |
 | -------------------------- | ------------------------------------------------- |
-| `title`                    | Track title (the only column that is required)    |
+| `title`                    | Track title (the only required column)            |
 | `artists`                  | Artists, separated by `;`                         |
 | `album`                    | Album title                                       |
 | `duration_ms`              | Length in milliseconds                            |
 | `isrc`                     | ISRC, the most reliable way to find a track again |
 | `spotify_uri` / `tidal_id` | The track's id on that service                    |
 
-Files must be UTF-8. The column names of other exporters (`Track Name`,
-`Artist Name(s)`, ...) work too, and so do semicolons and tabs between the
-cells; a file without a header row is read as `artist,title`. With `--albums`
-each row is an album: `artist,album`, as csv2tidal took them.
+Files must be UTF-8. Column names from other exporters (`Track Name`,
+`Artist Name(s)`, ...) work too, and cells can be separated by commas,
+semicolons or tabs. A file without a header row is read as `artist,title`. With
+`--albums`, each row is an album (`artist,album`), the way csv2tidal read them.
 
 ## Good to know
 
-- Spotify only lets apps read playlists you own or collaborate on, not the
-  ones you follow. They are skipped, and so are empty playlists, with a note.
-- A transfer to Tidal is fast (20 ISRCs per request); one to Spotify takes a
-  request per track.
-- Tidal's API is young. If something fails, add the output of
+- Spotify only lets apps read playlists you own or collaborate on. Playlists you
+  only follow are skipped with a note, and so are empty ones.
+- Transfers to Tidal are fast (20 ISRCs per request). Transfers to Spotify take
+  one request per track.
+- Tidal's API is still young. If something breaks, add the output of
   `streamrip playlist doctor tidal` to your issue.
 
 ## Credits
 
-The playlist tools were Music-Sync, which started out as
+The playlist tools come from Music-Sync, which started as
 [csv2tidal](https://github.com/Nugman/csv2tidal), a small script by Roland Behme
-([Nugman](https://github.com/Nugman)) that put a list of albums in your Tidal
-favourites. He took the idea from
-[a gist by RZetko](https://gist.github.com/RZetko/71801a20188e842ef03bed3b6d7a297f),
+([Nugman](https://github.com/Nugman)) that added a list of albums to your Tidal
+favourites. He got the idea from
+[a gist by RZetko](https://gist.github.com/RZetko/71801a20188e842ef03bed3b6d7a297f)
 and the login code from [spotify_to_tidal](https://github.com/spotify2tidal/spotify_to_tidal)
 by [Tim Rae](https://github.com/timrae) and
-[its contributors](https://github.com/spotify2tidal/spotify_to_tidal/graphs/contributors),
-which we still borrow ideas from. All three ran on
+[its contributors](https://github.com/spotify2tidal/spotify_to_tidal/graphs/contributors).
+We still borrow ideas from it. All three were built on
 [python-tidal](https://github.com/EbbLabs/python-tidal), started by
 [Thomas Amland](https://github.com/tamland) and kept alive by
 [morguldir](https://github.com/morguldir) and
-[tehkillerbee](https://github.com/tehkillerbee). Sten Tijhuis merged csv2tidal
-with his own prototype into Music-Sync, and Music-Sync into streamrip. The
-colours of the web interface come from [daisyUI](https://daisyui.com). How this
-is licensed: [License](../README.md#license).
+[tehkillerbee](https://github.com/tehkillerbee). Sten Tijhuis combined csv2tidal
+with his own prototype into Music-Sync, and later merged Music-Sync into
+streamrip. The colours of the web interface come from
+[daisyUI](https://daisyui.com). For the licence, see
+[License](../README.md#license).

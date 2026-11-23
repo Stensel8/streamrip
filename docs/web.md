@@ -6,34 +6,34 @@
 streamrip web
 ```
 
-opens <http://127.0.0.1:8888> in your browser: what the commands do, on a page.
+opens <http://127.0.0.1:8888> in your browser. It does what the commands do, on
+a web page.
 
-- **Download**: paste links (albums, tracks, playlists, artists, labels, from
-  every source); search a source, see the covers and tick what to download; or
-  download a CSV list. A download runs in the background, with its tracks, how
-  far it is and its log on the page. One runs at a time; the next waits for it.
-- **Playlists**: download your Spotify or Tidal liked songs or a playlist from
-  the source you pick, transfer them to the other service, export them to CSV
-  or import a CSV (see [Playlists](playlists.md)).
-- **Accounts**: log in to Qobuz, Tidal and Deezer for downloading, set up the
-  Spotify app both downloads and playlists use, and Tidal's API for
-  playlists. A browser login comes back to streamrip on this computer by
-  itself; when your browser is on another device, paste the address it ends up
-  on instead.
+- **Download**: paste links from any source (albums, tracks, playlists, artists,
+  labels), search a source and tick what you want from the results, or download
+  a CSV list. Downloads run in the background, and the page shows the tracks,
+  the progress and the log. One download runs at a time; the next one waits.
+- **Playlists**: download your liked songs or a playlist from Spotify or Tidal
+  from a source of your choice, transfer them to the other service, or export
+  and import CSV files (see [Playlists](playlists.md)).
+- **Accounts**: log in to Qobuz, Tidal and Deezer for downloading, and set up
+  the Spotify app (for downloads and playlists) and Tidal's API (for playlists).
+  A browser login finds its way back to streamrip on this computer. If your
+  browser is on another device, paste the address it ends up on.
 
-Everything is kept in the same `config.toml` as the command line's, so a login
-made on the page works in the terminal and the other way round.
+It all goes into the same `config.toml` as the command line, so a login made on
+the page also works in the terminal, and the other way round.
 
-It needs the `web` extra (Flask). The installers, the container image and the
-Nix flake include it; with a wheel:
-`uv tool install "./streamrip-*.whl[web]"`. `--port` picks another port,
-`--no-browser` leaves the browser closed.
+The web interface needs the `web` extra (Flask). The installers, the container
+image and the Nix flake include it. With a wheel, run
+`uv tool install "./streamrip-*.whl[web]"`. Use `--port` for another port and
+`--no-browser` to keep the browser closed.
 
-## It is for you alone
+## It's for you alone
 
-The page has no password, so it only answers to `127.0.0.1` and `localhost`
-(a page on another site cannot reach it under another name), refuses changes
-that another website starts, and runs only its own scripts. Never make it
+The page has no password. That's why it only answers to `127.0.0.1` and
+`localhost` (so another site can't reach it under a different name), refuses
+changes started by other websites and only runs its own scripts. Never make it
 reachable from a network.
 
 ## In a container
@@ -45,7 +45,8 @@ podman run --rm -it -v ./streamrip:/data -v ~/Music:/data/Music \
   opencommit.eu/stensel8/streamrip web --host 0.0.0.0
 ```
 
-and open <http://127.0.0.1:8888>. Inside the container it has to listen on
-every address (`--host 0.0.0.0`), so publish the port on `127.0.0.1` only, as
-above. A Spotify or Tidal login cannot come back into the container by itself:
-paste the address your browser ends up on, in the box under the login link.
+Then open <http://127.0.0.1:8888>. Inside the container it has to listen on all
+addresses (`--host 0.0.0.0`), so publish the port on `127.0.0.1` only, as above.
+Spotify and Tidal logins can't find their way back into the container by
+themselves. Paste the address your browser ends up on into the box under the
+login link.
