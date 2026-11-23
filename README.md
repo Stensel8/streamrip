@@ -9,7 +9,9 @@
 [![Mirror: opencommit.eu](https://img.shields.io/badge/mirror-opencommit.eu-blue)](https://opencommit.eu/Stensel8/streamrip)
 [![Mirror: codetrunk.eu](https://img.shields.io/badge/mirror-codetrunk.eu-blue)](https://repos.codetrunk.eu/Stensel8/streamrip)
 
-Download your music from Qobuz, Tidal, Deezer, SoundCloud and Spotify, and move
+**Keep the music you pay for. Take your playlists with you.**
+
+streamrip downloads from Qobuz, Tidal, Deezer, SoundCloud and Spotify, and moves
 your playlists between Spotify, Tidal and CSV. From the command line or in your
 browser.
 
@@ -238,9 +240,9 @@ CI does.
 ## Acknowledgements
 
 streamrip was written by [nathom](https://github.com/nathom) (consider
-[sponsoring nathom](https://github.com/sponsors/nathom)). This fork builds on
-everyone who sent fixes upstream, credited in [CHANGELOG.md](CHANGELOG.md).
-Thanks to Vitiko98, Sorrow446 and DashLt for their contributions.
+[sponsoring nathom](https://github.com/sponsors/nathom)). Thanks to all the
+contributors, upstream and in this fork. The fixes from upstream are credited in
+[CHANGELOG.md](CHANGELOG.md).
 
 streamrip was inspired by [rip](https://github.com/nathom/streamrip),
 [qobuz-dl](https://github.com/vitiko98/qobuz-dl),

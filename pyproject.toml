@@ -1,7 +1,7 @@
 [project]
 name = "streamrip"
 version = "2.7.3"
-description = "Download your music from Qobuz, Tidal, Deezer, SoundCloud and Spotify, and move your playlists between Spotify, Tidal and CSV."
+description = "Keep the music you pay for. Take your playlists with you. streamrip downloads from Qobuz, Tidal, Deezer, SoundCloud and Spotify, and moves your playlists between Spotify, Tidal and CSV."
 authors = [{ name = "nathom", email = "nathanthomas707@gmail.com" }]
 maintainers = [{ name = "Stensel8", email = "stentijhuis@protonmail.com" }]
 # The whole is AGPL-3.0 (LICENSE); the code from nathom/streamrip is GPL-3.0
