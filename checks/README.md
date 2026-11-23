@@ -1,7 +1,8 @@
 # Checks by hand
 
-CI runs what needs no account. Everything else is run by you, with the scripts
-here. You need no CI to test streamrip completely: `run.py all` does all of it.
+CI runs everything that needs no account. The scripts here run the rest on your
+own machine, and `run.py all` runs everything, so you don't need CI to test
+streamrip completely.
 
 ```bash
 python checks/run.py offline     # CI's lint and the tests that need no login
@@ -13,7 +14,7 @@ python checks/run.py nix         # CI's `nix flake check`
 python checks/run.py all
 ```
 
-Any python and any folder will do: the script runs itself in the project's
+Any Python and any folder will do. The script reruns itself in the project's
 environment with uv.
 
 | | CI | by hand |
@@ -27,26 +28,28 @@ environment with uv.
 
 ## Real accounts
 
-`live` asks before each service, then streamrip asks you to log in (a link to
-open for Tidal, a browser for Qobuz, Deezer and Spotify). It then:
+`live` asks before each service, and then streamrip asks you to log in (a link
+for Tidal, a browser for Qobuz, Deezer and Spotify). After that it:
 
 1. logs in and searches for a track,
-2. downloads one result and checks the file: tags, length and a clean decode,
-3. runs the same download again and checks that it is skipped,
-4. for Tidal, makes the access tokens expire and checks that they are refreshed
-   instead of a new login being asked for.
+2. downloads one result and checks the file's tags, its length and that it
+   decodes cleanly,
+3. runs the same download again and checks that it's skipped,
+4. for Tidal, expires the access tokens and checks that they're refreshed
+   without asking for a new login.
 
 It uses a scratch config and folder, so your own config, logins and downloads
-are untouched; both are deleted afterwards. `--config FILE` starts from the
-logins in that file instead of asking for them, and `--query TEXT` searches for
-something else (SoundCloud only lets streamrip download what artists upload
-themselves, so its default is a generic search that can come up empty).
+aren't touched. Both are deleted afterwards. `--config FILE` takes the logins
+from that file instead of asking for them, and `--query TEXT` searches for
+something else. SoundCloud only lets streamrip download what artists upload
+themselves, so its default is a generic search that can come up empty.
 
-It does one search and one download per service. Run it when you changed
-something, not on a schedule: services suspend accounts that look like abuse.
+It does one search and one download per service. Run it when you've changed
+something. Don't put it on a schedule: services suspend accounts that look like
+abuse.
 
 ### In CI
 
-On a push to `dev` the pi runs `live` for Qobuz, Tidal and Deezer with the
-`STREAMRIP_CONFIG` secret: your whole `config.toml`. Without it, or with a
-login that no longer works, that service is skipped.
+On a push to `dev`, the pi runs `live` for Qobuz, Tidal and Deezer with the
+`STREAMRIP_CONFIG` secret, which holds your whole `config.toml`. If the secret
+is missing or a login no longer works, that service is skipped.

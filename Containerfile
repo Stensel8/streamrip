@@ -101,7 +101,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 FROM gcr.io/distroless/cc-debian13:latest@sha256:dac90a25ffe03ebaace90cda886b081e61ab6cd77ac47eda51f7bcc15c320765
 
 LABEL org.opencontainers.image.title="streamrip" \
-      org.opencontainers.image.description="A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, SoundCloud, and Spotify." \
+      org.opencontainers.image.description="Keep the music you pay for. Take your playlists with you. streamrip downloads from Qobuz, Tidal, Deezer, SoundCloud and Spotify, and moves your playlists between Spotify, Tidal and CSV." \
       org.opencontainers.image.source="https://github.com/Stensel8/streamrip" \
       org.opencontainers.image.licenses="AGPL-3.0-only AND GPL-3.0-only"
 
