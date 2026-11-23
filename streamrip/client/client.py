@@ -95,21 +95,21 @@ def _chrome(
     }
 
 
-# Chrome 156 is the stable release (late October 2026), 155 lingers with
-# late updaters, and Brave sends its own brand in the same list. When 157
-# goes fully stable, move a slot or two from 156 to it. A repeated
+# Chrome 158 is the stable release (mid-November 2026), 157 lingers with
+# late updaters, and Brave sends its own brand in the same list. When 159
+# goes fully stable, move a slot or two from 158 to it. A repeated
 # identity weighs heavier in the pick.
 _IDENTITIES: tuple[dict[str, str], ...] = (
-    _chrome(156, "Windows", "en-US,en;q=0.9"),
-    _chrome(156, "Windows", "en-US,en;q=0.9"),
-    _chrome(156, "Windows", "en-US,en;q=0.9"),
-    _chrome(156, "Windows", "nl-NL,nl;q=0.9,en-US;q=0.8,en;q=0.7"),
-    _chrome(156, "macOS", "en-US,en;q=0.9"),
-    _chrome(156, "macOS", "en-US,en;q=0.9"),
-    _chrome(155, "Windows", "en-US,en;q=0.9"),
-    _chrome(155, "Windows", "en-US,en;q=0.9"),
-    _chrome(155, "macOS", "en-GB,en;q=0.9"),
-    _chrome(156, "Windows", "en-US,en;q=0.9", brand="Brave"),
+    _chrome(158, "Windows", "en-US,en;q=0.9"),
+    _chrome(158, "Windows", "en-US,en;q=0.9"),
+    _chrome(158, "Windows", "en-US,en;q=0.9"),
+    _chrome(158, "Windows", "nl-NL,nl;q=0.9,en-US;q=0.8,en;q=0.7"),
+    _chrome(158, "macOS", "en-US,en;q=0.9"),
+    _chrome(158, "macOS", "en-US,en;q=0.9"),
+    _chrome(157, "Windows", "en-US,en;q=0.9"),
+    _chrome(157, "Windows", "en-US,en;q=0.9"),
+    _chrome(157, "macOS", "en-GB,en;q=0.9"),
+    _chrome(158, "Windows", "en-US,en;q=0.9", brand="Brave"),
 )
 
 # The identity of the moment, and when it gives way. _rotate_at starts at

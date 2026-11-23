@@ -26,3 +26,5 @@ StreamripDownloads
 pyrightconfig.json
 .venv/
 .uv-cache/
+.STREAMRIP_HANDOFF.md
+captures/
