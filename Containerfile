@@ -97,7 +97,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 
 # --- the image: distroless, so no shell and no apt; Patchbot keeps the digest current ---
-FROM gcr.io/distroless/cc-debian13:latest@sha256:809d04afa1be033c441f76bb0051878c342fb76d0ea236bc6dc94b655fa0fbd6
+FROM gcr.io/distroless/cc-debian13:latest@sha256:dac90a25ffe03ebaace90cda886b081e61ab6cd77ac47eda51f7bcc15c320765
 
 LABEL org.opencontainers.image.title="streamrip" \
       org.opencontainers.image.description="A fast, all-in-one scriptable music downloader for Qobuz, Deezer, Tidal, SoundCloud, and Spotify." \
