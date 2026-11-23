@@ -218,7 +218,7 @@ in the config. A login that stops working is asked for again.
 | Tidal | A subscription. Log in with a link on any device (twice, for hi-res). |
 | Deezer | The `arl` cookie of a logged-in session: an isolated browser window, or by hand. |
 | SoundCloud | Nothing. |
-| Spotify | An app of your own, and Premium on the account that owns it. The audio comes from YouTube Music and is not lossless. The same app and login serve the playlist tools. |
+| Spotify | An app of your own, and Premium on the account that owns it. The audio is what your account gets, or a 320 kbps match from YouTube Music where Spotify will not play it. The same app and login serve the playlist tools. |
 
 The playlist tools also need a Tidal developer app for your Tidal playlists
 ([how](docs/playlists.md#tidal)). Details per source: [Logging in](docs/logging-in.md),
@@ -228,7 +228,7 @@ The playlist tools also need a Tidal developer app for your Tidal playlists
 
 - [Playlists](docs/playlists.md): transfer, export, import and download your liked songs and playlists
 - [The web interface](docs/web.md): what it does, and why it is for you alone
-- [Spotify](docs/spotify.md): the app you need, what works, and why it isn't lossless
+- [Spotify](docs/spotify.md): the app you need, what works, and the quality you get
 - [CSV lists](docs/csv-lists.md): download a list exported from streamrip, Exportify or a spreadsheet
 - [Lyrics](docs/lyrics.md): where they come from, and how to turn the lookup off
 - [Podman and Docker](docs/container.md): the image, its volume, and building it yourself
@@ -290,4 +290,4 @@ of Music-Sync.
 
 I will not be responsible for how **you** use streamrip. By using streamrip, you
 agree to the terms and conditions of the Qobuz, Tidal, Deezer and Spotify APIs,
-and of YouTube, which the audio of Spotify tracks comes from.
+and of YouTube Music, for the Spotify tracks whose audio it serves.
