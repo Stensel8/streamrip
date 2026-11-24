@@ -151,6 +151,7 @@ More in [docs/nix.md](docs/nix.md).
 streamrip url https://tidal.com/browse/album/234793           # an album, artist, playlist or track
 streamrip url <link> <link>                                     # several at once
 streamrip file urls.txt                                         # the links in a file, one per line
+streamrip plan <link>                                           # what it would do, without downloading
 streamrip id tidal album 234793                                 # by source, type and ID
 streamrip search tidal album 'linkin park meteora'              # search and pick
 streamrip search --first tidal track 'linkin park in the end'   # search and take the first result

@@ -186,7 +186,7 @@ class MetadataConfig:
     renumber_playlist_tracks: bool
     exclude: list[str]
     prefer_explicit: bool
-    musicbrainz: bool
+    musicbrainz: bool = True  # a config from before has no such line
 
 
 @dataclass(slots=True)

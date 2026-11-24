@@ -13,6 +13,8 @@ Music-Sync is part of streamrip, and logins are in one place.
   downloads a list from Qobuz, Tidal or Deezer; MusicBrainz finds a track under
   another ISRC, and `--report` saves how every track was matched
   ([docs/playlists.md](docs/playlists.md))
+- feat: `streamrip plan <link>` says what a download would do (quality, new
+  tracks, time at the pace) and downloads nothing
 - feat: `streamrip web`, a web interface for downloads, search, the playlist
   tools and logins ([docs/web.md](docs/web.md))
 - feat: `streamrip accounts`, `login`, `logout` and `verify`, which asks every

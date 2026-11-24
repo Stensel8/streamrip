@@ -26,6 +26,7 @@ lazy from rich.traceback import install
 from .. import __version__
 from ..config import DEFAULT_CONFIG_PATH, PACES
 from .accounts_cli import accounts, login, logout, verify
+from .plan import show_plan
 from .playlist_cli import playlist
 from .stopping import terminate
 
@@ -566,6 +567,24 @@ async def url(ctx, urls):
         await main.add_all(urls)
         await main.resolve()
         await main.rip()
+
+
+@rip.command()
+@click.argument("urls", nargs=-1, required=True)
+@click.pass_context
+@coro
+async def plan(ctx, urls):
+    """Show what downloading URLs would do, and download nothing.
+
+    Looks everything up like `url` does, then says per item its quality and
+    how many tracks are new, and per account how long that takes at its pace.
+    """
+    _require_config(ctx)
+
+    async with main_session(ctx) as main:
+        await main.add_all(urls)
+        await main.resolve()
+        show_plan(main)
 
 
 @rip.command()
