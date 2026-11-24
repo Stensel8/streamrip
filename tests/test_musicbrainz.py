@@ -166,3 +166,11 @@ def test_a_live_recording_is_not_taken_for_the_studio_one_and_one_without_isrcs_
     assert [
         c.request.url.split("/ws/2/")[1].split("?")[0] for c in responses.calls[1:]
     ] == ["recording/bare", "recording/good"]
+
+
+def test_a_second_opinion_that_is_less_sure_than_the_score_asked_is_not_taken(service):
+    wanted = Track("Harder, Better, Faster, Stronger", ["Daft Punk"], isrc=ISRC)
+    _, misses = resolve_tracks(
+        service, [wanted], min_score=0.99, musicbrainz=Knows([SIBLING])
+    )
+    assert len(misses) == 1  # MusicBrainz is 0.95 sure

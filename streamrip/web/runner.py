@@ -36,6 +36,7 @@ lazy from .jobs import Job
 logger = logging.getLogger("streamrip")
 
 SOURCES = ("qobuz", "tidal", "deezer", "soundcloud", "spotify")
+PLANS = ("qobuz", "tidal", "deezer")  # the sources whose login can lower the quality
 MEDIA_TYPES = ("track", "album", "artist", "playlist")
 SEARCH_RESULTS = 30  # what the page lists of a search
 
@@ -90,9 +91,16 @@ class Runner:
         handler = JobLog(job)
         logger.addHandler(handler)
         progress.observe(JobObserver(job))
+        # No bars in the terminal the server runs in: the page shows them.
+        self.config.session.cli.progress_bars = False
+        # A login lowers the quality to what the plan gives, for this run: a
+        # server must not keep that after the plan changes.
+        asked = {s: getattr(self.config.session, s).quality for s in PLANS}
         try:
             yield
         finally:
+            for source, quality in asked.items():
+                getattr(self.config.session, source).quality = quality
             progress.observe(None)
             logger.removeHandler(handler)
             self._turn.release()

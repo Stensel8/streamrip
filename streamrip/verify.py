@@ -9,7 +9,7 @@ from dataclasses import dataclass
 
 from .accounts import BY_ID, LOGIN_IDS, Accounts
 from .exceptions import AuthenticationError, MissingCredentialsError
-from .sync.errors import NotLoggedInError, SyncError
+from .sync.errors import NotLoggedInError
 lazy from .client import DeezerClient, QobuzClient, SoundcloudClient, TidalClient
 lazy from .config import Config
 lazy from .sync.services import Services
@@ -50,7 +50,10 @@ async def _download_login(config: Config, source: str) -> tuple[str, str]:
         plan, best = await client.account_plan()
     finally:
         await client.close()
-    quality = getattr(config.session, source).quality
+    # What was asked, not what a client lowered it to for the run.
+    quality = getattr(
+        client, "requested_quality", getattr(config.session, source).quality
+    )
     hint = ""
     if best is not None and quality > best:
         hint = (
@@ -97,11 +100,7 @@ async def _verify_one(config: Config, accounts: Accounts, login_id: str) -> Resu
         return Result(login_id, FAILED, why, f"streamrip login {login_id}")
     except TimeoutError:
         return Result(login_id, FAILED, f"no answer in {TIMEOUT} s")
-    except (
-        SyncError,
-        OSError,
-        ValueError,
-    ) as e:  # not a login problem: a network or service one
+    except Exception as e:  # not a login problem: a network or service one
         return Result(login_id, FAILED, str(e) or type(e).__name__)
     return Result(login_id, OK, detail, hint=hint)
 

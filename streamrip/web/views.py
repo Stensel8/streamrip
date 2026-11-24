@@ -208,8 +208,9 @@ def job_paste(job_id: str) -> Response:
 
 def _matching(data) -> tuple[bool, float]:
     """The options of a transfer or an import: only look, and how sure a match must be."""
+    given = data.get("min_score")
     try:
-        score = float(data.get("min_score") or 0.8)
+        score = 0.8 if given in {None, ""} else float(given)
     except TypeError, ValueError:
         score = -1.0
     if not 0 <= score <= 1:

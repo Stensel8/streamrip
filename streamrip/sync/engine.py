@@ -250,7 +250,7 @@ def resolve_tracks(
                 found = provider.find(track, known)
                 match = found if found and found.score >= min_score else None
                 if match is None and musicbrainz:
-                    match = _second_opinion(provider, musicbrainz, track)
+                    match = _second_opinion(provider, musicbrainz, track, min_score)
                 miss = None if match else _miss(track, found, provider, min_score)
             if match:
                 match.wanted = track
@@ -273,10 +273,13 @@ def resolve_tracks(
 
 
 def _second_opinion(
-    provider: Provider, musicbrainz: MusicBrainz, track: Track
+    provider: Provider, musicbrainz: MusicBrainz, track: Track, min_score: float
 ) -> Match | None:
-    """The track under another ISRC of the same recording, which MusicBrainz knows."""
+    """The track under another ISRC of the same recording, which MusicBrainz knows,
+    if that is sure enough for the score asked."""
     isrcs, sure = musicbrainz.isrcs_for(track)
+    if sure < min_score:
+        return None
     known = provider.lookup_isrcs(isrcs) if isrcs else {}
     for isrc in isrcs:
         if found := known.get(isrc):
@@ -416,7 +419,11 @@ def import_albums(
             if exc.status not in UNLOOKUPABLE:
                 raise
             hit = None  # the service could not handle this search
-        closest = Match(hit[0], hit[1], "search") if hit and hit[1] > 0 else None
+        closest = (
+            Match(hit[0], hit[1], "search", wanted=album)
+            if hit and hit[1] > 0
+            else None
+        )
         miss = (
             None
             if closest and closest.score >= min_score

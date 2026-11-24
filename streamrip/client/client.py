@@ -979,6 +979,7 @@ class Client(RequestClient, ABC):
         """Keep the quality asked for within the plan, for this run only, when the
         login already said what the plan is (no request of its own)."""
         plan, best = await self.account_plan()
+        self.requested_quality = self.config.quality  # what was asked, for `verify`
         if best is not None and self.config.quality > best:
             logger.info(
                 "Your %s plan is %s: downloading at quality %d, not the %d you asked for",

@@ -2,6 +2,7 @@ import pytest
 from click.testing import CliRunner
 
 from streamrip import verify as verify_module
+from streamrip.accounts import Accounts
 from streamrip.client import DeezerClient, QobuzClient, TidalClient
 from streamrip.config import Config, set_user_defaults
 from streamrip.exceptions import AuthenticationError
@@ -238,3 +239,58 @@ async def test_a_quality_within_the_plan_or_a_plan_that_is_not_known_is_left_alo
     qobuz._credential = {"parameters": {}}  # purchases only: nothing is known
     await qobuz._fit_quality()
     assert config.session.qobuz.quality == 4
+
+
+async def test_the_quality_hint_compares_with_what_was_asked_not_what_the_login_lowered(
+    config, monkeypatch
+):
+    log_in_to_qobuz(config)
+    config.session.qobuz.quality = 4
+
+    class Lowers(FakeClient):
+        plan = ("lossless", 2)
+
+        async def login(self):
+            self.requested_quality = (
+                config.session.qobuz.quality
+            )  # as _fit_quality records it
+            config.session.qobuz.quality = 2
+
+    monkeypatch.setattr(verify_module, "QobuzClient", Lowers)
+    (found,) = await verify_module.verify(config, ("qobuz",))
+    assert "set it to 2" in found.hint
+
+
+async def test_one_service_failing_in_a_way_nobody_expected_does_not_end_the_check(
+    config, monkeypatch
+):
+    log_in_to_qobuz(config)
+    config.update_logins("deezer", {"arl": "cookie"})
+
+    class Broken(FakeClient):
+        async def login(self):
+            raise KeyError("credential")
+
+    monkeypatch.setattr(verify_module, "QobuzClient", Broken)
+    monkeypatch.setattr(verify_module, "DeezerClient", FakeClient)
+    found = {r.id: r for r in await verify_module.verify(config, ("qobuz", "deezer"))}
+    assert found["qobuz"].state == "failed"
+    assert found["deezer"].state == "ok"
+
+
+def test_a_login_that_ends_without_a_login_is_no_login_and_keeps_the_old_one(
+    tmp_path, monkeypatch
+):
+    set_user_defaults(tmp_path / "config.toml")
+    log_in_to_qobuz(Config(tmp_path / "config.toml"))
+
+    async def stopped(_config, _source):
+        pass  # `coro` ends a Ctrl-C quietly, like this
+
+    monkeypatch.setattr(accounts_cli, "_log_in", stopped)
+    _code, output = run_cli(tmp_path, "login", "qobuz")
+    assert "Logged in" not in output
+    assert "No login made" in output
+    assert Accounts(Config(tmp_path / "config.toml")).logged_in(
+        "qobuz"
+    )  # the old one is back

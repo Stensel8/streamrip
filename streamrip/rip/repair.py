@@ -47,6 +47,8 @@ async def repair_downloads(
 ) -> int:
     """Retry every item of the failed downloads database; what worked is
     forgotten there. Returns how many were repaired."""
+    singles = config.session.filepaths.add_singles_to_folder
+    recording = config.session.database.downloads_enabled
     # A repaired track is nearly always a track missing from an album that was
     # otherwise downloaded, so it needs to land in that album's folder rather
     # than loose in the download root. This only touches the in-memory session
@@ -56,6 +58,16 @@ async def repair_downloads(
     # What succeeded is read back from the downloads db below, so it is kept
     # even with --no-db or downloads_enabled = false.
     config.session.database.downloads_enabled = True
+    try:
+        return await _repair(config, interactive)
+    finally:
+        # A server goes on with other downloads after this one.
+        config.session.filepaths.add_singles_to_folder = singles
+        config.session.database.downloads_enabled = recording
+
+
+async def _repair(config: Config, interactive: bool) -> int:
+    """Retry the failed items; how many were repaired."""
     database = db.Database(
         db.Downloads(config.session.database.downloads_path),
         db.Failed(config.session.database.failed_downloads_path),

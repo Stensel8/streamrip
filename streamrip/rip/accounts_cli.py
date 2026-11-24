@@ -76,7 +76,13 @@ def _log_in_again(config: Config, service: str):
     except BaseException:
         accounts.restore(service, held)
         raise
-    console.print(f"Logged in to {BY_ID[service].label}.")
+    # `coro` ends a Ctrl-C quietly, so the end of the call says nothing yet:
+    # what was saved does.
+    if Accounts(Config(config.path)).logged_in(service):
+        console.print(f"Logged in to {BY_ID[service].label}.")
+    else:
+        accounts.restore(service, held)
+        console.print(f"No login made: {BY_ID[service].label} stays as it was.")
 
 
 @click.command()
@@ -126,6 +132,10 @@ def verify(ctx, service, fix):
                 _log_in_again(config, result.id)
             except click.ClickException as e:
                 console.print(f"[red]{e.message}[/red]")
+            except SystemExit:  # `coro` exits for a login that was refused
+                console.print(
+                    f"[red]{BY_ID[result.id].label}: the login did not work.[/red]"
+                )
         results = coro(run_verify)(config, ids)
         console.print()
         _print_results(results)

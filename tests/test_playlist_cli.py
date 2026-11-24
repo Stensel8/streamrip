@@ -453,3 +453,15 @@ def test_a_download_without_ffmpeg_is_a_message_not_a_traceback(
     assert code == 1
     assert "No ffmpeg installation found" in stdout + stderr
     assert "Traceback" not in stdout + stderr
+
+
+def test_a_matched_album_remembers_the_row_it_was_for():
+    from playlist_support import FakeProvider
+
+    from streamrip.sync.engine import import_albums
+
+    provider = FakeProvider("tidal")
+    provider.albums = [Track("Meteora", ["Linkin Park"], ids={"tidal": "1"})]
+    row = Track("Meteora", ["Linkin Park"], album="Meteora")
+    result = import_albums(provider, [row])
+    assert [m.wanted.title for m in result.matched] == ["Meteora"]

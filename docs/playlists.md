@@ -33,7 +33,7 @@ streamrip playlist import tidal albums.csv --albums       # artist,album per row
 
 streamrip playlist list spotify                           # your playlists, with their ids
 streamrip accounts                                        # what is set up and logged in
-streamrip playlist doctor                                 # tries the real APIs
+streamrip verify                                          # tries every login on the real services
 ```
 
 | Option              | What it does                                                          |

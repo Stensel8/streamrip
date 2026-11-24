@@ -1069,3 +1069,44 @@ def test_the_real_runner_repairs_and_says_how_many(services, tmp_path, monkeypat
     )
     assert message == "Repaired 1 of 2 downloads; 1 failed again and stay in the list."
     assert seen == {"flat": True, "interactive": False}
+
+
+async def test_repairing_puts_back_the_settings_a_server_goes_on_with(
+    services, monkeypatch
+):
+    import streamrip.rip.repair as repair_module
+
+    seen = {}
+
+    async def fake(config, interactive):
+        seen["singles"] = config.session.filepaths.add_singles_to_folder
+        seen["recording"] = config.session.database.downloads_enabled
+        return 0
+
+    monkeypatch.setattr(repair_module, "_repair", fake)
+    session = services.config.session
+    session.filepaths.add_singles_to_folder = False
+    session.database.downloads_enabled = False
+    await repair_module.repair_downloads(services.config)
+    assert seen == {"singles": True, "recording": True}  # what a repair needs
+    assert session.filepaths.add_singles_to_folder is False  # and then it is as it was
+    assert session.database.downloads_enabled is False
+
+
+def test_a_quality_a_login_lowered_is_not_kept_by_a_server(services):
+    import streamrip.web.runner as runner_module
+
+    runner = runner_module.Runner(services.config)
+    services.config.session.qobuz.quality = 4
+    with runner._working(Job("q", "download", "x")):
+        services.config.session.qobuz.quality = 2  # as a login does for the run
+        assert services.config.session.cli.progress_bars is False
+    assert services.config.session.qobuz.quality == 4
+
+
+def test_a_score_of_zero_is_a_score():
+    from streamrip.web.views import _matching
+
+    assert _matching({"min_score": "0"}) == (False, 0.0)
+    assert _matching({}) == (False, 0.8)
+    assert _matching({"dry_run": "1", "min_score": "0.95"}) == (True, 0.95)
