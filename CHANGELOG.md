@@ -3,7 +3,7 @@
 All notable changes in this fork of [nathom/streamrip](https://github.com/nathom/streamrip). Numbers can refer to
 upstream issues and pull requests.
 
-## 2.7.3
+## 2.8.0-rc-1
 
 **Music-Sync is part of streamrip.** Moving playlists between Spotify, Tidal and
 CSV files is `streamrip playlist`, and its web interface became streamrip's.
@@ -26,10 +26,15 @@ CSV files is `streamrip playlist`, and its web interface became streamrip's.
 - feat: one Spotify app and login for downloads and playlists alike. It asks
   for a little more than before (your library), so the playlist tools ask for
   it once again
+- feat: on Premium, Spotify can also be downloaded from Spotify itself, through
+  its own client: it plays the track in full and records it, a little slower,
+  and when that is not possible it falls back to the same song on YouTube Music
+  at 320 kbps
 - chore: one matching module and one CSV reader for YouTube Music, CSV lists
   and transfers, the best of both projects
 - chore: licensed AGPL-3.0 as a whole, the code from nathom/streamrip GPL-3.0
   as well ([LICENSE](LICENSE), [LICENSES/](LICENSES), [how](README.md#license))
+- chore: current browser identities and a round of dependency updates
 - docs: why streamrip exists: you have a right to own the media you pay for
 - fix: a config saved twice in one run (now the web interface's way) dropped a
   value set back to what it was, like a logout
