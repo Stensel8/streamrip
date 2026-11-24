@@ -92,6 +92,8 @@ LOGINS = (
     ),
 )
 LOGIN_IDS = tuple(login.id for login in LOGINS)
+# The playlist services, by the login that lets streamrip read and change them.
+LIBRARY_LOGINS = {"spotify": "spotify", "tidal": "tidal-library"}
 BY_ID = {login.id: login for login in LOGINS}
 
 

@@ -29,6 +29,9 @@ PHASES = frozendict(
         "download": ("find", "download"),
         "playlist-download": ("read", "find", "download"),
         "login": ("login",),
+        "verify": ("login",),
+        "plan": ("find",),
+        "repair": ("find", "download"),
     }
 )
 SHOWN_MISSES = 50  # tracks not found that the page lists; the CSV has them all

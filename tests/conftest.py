@@ -27,6 +27,29 @@ from streamrip.console import console  # noqa: E402
 from streamrip.rip.interactive import Confirm  # noqa: E402
 
 
+class BrowserOpened(BaseException):
+    """A test tried to open a browser. Not an Exception: the code that opens
+    links swallows those, and a test must not get away with it."""
+
+
+@pytest.fixture(autouse=True)
+def _no_browser(monkeypatch):
+    """No test opens a browser tab: a login page that really opens asks the
+    person at the keyboard to approve it. A test that is about opening a link
+    patches the opener itself, which comes after this."""
+
+    def refuse(url, *_a, **_k):
+        raise BrowserOpened(f"a test tried to open {url}")
+
+    for opener in (
+        "streamrip.rip.prompter.launch",
+        "streamrip.rip.accounts_cli.launch",
+        "streamrip.rip.cli.launch",
+        "click.launch",
+    ):
+        monkeypatch.setattr(opener, refuse)
+
+
 @pytest.fixture(autouse=True)
 def _reset_global_download_semaphore():
     """`global_download_semaphore` caches one max_connections value for the

@@ -4,9 +4,6 @@
 
 {% block content %}
 <h1>Download</h1>
-{% if not sources|selectattr("ready")|rejectattr("name", "equalto", "soundcloud")|list %}
-<div class="alert warn intro">No source is logged in yet. <a class="link" href="{{ url_for('pages.accounts') }}">Log in on the Accounts page</a> first; SoundCloud works without.</div>
-{% endif %}
 
 <div class="cards single">
   {% include "_job.html" %}

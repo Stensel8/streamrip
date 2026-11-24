@@ -4,37 +4,40 @@ playlist tools, and the logins of every service."""
 import io
 from pathlib import PureWindowsPath
 from urllib.parse import quote
-lazy from collections.abc import Callable
 
 from flask import (
     Blueprint,
     Response,
     abort,
     current_app,
-    flash,
     jsonify,
-    redirect,
     render_template,
     request,
-    url_for,
 )
-lazy from werkzeug.wrappers import Response as WerkzeugResponse
 
 from .. import __version__
-from ..accounts import Accounts
+from ..accounts import LIBRARY_LOGINS, Accounts
 from ..rip.parse_url import parse_url
 from ..sync.csvio import decode, parse_csv, slug, write_csv
 from ..sync.engine import LIKED, import_albums, import_tracks, select_tracks
 from ..sync.errors import CsvError, ProviderError
-from ..sync.services import DEVELOPER_DASHBOARDS, LABELS, SERVICES
-from .logins import BrowserLogin
+from ..sync.services import LABELS, SERVICES
+from .common import (
+    SOURCE_LABELS,
+    choice,
+    find_job,
+    get_config,
+    get_jobs,
+    get_runner,
+    get_services,
+    sent,
+    start,
+)
 from .runner import MEDIA_TYPES, SOURCES
-lazy from ..config import Config
 lazy from ..rip.main import Main
 lazy from ..sync.models import Track
-lazy from ..sync.services import Services
-lazy from .jobs import Job, JobManager
-lazy from .runner import Runner
+lazy from .jobs import Job
+lazy from .logins import BrowserLogin
 
 pages = Blueprint("pages", __name__)
 # What belongs to one playlist service lives under /playlists/spotify/... or
@@ -43,15 +46,6 @@ playlist_pages = Blueprint(
     "playlist", __name__, url_prefix=f"/playlists/<any({','.join(SERVICES)}):service>"
 )
 
-SOURCE_LABELS = frozendict(
-    {
-        "qobuz": "Qobuz",
-        "tidal": "Tidal",
-        "deezer": "Deezer",
-        "soundcloud": "SoundCloud",
-        "spotify": "Spotify",
-    }
-)
 SOURCE_NOTES = frozendict(
     {
         "qobuz": "FLAC up to 24/192",
@@ -61,45 +55,6 @@ SOURCE_NOTES = frozendict(
         "spotify": "AAC from YouTube Music",
     }
 )
-
-
-def _services() -> Services:
-    return current_app.extensions["services"]
-
-
-def _jobs() -> JobManager:
-    return current_app.extensions["jobs"]
-
-
-def _runner() -> Runner:
-    return current_app.extensions["runner"]
-
-
-def _config() -> Config:
-    return current_app.extensions["config"]
-
-
-def _sent() -> dict:
-    """The JSON object the page sent; anything else counts as nothing sent."""
-    data = request.get_json(silent=True)
-    return data if isinstance(data, dict) else {}
-
-
-def _choice(value, choices, what: str) -> str:
-    if value not in choices:
-        raise ProviderError(f"Choose a {what}.")
-    return value
-
-
-def _start(kind: str, title: str, work: Callable[[Job], str]) -> tuple[Response, int]:
-    """Run `work(job)` in the background. The page follows it at /jobs/<id>."""
-    return jsonify(id=_jobs().start(kind, title, work).id), 202
-
-
-def _job(job_id: str) -> Job:
-    if (job := _jobs().get(job_id)) is None:
-        abort(404, "Unknown job")
-    return job
 
 
 def _attachment(name: str, tracks: list[Track]) -> Response:
@@ -129,27 +84,18 @@ def _uploaded_tracks() -> tuple[str, list[Track]]:
     return PureWindowsPath(upload.filename).stem or "CSV list", tracks
 
 
-# The login of each playlist service, as Accounts calls it.
-LIBRARY_LOGINS = {"spotify": "spotify", "tidal": "tidal-library"}
-
-
-def _accounts() -> list[dict]:
-    """What the templates need to know about each playlist service."""
-    accounts = Accounts(_config())
-    statuses = {name: accounts.status(LIBRARY_LOGINS[name]) for name in SERVICES}
+def _connected_services() -> list[dict]:
+    """The playlist services that are logged in, for the selects of the playlist page."""
+    accounts = Accounts(get_config())
     return [
-        {
-            "name": name,
-            "label": LABELS[name],
-            "configured": not status.app_missing,
-            "connected": status.logged_in,
-        }
-        for name, status in statuses.items()
+        {"name": name, "label": LABELS[name]}
+        for name, login_id in LIBRARY_LOGINS.items()
+        if accounts.logged_in(login_id)
     ]
 
 
 def _download_sources() -> list[dict]:
-    accounts = Accounts(_config())
+    accounts = Accounts(get_config())
     return [
         {
             "name": s,
@@ -170,28 +116,14 @@ def dashboard() -> str:
         "dashboard.html",
         sources=_download_sources(),
         media_types=MEDIA_TYPES,
-        folder=_config().session.downloads.folder,
+        folder=get_config().session.downloads.folder,
     )
 
 
 @pages.get("/playlists")
 def playlists_page() -> str:
     return render_template(
-        "playlists.html", accounts=_accounts(), sources=_download_sources()
-    )
-
-
-@pages.get("/accounts")
-def accounts() -> str:
-    services = _services()
-    return render_template(
-        "accounts.html",
-        sources=_download_sources(),
-        accounts=_accounts(),
-        dashboards=DEVELOPER_DASHBOARDS,
-        redirect_uris={name: services.redirect_uri(name) for name in SERVICES},
-        config_path=_config().path,
-        tidal_secret=bool(services.client_secret("tidal")),
+        "playlists.html", accounts=_connected_services(), sources=_download_sources()
     )
 
 
@@ -207,24 +139,24 @@ def health() -> Response:
 @pages.get("/jobs/running")
 def job_running() -> Response:
     """The job that is going now, so a reloaded page can pick it up again."""
-    job = _jobs().running()
+    job = get_jobs().running()
     return jsonify(id=job.id if job else None)
 
 
 @pages.get("/jobs/<job_id>")
 def job_status(job_id: str) -> Response:
-    return jsonify(_job(job_id).to_json())
+    return jsonify(find_job(job_id).to_json())
 
 
 @pages.get("/jobs/<job_id>/unmatched.csv")
 def job_unmatched(job_id: str) -> Response:
-    return _attachment("unmatched", [miss.track for miss in _job(job_id).misses])
+    return _attachment("unmatched", [miss.track for miss in find_job(job_id).misses])
 
 
 @pages.get("/jobs/<job_id>/download")
 def job_download(job_id: str) -> Response:
     """The CSV an export made."""
-    if (download := _job(job_id).download) is None:
+    if (download := find_job(job_id).download) is None:
         abort(404, "This job has no file (yet).")
     return _attachment(*download)
 
@@ -232,7 +164,7 @@ def job_download(job_id: str) -> Response:
 @pages.post("/jobs/<job_id>/cancel")
 def job_cancel(job_id: str) -> Response:
     """Give up on a browser login, so another can start."""
-    _job(job_id)
+    find_job(job_id)
     if (login := current_app.extensions["logins"].get(job_id)) is not None:
         login.cancel()
     return jsonify(status="ok")
@@ -241,11 +173,11 @@ def job_cancel(job_id: str) -> Response:
 @pages.post("/jobs/<job_id>/paste")
 def job_paste(job_id: str) -> Response:
     """The address a browser login ended up on, pasted by hand."""
-    _job(job_id)
+    find_job(job_id)
     login: BrowserLogin | None = current_app.extensions["logins"].get(job_id)
     if login is None:
         abort(404, "This login is over.")
-    login.paste(str(_sent().get("address") or ""))
+    login.paste(str(sent().get("address") or ""))
     return jsonify(status="ok")
 
 
@@ -255,13 +187,13 @@ def job_paste(job_id: str) -> Response:
 @pages.post("/download")
 def download() -> tuple[Response, int]:
     """Download links ({"urls": "..."}) or search results ({"items": [...]})."""
-    data = _sent()
+    data = sent()
     if items := data.get("items"):
         try:
             chosen = [
                 (
-                    _choice(i["source"], SOURCES, "source"),
-                    _choice(i["media_type"], MEDIA_TYPES, "kind"),
+                    choice(i["source"], SOURCES, "source"),
+                    choice(i["media_type"], MEDIA_TYPES, "kind"),
                     str(i["id"]),
                 )
                 for i in items
@@ -284,24 +216,24 @@ def download() -> tuple[Response, int]:
             await main.add_all(urls)
 
         title = f"Downloading {len(urls)} link{'s' * (len(urls) > 1)}"
-    runner = _runner()
-    return _start("download", title, lambda job: runner.download(job, add))
+    runner = get_runner()
+    return start("download", title, lambda job: runner.download(job, add))
 
 
 @pages.post("/download/csv")
 def download_csv() -> tuple[Response, int]:
     """A CSV list, each track searched on a source (as `streamrip csv`)."""
     name, tracks = _uploaded_tracks()
-    source = _choice(request.form.get("source"), SOURCES, "source")
+    source = choice(request.form.get("source"), SOURCES, "source")
     fallback = request.form.get("fallback") or None
     if fallback is not None:
-        _choice(fallback, SOURCES, "fallback source")
-    runner = _runner()
+        choice(fallback, SOURCES, "fallback source")
+    runner = get_runner()
 
     async def add(main: Main):
         await main.resolve_csv(name, tracks, source, fallback)
 
-    return _start(
+    return start(
         "download",
         f"Downloading {name} from {SOURCE_LABELS[source]}",
         lambda job: runner.download(job, add),
@@ -310,12 +242,12 @@ def download_csv() -> tuple[Response, int]:
 
 @pages.post("/search")
 def search() -> Response:
-    data = _sent()
-    source = _choice(data.get("source"), SOURCES, "source")
-    media_type = _choice(data.get("media_type"), MEDIA_TYPES, "kind")
+    data = sent()
+    source = choice(data.get("source"), SOURCES, "source")
+    media_type = choice(data.get("media_type"), MEDIA_TYPES, "kind")
     if not (query := str(data.get("query") or "").strip()):
         raise ProviderError("Type what to search for.")
-    results = _runner().search(source, media_type, query[:200])
+    results = get_runner().search(source, media_type, query[:200])
     return jsonify(
         [
             {
@@ -341,15 +273,15 @@ def search() -> Response:
 
 @pages.post("/playlists/transfer")
 def transfer() -> tuple[Response, int]:
-    data = _sent()
-    source = _choice(data.get("source"), SERVICES, "service to copy from")
-    target = _choice(data.get("target"), SERVICES, "service to copy to")
+    data = sent()
+    source = choice(data.get("source"), SERVICES, "service to copy from")
+    target = choice(data.get("target"), SERVICES, "service to copy to")
     if source == target:
         raise ProviderError("Choose two different services.")
     playlist = str(data.get("playlist") or "") or None  # str: an id may be a number
     name = str(data.get("name") or "").strip()
     favorites = data.get("into") == "favorites"
-    services = _services()  # the job runs on a thread of its own: no request there
+    services = get_services()  # the job runs on a thread of its own: no request there
     source_provider = services.provider(source)
     target_provider = services.provider(target)
 
@@ -376,7 +308,7 @@ def transfer() -> tuple[Response, int]:
             musicbrainz=services.musicbrainz(),
         ).summary()
 
-    return _start(
+    return start(
         "transfer", f"Transfer from {LABELS[source]} to {LABELS[target]}", work
     )
 
@@ -391,7 +323,7 @@ def playlist_list(service: str) -> Response:
                 "track_count": p.track_count,
                 "readable": p.readable,
             }
-            for p in _services().provider(service).playlists()
+            for p in get_services().provider(service).playlists()
         ]
     )
 
@@ -399,8 +331,8 @@ def playlist_list(service: str) -> Response:
 @playlist_pages.post("/export")
 def export(service: str) -> tuple[Response, int]:
     """Read liked songs or a playlist; the page then saves the CSV."""
-    playlist = str(_sent().get("playlist") or "") or None
-    provider = _services().provider(service)  # here: a missing app fails the request
+    playlist = str(sent().get("playlist") or "") or None
+    provider = get_services().provider(service)  # here: a missing app fails the request
 
     def work(job: Job) -> str:
         ((name, tracks),) = select_tracks(
@@ -409,7 +341,7 @@ def export(service: str) -> tuple[Response, int]:
         job.download = (name, tracks)
         return f"{name}: {len(tracks)} tracks exported."
 
-    return _start("export", f"Export from {LABELS[service]}", work)
+    return start("export", f"Export from {LABELS[service]}", work)
 
 
 @playlist_pages.post("/import")
@@ -418,7 +350,7 @@ def import_csv(service: str) -> tuple[Response, int]:
     playlist = request.form.get("playlist", "").strip() or "streamrip import"
     into_favorites = request.form.get("into") == "favorites"
     albums = request.form.get("contains") == "albums"  # a row per album
-    services = _services()
+    services = get_services()
     provider = services.provider(service)
 
     def work(job: Job) -> str:
@@ -433,20 +365,20 @@ def import_csv(service: str) -> tuple[Response, int]:
             musicbrainz=services.musicbrainz(),
         ).summary()
 
-    return _start("import", f"Import into {LABELS[service]}", work)
+    return start("import", f"Import into {LABELS[service]}", work)
 
 
 @playlist_pages.post("/download")
 def playlist_download(service: str) -> tuple[Response, int]:
     """Read liked songs or a playlist, and download it from a source."""
-    data = _sent()
+    data = sent()
     playlist = str(data.get("playlist") or "") or None
-    source = _choice(data.get("source"), SOURCES, "source to download from")
+    source = choice(data.get("source"), SOURCES, "source to download from")
     fallback = data.get("fallback") or None
     if fallback is not None:
-        _choice(fallback, SOURCES, "fallback source")
-    provider = _services().provider(service)
-    runner = _runner()
+        choice(fallback, SOURCES, "fallback source")
+    provider = get_services().provider(service)
+    runner = get_runner()
 
     def work(job: Job) -> str:
         ((name, tracks),) = select_tracks(
@@ -459,93 +391,4 @@ def playlist_download(service: str) -> tuple[Response, int]:
         return runner.download(job, add)
 
     title = f"Downloading from {LABELS[service]}, via {SOURCE_LABELS[source]}"
-    return _start("playlist-download", title, work)
-
-
-# --- logging in ----------------------------------------------------------------
-
-
-def _back(message: str, category: str = "ok"):
-    flash(message, category)
-    return redirect(url_for("pages.accounts"))
-
-
-def _form(name: str) -> str:
-    return request.form.get(name, "").strip()
-
-
-@pages.post("/accounts/qobuz")
-def login_qobuz() -> WerkzeugResponse:
-    user_id, token = _form("user_id"), _form("auth_token")
-    if not user_id or not token:
-        return _back("Fill in both the user id and the token.", "error")
-    _runner().login_qobuz(user_id, token)
-    return _back("Logged in to Qobuz.")
-
-
-@pages.post("/accounts/deezer")
-def login_deezer() -> WerkzeugResponse:
-    if not (arl := _form("arl")):
-        return _back("Paste the ARL cookie first.", "error")
-    _runner().login_deezer(arl)
-    return _back("Logged in to Deezer.")
-
-
-@pages.post("/accounts/tidal")
-def login_tidal() -> tuple[Response, int]:
-    runner = _runner()
-    return _start("login", "Log in to Tidal (downloads)", runner.login_tidal)
-
-
-@pages.post("/accounts/<any(spotify, tidal):service>/app")
-def set_app(service: str) -> WerkzeugResponse:
-    """The client id (and for Tidal the secret) of the user's developer app."""
-    client_id, secret = _form("client_id"), _form("client_secret")
-    if not client_id or (
-        service == "tidal" and not secret and not _services().client_secret("tidal")
-    ):
-        return _back(
-            "Fill in the Client ID" + (" and Secret." if service == "tidal" else "."),
-            "error",
-        )
-    config = _config()
-    config.update_logins(
-        service,
-        {"client_id": client_id}
-        if service == "spotify"
-        else {
-            "api_client_id": client_id,
-            "api_client_secret": secret or config.session.tidal.api_client_secret,
-        },
-    )
-    # A login that is waiting was started with the old app.
-    for login in list(current_app.extensions["logins"].values()):
-        if login.oauth.name == service:
-            login.cancel()
-    return _back(f"Saved the {LABELS[service]} app. Now log in.")
-
-
-@pages.post("/accounts/<any(spotify, tidal):service>/login")
-def browser_login(service: str) -> tuple[Response, int]:
-    services = _services()
-    login = BrowserLogin(services.oauth(service), services.store)
-    logins = current_app.extensions["logins"]
-    # One login at a time: one given up on would keep the port for minutes.
-    for earlier in list(logins.values()):
-        earlier.cancel()
-
-    def work(job: Job) -> str:
-        logins[job.id] = login
-        try:
-            return login.run(job)
-        finally:
-            logins.pop(job.id, None)
-
-    what = "" if service == "spotify" else " (playlists)"
-    return _start("login", f"Log in to {LABELS[service]}{what}", work)
-
-
-@pages.post("/accounts/<any(spotify, tidal):service>/logout")
-def logout(service: str) -> WerkzeugResponse:
-    Accounts(_config()).logout(LIBRARY_LOGINS[service])
-    return _back(f"Logged out of {LABELS[service]}.")
+    return start("playlist-download", title, work)

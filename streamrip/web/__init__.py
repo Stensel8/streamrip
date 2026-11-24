@@ -26,6 +26,7 @@ from ..exceptions import (
 from ..rip.spotify_login import SpotifyLoginError
 from ..sync.errors import SyncError
 from ..sync.services import Services
+from .accounts import accounts_pages
 from .jobs import JobManager, explain
 from .runner import Runner
 from .views import pages, playlist_pages
@@ -145,5 +146,6 @@ def create_app(
     for error in (*EXPLAINED, HTTPException):
         app.register_error_handler(error, _report)
     app.register_blueprint(pages)
+    app.register_blueprint(accounts_pages)
     app.register_blueprint(playlist_pages)
     return app

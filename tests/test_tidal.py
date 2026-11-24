@@ -25,6 +25,7 @@ from streamrip.exceptions import (
 from streamrip.metadata import AlbumMetadata, ArtistMetadata, TrackMetadata
 from streamrip.metadata.util import tidal_quality_id
 from streamrip.rip.prompter import TidalPrompter, _open_login_link
+from streamrip.rip.prompter import launch as real_launch
 
 MPD = """<?xml version="1.0" encoding="UTF-8"?>
 <MPD xmlns="urn:mpeg:dash:schema:mpd:2011" profiles="urn:mpeg:dash:profile:isoff-main:2011">
@@ -279,6 +280,9 @@ def test_the_browser_does_not_print_over_the_login_prompt(monkeypatch, tmp_path,
     )
     xdg_open.chmod(0o755)
     monkeypatch.setenv("PATH", f"{tmp_path}:{os.environ['PATH']}")
+    # The real opener, which runs the fake xdg-open above: the guard of conftest
+    # is for the tests that would open a real browser.
+    monkeypatch.setattr("streamrip.rip.prompter.launch", real_launch)
 
     _open_login_link("https://link.tidal.com/X")
     for _ in range(100):  # xdg-open runs on its own

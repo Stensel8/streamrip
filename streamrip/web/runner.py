@@ -13,11 +13,19 @@ lazy from collections.abc import Awaitable, Callable, Coroutine
 lazy from typing import Any
 
 from .. import progress
-from ..client import DeezerClient, QobuzClient, TidalClient
+from ..accounts import BY_ID
+from ..client import DeezerClient, QobuzClient, SoundcloudClient, TidalClient
 from ..console import plural
+from ..exceptions import AuthenticationError
 from ..metadata import SearchResults
 from ..rip.main import Main
-from ..rip.prompter import DeezerPrompter, QobuzPrompter, TidalPrompter
+from ..rip.prompter import (
+    DeezerPrompter,
+    QobuzPrompter,
+    SoundcloudPrompter,
+    TidalPrompter,
+)
+from ..verify import verify as verify_logins
 from .jobs import JobLog, JobObserver
 lazy from ..config import Config
 lazy from .jobs import Job
@@ -146,6 +154,35 @@ class Runner:
         values = {"user_id": user_id, "auth_token": token}
         self.call(self._login(QobuzClient, QobuzPrompter, "qobuz", values))
 
+    def login_soundcloud(self, token: str):
+        """Log in to SoundCloud with its oauth_token cookie, and keep it if it works."""
+        self.call(
+            self._login(
+                SoundcloudClient,
+                SoundcloudPrompter,
+                "soundcloud",
+                {"oauth_token": token},
+            )
+        )
+
+    def verify(self, job: Job) -> str:
+        """Ask every service whether its login works; the results go in the log."""
+        job.enter("login", "Asking every service")
+        results = self.call(verify_logins(self.config))
+        for r in results:
+            label = BY_ID[r.id].label
+            text = f"{label}: {r.state}" + (f", {r.detail}" if r.detail else "")
+            level = {"ok": "info", "guest": "info", "failed": "error"}.get(
+                r.state, "warning"
+            )
+            job.log.append((level, text))
+            if r.hint:
+                job.log.append(("warning", f"{label}: {r.hint}"))
+        good = sum(r.state in {"ok", "guest"} for r in results)
+        bad = [BY_ID[r.id].label for r in results if r.state == "failed"]
+        summary = f"{good} of {len(results)} are fine"
+        return summary + (f"; log in again to {', '.join(bad)}." if bad else ".")
+
     def login_deezer(self, arl: str):
         """Log in to Deezer with an ARL cookie, and keep it if it works."""
         self.call(self._login(DeezerClient, DeezerPrompter, "deezer", {"arl": arl}))
@@ -161,6 +198,8 @@ class Runner:
         client = client_type(self.config)
         try:
             await client.login()
+            if reason := getattr(client, "guest_reason", ""):
+                raise AuthenticationError(reason)  # SoundCloud did not take it
         except Exception:
             for name, value in before.items():
                 setattr(c, name, value)

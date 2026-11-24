@@ -39,7 +39,7 @@ function show(text, { error = false } = {}) {
   $('job-title').textContent = error ? 'Something went wrong' : 'Starting';
   for (const id of ['job-clock', 'job-numbers']) $(id).textContent = '';
   for (const id of ['job-steps', 'job-current', 'job-unmatched', 'job-download', 'job-rows', 'job-log', 'job-login']) {
-    $(id).hidden = true;
+    if ($(id)) $(id).hidden = true; // the login parts are on the Accounts page only
   }
   $('job-bar').hidden = error;
   $('job-bar').removeAttribute('value'); // no value: a bar that moves without saying how far
@@ -87,11 +87,13 @@ function render(id, job) {
   $('job-text').classList.toggle('error', failed);
 
   // A login: the page to log in on, and a box for the address a browser elsewhere ends up on.
-  $('job-login').hidden = !(running && job.link);
-  $('job-link').href = job.link || '#';
-  $('job-paste-box').hidden = $('job-cancel').hidden = !(running && job.pasteable);
-  $('job-paste').dataset.job = id;
-  $('job-cancel').dataset.job = id;
+  if ($('job-login')) {
+    $('job-login').hidden = !(running && job.link);
+    $('job-link').href = job.link || '#';
+    $('job-paste-box').hidden = $('job-cancel').hidden = !(running && job.pasteable);
+    $('job-paste').dataset.job = id;
+    $('job-cancel').dataset.job = id;
+  }
 
   const bar = $('job-bar');
   bar.hidden = !running || job.kind === 'login';
@@ -129,7 +131,7 @@ function render(id, job) {
 
   $('job-log').hidden = !job.log.length;
   $('job-log-lines').replaceChildren(...job.log.map(({ level, text }) => el('li', { textContent: text, className: level })));
-  if (failed && job.log.length) $('job-log').open = true;
+  if ((failed || job.kind === 'verify' || job.kind === 'plan') && job.log.length) $('job-log').open = true;
 
   // The browser tab says how far it is, so it can be followed from another tab.
   const phase = PHASES[job.phase] ?? 'Starting';
@@ -292,7 +294,8 @@ onSubmit('pl-download-form', (form) => {
 
 // --- the accounts page ------------------------------------------------------------------------------------
 
-$('tidal-login')?.addEventListener('click', () => start('/accounts/tidal'));
+$('verify')?.addEventListener('click', () => start('/accounts/verify'));
+$('tidal-login')?.addEventListener('click', () => start('/accounts/tidal/login'));
 for (const button of document.querySelectorAll('[data-browser-login]')) {
   button.addEventListener('click', () => start(`/accounts/${button.dataset.browserLogin}/login`));
 }

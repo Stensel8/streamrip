@@ -17,7 +17,7 @@
       {% set here = request.endpoint %}
       <a href="{{ url_for('pages.dashboard') }}"{{ ' aria-current=page' if here == 'pages.dashboard' }}>Download</a>
       <a href="{{ url_for('pages.playlists_page') }}"{{ ' aria-current=page' if here == 'pages.playlists_page' }}>Playlists</a>
-      <a href="{{ url_for('pages.accounts') }}"{{ ' aria-current=page' if here == 'pages.accounts' }}>Accounts</a>
+      <a href="{{ url_for('accounts.page') }}"{{ ' aria-current=page' if here == 'accounts.page' }}>Accounts</a>
     </nav>
   </header>
 

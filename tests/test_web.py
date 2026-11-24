@@ -92,6 +92,9 @@ class FakeRunner(Runner):
     def login_deezer(self, arl):
         self.logins.append(("deezer", arl))
 
+    def login_soundcloud(self, token):
+        self.logins.append(("soundcloud", token))
+
 
 @pytest.fixture
 def services(tmp_path) -> FakeServices:
@@ -484,18 +487,22 @@ def test_the_observer_follows_titles_and_ignores_lookups():
 
 
 def test_qobuz_and_deezer_logins_are_tried_and_kept(client, runner):
-    response = client.post("/accounts/qobuz", data={"user_id": "1", "auth_token": "t"})
+    response = client.post(
+        "/accounts/qobuz/login", data={"user_id": "1", "auth_token": "t"}
+    )
     assert response.status_code == 302
-    assert client.post("/accounts/deezer", data={"arl": "secret"}).status_code == 302
+    assert (
+        client.post("/accounts/deezer/login", data={"arl": "secret"}).status_code == 302
+    )
     assert runner.logins == [("qobuz", "1", "t"), ("deezer", "secret")]
     assert "Logged in to Deezer" in client.get("/accounts").get_data(as_text=True)
-    client.post("/accounts/qobuz", data={"user_id": "1"})
+    client.post("/accounts/qobuz/login", data={"user_id": "1"})
     assert "Fill in both" in client.get("/accounts").get_data(as_text=True)
 
 
 def test_an_app_is_saved_in_the_config(client, services):
     client.post(
-        "/accounts/tidal/app", data={"client_id": "tid", "client_secret": "sec"}
+        "/accounts/tidal-library/app", data={"client_id": "tid", "client_secret": "sec"}
     )
     client.post("/accounts/spotify/app", data={"client_id": "sid"})
     saved = Config(services.config.path).file
@@ -505,7 +512,7 @@ def test_an_app_is_saved_in_the_config(client, services):
         saved.spotify.client_id,
     ) == ("tid", "sec", "sid")
     # A saved secret need not be typed again to change the id.
-    client.post("/accounts/tidal/app", data={"client_id": "tid2"})
+    client.post("/accounts/tidal-library/app", data={"client_id": "tid2"})
     assert Config(services.config.path).file.tidal.api_client_secret == "sec"
 
 
@@ -557,10 +564,10 @@ def test_a_waiting_login_can_be_cancelled_and_ends_when_the_app_changes(
     for end in (
         lambda job_id: client.post(f"/jobs/{job_id}/cancel", headers=JSON),
         lambda _: client.post(
-            "/accounts/tidal/app", data={"client_id": "x", "client_secret": "y"}
+            "/accounts/tidal-library/app", data={"client_id": "x", "client_secret": "y"}
         ),
     ):
-        job_id = started(client.post("/accounts/tidal/login", headers=JSON))
+        job_id = started(client.post("/accounts/tidal-library/login", headers=JSON))
         time.sleep(0.1)  # let the login start waiting
         end(job_id)
         job = wait_for(client, job_id)
@@ -569,7 +576,7 @@ def test_a_waiting_login_can_be_cancelled_and_ends_when_the_app_changes(
 
 def test_logging_out_removes_the_login(client, services):
     services.store.save("tidal", Token("A", "R", time.time() + 100))
-    assert client.post("/accounts/tidal/logout").status_code == 302
+    assert client.post("/accounts/tidal-library/logout").status_code == 302
     assert services.store.load("tidal") is None
 
 
@@ -770,3 +777,61 @@ def test_unknown_jobs_are_a_404(client):
     assert client.get("/jobs/nope/unmatched.csv").status_code == 404
     assert client.get("/jobs/nope/download").status_code == 404
     assert client.post("/jobs/nope/paste", json={}, headers=JSON).status_code == 404
+
+
+# --- the accounts page is where every login is ----------------------------------------------------
+
+
+def test_every_login_is_on_the_accounts_page_and_nowhere_else(client):
+    accounts = client.get("/accounts").get_data(as_text=True)
+    for login in ("qobuz", "tidal", "deezer", "soundcloud", "spotify", "tidal-library"):
+        assert f'id="{login}"' in accounts
+    for path in ("/", "/playlists"):
+        page = client.get(path).get_data(as_text=True)
+        assert "Accounts page" not in page, path
+        assert "Log in" not in page, path
+
+
+def test_soundcloud_takes_a_token_and_a_guest_is_no_failure(client, runner):
+    assert "Guest" in client.get("/accounts").get_data(as_text=True)
+    assert (
+        client.post(
+            "/accounts/soundcloud/login", data={"oauth_token": "2-1"}
+        ).status_code
+        == 302
+    )
+    assert runner.logins == [("soundcloud", "2-1")]
+    client.post("/accounts/soundcloud/login", data={})
+    assert "Paste the oauth_token" in client.get("/accounts").get_data(as_text=True)
+
+
+def test_every_login_can_be_logged_out_from_the_page(client, services):
+    services.config.update_logins("deezer", {"arl": "cookie"})
+    assert client.post("/accounts/deezer/logout").status_code == 302
+    assert services.config.session.deezer.arl == ""
+    assert "Logged out of Deezer" in client.get("/accounts").get_data(as_text=True)
+    assert "Not logged in to Deezer" in (
+        client.post("/accounts/deezer/logout", follow_redirects=True).get_data(
+            as_text=True
+        )
+    )
+
+
+def test_checking_all_logins_is_a_job_that_reports_each(client, services, monkeypatch):
+    import streamrip.web.runner as runner_module
+    from streamrip.verify import Result
+
+    async def fake(_config, ids=None):
+        return [
+            Result("qobuz", "ok", "Studio, hi-res"),
+            Result("deezer", "failed", "expired", "streamrip login deezer"),
+        ]
+
+    monkeypatch.setattr(runner_module, "verify_logins", fake)
+    job = wait_for(client, started(client.post("/accounts/verify", headers=JSON)))
+    assert job["status"] == "done"
+    assert job["message"] == "1 of 2 are fine; log in again to Deezer."
+    assert [(line["level"], line["text"]) for line in job["log"]] == [
+        ("info", "Qobuz: ok, Studio, hi-res"),
+        ("error", "Deezer: failed, expired"),
+    ]

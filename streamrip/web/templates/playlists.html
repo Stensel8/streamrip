@@ -6,22 +6,6 @@
 <h1>Playlists</h1>
 <p class="muted intro">Move liked songs and playlists between Spotify, Tidal and CSV files, or download them from a lossless source. Tracks are found by ISRC, or else by title, artist and length; a live version is never taken for the studio one, and nothing is added twice.</p>
 
-<div class="cards">
-  {% for a in accounts %}
-  <section class="card">
-    <div class="card-head">
-      <h2>{{ a.label }}</h2>
-      {% if a.connected %}<span class="badge ok">Connected</span>
-      {% elif not a.configured %}<span class="badge warn">No app yet</span>
-      {% else %}<span class="badge">Not logged in</span>{% endif %}
-    </div>
-    {% if not a.connected %}<a class="btn wide" href="{{ url_for('pages.accounts') }}#{{ a.name }}">Set up on the Accounts page</a>{% endif %}
-  </section>
-  {% endfor %}
-</div>
-
-<hr>
-
 <div class="cards single">
   {% include "_job.html" %}
 

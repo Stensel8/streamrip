@@ -444,7 +444,7 @@ class _RepairMain:
     downloaded: list[tuple[str, str]] = []
     downloads_at_rip: list = []
 
-    def __init__(self, config):
+    def __init__(self, config, interactive=True):
         c = config.session.database
         self.database = db.Database(
             # As Main does: a table turned off is a Dummy.
@@ -477,7 +477,7 @@ class _RepairMain:
 
 def _repair(monkeypatch, cfg, downloaded, *options):
     _RepairMain.downloaded = downloaded
-    monkeypatch.setattr("streamrip.rip.cli.Main", _RepairMain)
+    monkeypatch.setattr("streamrip.rip.repair.Main", _RepairMain)
     return _rip(cfg, *options, "repair", "-y")
 
 

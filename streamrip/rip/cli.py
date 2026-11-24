@@ -47,6 +47,7 @@ lazy from ..web import create_app
 lazy from .interactive import Confirm, Prompt
 lazy from .main import Main, fallback_chain
 lazy from .prompter import has_screen, launch
+lazy from .repair import repair_downloads
 
 logger = logging.getLogger("streamrip")
 
@@ -796,38 +797,6 @@ def database_clear(ctx, table, yes):
     console.print(f"[green]Cleared {summary}.")
 
 
-async def _albums_for(main, failed_items):
-    """Map failed tracks onto the albums that contain them.
-
-    Returns (album targets, items to retry as they are). Anything whose album
-    cannot be determined is passed through untouched rather than dropped.
-    """
-    targets: list[tuple[str, str, str]] = []
-    unresolved: list[tuple[str, str, str]] = []
-    seen: set[tuple[str, str]] = set()
-
-    for source, media_type, item_id in failed_items:
-        if media_type != "track":
-            targets.append((source, media_type, item_id))
-            continue
-        try:
-            client = await main.get_logged_in_client(source)
-            resp = await client.get_metadata(item_id, "track")
-            album_id = str((resp.get("album") or {}).get("id") or "")
-        except Exception as e:
-            logger.debug("Could not find the album for %s: %s", item_id, e)
-            album_id = ""
-
-        if not album_id:
-            unresolved.append((source, media_type, item_id))
-            continue
-        if (source, album_id) not in seen:
-            seen.add((source, album_id))
-            targets.append((source, "album", album_id))
-
-    return targets, unresolved
-
-
 @rip.command()
 @click.option("-y", "--yes", help="Don't ask for confirmation.", is_flag=True)
 @click.option(
@@ -851,15 +820,6 @@ async def repair(ctx, yes, flat):
     """
     with _require_config(ctx) as cfg:
         cfg: Config
-        # A repaired track is nearly always a track missing from an album that
-        # was otherwise downloaded, so it needs to land in that album's folder
-        # rather than loose in the download root. This only touches the
-        # in-memory session copy, so config.toml is left alone.
-        if not flat:
-            cfg.session.filepaths.add_singles_to_folder = True
-        # What succeeded is read back from the downloads db below, so it is
-        # kept even with --no-db or downloads_enabled = false.
-        cfg.session.database.downloads_enabled = True
         database = db.Database(
             db.Downloads(cfg.session.database.downloads_path),
             db.Failed(cfg.session.database.failed_downloads_path),
@@ -877,54 +837,15 @@ async def repair(ctx, yes, flat):
             console.print("[green]Repair aborted")
             return
 
-        # A failed item should never also be logged as downloaded, but older
-        # versions of streamrip could mark one downloaded even after it
-        # failed. Clear that stale state so the retry below isn't skipped.
-        for source, _media_type, item_id in failed_items:
-            database.forget_downloaded(source, item_id)
-
-        async with Main(cfg) as main:
-            # Retry through the album rather than track by track. Resolving a
-            # single track builds its album metadata from the track response,
-            # which on Tidal carries only an id, title and cover -- no track
-            # count, and the track's artists in place of the album artist. The
-            # folder that produces differs from the album's own in both, so
-            # repaired tracks land in a separate folder instead of rejoining
-            # the album.
-            #
-            # Going through the album gets the real metadata, the right
-            # folder, disc subfolders and cover art, and costs nothing extra:
-            # tracks already in the downloads db are skipped, so only what is
-            # missing gets fetched.
-            targets, unresolved = await _albums_for(main, failed_items)
-            if unresolved:
-                console.print(
-                    f"[yellow]{plural(len(unresolved), 'item')} had no album to retry "
-                    "through; fetching them individually."
-                )
-            await main.add_all_by_id(targets + unresolved)
-            await main.resolve()
-            await main.rip()
-
-        # Nothing in the download pipeline removes rows from the failed db, so
-        # success can't be detected by diffing it. But set_downloaded() is
-        # only reached via postprocess(), which a failed download never gets
-        # to, so an item in the downloads db now is one that just succeeded.
-        repaired = [
-            (source, media_type, item_id)
-            for source, media_type, item_id in failed_items
-            if database.downloaded(source, item_id)
-        ]
-        for source, media_type, item_id in repaired:
-            database.forget_failed(source, media_type, item_id)
+        repaired = await repair_downloads(cfg, flat)
 
         console.print(
-            f"[green]Repaired {len(repaired)} of {plural(len(failed_items), 'item')}."
+            f"[green]Repaired {repaired} of {plural(len(failed_items), 'item')}."
             "[/green]"
         )
-        if len(repaired) < len(failed_items):
+        if repaired < len(failed_items):
             console.print(
-                f"[yellow]{plural(len(failed_items) - len(repaired), 'item')} failed "
+                f"[yellow]{plural(len(failed_items) - repaired, 'item')} failed "
                 "again, and stay logged. Run [bold]streamrip repair[/bold] to try "
                 "again."
             )
