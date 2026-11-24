@@ -24,6 +24,7 @@ from ..exceptions import (
     NonStreamableError,
 )
 from ..rip.spotify_login import SpotifyLoginError
+from ..spotify_auth import SpotifyAuthError
 from ..sync.errors import SyncError
 from ..sync.services import Services
 from .accounts import accounts_pages
@@ -45,6 +46,7 @@ EXPLAINED = (
     NonStreamableError,
     APIError,
     SpotifyLoginError,
+    SpotifyAuthError,
 )
 
 # The pages use only their own scripts and styles, and nothing inline; covers

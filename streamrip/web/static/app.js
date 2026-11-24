@@ -329,6 +329,7 @@ onSubmit('pl-download-form', (form, who) => {
 
 $('verify')?.addEventListener('click', () => start('/accounts/verify'));
 $('tidal-login')?.addEventListener('click', () => start('/accounts/tidal/login'));
+$('spotify-pair')?.addEventListener('click', () => start('/accounts/spotify/pair'));
 for (const button of document.querySelectorAll('[data-browser-login]')) {
   button.addEventListener('click', () => start(`/accounts/${button.dataset.browserLogin}/login`));
 }

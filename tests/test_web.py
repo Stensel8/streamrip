@@ -16,7 +16,7 @@ from types import SimpleNamespace
 import pytest
 from playlist_support import ISRC_A, FakeProvider, FakeServices, track
 
-from streamrip import __version__, progress
+from streamrip import __version__, progress, spotify_auth
 from streamrip.config import Config
 from streamrip.rip.spotify_login import SpotifyLoginError
 from streamrip.sync.auth import Token
@@ -571,6 +571,38 @@ def test_a_browser_login_takes_a_pasted_address(client, services, monkeypatch):
     assert job["message"] == "Logged in to Spotify."
     assert services.fake_oauth.exchanged[0] == "CODE"
     assert Config(services.config.path).file.spotify.access_token == "ACCESS"
+    assert Config(services.config.path).file.spotify.auth_method == "app"
+
+
+def test_the_spotify_pair_link_needs_no_app(client, services, monkeypatch):
+    """Spotify's own desktop client: no app, a pair link, approved anywhere."""
+    pair = spotify_auth.DeviceCode(
+        "DC",
+        "ABC123",
+        "https://spotify.com/pair",
+        "https://spotify.com/pair?code=ABC123",
+        3599,
+        5,
+    )
+    token = spotify_auth.Token("A", "R", time.time() + 3600)
+    monkeypatch.setattr(spotify_auth, "request_device_code", lambda config: pair)
+    monkeypatch.setattr(spotify_auth, "poll_for_token", lambda *a, **k: token)
+
+    job_id = started(client.post("/accounts/spotify/pair", headers=JSON))
+    deadline = time.monotonic() + 5
+    while not (job := client.get(f"/jobs/{job_id}", headers=JSON).get_json())["link"]:
+        assert time.monotonic() < deadline
+        time.sleep(0.02)
+    assert job["link"].startswith("https://spotify.com/pair")
+    assert not job["pasteable"]
+    job = wait_for(client, job_id)
+    assert (job["status"], job["message"]) == ("done", "Logged in to Spotify.")
+    saved = Config(services.config.path).file.spotify
+    assert (saved.access_token, saved.refresh_token, saved.auth_method) == (
+        "A",
+        "R",
+        "device",
+    )
 
 
 def test_a_waiting_login_can_be_cancelled_and_ends_when_the_app_changes(

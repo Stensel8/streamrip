@@ -14,7 +14,7 @@ lazy from werkzeug.wrappers import Response as WerkzeugResponse
 from ..accounts import BY_ID, LOGIN_IDS, Accounts
 from ..sync.services import DEVELOPER_DASHBOARDS, LABELS
 from .common import form, get_config, get_runner, get_services, start
-from .logins import BrowserLogin
+from .logins import BrowserLogin, DeviceLogin
 lazy from .jobs import Job
 
 accounts_pages = Blueprint("accounts", __name__, url_prefix="/accounts")
@@ -112,6 +112,26 @@ def browser_login(login_id: str) -> tuple[Response, int]:
     return start("login", f"Log in to {LABELS[service]}{what}", work)
 
 
+@accounts_pages.post("/spotify/pair")
+def spotify_pair() -> tuple[Response, int]:
+    """Spotify's own desktop client: a pair link, approved on any device, no
+    app of one's own."""
+    login = DeviceLogin(get_config())
+    logins = current_app.extensions["logins"]
+    # One login at a time: a device login waits a long time.
+    for earlier in list(logins.values()):
+        earlier.cancel()
+
+    def work(job: Job) -> str:
+        logins[job.id] = login
+        try:
+            return login.run(job)
+        finally:
+            logins.pop(job.id, None)
+
+    return start("login", "Log in to Spotify with the pair link", work)
+
+
 @accounts_pages.post(f"/<any({_APP}):login_id>/app")
 def set_app(login_id: str) -> WerkzeugResponse:
     """The client id (and for Tidal the secret) of the user's developer app."""
@@ -134,9 +154,10 @@ def set_app(login_id: str) -> WerkzeugResponse:
             "api_client_secret": secret or config.session.tidal.api_client_secret,
         },
     )
-    # A login that is waiting was started with the old app.
+    # A login that is waiting was started with the old app. A pair link
+    # belongs to Spotify's own client, and keeps going.
     for login in list(current_app.extensions["logins"].values()):
-        if login.oauth.name == service:
+        if isinstance(login, BrowserLogin) and login.oauth.name == service:
             login.cancel()
     return _back(f"Saved the {LABELS[service]} app. Now log in.")
 
