@@ -249,6 +249,7 @@ def resolve_tracks(
                 match = found if found and found.score >= min_score else None
                 miss = None if match else _miss(track, found, provider, min_score)
             if match:
+                match.wanted = track
                 matches.append(match)
             if miss:
                 misses.append(miss)

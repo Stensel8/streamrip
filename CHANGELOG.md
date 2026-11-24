@@ -10,7 +10,8 @@ Music-Sync is part of streamrip, and logins are in one place.
 - feat: `streamrip playlist` moves liked songs and playlists between Spotify,
   Tidal and CSV, writes M3U8 for Navidrome and Jellyfin
   ([Music-Sync#11](https://github.com/Stensel8/Music-Sync/issues/11)) and
-  downloads a list from Qobuz, Tidal or Deezer
+  downloads a list from Qobuz, Tidal or Deezer; `--report` saves how every
+  track was matched
   ([docs/playlists.md](docs/playlists.md))
 - feat: `streamrip web`, a web interface for downloads, search, the playlist
   tools and logins ([docs/web.md](docs/web.md))

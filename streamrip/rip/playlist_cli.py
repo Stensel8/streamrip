@@ -33,6 +33,7 @@ lazy from ..sync.errors import ProviderError, SyncError
 lazy from ..sync.m3u import Library, write_m3u8
 lazy from ..sync.models import Track
 lazy from ..sync.providers.base import Provider
+lazy from ..sync.report import write_report
 lazy from ..sync.services import (
     DEVELOPER_DASHBOARDS,
     LABELS,
@@ -118,6 +119,13 @@ def free_name(name: str, taken: set[str]) -> str:
     )
     taken.add(free.casefold())
     return free
+
+
+def _write_report(path: Path | None, matched: list, misses: list[Miss]):
+    """Save the audit trail of a transfer or import, if it was asked for."""
+    if path:
+        rows = write_report(path, matched, misses)
+        console.print(f"{plural(rows, 'track')} reported in {path}")
 
 
 def _report_unmatched(misses: list[Miss], path: Path | None):
@@ -223,6 +231,12 @@ def matching_options(command: Callable) -> Callable:
                 "--unmatched",
                 type=click.Path(dir_okay=False, path_type=Path),
                 help="Write the tracks that were not found to this CSV.",
+            ),
+            click.option(
+                "--report",
+                type=click.Path(dir_okay=False, path_type=Path),
+                help="Write every track with what it was matched to, how, and "
+                "how sure, to this CSV.",
             ),
             click.option("-q", "--quiet", is_flag=True, help="No progress output."),
         ]
@@ -444,6 +458,7 @@ def import_csv(
     dry_run,
     min_score,
     unmatched,
+    report,
     quiet,
 ):
     """Add the tracks (or albums) of a CSV file to a playlist or your favourites.
@@ -473,6 +488,7 @@ def import_csv(
         )
     console.print(result.summary(), markup=False, highlight=False)
     _report_unmatched(result.misses, unmatched)
+    _write_report(report, result.matched, result.misses)
 
 
 @playlist.command()
@@ -504,6 +520,7 @@ def transfer(
     dry_run,
     min_score,
     unmatched,
+    report,
     quiet,
 ):
     """Copy liked songs or playlists from one service to the other.
@@ -525,6 +542,7 @@ def transfer(
     )
     progress = _progress(quiet)
     misses: list[Miss] = []
+    matched: list = []
     selected = _select(source_provider, liked or sync_favorites, playlist, progress)
     for name, tracks in selected:
         # None: the favourites (liked songs) of the target.
@@ -544,7 +562,9 @@ def transfer(
         )
         console.print(result.summary(), markup=False, highlight=False)
         misses.extend(result.misses)
+        matched.extend(result.matched)
     _report_unmatched(misses, unmatched)
+    _write_report(report, matched, misses)
 
 
 @playlist.command()

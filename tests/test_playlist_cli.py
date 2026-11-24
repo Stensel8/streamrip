@@ -1,5 +1,6 @@
 """`streamrip playlist`: Music-Sync's commands, as part of streamrip."""
 
+import csv
 import json
 
 import pytest
@@ -238,6 +239,40 @@ def test_a_transfer_shows_each_step_and_what_came_closest(
     )
     assert code == 2
     assert "the same service" in stderr
+
+
+def test_a_transfer_can_report_every_track_with_what_it_was_matched_to(
+    tmp_path, monkeypatch, capsys
+):
+    liked = [
+        Track("Song A", ["Artist A"], isrc=ISRC_A),
+        Track("Song B (Live)", ["Artist B"], duration_ms=200_000),
+    ]
+    services = FakeServices(
+        tmp_path,
+        spotify=FakeProvider("spotify", liked=liked),
+        tidal=FakeProvider("tidal", CATALOG),
+    )
+    out = tmp_path / "audit.csv"
+    code, stdout, _ = run(
+        tmp_path,
+        monkeypatch,
+        capsys,
+        ["transfer", "spotify", "tidal", "--liked", "--report", str(out)],
+        services,
+    )
+    assert code == 0
+    assert "2 tracks reported" in stdout
+    rows = {r["wanted title"]: r for r in csv.DictReader(out.open(encoding="utf-8"))}
+    matched, missed = rows["Song A"], rows["Song B (Live)"]
+    assert (matched["result"], matched["how"], matched["found title"]) == (
+        "matched",
+        "isrc",
+        "Song A",
+    )
+    assert missed["result"] == "not found"
+    assert missed["why"].startswith("only another version")
+    assert missed["found title"] == "Song B"  # the closest it came
 
 
 def test_sync_favorites_puts_liked_songs_in_the_favourites(

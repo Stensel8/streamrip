@@ -40,6 +40,7 @@ streamrip playlist doctor                                 # tries the real APIs
 | ------------------- | --------------------------------------------------------------------- |
 | `--dry-run`         | Look everything up, but change nothing                                |
 | `--unmatched FILE`  | Save the tracks that weren't found to a CSV                           |
+| `--report FILE`     | Save every track with what it was matched to, how and how sure (`transfer`, `import`) |
 | `--min-score 0.8`   | How sure a match must be (0 to 1)                                     |
 | `--to-playlist NAME`| The playlist to fill (transfer)                                       |
 | `--to-favorites`    | Add to your favourites (liked songs) instead of a playlist (import)   |
