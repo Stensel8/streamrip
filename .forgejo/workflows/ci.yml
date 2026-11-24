@@ -16,7 +16,7 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: https://opencommit.eu/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
@@ -31,7 +31,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: https://opencommit.eu/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
@@ -41,7 +41,7 @@ jobs:
           cache-local-path: ${{ github.workspace }}/.uv-cache
       # --locked fails when uv.lock no longer matches pyproject.toml.
       - name: Install dependencies
-        run: uv sync --locked --all-extras --python 3.15
+        run: uv sync --locked --python 3.15
       - name: Run tests
         # The tests about logins and sessions run by hand: checks/run.py login.
         run: uv run --locked pytest -m "not login"
@@ -51,7 +51,7 @@ jobs:
   install:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: https://opencommit.eu/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - run: ./install.sh && .venv/bin/streamrip --help
@@ -66,7 +66,7 @@ jobs:
     runs-on: pi
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: https://opencommit.eu/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
@@ -74,7 +74,7 @@ jobs:
           enable-cache: true
           # Beside the checkout, so packages are hardlinked into .venv, not copied.
           cache-local-path: ${{ github.workspace }}/.uv-cache
-      - run: uv sync --locked --all-extras --python 3.15
+      - run: uv sync --locked --python 3.15
       - run: uv run --locked pytest -m "not login"
 
   # Real accounts, from home (services refuse data centres), with the
@@ -87,7 +87,7 @@ jobs:
     runs-on: pi
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: https://opencommit.eu/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
@@ -106,5 +106,5 @@ jobs:
           config="$(mktemp)"  # 0600: it holds the logins
           trap 'rm -f "$config"' EXIT
           printf '%s\n' "$STREAMRIP_CONFIG" > "$config"
-          uv run --locked --all-extras python checks/run.py live qobuz tidal deezer \
+          uv run --locked python checks/run.py live qobuz tidal deezer \
             --config "$config" < /dev/null

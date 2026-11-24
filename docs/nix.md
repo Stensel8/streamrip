@@ -18,7 +18,7 @@ nixpkgs' own Python packages aren't used. `flake.lock` pins nixpkgs and the
 uv2nix inputs.
 
 The development shell has streamrip installed in editable mode from the
-checkout, with every extra, the dev tools and uv. Run
+checkout, with the dev tools and uv. Run
 `pytest -m 'not real_browser and not login'` there to test the working tree.
 
 The package and the shell add FFmpeg, Deno and Chromium to `PATH` and leave your

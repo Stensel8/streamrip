@@ -19,7 +19,7 @@ if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
 }
 
 Write-Host "Installing streamrip into .venv..."
-uv sync --locked --no-dev --no-editable --extra browser --extra ffmpeg --extra web
+uv sync --locked --no-dev --no-editable
 if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
 Write-Host ""

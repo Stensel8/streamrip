@@ -28,7 +28,7 @@ import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-UV = ["uv", "run", "--locked", "--all-extras"]
+UV = ["uv", "run", "--locked"]
 PYTEST = [*UV, "pytest"]
 SOURCES = ("tidal", "qobuz", "deezer", "spotify", "soundcloud")
 # SoundCloud only lets streamrip download what the artists themselves upload, so it is searched for that.

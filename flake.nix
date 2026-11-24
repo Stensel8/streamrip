@@ -56,9 +56,8 @@
         ]);
       inherit (pythonSet.streamrip) version;
 
-      # The browser extra drives the Chromium below for the Qobuz and Deezer logins;
-      # the web extra is `streamrip web`.
-      venv = pythonSet.mkVirtualEnv "streamrip-env" { streamrip = [ "browser" "web" ]; };
+      # Playwright drives the Chromium below for the Qobuz and Deezer logins.
+      venv = pythonSet.mkVirtualEnv "streamrip-env" workspace.deps.default;
       runtimeTools = [ pkgs.ffmpeg-headless pkgs.deno pkgs.chromium ];
 
       streamrip = pkgs.runCommand "streamrip-${version}" {
@@ -75,7 +74,7 @@
           --prefix PATH : ${lib.makeBinPath runtimeTools}
       '';
 
-      # Every extra and the dev group: pytest and the rest.
+      # Everything and the dev group: pytest and the rest.
       testEnv = pythonSet.mkVirtualEnv "streamrip-test-env" workspace.deps.all;
       tests = pkgs.runCommand "streamrip-${version}-tests" {
         src = lib.fileset.toSource {

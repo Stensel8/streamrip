@@ -120,9 +120,8 @@ and run:
 uv tool install ./streamrip-*.whl
 ```
 
-uv fetches Python 3.15 if you need it. The `browser` extra adds the automatic
-login browser, `ffmpeg` a bundled ffmpeg and `web` the web interface:
-`uv tool install "./streamrip-*.whl[browser,ffmpeg,web]"`.
+uv fetches Python 3.15 if you need it. The wheel has everything in it: the web
+interface, the automatic login browser and a bundled ffmpeg.
 
 ### With Podman or Docker
 
@@ -230,7 +229,7 @@ of `streamrip web`.
 Report problems in the [issue tracker on opencommit.eu](https://opencommit.eu/Stensel8/streamrip/issues)
 or on [GitHub](https://github.com/Stensel8/streamrip/issues).
 
-For code, `uv sync --all-extras` sets everything up. Make sure `uv run pytest`
+For code, `uv sync` sets everything up. Make sure `uv run pytest`
 and `uv run ruff check . && uv run ruff format .` pass before you open a pull
 request against `dev`. Tests that need a real browser are skipped when there
 isn't one. CI skips the login and session tests. [checks/](checks/README.md)

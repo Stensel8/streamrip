@@ -35,7 +35,7 @@ def has_screen() -> bool:
 
 def browser_login_available() -> bool:
     """Whether the isolated browser window can work here: it needs Playwright
-    (the `browser` extra) and a screen."""
+    and a screen."""
     return importlib.util.find_spec("playwright") is not None and has_screen()
 
 

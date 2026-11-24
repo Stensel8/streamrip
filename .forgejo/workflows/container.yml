@@ -41,7 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: https://opencommit.eu/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - run: |
@@ -56,7 +56,7 @@ jobs:
     runs-on: pi
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: https://opencommit.eu/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - run: |
@@ -73,7 +73,7 @@ jobs:
     runs-on: ${{ matrix.runs-on }}
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: https://opencommit.eu/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.TAG }}
           persist-credentials: false
@@ -85,6 +85,7 @@ jobs:
           set -euo pipefail
           case "$(uname -m)" in x86_64) arch=amd64 ;; aarch64) arch=arm64 ;; esac
           version=""; [[ "$TAG" == v[0-9]* ]] && version="${TAG#v}"
+          [[ -z "$TAG" || -n "$version" ]] || { echo "::error::A release tag looks like v2.8.0, not $TAG"; exit 1; }
           image="$IMAGE:${version:-test}-$arch"
           # The login stays in this run; the build cache stays in the docker daemon.
           export DOCKER_CONFIG="$(mktemp -d)"

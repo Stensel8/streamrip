@@ -1,5 +1,5 @@
 # --- tools: an ffmpeg with only what streamrip uses, and QuickJS-ng for yt-dlp ---
-FROM docker.io/library/debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS tools
+FROM docker.io/library/debian:trixie-slim@sha256:8aa5a7bf5a1955bddbe7d74fcdd0b91ab30e74362a8b73af672b0481b35b44a0 AS tools
 
 # Patchbot keeps these four current: a tag of FFmpeg's own git and its commit,
 # and QuickJS-ng's release files with their sha256.
@@ -47,7 +47,7 @@ RUN set -eux; \
 
 
 # --- build: Python from uv and streamrip with its packages ---
-FROM docker.io/library/debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS build
+FROM docker.io/library/debian:trixie-slim@sha256:8aa5a7bf5a1955bddbe7d74fcdd0b91ab30e74362a8b73af672b0481b35b44a0 AS build
 
 COPY --from=ghcr.io/astral-sh/uv:0.13.9@sha256:d3b601f0c7b118bc1753febf7c41cc80981df678445e0254284eecf84db79a7d /uv /usr/local/bin/uv
 
@@ -70,16 +70,19 @@ COPY pyproject.toml uv.lock ./
 # pyproject.toml and uv.lock change.
 RUN --mount=type=cache,target=/root/.cache/uv \
     set -eux; \
-    uv sync --locked --no-dev --no-install-project --extra web --python 3.15; \
+    uv sync --locked --no-dev --no-install-project --python 3.15; \
     cd "$(dirname "$(dirname "$(readlink -f /opt/streamrip/bin/python)")")"; \
     rm -rf include share bin/pip* bin/idle* bin/pydoc* bin/*-config \
         lib/pkgconfig lib/*.a lib/libpython* lib/*tcl* lib/*tk* lib/itcl* lib/thread*; \
     cd lib/python3.*; \
     rm -rf test idlelib tkinter turtledemo turtle.py ensurepip pydoc_data config-* \
         site-packages/pip* site-packages/setuptools*; \
-    # What streamrip never loads: a self-test, and Pillow's AVIF, font, colour
-    # profile and Tk modules with the libraries only they use.
+    # What streamrip never loads: a self-test, Pillow's AVIF, font, colour
+    # profile and Tk modules with the libraries only they use, Playwright's
+    # browser driver (there is no screen to log in on) and imageio-ffmpeg's
+    # ffmpeg (the image has its own).
     cd /opt/streamrip/lib/python3.*/site-packages; \
+    rm -rf playwright/driver imageio_ffmpeg/binaries; \
     rm -rf Cryptodome/SelfTest PIL/_avif.* PIL/_imagingcms.* PIL/_imagingft.* PIL/_imagingtk.* \
         pillow.libs/libavif* pillow.libs/liblcms2* pillow.libs/libfreetype* \
         pillow.libs/libharfbuzz* pillow.libs/libpng16* pillow.libs/libbrotli*; \
@@ -91,7 +94,7 @@ COPY streamrip ./streamrip
 # long as pyproject.toml is unchanged, however much of the code changed.
 RUN --mount=type=cache,target=/root/.cache/uv \
     set -eux; \
-    uv sync --locked --no-dev --no-editable --extra web --reinstall-package streamrip --python 3.15; \
+    uv sync --locked --no-dev --no-editable --reinstall-package streamrip --python 3.15; \
     /opt/streamrip/bin/python -c 'import ssl, sqlite3, lzma, bz2, ctypes, streamrip.rip.cli, streamrip.web; \
         from PIL import features; assert all(map(features.check, ("jpg", "zlib", "webp")))'; \
     /opt/streamrip/bin/streamrip --version

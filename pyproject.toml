@@ -1,6 +1,6 @@
 [project]
 name = "streamrip"
-version = "2.8.0rc1"
+version = "2.8.0"
 description = "Keep the music you pay for. Take your playlists with you. streamrip downloads from Qobuz, Tidal, Deezer, SoundCloud and Spotify, and moves your playlists between Spotify, Tidal and CSV."
 authors = [{ name = "nathom", email = "nathanthomas707@gmail.com" }]
 maintainers = [{ name = "Stensel8", email = "stentijhuis@protonmail.com" }]
@@ -36,23 +36,21 @@ dependencies = [
   # brotli, which has no wheel for Python 3.15, only to unpack the odd
   # brotli-compressed page.
   "ytmusicapi>=1.12,<2",
-  "yt-dlp==2026.10.26",
+  "yt-dlp==2026.11.23",
   "yt-dlp-ejs==0.8.0",
   "websockets>=17",
   # The CA bundle every connection is checked against, on every system alike.
   "certifi>=2026.11.20",
+  # `streamrip web`: downloads, search, playlists and logins in a browser.
+  "flask>=3.1,<4",
+  # Drives a browser for the automatic Qobuz and Deezer logins: an already
+  # installed Chrome-family browser when there is one (no download), or its own
+  # browser after asking, when there isn't. It is only offered where there is a
+  # screen to show the window on.
+  "playwright>=1.64,<2",
+  # A prebuilt ffmpeg, for when there's no system ffmpeg (or none on PATH).
+  "imageio-ffmpeg>=0.6",
 ]
-
-[project.optional-dependencies]
-# Drives a browser for the automatic Qobuz and Deezer logins: an already
-# installed Chrome-family browser when there is one (no download), or its own
-# browser after asking, when there isn't. It needs a screen to show the window
-# on, so the container image leaves it out; the installers include it.
-browser = ["playwright>=1.64,<2"]
-# A prebuilt ffmpeg, for when there's no system ffmpeg (or none on PATH).
-ffmpeg = ["imageio-ffmpeg>=0.6"]
-# `streamrip web`: downloads, search, playlists and logins in a browser.
-web = ["flask>=3.1,<4"]
 
 [project.scripts]
 streamrip = "streamrip.rip:rip"
