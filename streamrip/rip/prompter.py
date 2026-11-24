@@ -443,21 +443,22 @@ class SpotifyPrompter(CredentialPrompter):
         # A login is a saved token: a device one has no client id of one's own.
         return bool(c.refresh_token or c.access_token)
 
-    async def prompt_and_login(self):
-        """One of two: the pair link, or one's own app; a saved login is used
-        as it is."""
-        choice = _choose_login(
-            "Spotify",
-            (
+    async def prompt_and_login(self, method: str | None = None):
+        """One of two: the pair link, or one's own app. `method` skips the
+        choice when it is already made (the --configure login)."""
+        if method is None:
+            method = _choose_login(
+                "Spotify",
                 (
-                    "device",
-                    "a pair link to approve on any device (no app of your own)",
+                    (
+                        "device",
+                        "a pair link to approve on any device (no app of your own)",
+                    ),
+                    ("app", "your own app, with the browser login"),
                 ),
-                ("app", "your own app, with the browser login"),
-            ),
-            "device",
-        )
-        if choice == "device":
+                "device",
+            )
+        if method == "device":
             self._log_in_device()
         else:
             await self._log_in_app()

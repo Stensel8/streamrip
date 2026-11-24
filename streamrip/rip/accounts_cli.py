@@ -78,7 +78,8 @@ def _log_in_again(config: Config, service: str, configure: bool = False):
         elif service == "spotify" and not configure:
             spotify_device_login(config)
         else:
-            coro(_log_in)(config, service)
+            method = "app" if service == "spotify" else None
+            coro(_log_in)(config, service, method=method)
     except SyncError as e:
         accounts.restore(service, held)
         raise click.ClickException(str(e)) from e
@@ -202,7 +203,7 @@ def logout(ctx, service):
     )
 
 
-async def _log_in(config: Config, source: str):
+async def _log_in(config: Config, source: str, method: str | None = None):
     """Log in to a download source as it does the first time it is used."""
     client = {
         "qobuz": QobuzClient,
@@ -213,7 +214,10 @@ async def _log_in(config: Config, source: str):
     }[source](config)
     try:
         prompter = get_prompter(client, config)
-        await prompter.prompt_and_login()
+        if method is None:
+            await prompter.prompt_and_login()
+        else:
+            await prompter.prompt_and_login(method)
         prompter.save()
     finally:
         await client.close()
