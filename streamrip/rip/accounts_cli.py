@@ -10,6 +10,7 @@ lazy import asyncio
 import click
 
 from ..accounts import BY_ID, LOGIN_IDS, Accounts
+lazy from .. import spotify_auth
 lazy from ..client import (
     DeezerClient,
     QobuzClient,
@@ -26,7 +27,12 @@ lazy from ..verify import FAILED
 lazy from ..verify import verify as run_verify
 lazy from .cli import _require_config, coro
 lazy from .interactive import Prompt
-lazy from .prompter import get_prompter, has_screen, launch
+lazy from .prompter import (
+    get_prompter,
+    has_screen,
+    launch,
+    spotify_device_login,
+)
 lazy from .spotify_login import capture_code, code_from_redirect_url
 
 LOGIN = click.Choice(LOGIN_IDS, case_sensitive=False)
@@ -60,19 +66,28 @@ def accounts(ctx):
     console.print(f"Kept in {config.state.path}", highlight=False, soft_wrap=True)
 
 
-def _log_in_again(config: Config, service: str):
+def _log_in_again(config: Config, service: str, app: bool = False):
     """Log in to `service` from nothing, and put the old login back if that does
-    not work out: a login that works is not asked for twice."""
+    not work out: a login that works is not asked for twice. `app` is Spotify's
+    own app, instead of the pair link."""
     accounts = Accounts(config)
     held = accounts.logout(service)
     try:
         if service == "tidal-library":
             _log_in_to_tidal_library(Services(config))
+        elif service == "spotify" and not app:
+            spotify_device_login(config)
         else:
             coro(_log_in)(config, service)
     except SyncError as e:
         accounts.restore(service, held)
         raise click.ClickException(str(e)) from e
+    except spotify_auth.SpotifyAuthError as e:
+        accounts.restore(service, held)
+        raise click.ClickException(str(e)) from e
+    except KeyboardInterrupt:
+        accounts.restore(service, held)
+        raise click.ClickException("Login cancelled.") from None
     except BaseException:
         accounts.restore(service, held)
         raise
@@ -87,13 +102,21 @@ def _log_in_again(config: Config, service: str):
 
 @click.command()
 @click.argument("service", type=LOGIN, required=False)
+@click.option(
+    "--app",
+    "use_app",
+    is_flag=True,
+    help="Spotify: use your own app from the developer dashboard, instead of "
+    "the pair link.",
+)
 @click.pass_context
-def login(ctx, service):
+def login(ctx, service, use_app):
     """Log in to a service, or log in again.
 
     tidal logs in for downloading. tidal-library is Tidal's official API, for
     your playlists and favourites, with a developer app of your own. spotify
-    is one login for downloading and playlists alike. Without a name, it asks.
+    is one login for downloading and playlists alike: a pair link to approve
+    on any device, or --app for your own app. Without a name, it asks.
     """
     config = _require_config(ctx)
     service = service or Prompt.ask(
@@ -103,7 +126,7 @@ def login(ctx, service):
             (s.login.id for s in Accounts(config).all() if not s.logged_in), None
         ),
     )
-    _log_in_again(config, service)
+    _log_in_again(config, service, app=use_app)
 
 
 @click.command()

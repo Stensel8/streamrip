@@ -18,6 +18,7 @@ import pytest
 import tomlkit
 from aiohttp import web
 
+from streamrip import spotify_auth
 from streamrip.client import spotify as spotify_module
 from streamrip.client.audio_match import MatchTrack
 from streamrip.client.downloadable import YtDlpDownloadable
@@ -316,6 +317,8 @@ async def test_finishing_the_login_trades_the_code_for_tokens(make_client, spoti
     assert client.logged_in
     assert client.config.refresh_token == "FIRST"
     assert client.global_config.file.spotify.access_token == "NEW"
+    # A login made with one's own app says so, and a refresh uses that app.
+    assert client.config.auth_method == "app"
 
 
 # --- requests ----------------------------------------------------------------
@@ -1022,7 +1025,7 @@ async def test_the_app_is_explained_then_the_client_id_asked(prompter, monkeypat
         prompter_module.console, "print", lambda *a, **k: printed.append(a)
     )
     monkeypatch.setattr(prompter_module, "_open_login_link", lambda url: None)
-    answers = _answer(monkeypatch, "  my-client-id  ", "2", PASTED)
+    answers = _answer(monkeypatch, "2", "  my-client-id  ", "2", PASTED)
 
     await prompter.prompt_and_login()
 
@@ -1033,11 +1036,90 @@ async def test_the_app_is_explained_then_the_client_id_asked(prompter, monkeypat
     assert "developer.spotify.com/dashboard" in explanation
     assert "Web API" in explanation
     assert REDIRECT in explanation
-    assert answers.questions[0] == "Enter the Client ID of your Spotify app"
+    assert answers.questions[0] == "Choose"
+    assert "Enter the Client ID of your Spotify app" in answers.questions
+
+
+@pytest.mark.login
+async def test_the_pair_link_is_the_default_way_to_log_in(prompter, monkeypatch):
+    pair = spotify_auth.DeviceCode(
+        "DC",
+        "ABC123",
+        "https://spotify.com/pair",
+        "https://spotify.com/pair?code=ABC123",
+        3599,
+        5,
+    )
+    token = spotify_auth.Token("A", "R", time.time() + 3600)
+    opened = []
+    polls = []
+    monkeypatch.setattr(prompter_module, "_open_login_link", opened.append)
+    monkeypatch.setattr(
+        prompter_module.spotify_auth, "request_device_code", lambda config: pair
+    )
+
+    def poll(code, config, **kwargs):
+        polls.append((code, kwargs))
+        return token
+
+    monkeypatch.setattr(prompter_module.spotify_auth, "poll_for_token", poll)
+    answers = _answer(monkeypatch, "1")
+
+    await prompter.prompt_and_login()
+
+    assert answers.questions[0] == "Choose"  # the pair link is the first one
+    assert opened == ["https://spotify.com/pair?code=ABC123"]
+    assert [p[0] for p in polls] == ["DC"]
+    c = prompter.config.session.spotify
+    assert (c.access_token, c.refresh_token, c.auth_method) == ("A", "R", "device")
+
+
+@pytest.mark.login
+@pytest.mark.parametrize("again", [True, False], ids=["tried again", "given up"])
+async def test_a_pair_link_spotify_refuses_can_be_tried_again(
+    prompter, monkeypatch, again
+):
+    pair = spotify_auth.DeviceCode("DC", "ABC123", "u", "u", 3599, 5)
+    token = spotify_auth.Token("A", "R", time.time() + 3600)
+    monkeypatch.setattr(
+        prompter_module.spotify_auth, "request_device_code", lambda config: pair
+    )
+    if again:
+        monkeypatch.setattr(
+            prompter_module.spotify_auth,
+            "poll_for_token",
+            MagicMock(
+                side_effect=[
+                    spotify_auth.DeviceLoginRefusedError("the pair link expired"),
+                    token,
+                ]
+            ),
+        )
+        monkeypatch.setattr(prompter_module, "_open_login_link", lambda url: None)
+        monkeypatch.setattr(
+            prompter_module.Confirm, "ask", staticmethod(lambda *a, **k: True)
+        )
+        _answer(monkeypatch, "1")
+        await prompter.prompt_and_login()
+        c = prompter.config.session.spotify
+        assert (c.access_token, c.auth_method) == ("A", "device")
+    else:
+
+        def refused(*a, **k):
+            raise spotify_auth.DeviceLoginRefusedError("the pair link expired")
+
+        monkeypatch.setattr(prompter_module.spotify_auth, "poll_for_token", refused)
+        monkeypatch.setattr(prompter_module, "_open_login_link", lambda url: None)
+        monkeypatch.setattr(
+            prompter_module.Confirm, "ask", staticmethod(lambda *a, **k: False)
+        )
+        _answer(monkeypatch, "1")
+        with pytest.raises(AuthenticationError, match="cancelled"):
+            await prompter.prompt_and_login()
 
 
 async def test_a_saved_client_id_is_not_asked_again(prompter, monkeypatch):
-    answers = _answer(monkeypatch, "2", PASTED)
+    answers = _answer(monkeypatch, "2", "2", PASTED)
 
     await prompter.prompt_and_login()
 
@@ -1048,7 +1130,7 @@ async def test_a_saved_client_id_is_not_asked_again(prompter, monkeypatch):
 async def test_the_browser_login_catches_the_code_itself(prompter, monkeypatch):
     opened = []
     monkeypatch.setattr(prompter_module, "_open_login_link", opened.append)
-    _answer(monkeypatch, "1")
+    _answer(monkeypatch, "2", "1")
     capture = AsyncMock(return_value="CAUGHT")
     monkeypatch.setattr(prompter_module, "capture_code", capture)
 
@@ -1076,14 +1158,15 @@ async def test_without_a_screen_the_other_device_is_the_default(
 
     await prompter.prompt_and_login()
 
-    assert defaults[0] == default
+    assert defaults[0] == "1"  # the pair link, the default way
+    assert defaults[1] == default  # then the browser choice
     prompter.client.finish_login.assert_awaited_once_with("C", "V")
 
 
 @pytest.mark.login
 @pytest.mark.parametrize("again", [True, False], ids=["tried again", "given up"])
 async def test_a_failed_login_can_be_tried_again(prompter, monkeypatch, again):
-    _answer(monkeypatch, "2", "bad", "2", "good")
+    _answer(monkeypatch, "2", "2", "bad", "2", "good")
     monkeypatch.setattr(
         prompter_module.Confirm, "ask", staticmethod(lambda *a, **k: again)
     )

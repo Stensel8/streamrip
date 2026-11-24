@@ -10,6 +10,7 @@ lazy from collections.abc import Callable
 
 import click
 
+from .. import spotify_auth
 from ..client.spotify import DEVELOPER_DASHBOARD
 from ..console import console
 from ..exceptions import AuthenticationError, MissingCredentialsError
@@ -409,8 +410,34 @@ class SoundcloudPrompter(CredentialPrompter):
         self.config.file.set_modified()
 
 
+def spotify_device_login(config: Config) -> None:
+    """Spotify's own desktop client: a pair link, approved on any device.
+
+    No app of one's own, no browser to send back: the token that comes is the
+    one Spotify's own client uses, and it is kept as a "device" login.
+    """
+    pair = spotify_auth.request_device_code(config)
+    console.print(
+        "\nSpotify: approve the login on any device, in the Spotify app or a "
+        "browser.\n"
+        f"  Open [blue underline]{pair.verification_uri_complete}[/blue underline] "
+        "and sign in there.\n"
+        "The pair link is one-time; when it is refused or expires, start the "
+        "login again.\n"
+    )
+    _open_login_link(pair.verification_uri_complete)
+    token = spotify_auth.poll_for_token(
+        pair.device_code,
+        config,
+        expires_in=pair.expires_in,
+        interval=pair.interval,
+    )
+    spotify_auth.save(config, token, "device")
+
+
 class SpotifyPrompter(CredentialPrompter):
-    """Spotify wants an app of the user's own, and a login through the browser."""
+    """Spotify: a pair link to approve on any device (no app of one's own), or
+    one's own app for the browser login."""
 
     client: SpotifyClient
 
@@ -420,7 +447,39 @@ class SpotifyPrompter(CredentialPrompter):
         return bool(c.refresh_token or c.access_token)
 
     async def prompt_and_login(self):
-        """Ask for the app's client id unless one is saved, then log in."""
+        """One of two: the pair link, or one's own app; a saved login is used
+        as it is."""
+        choice = _choose_login(
+            "Spotify",
+            (
+                (
+                    "device",
+                    "a pair link to approve on any device (no app of your own)",
+                ),
+                ("app", "your own app, with the browser login"),
+            ),
+            "device",
+        )
+        if choice == "device":
+            self._log_in_device()
+        else:
+            await self._log_in_app()
+        await self._offer_spotify_backend()
+
+    def _log_in_device(self):
+        """The pair link, approved anywhere: Spotify's own desktop client."""
+        while True:
+            try:
+                spotify_device_login(self.config)
+            except spotify_auth.SpotifyAuthError as e:
+                console.print(str(e), style="yellow", markup=False)
+                if not Confirm.ask("Try again?", default=True):
+                    raise AuthenticationError("Spotify login cancelled.") from e
+            else:
+                break
+
+    async def _log_in_app(self):
+        """The app of one's own: ask for it unless it is saved, then log in."""
         c = self.config.session.spotify
         if not c.client_id:
             self._explain_app()
@@ -437,7 +496,6 @@ class SpotifyPrompter(CredentialPrompter):
                     raise AuthenticationError("Spotify login cancelled.") from e
             else:
                 break
-        await self._offer_spotify_backend()
 
     async def _offer_spotify_backend(self):
         """After the Web-API login: sign in to Spotify's own audio too.

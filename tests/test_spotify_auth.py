@@ -371,3 +371,70 @@ def test_the_playlist_tools_refresh_the_shared_login_once(tmp_path):
     saved_token = ConfigTokenStore(config_at(tmp_path)).load("spotify")
     assert saved_token is not None
     assert saved_token.refresh_token == "R2"
+
+
+# --- the command line: the pair link is the way, --app the other ------------
+
+
+@pytest.fixture
+def device_login(monkeypatch):
+    """A device login that goes through: a pair link, approved at once."""
+    from streamrip.rip import accounts_cli
+
+    pair = spotify_auth.DeviceCode(
+        "DC",
+        "ABC123",
+        "https://spotify.com/pair",
+        "https://spotify.com/pair?code=ABC123",
+        3599,
+        5,
+    )
+    token = Token("A", "R", time.time() + 3600)
+    monkeypatch.setattr(
+        accounts_cli.spotify_auth, "request_device_code", lambda config: pair
+    )
+    monkeypatch.setattr(
+        accounts_cli.spotify_auth, "poll_for_token", lambda *a, **k: token
+    )
+    monkeypatch.setattr(
+        accounts_cli,
+        "spotify_device_login",
+        lambda config: accounts_cli.spotify_auth.save(config, token, "device"),
+    )
+    return accounts_cli
+
+
+def test_the_command_line_logs_spotify_in_with_a_pair_link(tmp_path, device_login):
+    saved(tmp_path, client_id="MYAPP")
+    config = config_at(tmp_path)
+
+    device_login._log_in_again(config, "spotify")
+
+    kept = config_at(tmp_path).session.spotify
+    assert (kept.access_token, kept.refresh_token, kept.auth_method) == (
+        "A",
+        "R",
+        "device",
+    )
+    # The app is kept: a login is how it was made, and the app is one's own.
+    assert kept.client_id == "MYAPP"
+
+
+def test_a_device_login_that_fails_keeps_the_old_login(
+    tmp_path, device_login, monkeypatch
+):
+    saved(tmp_path, token_expiry=str(int(time.time()) + 3600))
+    config = config_at(tmp_path)
+    monkeypatch.setattr(
+        device_login,
+        "spotify_device_login",
+        lambda config: (_ for _ in ()).throw(
+            spotify_auth.AuthServerDownError("the login server is having trouble")
+        ),
+    )
+
+    with pytest.raises(Exception, match="trouble"):
+        device_login._log_in_again(config, "spotify")
+
+    kept = config_at(tmp_path).session.spotify
+    assert kept.refresh_token == "R"  # the working login is still there
