@@ -27,8 +27,8 @@ Music-Sync is part of streamrip, and logins are in one place.
   lossless step lower
   ([#122](https://opencommit.eu/Stensel8/streamrip/issues/122)), and an
   album's description is tagged as plain text
-- chore: one matching module and CSV reader, AGPL-3.0, current browser
-  identities, dependency updates, and an image build that fails on a release
+- chore: one matching module and CSV reader, AGPL-3.0, a browser version that
+  follows Chrome's release calendar, dependency updates, and an image build that fails on a release
   tag without the `v`
 - docs: why streamrip exists
 

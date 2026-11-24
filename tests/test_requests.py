@@ -15,7 +15,6 @@ import pytest
 from streamrip.client import client as client_module
 from streamrip.client import new_session
 from streamrip.client.client import (
-    _IDENTITIES,
     MAX_API_ATTEMPTS,
     MAX_RETRY_DELAY,
     RATE_LIMIT_BUDGET,
@@ -26,6 +25,7 @@ from streamrip.client.client import (
     _sec_ch_ua,
     api_headers,
     browser_headers,
+    identities,
     register_header_dict,
 )
 from streamrip.client.qobuz import QobuzClient, QobuzSpoofer
@@ -569,7 +569,7 @@ def test_sec_ch_ua_is_chromiums_for_that_version(major, brand, expected):
     assert _sec_ch_ua(major, brand) == expected
 
 
-@pytest.mark.parametrize("identity", _IDENTITIES)
+@pytest.mark.parametrize("identity", identities())
 def test_every_identity_agrees_with_itself(identity):
     """A Windows user agent never claims macOS in its hints, and the brand
     list follows the user agent's version: a contradiction between the two
@@ -610,12 +610,12 @@ async def test_sessions_follow_the_identity_as_it_rotates(clock):
     ):
         before = dict(followed.headers)
         assert before == browser_headers()
-        assert before in _IDENTITIES
+        assert before in identities()
 
         clock.now += 3 * 60 * 60  # past any identity's time
 
         assert browser_headers() != before
-        assert browser_headers() in _IDENTITIES
+        assert browser_headers() in identities()
         assert dict(followed.headers) == browser_headers()
         # An explicit user agent replaces the identity, rotations and all.
         assert dict(own_agent.headers) == {"User-Agent": "streamrip/test"}
@@ -639,3 +639,22 @@ def test_a_registered_header_dict_follows_but_keeps_its_own_language(clock):
 
     assert headers.pop("Accept-Language") == "fr_FR"
     assert headers == {k: v for k, v in api_headers().items() if k != "Accept-Language"}
+
+
+def test_the_chrome_version_follows_the_release_calendar():
+    from datetime import date
+
+    from streamrip.client.client import chrome_major
+
+    assert chrome_major(date(2026, 11, 17)) == 158  # the day 158 went stable
+    assert chrome_major(date(2026, 11, 30)) == 158
+    assert chrome_major(date(2026, 12, 1)) == 159  # two weeks on
+    assert chrome_major(date(2026, 11, 16)) == 157  # the day before
+    versions = {
+        int(i["User-Agent"].split("Chrome/")[1].split(".")[0])
+        for i in identities(date(2027, 3, 1))
+    }
+    assert versions == {
+        chrome_major(date(2027, 3, 1)),
+        chrome_major(date(2027, 3, 1)) - 1,
+    }

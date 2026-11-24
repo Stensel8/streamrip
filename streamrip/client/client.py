@@ -11,6 +11,7 @@ import time
 import weakref
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from datetime import date, timedelta
 from typing import Any
 lazy from collections import Counter
 lazy from collections.abc import Awaitable, Callable
@@ -95,22 +96,38 @@ def _chrome(
     }
 
 
-# Chrome 158 is the stable release (mid-November 2026), 157 lingers with
-# late updaters, and Brave sends its own brand in the same list. When 159
-# goes fully stable, move a slot or two from 158 to it. A repeated
-# identity weighs heavier in the pick.
-_IDENTITIES: tuple[dict[str, str], ...] = (
-    _chrome(158, "Windows", "en-US,en;q=0.9"),
-    _chrome(158, "Windows", "en-US,en;q=0.9"),
-    _chrome(158, "Windows", "en-US,en;q=0.9"),
-    _chrome(158, "Windows", "nl-NL,nl;q=0.9,en-US;q=0.8,en;q=0.7"),
-    _chrome(158, "macOS", "en-US,en;q=0.9"),
-    _chrome(158, "macOS", "en-US,en;q=0.9"),
-    _chrome(157, "Windows", "en-US,en;q=0.9"),
-    _chrome(157, "Windows", "en-US,en;q=0.9"),
-    _chrome(157, "macOS", "en-GB,en;q=0.9"),
-    _chrome(158, "Windows", "en-US,en;q=0.9", brand="Brave"),
-)
+# Chrome ships a new major version every two weeks: 158 went stable on
+# 17 November 2026. The version follows from the calendar, so nobody has to
+# bump it by hand; if Google changes its pace, it is a version or two off,
+# which is what a browser that has not updated yet looks like anyway.
+CHROME_STABLE = (158, date(2026, 11, 17))
+CHROME_EVERY = timedelta(weeks=2)
+
+
+def chrome_major(today: date) -> int:
+    """The stable Chrome major version on `today`."""
+    major, since = CHROME_STABLE
+    return major + (today - since) // CHROME_EVERY
+
+
+def identities(today: date | None = None) -> tuple[dict[str, str], ...]:
+    """The identities to pick from: the stable Chrome, the one before it that
+    lingers with late updaters, and Brave, which sends its own brand in the
+    same list. A repeated identity weighs heavier in the pick."""
+    now = chrome_major(today or date.today())
+    return (
+        _chrome(now, "Windows", "en-US,en;q=0.9"),
+        _chrome(now, "Windows", "en-US,en;q=0.9"),
+        _chrome(now, "Windows", "en-US,en;q=0.9"),
+        _chrome(now, "Windows", "nl-NL,nl;q=0.9,en-US;q=0.8,en;q=0.7"),
+        _chrome(now, "macOS", "en-US,en;q=0.9"),
+        _chrome(now, "macOS", "en-US,en;q=0.9"),
+        _chrome(now - 1, "Windows", "en-US,en;q=0.9"),
+        _chrome(now - 1, "Windows", "en-US,en;q=0.9"),
+        _chrome(now - 1, "macOS", "en-GB,en;q=0.9"),
+        _chrome(now, "Windows", "en-US,en;q=0.9", brand="Brave"),
+    )
+
 
 # The identity of the moment, and when it gives way. _rotate_at starts at
 # 0 so the first use picks one.
@@ -126,7 +143,7 @@ _header_dicts: list[dict[str, str]] = []
 def _pick_identity() -> dict[str, str]:
     """Another identity than the current one."""
     return random.choice(
-        [identity for identity in _IDENTITIES if identity != _identity]
+        [identity for identity in identities() if identity != _identity]
     )
 
 
