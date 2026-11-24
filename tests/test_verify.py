@@ -8,6 +8,7 @@ from streamrip.config import Config, set_user_defaults
 from streamrip.exceptions import AuthenticationError
 from streamrip.rip import accounts_cli
 from streamrip.rip.cli import rip
+from streamrip.sync.errors import ApiError
 
 
 @pytest.fixture
@@ -94,26 +95,107 @@ async def test_a_service_that_does_not_answer_is_no_login_problem(config, monkey
     assert not found.fixable  # logging in again would not help
 
 
-async def test_a_library_login_is_asked_for_its_account(config, monkeypatch):
-    config.update_logins(
-        "spotify", {"client_id": "app", "access_token": "a", "refresh_token": "r"}
-    )
+@pytest.mark.parametrize("method", ["device", "app"], ids=["pair link", "own app"])
+async def test_spotify_says_who_you_are_and_how_the_login_was_made(
+    config, monkeypatch, method
+):
+    """The row: is the login accepted, what the account is, and how the login was made."""
+    import time
 
-    class Provider:
-        def account(self):
-            return "Premium, 12 liked songs"
+    from streamrip import spotify_auth
 
-    class Services:
-        def __init__(self, _config):
+    saved = {
+        "access_token": "a",
+        "refresh_token": "r",
+        "token_expiry": str(int(time.time()) + 3600),
+        "auth_method": method,
+    }
+    if method == "app":
+        saved["client_id"] = "app"
+    config.update_logins("spotify", saved)
+
+    class ApiClient:
+        def __init__(self, *args, **kwargs):
             pass
 
-        def provider(self, name):
-            assert name == "spotify"
-            return Provider()
+        def request(self, *args, **kwargs):
+            return {"product": "premium", "display_name": "Sten"}
 
-    monkeypatch.setattr(verify_module, "Services", Services)
+    monkeypatch.setattr(verify_module, "ApiClient", ApiClient)
     (found,) = await verify_module.verify(config, ("spotify",))
-    assert (found.state, found.detail) == ("ok", "Premium, 12 liked songs")
+    how = "the pair link" if method == "device" else "your own app"
+    assert (found.state, found.detail) == ("ok", f"Premium, Sten, {how}")
+    # The login is the shared one: a refresh on the way is kept, not lost.
+    assert spotify_auth.load(config).refresh_token == "r"
+
+
+async def test_a_rate_limited_spotify_is_still_a_working_login(config, monkeypatch):
+    """A 429 is on the account, not on the login: the row says the login is fine."""
+    import time
+
+    from streamrip.sync.errors import ApiError
+
+    config.update_logins(
+        "spotify",
+        {
+            "access_token": "a",
+            "refresh_token": "r",
+            "token_expiry": str(int(time.time()) + 3600),
+            "auth_method": "device",
+        },
+    )
+
+    class ApiClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def request(self, *args, **kwargs):
+            raise ApiError(429, "API rate limit exceeded")
+
+    monkeypatch.setattr(verify_module, "ApiClient", ApiClient)
+    (found,) = await verify_module.verify(config, ("spotify",))
+    assert (found.state, found.detail) == ("ok", "the login is fine")
+    assert "rate-limiting" in found.hint
+
+
+@pytest.mark.parametrize(
+    ("error", "detail"),
+    [
+        (ApiError(401, "Invalid token"), "Invalid token"),
+        (
+            ApiError(403, "requires premium for this operation"),
+            "Spotify only lets apps whose owner has a Premium subscription",
+        ),
+    ],
+    ids=["refused", "premium required"],
+)
+async def test_a_login_spotify_refuses_says_how_to_fix_it(
+    config, monkeypatch, error, detail
+):
+    import time
+
+    config.update_logins(
+        "spotify",
+        {
+            "access_token": "a",
+            "refresh_token": "r",
+            "token_expiry": str(int(time.time()) + 3600),
+            "auth_method": "device",
+        },
+    )
+
+    class ApiClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def request(self, *args, **kwargs):
+            raise error
+
+    monkeypatch.setattr(verify_module, "ApiClient", ApiClient)
+    (found,) = await verify_module.verify(config, ("spotify",))
+    assert found.state == "failed"
+    assert detail in found.detail
+    assert found.fix == "streamrip login spotify"
 
 
 # --- what the clients say about the account -----------------------------------
