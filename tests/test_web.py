@@ -15,7 +15,7 @@ import time
 import pytest
 from playlist_support import ISRC_A, FakeProvider, FakeServices, track
 
-from streamrip import progress
+from streamrip import __version__, progress
 from streamrip.config import Config
 from streamrip.rip.spotify_login import SpotifyLoginError
 from streamrip.sync.auth import Token
@@ -135,6 +135,10 @@ def csv_tracks(response) -> list[str]:
 
 
 # --- pages and hardening ----------------------------------------------------------------------------
+
+
+def test_the_server_says_it_is_up(client):
+    assert client.get("/health").get_json() == {"status": "ok", "version": __version__}
 
 
 def test_the_pages_render(client):

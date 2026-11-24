@@ -20,6 +20,7 @@ from flask import (
 )
 lazy from werkzeug.wrappers import Response as WerkzeugResponse
 
+from .. import __version__
 from ..accounts import Accounts
 from ..rip.parse_url import parse_url
 from ..sync.csvio import decode, parse_csv, slug, write_csv
@@ -192,6 +193,12 @@ def accounts() -> str:
         config_path=_config().path,
         tidal_secret=bool(services.client_secret("tidal")),
     )
+
+
+@pages.get("/health")
+def health() -> Response:
+    """That the server answers, for a container's health check."""
+    return jsonify(status="ok", version=__version__)
 
 
 # --- jobs ----------------------------------------------------------------------

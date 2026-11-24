@@ -60,3 +60,12 @@ The image includes [`streamrip web`](web.md) too. Only publish its port on
 podman run --rm -it -v ./streamrip:/data -v ~/Music:/data/Music \
   -p 127.0.0.1:8888:8888 opencommit.eu/stensel8/streamrip web --host 0.0.0.0
 ```
+
+To have the container's health reported, add a check that asks `/health`:
+
+```bash
+  --health-cmd '["/opt/streamrip/bin/python","-c","import urllib.request as u; u.urlopen(\"http://127.0.0.1:8888/health\", timeout=3)"]'
+```
+
+The image has no check of its own: most of its runs are one command, with
+nothing to listen on.
