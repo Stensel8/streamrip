@@ -5,6 +5,8 @@ import functools
 import shutil
 lazy from pathlib import Path
 
+lazy import imageio_ffmpeg
+
 from ..exceptions import FFmpegNotFoundError, NonStreamableError
 
 
@@ -12,18 +14,16 @@ from ..exceptions import FFmpegNotFoundError, NonStreamableError
 def find_ffmpeg() -> str | None:
     """Return a path to an ffmpeg executable, or None if none is available.
 
-    Prefers an ffmpeg already on PATH. Falls back to the binary bundled by
-    the optional `ffmpeg` extra (imageio-ffmpeg), so streamrip works without
-    a separate, OS-specific ffmpeg install.
+    Prefers an ffmpeg already on PATH. Falls back to the binary bundled with
+    imageio-ffmpeg, so streamrip works without a separate, OS-specific ffmpeg
+    install (the container image has its own).
     """
     path = shutil.which("ffmpeg")
     if path is not None:
         return path
     try:
-        import imageio_ffmpeg
-
         return imageio_ffmpeg.get_ffmpeg_exe()
-    except ImportError, RuntimeError:
+    except RuntimeError:
         return None
 
 

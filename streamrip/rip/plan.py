@@ -1,4 +1,4 @@
-"""`streamrip plan`: what a download would do, said before it does anything."""
+"""`--preview`: what a download would do, said before it does anything."""
 
 from ..console import console, plural
 from ..media import Album, Artist, Label, Playlist, Track

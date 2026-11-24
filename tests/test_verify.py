@@ -127,9 +127,9 @@ async def test_qobuz_says_what_its_credential_allows():
 
 async def test_deezer_says_what_the_licence_allows():
     client = DeezerClient(Config.defaults())
-    client.current_user = {"can_stream_hq": True, "can_stream_lossless": True}
+    client.client.current_user = {"can_stream_hq": True, "can_stream_lossless": True}
     assert await client.account_plan() == ("lossless (FLAC)", 2)
-    client.current_user = {"can_stream_hq": True, "can_stream_lossless": False}
+    client.client.current_user = {"can_stream_hq": True, "can_stream_lossless": False}
     assert (await client.account_plan())[1] == 1
 
 
@@ -214,3 +214,27 @@ async def test_a_saved_soundcloud_login_that_is_not_taken_is_reported(
     (found,) = await verify_module.verify(config, ("soundcloud",))
     assert (found.state, found.fixable) == ("failed", True)
     assert "HTTP 401" in found.detail
+
+
+async def test_a_quality_above_the_plan_is_lowered_for_the_run_and_says_so(caplog):
+    caplog.set_level("INFO", logger="streamrip")
+    config = Config.defaults()
+    qobuz = QobuzClient(config)
+    qobuz._credential = {"parameters": {"lossless_streaming": True}}
+    config.session.qobuz.quality = 4
+    await qobuz._fit_quality()
+    assert config.session.qobuz.quality == 2
+    assert "plan is lossless: downloading at quality 2, not the 4" in caplog.text
+    assert config.file.qobuz.quality == 4  # the setting itself stays
+
+
+async def test_a_quality_within_the_plan_or_a_plan_that_is_not_known_is_left_alone():
+    config = Config.defaults()
+    qobuz = QobuzClient(config)
+    qobuz._credential = {"parameters": {"hires_streaming": True}}
+    config.session.qobuz.quality = 4
+    await qobuz._fit_quality()
+    assert config.session.qobuz.quality == 4
+    qobuz._credential = {"parameters": {}}  # purchases only: nothing is known
+    await qobuz._fit_quality()
+    assert config.session.qobuz.quality == 4

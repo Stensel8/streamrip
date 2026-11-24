@@ -74,5 +74,11 @@ Qobuz (see [Lyrics](lyrics.md)).
 
 ## SoundCloud and Spotify
 
-SoundCloud needs no login. Spotify needs an app of your own and a one-time login
-in your browser; see [Spotify](spotify.md).
+SoundCloud works as a guest, and with a login it gives better quality and has
+higher limits. `streamrip login soundcloud` asks for the `oauth_token` cookie of
+your login: log in at soundcloud.com, open DevTools, Application (or Storage),
+Cookies, and copy its value. Leave it empty to stay a guest. When SoundCloud does
+not take a saved login, streamrip says so and goes on as a guest.
+
+Spotify needs an app of your own and a one-time login in your browser; see
+[Spotify](spotify.md).

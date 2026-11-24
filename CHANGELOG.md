@@ -5,7 +5,8 @@ upstream issues and pull requests.
 
 ## 2.8.0
 
-Music-Sync is part of streamrip, and logins are in one place.
+Music-Sync is part of streamrip, and the web interface and the command line do
+the same things, in the same sections.
 
 - feat: `streamrip playlist` moves liked songs and playlists between Spotify,
   Tidal and CSV, writes M3U8 for Navidrome and Jellyfin
@@ -13,16 +14,20 @@ Music-Sync is part of streamrip, and logins are in one place.
   downloads a list from Qobuz, Tidal or Deezer; MusicBrainz finds a track under
   another ISRC, and `--report` saves how every track was matched
   ([docs/playlists.md](docs/playlists.md))
-- feat: a fallback can be a chain, `--fallback-source qobuz,deezer`: a track
-  the first source lacks is looked for on the next, in order (`csv`, `lastfm`)
-- feat: `streamrip plan <link>` says what a download would do (quality, new
-  tracks, time at the pace) and downloads nothing
-- feat: `streamrip web`, a web interface for downloads, search, the playlist
-  tools and logins ([docs/web.md](docs/web.md))
+- feat: `streamrip web`, with Download, Playlists, Accounts and Library, for
+  everything the command line does ([docs/web.md](docs/web.md)). Every login is
+  on the Accounts page
 - feat: `streamrip accounts`, `login`, `logout` and `verify`, which asks every
   service whether the login works, what the plan is and what to do about it.
   Logins and their apps are in `state.toml`, next to `config.toml`, and shared
   with `streamrip web`
+- feat: SoundCloud logs in when it can (better quality, higher limits) and
+  goes on as a guest when it cannot
+- feat: `--preview` on every download command says what a download would do
+  (quality, new tracks, time at the pace) and downloads nothing
+- feat: a fallback can be a chain, `--fallback-source qobuz,deezer`: a track
+  the first source lacks is looked for on the next, in order
+- feat: the quality asked for stays within a Qobuz or Deezer plan
 - feat: Spotify on Premium is downloaded from Spotify itself, with YouTube
   Music as the fallback, and one Spotify app and login does downloads and
   playlists
@@ -32,8 +37,8 @@ Music-Sync is part of streamrip, and logins are in one place.
   ([#122](https://opencommit.eu/Stensel8/streamrip/issues/122)), and an
   album's description is tagged as plain text
 - chore: one matching module and CSV reader, AGPL-3.0, a browser version that
-  follows Chrome's release calendar, dependency updates, and an image build that fails on a release
-  tag without the `v`
+  follows Chrome's release calendar, dependency updates, and an image build
+  that fails on a release tag without the `v`
 - docs: why streamrip exists
 
 ## 2.7.2

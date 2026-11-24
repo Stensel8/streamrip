@@ -9,7 +9,6 @@ own if there is none.
 """
 
 import asyncio
-import importlib.util
 import logging
 import os
 import shutil
@@ -34,9 +33,8 @@ def has_screen() -> bool:
 
 
 def browser_login_available() -> bool:
-    """Whether the isolated browser window can work here: it needs Playwright
-    and a screen."""
-    return importlib.util.find_spec("playwright") is not None and has_screen()
+    """Whether the isolated browser window can work here: it needs a screen."""
+    return has_screen()
 
 
 # Playwright's own channel names for already-installed browsers, tried

@@ -3,7 +3,6 @@
 import hashlib
 import http.server
 import shutil
-import sys
 import threading
 import time
 import types
@@ -281,15 +280,19 @@ def test_content_range_parsing(value, parsed):
     ],
 )
 def test_find_ffmpeg_prefers_the_one_on_path(on_path, imageio, found):
-    module = None
-    if imageio:
-        module = types.ModuleType("imageio_ffmpeg")
-        module.get_ffmpeg_exe = lambda: imageio
+    bundled = types.ModuleType("imageio_ffmpeg")
+
+    def get_ffmpeg_exe():
+        if imageio is None:  # the wheel has no binary for this system
+            raise RuntimeError("no ffmpeg binary")
+        return imageio
+
+    bundled.get_ffmpeg_exe = get_ffmpeg_exe
     find_ffmpeg.cache_clear()
     try:
         with (
             patch("shutil.which", side_effect={"ffmpeg": on_path}.get),
-            patch.dict(sys.modules, {"imageio_ffmpeg": module}),
+            patch("streamrip.utils.ffmpeg_utils.imageio_ffmpeg", bundled),
         ):
             assert find_ffmpeg() == found
     finally:

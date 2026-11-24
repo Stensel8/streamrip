@@ -118,6 +118,7 @@
         <li>Scopes: collection.read, collection.write, playlists.read, playlists.write and user.read.</li>
         <li>Copy the Client ID and the Client Secret.</li>
       </ol>
+      <p class="small muted">If Tidal says <strong>11102</strong>, check the Client ID, the redirect URI and the scopes of your app.</p>
     </details>
     <form method="post" action="{{ url_for('accounts.set_app', login_id='tidal-library') }}" class="fields">
       {% call field("Client ID") %}<input name="client_id" placeholder="{{ 'saved' if tidal_secret or not accounts['tidal-library'].app_missing else '' }}" required autocomplete="off">{% endcall %}

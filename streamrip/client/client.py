@@ -975,6 +975,20 @@ class Client(RequestClient, ABC):
         words, and the highest `quality` setting it can use (None: unknown)."""
         return "", None
 
+    async def _fit_quality(self):
+        """Keep the quality asked for within the plan, for this run only, when the
+        login already said what the plan is (no request of its own)."""
+        plan, best = await self.account_plan()
+        if best is not None and self.config.quality > best:
+            logger.info(
+                "Your %s plan is %s: downloading at quality %d, not the %d you asked for",
+                self.source.capitalize(),
+                plan,
+                best,
+                self.config.quality,
+            )
+            self.config.quality = best
+
     @abstractmethod
     async def login(self):
         raise NotImplementedError

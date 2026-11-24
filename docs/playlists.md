@@ -170,7 +170,7 @@ semicolons or tabs. A file without a header row is read as `artist,title`. With
 - Transfers to Tidal are fast (20 ISRCs per request). Transfers to Spotify take
   one request per track.
 - Tidal's API is still young. If something breaks, add the output of
-  `streamrip playlist doctor tidal` to your issue.
+  `streamrip verify` to your issue.
 
 ## Credits
 

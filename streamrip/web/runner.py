@@ -105,7 +105,7 @@ class Runner:
 
     def plan(self, job: Job, add: Callable[[Main], Awaitable[None]]) -> str:
         """Look up what `add` brings, as a download does, and say what it would
-        do (see `streamrip plan`) without downloading anything."""
+        do (see `--preview`) without downloading anything."""
         with self._working(job):
             items, accounts = self.call(self._plan(job, add))
         for line in [*items, *accounts]:

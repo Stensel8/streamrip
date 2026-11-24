@@ -56,7 +56,7 @@ SOURCE_NOTES = frozendict(
         "qobuz": "FLAC up to 24/192",
         "tidal": "FLAC up to 24/192",
         "deezer": "FLAC 16/44.1",
-        "soundcloud": "MP3 or AAC, no login",
+        "soundcloud": "MP3 or AAC, better with a login",
         "spotify": "AAC from YouTube Music",
     }
 )

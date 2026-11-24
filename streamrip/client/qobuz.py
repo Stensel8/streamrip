@@ -229,6 +229,7 @@ class QobuzClient(Client):
         self._login_headers["X-User-Auth-Token"] = resp["user_auth_token"]
 
         self.secret = await self._get_valid_secret(c.secrets)
+        await self._fit_quality()
 
     async def account_plan(self) -> tuple[str, int | None]:
         credential = getattr(self, "_credential", None) or {}

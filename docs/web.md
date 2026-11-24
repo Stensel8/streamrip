@@ -9,17 +9,24 @@ streamrip web
 opens <http://127.0.0.1:8888> in your browser. It does what the commands do, on
 a web page.
 
-- **Download**: paste links from any source (albums, tracks, playlists, artists,
-  labels), search a source and tick what you want from the results, or download
-  a CSV list. Downloads run in the background, and the page shows the tracks,
-  the progress and the log. One download runs at a time; the next one waits.
+- **Download**: links (typed, or in a file), search with covers, an id, a CSV
+  list or a last.fm playlist. A list can fall back to a second and third source
+  for a track the first lacks. *Preview* looks everything up and says what would
+  be downloaded, without downloading it. Downloads run in the background, and
+  the page shows the tracks, the progress and the log. One runs at a time.
 - **Playlists**: download your liked songs or a playlist from Spotify or Tidal
-  from a source of your choice, transfer them to the other service, or export
-  and import CSV files (see [Playlists](playlists.md)).
-- **Accounts**: log in to Qobuz, Tidal and Deezer for downloading, and set up
-  the Spotify app (for downloads and playlists) and Tidal's API (for playlists).
-  A browser login finds its way back to streamrip on this computer. If your
-  browser is on another device, paste the address it ends up on.
+  from a source of your choice, transfer them to the other service, export them
+  (CSV, or M3U8 for a player) and import CSV files. Only look (dry run) and
+  the score a match needs are there too, and a finished job offers a CSV of how
+  every track was matched (see [Playlists](playlists.md)).
+- **Accounts**: every login: Qobuz, Tidal, Deezer, SoundCloud, and the apps for
+  Spotify and Tidal's API. *Check all logins* asks every service whether its
+  login works, and shows the plan. A login that waits can be dismissed.
+- **Library**: what was downloaded and what failed. Retry the failures, or
+  forget them (and what was downloaded, to download it again).
+
+The command line does the same in the same sections, see `streamrip --help`.
+Settings stay in `config.toml`, which `streamrip config open` opens.
 
 Logins go into the same `state.toml` as the command line's, so a login made on
 the page also works in the terminal, and the other way round.

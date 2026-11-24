@@ -269,9 +269,10 @@ class DeezerClient(Client):
         if not success:
             raise AuthenticationError("Invalid or expired Deezer ARL.")
         self.logged_in = True
+        await self._fit_quality()
 
     async def account_plan(self) -> tuple[str, int | None]:
-        user = getattr(self, "current_user", None) or {}
+        user = self.client.current_user  # what the login found out
         if user.get("can_stream_lossless"):
             return "lossless (FLAC)", 2
         if user.get("can_stream_hq"):

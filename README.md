@@ -151,7 +151,7 @@ More in [docs/nix.md](docs/nix.md).
 streamrip url https://tidal.com/browse/album/234793           # an album, artist, playlist or track
 streamrip url <link> <link>                                     # several at once
 streamrip file urls.txt                                         # the links in a file, one per line
-streamrip plan <link>                                           # what it would do, without downloading
+streamrip url <link> --preview                                  # what it would do, without downloading
 streamrip id tidal album 234793                                 # by source, type and ID
 streamrip search tidal album 'linkin park meteora'              # search and pick
 streamrip search --first tidal track 'linkin park in the end'   # search and take the first result
@@ -207,7 +207,7 @@ the config. If a login stops working, it asks again.
 | Qobuz | A subscription, or albums you bought. Log in through an isolated browser window, your own browser, or by hand. |
 | Tidal | A subscription. You log in with a link on any device (twice for hi-res). |
 | Deezer | The `arl` cookie of a logged-in session, from an isolated browser window or by hand. |
-| SoundCloud | Nothing. |
+| SoundCloud | Nothing: it works as a guest. A login (the `oauth_token` cookie) gives better quality and higher limits. |
 | Spotify | Your own Spotify app, and Premium on the account that owns it. Lossless, up to 44.1 kHz. The track plays in full and is recorded, so it rips slower than the other sources, and where Spotify will not play a track it falls back to a 320 kbps match on YouTube Music. The playlist tools use the same app and login. |
 
 For your Tidal playlists, the playlist tools also need a Tidal developer app
