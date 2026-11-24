@@ -7,11 +7,16 @@
   <ol id="job-steps" class="steps" hidden></ol>
   <p id="job-text" class="small"></p>
   <div id="job-login" hidden>
-    <p><a id="job-link" class="btn primary" target="_blank" rel="noopener noreferrer">Open the login page</a></p>
-    <form id="job-paste" class="row" hidden>
-      <input name="address" placeholder="On another device? Paste the address you end up on" class="grow" autocomplete="off">
-      <button class="btn" type="submit">Use it</button>
-    </form>
+    <p><a id="job-link" class="btn primary" target="_blank" rel="noopener noreferrer">Open the login page</a>
+      <button id="job-cancel" class="btn" type="button" hidden>Cancel</button></p>
+    <details id="job-paste-box" hidden>
+      <summary class="small muted">Is the browser on another device?</summary>
+      <p class="tiny muted">Log in there. It ends on a page that cannot be reached: paste that page's address here.</p>
+      <form id="job-paste" class="row">
+        <input name="address" placeholder="The address you end up on" class="grow" autocomplete="off">
+        <button class="btn" type="submit">Use it</button>
+      </form>
+    </details>
   </div>
   <progress id="job-bar" aria-label="Progress"></progress>
   <p id="job-numbers" class="small muted"></p>

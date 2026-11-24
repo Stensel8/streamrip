@@ -89,8 +89,9 @@ function render(id, job) {
   // A login: the page to log in on, and a box for the address a browser elsewhere ends up on.
   $('job-login').hidden = !(running && job.link);
   $('job-link').href = job.link || '#';
-  $('job-paste').hidden = !(running && job.pasteable);
+  $('job-paste-box').hidden = $('job-cancel').hidden = !(running && job.pasteable);
   $('job-paste').dataset.job = id;
+  $('job-cancel').dataset.job = id;
 
   const bar = $('job-bar');
   bar.hidden = !running || job.kind === 'login';
@@ -137,8 +138,7 @@ function render(id, job) {
 }
 
 // Poll a background job until it ends. Returns what it ended as.
-async function follow(id) {
-  let opened = false;
+async function follow(id, { opened = false } = {}) {
   for (;;) {
     const job = await api(`/jobs/${id}`);
     render(id, job);
@@ -151,14 +151,11 @@ async function follow(id) {
   }
 }
 
-// Start a background job and follow it to the end.
-async function start(url, init) {
+// Follow a background job to the end, with the buttons off meanwhile.
+async function track(id, options) {
   busy(true);
-  show('Starting…');
-  $('job').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   try {
-    const { id } = await api(url, { method: 'POST', ...init });
-    const job = await follow(id);
+    const job = await follow(id, options);
     if (job.download) window.location.href = `/jobs/${id}/download`; // saves the file; the page stays
     if (job.kind === 'login' && job.status === 'done') setTimeout(() => window.location.reload(), 1500);
   } catch (err) {
@@ -168,6 +165,32 @@ async function start(url, init) {
     busy(false);
   }
 }
+
+// Start a background job and follow it to the end.
+async function start(url, init) {
+  busy(true);
+  show('Starting…');
+  $('job').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  try {
+    const { id } = await api(url, { method: 'POST', ...init });
+    await track(id);
+  } catch (err) {
+    show(err.message, { error: true });
+    document.title = pageTitle;
+    busy(false);
+  }
+}
+
+// A page that was reloaded while a job runs goes on showing it, and does not offer to start another.
+async function resume() {
+  try {
+    const { id } = await api('/jobs/running');
+    if (id) await track(id, { opened: true }); // a login's page was opened already
+  } catch {
+    // Not knowing is fine: the page just starts empty.
+  }
+}
+if ($('job')) resume();
 
 // A form sent as JSON: its fields by name.
 const fields = (form) => Object.fromEntries(new FormData(form));
@@ -273,6 +296,8 @@ $('tidal-login')?.addEventListener('click', () => start('/accounts/tidal'));
 for (const button of document.querySelectorAll('[data-browser-login]')) {
   button.addEventListener('click', () => start(`/accounts/${button.dataset.browserLogin}/login`));
 }
+
+$('job-cancel')?.addEventListener('click', (e) => api(`/jobs/${e.target.dataset.job}/cancel`, { method: 'POST' }).catch(() => {}));
 
 onSubmit('job-paste', async (form) => {
   try {

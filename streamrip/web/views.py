@@ -191,6 +191,13 @@ def accounts() -> str:
 # --- jobs ----------------------------------------------------------------------
 
 
+@pages.get("/jobs/running")
+def job_running() -> Response:
+    """The job that is going now, so a reloaded page can pick it up again."""
+    job = _jobs().running()
+    return jsonify(id=job.id if job else None)
+
+
 @pages.get("/jobs/<job_id>")
 def job_status(job_id: str) -> Response:
     return jsonify(_job(job_id).to_json())
@@ -207,6 +214,15 @@ def job_download(job_id: str) -> Response:
     if (download := _job(job_id).download) is None:
         abort(404, "This job has no file (yet).")
     return _attachment(*download)
+
+
+@pages.post("/jobs/<job_id>/cancel")
+def job_cancel(job_id: str) -> Response:
+    """Give up on a browser login, so another can start."""
+    _job(job_id)
+    if (login := current_app.extensions["logins"].get(job_id)) is not None:
+        login.cancel()
+    return jsonify(status="ok")
 
 
 @pages.post("/jobs/<job_id>/paste")
@@ -478,6 +494,10 @@ def set_app(service: str) -> WerkzeugResponse:
             data.tidal.api_client_secret = secret or data.tidal.api_client_secret
     config.file.set_modified()
     config.save_file()
+    # A login that is waiting was started with the old app.
+    for login in list(current_app.extensions["logins"].values()):
+        if login.oauth.name == service:
+            login.cancel()
     return _back(f"Saved the {LABELS[service]} app. Now log in.")
 
 

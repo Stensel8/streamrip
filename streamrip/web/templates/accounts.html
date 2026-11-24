@@ -18,7 +18,7 @@
   {% include "_job.html" %}
 </div>
 
-<h2 class="section">Downloading</h2>
+<h2 class="section">Download accounts</h2>
 <div class="cards">
   {% set by = {} %}{% for s in sources %}{% set _ = by.update({s.name: s}) %}{% endfor %}
 
@@ -53,7 +53,7 @@
   </section>
 </div>
 
-<h2 class="section">Downloading and playlists</h2>
+<h2 class="section">Permission to edit your libraries</h2>
 <div class="cards">
   {% set spotify = accounts[0] %}
   <section class="card" id="spotify">
@@ -78,7 +78,7 @@
 
   {% set tidal = accounts[1] %}
   <section class="card" id="tidal">
-    <div class="card-head"><h2>Tidal playlists</h2>{{ status(tidal.connected) }}</div>
+    <div class="card-head"><h2>Tidal library</h2>{{ status(tidal.connected) }}</div>
     <p class="small muted">Reading and changing your Tidal playlists and favourites goes through Tidal's official API, with a developer app of your own. Downloading does not need it.</p>
     <ol class="small steps-text">
       <li><em>Create New App</em> in the <a class="link" href="{{ dashboards.tidal }}" target="_blank" rel="noopener noreferrer">TIDAL developer dashboard</a>.</li>

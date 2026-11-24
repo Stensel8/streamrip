@@ -9,6 +9,7 @@ import io
 import logging
 import os
 import re
+import threading
 import time
 from pathlib import Path
 
@@ -142,7 +143,7 @@ def test_the_pages_render(client):
     assert "Transfer" in client.get("/playlists").get_data(as_text=True)
     accounts = client.get("/accounts").get_data(as_text=True)
     assert "Qobuz" in accounts
-    assert "Tidal playlists" in accounts
+    assert "Tidal library" in accounts
     assert "http://127.0.0.1:9900/callback" in accounts
     assert "http://127.0.0.1:9900/tidal/callback" in accounts
 
@@ -255,6 +256,17 @@ def test_links_are_downloaded_as_a_job(client, runner):
             ["https://tidal.com/browse/album/234793", "https://www.deezer.com/album/1"],
         )
     ]
+
+
+def test_a_reloaded_page_finds_the_job_that_is_running(client, services):
+    jobs = client.application.extensions["jobs"]
+    assert client.get("/jobs/running").get_json() == {"id": None}
+    release = threading.Event()
+    job = jobs.start("download", "Downloading", lambda job: release.wait(5) and "ok")
+    assert client.get("/jobs/running").get_json() == {"id": job.id}
+    release.set()
+    wait_for(client, job.id)
+    assert client.get("/jobs/running").get_json() == {"id": None}
 
 
 @pytest.mark.parametrize(
@@ -529,6 +541,23 @@ def test_a_browser_login_takes_a_pasted_address(client, services, monkeypatch):
     assert job["message"] == "Logged in to Spotify."
     assert services.fake_oauth.exchanged[0] == "CODE"
     assert Config(services.config.path).file.spotify.access_token == "ACCESS"
+
+
+def test_a_waiting_login_can_be_cancelled_and_ends_when_the_app_changes(client, monkeypatch):
+    def wait_for_redirect(_uri, _timeout, stop):
+        stop.wait(5)
+        raise SpotifyLoginError("The login was cancelled.")
+
+    monkeypatch.setattr("streamrip.web.logins._wait_for_redirect", wait_for_redirect)
+    for end in (
+        lambda job_id: client.post(f"/jobs/{job_id}/cancel", headers=JSON),
+        lambda _: client.post("/accounts/tidal/app", data={"client_id": "x", "client_secret": "y"}),
+    ):
+        job_id = started(client.post("/accounts/tidal/login", headers=JSON))
+        time.sleep(0.1)  # let the login start waiting
+        end(job_id)
+        job = wait_for(client, job_id)
+        assert (job["status"], job["message"]) == ("error", "The login was cancelled.")
 
 
 def test_logging_out_removes_the_login(client, services):

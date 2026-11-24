@@ -130,7 +130,11 @@ def _wait_for_redirect(
         while not server.params and not stop.is_set() and time.monotonic() < deadline:
             server.handle_request()
     if not server.params:
-        raise SpotifyLoginError("Timed out waiting for the login to finish.")
+        raise SpotifyLoginError(
+            "The login was cancelled."
+            if stop.is_set()
+            else "Timed out waiting for the login to finish."
+        )
     return server.params
 
 

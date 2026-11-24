@@ -230,3 +230,11 @@ class JobManager:
     def get(self, job_id: str) -> Job | None:
         with self._lock:
             return self._jobs.get(job_id)
+
+    def running(self) -> Job | None:
+        """The newest job that is still going, for a page that was reloaded."""
+        with self._lock:
+            return next(
+                (j for j in reversed(self._jobs.values()) if j.status == "running"),
+                None,
+            )
