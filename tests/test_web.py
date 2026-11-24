@@ -543,7 +543,9 @@ def test_a_browser_login_takes_a_pasted_address(client, services, monkeypatch):
     assert Config(services.config.path).file.spotify.access_token == "ACCESS"
 
 
-def test_a_waiting_login_can_be_cancelled_and_ends_when_the_app_changes(client, monkeypatch):
+def test_a_waiting_login_can_be_cancelled_and_ends_when_the_app_changes(
+    client, monkeypatch
+):
     def wait_for_redirect(_uri, _timeout, stop):
         stop.wait(5)
         raise SpotifyLoginError("The login was cancelled.")
@@ -551,7 +553,9 @@ def test_a_waiting_login_can_be_cancelled_and_ends_when_the_app_changes(client, 
     monkeypatch.setattr("streamrip.web.logins._wait_for_redirect", wait_for_redirect)
     for end in (
         lambda job_id: client.post(f"/jobs/{job_id}/cancel", headers=JSON),
-        lambda _: client.post("/accounts/tidal/app", data={"client_id": "x", "client_secret": "y"}),
+        lambda _: client.post(
+            "/accounts/tidal/app", data={"client_id": "x", "client_secret": "y"}
+        ),
     ):
         job_id = started(client.post("/accounts/tidal/login", headers=JSON))
         time.sleep(0.1)  # let the login start waiting

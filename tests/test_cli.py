@@ -1175,6 +1175,6 @@ async def test_a_source_is_announced_once_however_often_it_is_used():
 
 def test_pyproject_and_the_package_have_the_same_version():
     pyproject = (Path(__file__).parent.parent / "pyproject.toml").read_text("utf-8")
-    m = re.search(r'^version\s*=\s*"([^"]+)"', pyproject, re.M)
+    m = re.search(r'^version\s*=\s*"([^"]+)"', pyproject, re.MULTILINE)
     assert m is not None
     assert m.group(1) == __version__
