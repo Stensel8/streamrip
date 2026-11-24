@@ -995,3 +995,77 @@ def test_everything_can_be_exported_as_m3u8_to_a_folder(client, services):
     )
     assert outside.status_code == 400
     assert "inside your home folder" in outside.get_json()["message"]
+
+
+def test_a_page_picks_up_only_the_jobs_that_belong_to_it(client, services):
+    jobs = client.application.extensions["jobs"]
+    release = threading.Event()
+    login = jobs.start("login", "Log in", lambda job: release.wait(5) and "ok")
+    assert client.get("/jobs/running?kinds=login verify").get_json() == {"id": login.id}
+    assert client.get("/jobs/running?kinds=download plan").get_json() == {"id": None}
+    assert 'data-kinds="download plan"' in client.get("/").get_data(as_text=True)
+    assert 'data-kinds="login verify"' in client.get("/accounts").get_data(as_text=True)
+    release.set()
+    wait_for(client, login.id)
+
+
+# --- the real runner, with the downloading itself left out ------------------------------------------
+
+
+def test_the_real_runner_previews_what_a_download_would_do(services, monkeypatch):
+    import streamrip.web.runner as runner_module
+
+    class Main:
+        media = ["something"]
+
+        def __init__(self, config, interactive=True):
+            assert interactive is False  # nobody is at the keyboard of a server
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_):
+            pass
+
+        async def resolve(self):
+            pass
+
+    monkeypatch.setattr(runner_module, "Main", Main)
+    monkeypatch.setattr(
+        runner_module,
+        "plan_lines",
+        lambda _main: (["Album: 9 tracks"], ["Qobuz: 9 tracks, at full speed"]),
+    )
+    job = Job("p", "plan", "Preview")
+
+    async def add(_main):
+        pass
+
+    message = runner_module.Runner(services.config).plan(job, add)
+    assert message == "Nothing was downloaded."
+    assert [text for _, text in job.log] == [
+        "Album: 9 tracks",
+        "Qobuz: 9 tracks, at full speed",
+    ]
+
+
+def test_the_real_runner_repairs_and_says_how_many(services, tmp_path, monkeypatch):
+    import streamrip.web.runner as runner_module
+    from streamrip import db
+
+    c = services.config.session.database
+    c.failed_downloads_path = str(tmp_path / "failed.db")
+    db.Failed(c.failed_downloads_path).add(("qobuz", "track", "1"))
+    db.Failed(c.failed_downloads_path).add(("qobuz", "track", "2"))
+    seen = {}
+
+    async def repair_downloads(config, flat=False, *, interactive=True):
+        seen.update(flat=flat, interactive=interactive)
+        return 1
+
+    monkeypatch.setattr(runner_module, "repair_downloads", repair_downloads)
+    message = runner_module.Runner(services.config).repair(
+        Job("r", "repair", "Retry"), flat=True
+    )
+    assert message == "Repaired 1 of 2 downloads; 1 failed again and stay in the list."
+    assert seen == {"flat": True, "interactive": False}

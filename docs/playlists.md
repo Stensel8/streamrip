@@ -103,16 +103,10 @@ makes the file readable only by you.
 
 ### Coming from Music-Sync
 
-```bash
-streamrip playlist migrate
-```
-
-copies the apps and logins from Music-Sync's settings (`~/.config/music-sync/`,
-or `%APPDATA%\music-sync` on Windows) for anything streamrip doesn't have yet.
-After that, add streamrip's redirect URIs to both apps. Music-Sync used port
-8888, streamrip uses 9900, and `streamrip accounts` shows the URIs. The
-`music-sync` commands are now `streamrip playlist` commands (`playlists` became
-`list`), and `music-sync web` is now [`streamrip web`](web.md).
+The `music-sync` commands are now `streamrip playlist` commands (`playlists`
+became `list`), and `music-sync web` is now [`streamrip web`](web.md). Log in
+again: the apps need streamrip's redirect URIs (`streamrip accounts` shows
+them), Music-Sync used port 8888 and streamrip uses 9900.
 
 ## How tracks are matched
 

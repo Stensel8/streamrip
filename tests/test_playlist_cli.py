@@ -1,7 +1,6 @@
 """`streamrip playlist`: Music-Sync's commands, as part of streamrip."""
 
 import csv
-import json
 
 import pytest
 from click.testing import CliRunner
@@ -427,74 +426,6 @@ def test_the_tidal_api_login_asks_for_the_app_and_keeps_the_login(
         "my-secret",
     )
     assert (saved.api_access_token, saved.api_refresh_token) == ("ACCESS", "REFRESH")
-
-
-def test_music_syncs_apps_and_logins_are_taken_over(tmp_path, monkeypatch, capsys):
-    old = tmp_path / "music-sync"
-    old.mkdir()
-    (old / "config.toml").write_text(
-        '[spotify]\nclient_id = "sp"\n\n[tidal]\nclient_id = "td"\nclient_secret = "sec"\n',
-        encoding="utf-8",
-    )
-    tokens = {
-        "spotify": {
-            "access_token": "SA",
-            "refresh_token": "SR",
-            "expires_at": 10.0,
-            "scope": "user-library-read",
-        },
-        "tidal": {
-            "access_token": "TA",
-            "refresh_token": "TR",
-            "expires_at": 20.0,
-            "scope": "",
-        },
-    }
-    (old / "tokens.json").write_text(json.dumps(tokens), encoding="utf-8")
-    config_at(tmp_path, tidal={"api_client_id": "mine"})  # set up already: left alone
-
-    code, stdout, _ = run(
-        tmp_path, monkeypatch, capsys, ["migrate", "--from", str(old)]
-    )
-    assert code == 0
-    said = " ".join(stdout.split())  # Rich wraps long lines
-    assert "the Spotify app, the Spotify login, the Tidal login" in said
-    assert "http://127.0.0.1:9900/callback" in said
-    saved = Config(tmp_path / "config.toml").file
-    assert (
-        saved.spotify.client_id,
-        saved.spotify.refresh_token,
-        saved.spotify.scope,
-    ) == ("sp", "SR", "user-library-read")
-    assert (saved.tidal.api_client_id, saved.tidal.api_refresh_token) == ("mine", "TR")
-
-    code, stdout, _ = run(
-        tmp_path, monkeypatch, capsys, ["migrate", "--from", str(old)]
-    )
-    assert "Nothing to take" in stdout
-    code, _, stderr = run(
-        tmp_path, monkeypatch, capsys, ["migrate", "--from", str(tmp_path / "none")]
-    )
-    assert code == 1
-    assert "No Music-Sync settings" in stderr
-
-
-def test_a_spotify_login_of_another_app_is_not_taken(tmp_path, monkeypatch, capsys):
-    old = tmp_path / "music-sync"
-    old.mkdir()
-    (old / "config.toml").write_text(
-        '[spotify]\nclient_id = "theirs"\n', encoding="utf-8"
-    )
-    (old / "tokens.json").write_text(
-        '{"spotify": {"access_token": "A", "refresh_token": "R"}}', encoding="utf-8"
-    )
-    config_at(tmp_path, spotify={"client_id": "ours"})
-    code, stdout, _ = run(
-        tmp_path, monkeypatch, capsys, ["migrate", "--from", str(old)]
-    )
-    assert code == 0
-    assert "Nothing to take" in stdout
-    assert Config(tmp_path / "config.toml").file.spotify.refresh_token == ""
 
 
 def test_a_download_without_ffmpeg_is_a_message_not_a_traceback(

@@ -30,6 +30,7 @@
 </div>
 
 {% set with_login = true %}
+{% set kinds = "login verify" %}
 {% include "_job.html" %}
 
 <h2 class="section">Download from</h2>
@@ -131,12 +132,6 @@
       <button class="btn primary" data-browser-login="tidal-library" data-job-button>{{ "Log in again" if accounts['tidal-library'].logged_in else "Log in" }}</button>
     </div>
     {% endif %}
-  </section>
-
-  <section class="card" id="music-sync">
-    <div class="card-head"><h2>From Music-Sync</h2></div>
-    <p class="muted small">Coming from Music-Sync? Take over its Spotify and Tidal apps and logins, where streamrip has none of its own yet. Then add streamrip's redirect URIs to both apps.</p>
-    <form method="post" action="{{ url_for('accounts.migrate') }}" class="actions"><button class="btn" type="submit">Take them over</button></form>
   </section>
 </div>
 {% endblock %}

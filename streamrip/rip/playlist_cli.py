@@ -35,12 +35,8 @@ lazy from ..sync.models import Track
 lazy from ..sync.providers.base import Provider
 lazy from ..sync.report import write_report
 lazy from ..sync.services import (
-    DEVELOPER_DASHBOARDS,
     LABELS,
-    SERVICES,
     Services,
-    migrate_music_sync,
-    music_sync_dir,
 )
 lazy from .cli import _ask_source, coro, main_session
 
@@ -249,38 +245,6 @@ def playlist():
         streamrip playlist import tidal liked.csv --playlist "From CSV"
         streamrip playlist download spotify --playlist "Road trip" --source qobuz
     """
-
-
-@playlist.command()
-@click.option(
-    "--from",
-    "folder",
-    type=click.Path(file_okay=False, path_type=Path),
-    help="Music-Sync's settings folder (default: where it keeps them).",
-)
-@click.pass_context
-@_explained
-def migrate(ctx, folder):
-    """Take the apps and logins of Music-Sync, which became part of streamrip.
-
-    What streamrip has set up itself is left as it is. Add streamrip's
-    redirect URIs to the apps afterwards (see `status`): Music-Sync's were on
-    port 8888.
-    """
-    services = _services(ctx)
-    taken = migrate_music_sync(services, folder)
-    where = folder or music_sync_dir()
-    if not taken:
-        console.print(f"Nothing to take from {where}: streamrip has it all already.")
-        return
-    console.print(f"Taken from {where}: {', '.join(taken)}.", highlight=False)
-    for service in SERVICES:
-        if services.is_configured(service):
-            console.print(
-                f"Add {services.redirect_uri(service)} to your {LABELS[service]} app "
-                f"as a redirect URI ({DEVELOPER_DASHBOARDS[service]}).",
-                highlight=False,
-            )
 
 
 # --- working with the lists ------------------------------------------------------

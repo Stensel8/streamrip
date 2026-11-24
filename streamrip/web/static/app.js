@@ -211,7 +211,7 @@ async function start(url, init) {
 // A page that was reloaded while a job runs goes on showing it, and does not offer to start another.
 async function resume() {
   try {
-    const { id } = await api('/jobs/running');
+    const { id } = await api(`/jobs/running?kinds=${encodeURIComponent($('job').dataset.kinds || '')}`);
     if (id && !dismissed.has(id)) await track(id, { opened: true }); // a login's page was opened already
   } catch {
     // Not knowing is fine: the page just starts empty.

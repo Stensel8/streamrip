@@ -51,6 +51,8 @@ playlist_pages = Blueprint(
     "playlist", __name__, url_prefix=f"/playlists/<any({','.join(SERVICES)}):service>"
 )
 
+# What `streamrip id` takes: a label has no search, but it has an id.
+ID_KINDS = (*MEDIA_TYPES, "label")
 SOURCE_NOTES = frozendict(
     {
         "qobuz": "FLAC up to 24/192",
@@ -121,6 +123,7 @@ def dashboard() -> str:
         "dashboard.html",
         sources=_download_sources(),
         media_types=MEDIA_TYPES,
+        id_kinds=ID_KINDS,
         folder=get_config().session.downloads.folder,
     )
 
@@ -144,7 +147,8 @@ def health() -> Response:
 @pages.get("/jobs/running")
 def job_running() -> Response:
     """The job that is going now, so a reloaded page can pick it up again."""
-    job = get_jobs().running()
+    kinds = set(request.args.get("kinds", "").split())
+    job = get_jobs().running(kinds)
     return jsonify(id=job.id if job else None)
 
 
@@ -272,7 +276,7 @@ def download_by_id() -> tuple[Response, int]:
     """One item by its id on a source (as `streamrip id`)."""
     data = payload()
     source = choice(data.get("source"), SOURCES, "source")
-    media_type = choice(data.get("media_type"), MEDIA_TYPES, "kind")
+    media_type = choice(data.get("media_type"), ID_KINDS, "kind")
     if not (item_id := str(data.get("id") or "").strip()):
         raise ProviderError("Type the id.")
 

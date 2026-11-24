@@ -12,8 +12,7 @@ from flask import (
 lazy from werkzeug.wrappers import Response as WerkzeugResponse
 
 from ..accounts import BY_ID, LOGIN_IDS, Accounts
-from ..sync.errors import ConfigError
-from ..sync.services import DEVELOPER_DASHBOARDS, LABELS, migrate_music_sync
+from ..sync.services import DEVELOPER_DASHBOARDS, LABELS
 from .common import form, get_config, get_runner, get_services, start
 from .logins import BrowserLogin
 lazy from .jobs import Job
@@ -55,18 +54,6 @@ def verify() -> tuple[Response, int]:
     """Ask every service whether its login works."""
     runner = get_runner()
     return start("verify", "Checking every login", runner.verify)
-
-
-@accounts_pages.post("/migrate")
-def migrate() -> WerkzeugResponse:
-    """Take over the apps and logins of Music-Sync."""
-    try:
-        taken = migrate_music_sync(get_services())
-    except ConfigError as e:
-        return _back(str(e), "error")
-    if not taken:
-        return _back("Nothing to take over: streamrip has it all already.")
-    return _back(f"Taken over from Music-Sync: {', '.join(taken)}.")
 
 
 # --- the logins -------------------------------------------------------------------

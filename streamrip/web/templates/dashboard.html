@@ -10,6 +10,7 @@
   </div>
 </div>
 
+{% set kinds = "download plan" %}
 {% include "_job.html" %}
 
 <div class="cards">
@@ -45,7 +46,7 @@
     <p class="muted small">When you know a source's own id for something.</p>
     <form id="id-form" class="fields">
       {% call field("Source") %}<select name="source" required>{% for s in sources %}<option value="{{ s.name }}">{{ s.label }}</option>{% endfor %}</select>{% endcall %}
-      {% call field("Kind") %}<select name="media_type">{% for t in media_types %}<option value="{{ t }}"{{ " selected" if t == "album" }}>{{ t.title() }}</option>{% endfor %}</select>{% endcall %}
+      {% call field("Kind") %}<select name="media_type">{% for t in id_kinds %}<option value="{{ t }}"{{ " selected" if t == "album" }}>{{ t.title() }}</option>{% endfor %}</select>{% endcall %}
       {% call field("Id") %}<input name="id" required autocomplete="off" placeholder="234793">{% endcall %}
       <div class="actions"><button class="btn" type="submit" name="plan" value="1" data-job-button>Preview</button><button class="btn primary" type="submit" data-job-button>Download</button></div>
     </form>

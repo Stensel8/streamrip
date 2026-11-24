@@ -236,10 +236,15 @@ class JobManager:
         with self._lock:
             return self._jobs.get(job_id)
 
-    def running(self) -> Job | None:
-        """The newest job that is still going, for a page that was reloaded."""
+    def running(self, kinds: set[str] | None = None) -> Job | None:
+        """The newest job that is still going (of these kinds, if given), for a
+        page that was reloaded: each page shows the jobs that belong to it."""
         with self._lock:
             return next(
-                (j for j in reversed(self._jobs.values()) if j.status == "running"),
+                (
+                    j
+                    for j in reversed(self._jobs.values())
+                    if j.status == "running" and (not kinds or j.kind in kinds)
+                ),
                 None,
             )

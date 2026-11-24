@@ -92,7 +92,9 @@ async def _verify_one(config: Config, accounts: Accounts, login_id: str) -> Resu
     try:
         detail, hint = await asyncio.wait_for(_check(config, login_id), TIMEOUT)
     except (AuthenticationError, MissingCredentialsError, NotLoggedInError) as e:
-        return Result(login_id, FAILED, str(e), f"streamrip login {login_id}")
+        # The error already says "Run: streamrip login x"; the fix is shown apart.
+        why = str(e).split(" Run: ")[0]
+        return Result(login_id, FAILED, why, f"streamrip login {login_id}")
     except TimeoutError:
         return Result(login_id, FAILED, f"no answer in {TIMEOUT} s")
     except (
