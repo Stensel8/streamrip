@@ -32,12 +32,19 @@ logger = logging.getLogger("streamrip")
 
 
 class SoundcloudClient(Client):
-    """SoundCloud: anonymous, with the client id of its own web player."""
+    """SoundCloud, with the client id of its own web player and, when there is
+    one, the login of its owner. Without a login, or when SoundCloud does not
+    take it, streamrip goes on as a guest."""
 
     source = "soundcloud"
 
     NON_STREAMABLE = "_non_streamable"
     ORIGINAL_DOWNLOAD = "_original_download"
+
+    # The login in use: the saved one once SoundCloud has taken it.
+    _token = ""
+    username = ""
+    guest_reason = ""
 
     async def login(self):
         """Use the saved client id if it still works, else scrape a new one."""
@@ -55,7 +62,30 @@ class SoundcloudClient(Client):
         logger.debug(
             "Current valid client_id=%s app_version=%s", client_id, app_version
         )
+        await self._sign_in()
         self.logged_in = True
+
+    async def _sign_in(self):
+        """Check the saved login. A guest is no failure: `guest_reason` says why
+        a saved login is not in use, for `streamrip verify`."""
+        self.username = self.guest_reason = self._token = ""
+        if not self.config.oauth_token:
+            return
+        self._token = self.config.oauth_token
+        status, me = await self._request(f"{BASE}/me")
+        if status == 200 and isinstance(me, dict):
+            self.username = str(me.get("username") or "")
+            self._me = me
+            return
+        self.guest_reason = f"SoundCloud did not take the saved login (HTTP {status})"
+        self._token = ""
+        logger.warning("%s: going on as a guest", self.guest_reason)
+
+    async def account_plan(self) -> tuple[str, int | None]:
+        if not self.username:
+            return "guest", None
+        plan = str((getattr(self, "_me", None) or {}).get("plan") or "")
+        return f"{self.username}, {plan}" if plan else self.username, None
 
     async def get_metadata(self, item_id: str, media_type: str) -> dict:
         """A track (by its custom id), or a playlist with its tracks' ids made
@@ -254,6 +284,10 @@ class SoundcloudClient(Client):
             params["app_version"] = c.app_version
         return params
 
+    def _auth_headers(self) -> dict | None:
+        """The login, when one is in use."""
+        return {"Authorization": f"OAuth {self._token}"} if self._token else None
+
     async def _request_ok(self, path: str, params: dict | None = None) -> Any:
         """_api_request that insists on HTTP 200."""
         status, resp = await self._api_request(path, params)
@@ -270,7 +304,9 @@ class SoundcloudClient(Client):
     async def _request(self, url: str, params: dict | None = None) -> tuple[int, Any]:
         """GET a SoundCloud url with the client id: (status, JSON body)."""
         logger.debug("Requesting %s with params=%s", url, params)
-        return await self._get_json(url, self._auth_params() | (params or {}))
+        return await self._get_json(
+            url, self._auth_params() | (params or {}), self._auth_headers()
+        )
 
     async def _announce_success(self) -> bool:
         """Whether SoundCloud accepts the saved client id."""
@@ -280,6 +316,7 @@ class SoundcloudClient(Client):
             return resp.status
 
         url = f"{BASE}/announcements"
+        # As a guest: this is about the client id, not about the login.
         return await self._get_with_retries(url, read, self._auth_params()) == 200
 
     async def _refresh_tokens(self) -> tuple[str, str]:

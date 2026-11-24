@@ -383,3 +383,42 @@ async def test_a_failed_request_says_which_and_why():
     client = _client({"tracks/7": (404, {})})
     with pytest.raises(APIError, match=r"tracks/7 failed \(HTTP 404\)"):
         await client.get_metadata("7|whatever", "track")
+
+
+# --- a login, and a guest when there is none or it fails -------------------------
+
+
+async def test_a_guest_sends_no_login():
+    client = SoundcloudClient(Config.defaults())
+    await client._sign_in()
+    assert client._auth_headers() is None
+    assert (client.username, client.guest_reason) == ("", "")
+
+
+async def test_a_login_that_soundcloud_takes_is_sent_with_every_request():
+    config = Config.defaults()
+    config.session.soundcloud.oauth_token = "2-1234"
+    client = SoundcloudClient(config)
+    client._get_json = AsyncMock(return_value=(200, {"username": "sten", "plan": "Go"}))
+    await client._sign_in()
+    assert (client.username, client.guest_reason) == ("sten", "")
+    assert client._get_json.call_args.args[2] == {"Authorization": "OAuth 2-1234"}
+    assert await client.account_plan() == ("sten, Go", None)
+
+    await client._request("https://api-v2.soundcloud.com/tracks/1")
+    assert client._get_json.call_args.args[2] == {"Authorization": "OAuth 2-1234"}
+
+
+async def test_a_login_that_soundcloud_refuses_goes_on_as_a_guest(caplog):
+    config = Config.defaults()
+    config.session.soundcloud.oauth_token = "stale"
+    client = SoundcloudClient(config)
+    client._get_json = AsyncMock(return_value=(401, {"message": "no"}))
+    await client._sign_in()
+    assert "HTTP 401" in client.guest_reason
+    assert client._auth_headers() is None  # nothing more is sent
+    assert "going on as a guest" in caplog.text
+    assert (
+        config.session.soundcloud.oauth_token == "stale"
+    )  # kept: it is the user's to remove
+    assert await client.account_plan() == ("guest", None)

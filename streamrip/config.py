@@ -98,6 +98,9 @@ class SoundcloudConfig(ServiceLimits):
 
     client_id: str
     app_version: str
+    # The oauth_token cookie of a soundcloud.com login: better quality and
+    # higher limits than a guest has. Kept in state.toml.
+    oauth_token: str = ""
     # SoundCloud streams in one quality; nothing to configure.
     quality: ClassVar[int] = 0
 

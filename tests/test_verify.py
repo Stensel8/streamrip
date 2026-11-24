@@ -193,3 +193,24 @@ def test_verify_fix_logs_in_to_what_needs_it_and_checks_again(tmp_path, monkeypa
     assert code == 0
     assert asked == ["qobuz"]
     assert "Studio, hi-res" in output  # the second round
+
+
+async def test_soundcloud_without_a_login_is_a_guest_and_no_problem(config):
+    (found,) = await verify_module.verify(config, ("soundcloud",))
+    assert found.state == verify_module.GUEST
+    assert found.fix == "streamrip login soundcloud"
+    assert not found.fixable  # nobody is nagged to log in
+
+
+async def test_a_saved_soundcloud_login_that_is_not_taken_is_reported(
+    config, monkeypatch
+):
+    config.update_logins("soundcloud", {"oauth_token": "stale"})
+
+    class Refused(FakeClient):
+        guest_reason = "SoundCloud did not take the saved login (HTTP 401)"
+
+    monkeypatch.setattr(verify_module, "SoundcloudClient", Refused)
+    (found,) = await verify_module.verify(config, ("soundcloud",))
+    assert (found.state, found.fixable) == ("failed", True)
+    assert "HTTP 401" in found.detail

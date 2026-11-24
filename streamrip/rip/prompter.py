@@ -375,7 +375,9 @@ class DeezerPrompter(CredentialPrompter):
 
 
 class SoundcloudPrompter(CredentialPrompter):
-    """SoundCloud needs no login: its client id is scraped on its own."""
+    """SoundCloud works as a guest, so a download never stops to ask. A login
+    (its oauth_token cookie) gives better quality and higher limits, and is
+    asked for by `streamrip login soundcloud`."""
 
     client: SoundcloudClient
 
@@ -383,10 +385,28 @@ class SoundcloudPrompter(CredentialPrompter):
         return True
 
     async def prompt_and_login(self):
-        """Nothing to ask for: SoundCloud needs no login."""
+        """Ask for the oauth_token, and keep it if SoundCloud takes it. Empty:
+        stay a guest."""
+        console.print(
+            "\nA SoundCloud login gives better quality and higher limits. Log in "
+            "at [blue underline]https://soundcloud.com/signin[/blue underline], open "
+            "DevTools → Application (or Storage) → Cookies and copy the value of "
+            "the [bold]oauth_token[/bold] cookie. Leave it empty to stay a guest.\n"
+        )
+        token = Prompt.ask("oauth_token", password=True).strip()
+        if not token:
+            return
+        self.config.session.soundcloud.oauth_token = token
+        await self.client.login()
+        if self.client.guest_reason:
+            self.config.session.soundcloud.oauth_token = ""
+            raise AuthenticationError(self.client.guest_reason)
 
     def save(self):
-        pass
+        self.config.file.soundcloud.oauth_token = (
+            self.config.session.soundcloud.oauth_token
+        )
+        self.config.file.set_modified()
 
 
 class SpotifyPrompter(CredentialPrompter):

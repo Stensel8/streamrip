@@ -10,13 +10,14 @@ from dataclasses import dataclass
 from .accounts import BY_ID, LOGIN_IDS, Accounts
 from .exceptions import AuthenticationError, MissingCredentialsError
 from .sync.errors import NotLoggedInError, SyncError
-lazy from .client import DeezerClient, QobuzClient, TidalClient
+lazy from .client import DeezerClient, QobuzClient, SoundcloudClient, TidalClient
 lazy from .config import Config
 lazy from .sync.services import Services
 
 TIMEOUT = 20  # seconds a service gets to answer
 
 OK, NOT_LOGGED_IN, NEEDS_APP, FAILED = "ok", "not logged in", "needs an app", "failed"
+GUEST = "guest"  # works without a login (SoundCloud)
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,11 +37,16 @@ class Result:
 
 async def _download_login(config: Config, source: str) -> tuple[str, str]:
     """Log in as a download does, and ask what the account may do."""
-    client = {"qobuz": QobuzClient, "tidal": TidalClient, "deezer": DeezerClient}[
-        source
-    ](config)
+    client = {
+        "qobuz": QobuzClient,
+        "tidal": TidalClient,
+        "deezer": DeezerClient,
+        "soundcloud": SoundcloudClient,
+    }[source](config)
     try:
         await client.login()
+        if reason := getattr(client, "guest_reason", ""):
+            raise AuthenticationError(reason)  # a saved login that is not in use
         plan, best = await client.account_plan()
     finally:
         await client.close()
@@ -75,6 +81,13 @@ async def _verify_one(config: Config, accounts: Accounts, login_id: str) -> Resu
             f"streamrip login {login_id}",
         )
     if not status.logged_in:
+        if status.login.guest:
+            return Result(
+                login_id,
+                GUEST,
+                "works without a login; one gives better quality and higher limits",
+                f"streamrip login {login_id}",
+            )
         return Result(login_id, NOT_LOGGED_IN, "", f"streamrip login {login_id}")
     try:
         detail, hint = await asyncio.wait_for(_check(config, login_id), TIMEOUT)

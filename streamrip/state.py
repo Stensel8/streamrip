@@ -43,7 +43,7 @@ CREDENTIALS = frozendict(
             "api_token_expiry",
         ),
         "deezer": ("arl",),
-        "soundcloud": ("client_id", "app_version"),
+        "soundcloud": ("client_id", "app_version", "oauth_token"),
         "spotify": (
             "client_id",
             "access_token",

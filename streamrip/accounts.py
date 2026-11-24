@@ -23,6 +23,8 @@ class Login:
     needs: tuple[tuple[str, ...], ...]
     # The developer app the user makes themselves, if the login needs one.
     app: tuple[str, ...] = ()
+    # Works without it: not being logged in makes a guest, not a problem.
+    guest: bool = False
 
 
 LOGINS = (
@@ -69,6 +71,15 @@ LOGINS = (
         "deezer",
         ("arl",),
         (("arl",),),
+    ),
+    Login(
+        "soundcloud",
+        "SoundCloud",
+        "downloads; a login gives better quality and higher limits",
+        "soundcloud",
+        ("oauth_token",),
+        (("oauth_token",),),
+        guest=True,
     ),
     Login(
         "spotify",

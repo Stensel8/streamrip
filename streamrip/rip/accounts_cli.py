@@ -10,7 +10,13 @@ lazy import asyncio
 import click
 
 from ..accounts import BY_ID, LOGIN_IDS, Accounts
-lazy from ..client import DeezerClient, QobuzClient, SpotifyClient, TidalClient
+lazy from ..client import (
+    DeezerClient,
+    QobuzClient,
+    SoundcloudClient,
+    SpotifyClient,
+    TidalClient,
+)
 lazy from ..config import Config
 lazy from ..console import console
 lazy from ..sync.auth import pkce_pair
@@ -24,7 +30,6 @@ lazy from .prompter import get_prompter, has_screen, launch
 lazy from .spotify_login import capture_code, code_from_redirect_url
 
 LOGIN = click.Choice(LOGIN_IDS, case_sensitive=False)
-SOUNDCLOUD = "soundcloud"
 
 
 @click.command()
@@ -40,6 +45,8 @@ def accounts(ctx):
             if status.logged_in
             else "needs an app first"
             if status.app_missing
+            else "guest"
+            if login.guest
             else "not logged in"
         )
         console.print(
@@ -50,7 +57,6 @@ def accounts(ctx):
                 f"{'':14} redirect URI: {services.redirect_uri(login.section)}",
                 highlight=False,
             )
-    console.print(f"{SOUNDCLOUD:14} {'no login needed':19} downloads", highlight=False)
     console.print(f"Kept in {config.state.path}", highlight=False, soft_wrap=True)
 
 
@@ -142,8 +148,6 @@ def _print_results(results):
             console.print(
                 f"{'':14} {r.hint}", highlight=False, soft_wrap=True, markup=False
             )
-    if not any(r.id == SOUNDCLOUD for r in results):
-        console.print(f"{SOUNDCLOUD:14} {'ok':14} no login needed", highlight=False)
 
 
 @click.command()
@@ -168,6 +172,7 @@ async def _log_in(config: Config, source: str):
         "qobuz": QobuzClient,
         "tidal": TidalClient,
         "deezer": DeezerClient,
+        "soundcloud": SoundcloudClient,
         "spotify": SpotifyClient,
     }[source](config)
     try:
