@@ -1212,3 +1212,45 @@ def test_a_fallback_source_that_is_no_source_is_refused(tmp_path, monkeypatch):
     )
     assert result.exit_code == 2
     assert "nope" in result.output
+
+
+def test_preview_says_what_would_happen_and_downloads_nothing(
+    run, tracks_csv, monkeypatch
+):
+    shown = []
+    monkeypatch.setattr(
+        "streamrip.rip.options.show_plan", lambda main: shown.append(main)
+    )
+    result = run("csv", tracks_csv, "--source", "tidal", "--preview")
+    assert result.exit_code == 0, result.output
+    assert len(shown) == 1
+    run.calls["rip"].assert_not_awaited()
+    run("csv", tracks_csv, "--source", "tidal")
+    run.calls["rip"].assert_awaited_once()
+
+
+def test_the_help_has_the_sections_of_the_web_interface():
+    from streamrip.rip.cli import rip
+
+    help_text = CliRunner().invoke(rip, ["--help"]).output
+    sections = [
+        line.rstrip(":")
+        for line in help_text.splitlines()
+        if line.endswith(":") and line[0].isupper()
+    ]
+    assert [
+        s
+        for s in sections
+        if s in {"Download", "Playlists", "Accounts", "Library", "Settings", "Web"}
+    ] == [
+        "Download",
+        "Playlists",
+        "Accounts",
+        "Library",
+        "Settings",
+        "Web",
+    ]
+    for command in ("url", "id", "csv", "lastfm", "verify", "repair", "plan"):
+        assert (f"  {command} " in help_text) == (
+            command != "plan"
+        )  # plan is --preview now

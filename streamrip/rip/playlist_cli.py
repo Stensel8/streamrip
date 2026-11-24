@@ -10,15 +10,15 @@ import shutil
 import sys
 import time
 from functools import wraps
-from itertools import count
 from pathlib import Path
 lazy from collections.abc import Callable
 
 import click
 
+from .options import finish, previewable, sources_callback
 lazy from ..config import Config
 lazy from ..console import console, err_console, plural
-lazy from ..sync.csvio import read_tracks, slug, write_tracks
+lazy from ..sync.csvio import read_tracks, write_tracks
 lazy from ..sync.engine import (
     LIKED,
     Miss,
@@ -29,8 +29,8 @@ lazy from ..sync.engine import (
     remaining,
     select_tracks,
 )
-lazy from ..sync.errors import ProviderError, SyncError
-lazy from ..sync.m3u import Library, write_m3u8
+lazy from ..sync.errors import SyncError
+lazy from ..sync.export import export_lists
 lazy from ..sync.models import Track
 lazy from ..sync.providers.base import Provider
 lazy from ..sync.report import write_report
@@ -106,19 +106,6 @@ class _ProgressLine:
 
 def _progress(quiet: bool) -> Progress | None:
     return None if quiet else _ProgressLine()
-
-
-def free_name(name: str, taken: set[str]) -> str:
-    """`name`, or "name (2)" and so on when an earlier file took it. Two
-    playlists can share a name, and `slug` makes more names alike; "Mix" and
-    "mix" are one file on Windows and macOS."""
-    free = next(
-        n
-        for i in count(1)
-        if (n := name if i == 1 else f"{name} ({i})").casefold() not in taken
-    )
-    taken.add(free.casefold())
-    return free
 
 
 def _write_report(path: Path | None, matched: list, misses: list[Miss]):
@@ -380,43 +367,25 @@ def export(
         )
     provider = _services(ctx).provider(service)
     selected = _select(provider, liked, playlist, _progress(quiet))
-    music = None
-    if m3u8 and library:
-        if not quiet:
-            console.print(
-                f"Reading the tags of the music in {library}", highlight=False
-            )
-        music = Library.scan(library)
-        console.print(
-            f"{plural(music.size, 'audio file')} in {library}", highlight=False
-        )
-    elif m3u8:
-        _warn(
-            "No --library: the playlists only describe the tracks, without files a "
-            "player can play."
-        )
 
-    def write(path: Path, tracks: list[Track]) -> str:
-        if not m3u8:
-            return f"{write_tracks(path, tracks)} tracks"
-        written, left_out = write_m3u8(path, tracks, music, absolute=absolute_paths)
-        missing.extend(left_out)
-        return f"{written} tracks" + (
-            f", {len(left_out)} not in the library" if left_out else ""
-        )
+    def say(line: str):
+        if line.startswith("No library"):
+            _warn(line)
+        elif not quiet or line[0].isdigit():
+            console.print(line, highlight=False)
 
-    missing: list[Track] = []
-    suffix = ".m3u8" if m3u8 else ".csv"
-    if everything:  # one file per playlist, in a folder
-        folder = output or Path("streamrip-export") / service
-        taken: set[str] = set()
-        for name, tracks in selected:
-            path = folder / f"{free_name(slug(name), taken)}{suffix}"
-            console.print(f"{write(path, tracks):>5} -> {path}", highlight=False)
-    else:
-        ((name, tracks),) = selected
-        path = output or Path(f"{slug(name)}{suffix}")
-        console.print(f"{write(path, tracks)} -> {path}", highlight=False)
+    lines, missing = export_lists(
+        selected,
+        everything=everything,
+        output=output,
+        service=service,
+        m3u8=m3u8,
+        library=library,
+        absolute=absolute_paths,
+        say=say,
+    )
+    for line in lines:
+        console.print(line, highlight=False)
     if missing and unmatched:
         write_tracks(unmatched, missing)
         console.print(
@@ -582,12 +551,16 @@ def transfer(
 @click.option(
     "-fs",
     "--fallback-source",
-    type=click.Choice(["qobuz", "tidal", "deezer", "soundcloud", "spotify"]),
-    help="Where to look for a track the first source does not have.",
+    callback=sources_callback,
+    help="Where to look for a track the first source does not have. Several, "
+    "comma separated, are tried in turn.",
 )
 @click.option("-q", "--quiet", is_flag=True, help="No progress output while reading.")
+@previewable
 @click.pass_context
-def download(ctx, service, liked, playlist, everything, source, fallback_source, quiet):
+def download(
+    ctx, service, liked, playlist, everything, source, fallback_source, quiet, preview
+):
     """Download liked songs or playlists from another source.
 
     Reads the list from Spotify or Tidal and finds each track on the source you
@@ -608,7 +581,7 @@ def download(ctx, service, liked, playlist, everything, source, fallback_source,
         async with main_session(ctx) as main:
             for name, tracks in selected:
                 await main.resolve_csv(name, tracks, source, fallback_source)
-            await main.rip()
+            await finish(main, preview)
 
     # The download commands' own handling: Ctrl-C and SIGTERM stop it cleanly,
     # a missing ffmpeg or a lapsed login is a message and exit code 1.
@@ -616,66 +589,3 @@ def download(ctx, service, liked, playlist, everything, source, fallback_source,
 
 
 # --- checking the setup -----------------------------------------------------------
-
-
-def _probes(provider: Provider) -> list[tuple[str, Callable[[], str]]]:
-    """The live checks `doctor` runs against one service, in order."""
-    first_liked: list[Track] = []  # filled by the first probe, used by the ISRC one
-
-    def liked() -> str:
-        if track := next(iter(provider.liked_tracks()), None):
-            first_liked.append(track)
-            return f"first liked track: {track}"
-        return "library is empty"
-
-    def playlists() -> str:
-        return plural(len(provider.playlists()), "playlist")
-
-    def search() -> str:
-        return plural(len(provider.search("Daft Punk Get Lucky")), "result")
-
-    def isrc() -> str:
-        code = first_liked[0].isrc if first_liked else None
-        if not code:
-            return "skipped (no liked track with an ISRC to test with)"
-        if not provider.lookup_isrcs([code]).get(code):
-            raise ProviderError(f"lookup of {code} found nothing")
-        return f"{code} found"
-
-    return [
-        ("read liked songs", liked),
-        ("list playlists", playlists),
-        ("search the catalogue", search),
-        ("look up by ISRC", isrc),
-    ]
-
-
-@playlist.command()
-@click.argument("service", type=SERVICE, required=False)
-@click.pass_context
-def doctor(ctx, service):
-    """Try your setup against the real APIs.
-
-    Add its output to an issue when something fails.
-    """
-    services = _services(ctx)
-    healthy = True
-    for name in [service] if service else SERVICES:
-        console.print(LABELS[name])
-        try:
-            probes = _probes(services.provider(name))  # fails here without an app
-        except SyncError as e:
-            console.print(f"  FAIL  setup: {e}", markup=False, highlight=False)
-            healthy = False
-            continue
-        console.print("  ok    setup")
-        for label, probe in probes:
-            try:
-                console.print(
-                    f"  ok    {label}: {probe()}", markup=False, highlight=False
-                )
-            except SyncError as e:
-                console.print(f"  FAIL  {label}: {e}", markup=False, highlight=False)
-                healthy = False
-    if not healthy:
-        ctx.exit(1)

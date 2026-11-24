@@ -6,25 +6,28 @@ own, in a thread, one download at a time (a second waits for the first, as two
 """
 
 import asyncio
+import contextlib
 import logging
 import threading
 from dataclasses import dataclass
 lazy from collections.abc import Awaitable, Callable, Coroutine
 lazy from typing import Any
 
-from .. import progress
+from .. import db, progress
 from ..accounts import BY_ID
 from ..client import DeezerClient, QobuzClient, SoundcloudClient, TidalClient
 from ..console import plural
 from ..exceptions import AuthenticationError
 from ..metadata import SearchResults
 from ..rip.main import Main
+from ..rip.plan import plan_lines
 from ..rip.prompter import (
     DeezerPrompter,
     QobuzPrompter,
     SoundcloudPrompter,
     TidalPrompter,
 )
+from ..rip.repair import repair_downloads
 from ..verify import verify as verify_logins
 from .jobs import JobLog, JobObserver
 lazy from ..config import Config
@@ -77,9 +80,10 @@ class Runner:
 
     # --- downloading -------------------------------------------------------
 
-    def download(self, job: Job, add: Callable[[Main], Awaitable[None]]) -> str:
-        """Log in, `add` what to download to a run, and download it, showing
-        the progress on `job`. Returns the summary."""
+    @contextlib.contextmanager
+    def _working(self, job: Job):
+        """Wait for the turn, and show on `job` what streamrip logs and the
+        progress of what it downloads."""
         if not self._turn.acquire(blocking=False):
             job.text = "Waiting for the download before this one to finish"
             self._turn.acquire()
@@ -87,11 +91,52 @@ class Runner:
         logger.addHandler(handler)
         progress.observe(JobObserver(job))
         try:
-            return self.call(self._run(job, add))
+            yield
         finally:
             progress.observe(None)
             logger.removeHandler(handler)
             self._turn.release()
+
+    def download(self, job: Job, add: Callable[[Main], Awaitable[None]]) -> str:
+        """Log in, `add` what to download to a run, and download it, showing
+        the progress on `job`. Returns the summary."""
+        with self._working(job):
+            return self.call(self._run(job, add))
+
+    def plan(self, job: Job, add: Callable[[Main], Awaitable[None]]) -> str:
+        """Look up what `add` brings, as a download does, and say what it would
+        do (see `streamrip plan`) without downloading anything."""
+        with self._working(job):
+            items, accounts = self.call(self._plan(job, add))
+        for line in [*items, *accounts]:
+            job.log.append(("info", line))
+        return "Nothing was downloaded." if items else "Nothing new to download."
+
+    async def _plan(
+        self, job: Job, add: Callable[[Main], Awaitable[None]]
+    ) -> tuple[list[str], list[str]]:
+        self.config.session.cli.progress_bars = False
+        try:
+            async with Main(self.config, interactive=False) as main:
+                job.enter("find", "Looking everything up")
+                await add(main)
+                await main.resolve()
+                return plan_lines(main)
+        finally:
+            self.config.save_file()
+
+    def repair(self, job: Job, flat: bool = False) -> str:
+        """Retry what failed before (see `streamrip repair`)."""
+        with self._working(job):
+            job.enter("find", "Retrying the failed downloads")
+            failed = len(
+                db.Failed(self.config.session.database.failed_downloads_path).all()
+            )
+            repaired = self.call(repair_downloads(self.config, flat, interactive=False))
+        left = failed - repaired
+        return f"Repaired {repaired} of {plural(failed, 'download')}" + (
+            f"; {left} failed again and stay in the list." if left else "."
+        )
 
     async def _run(self, job: Job, add: Callable[[Main], Awaitable[None]]) -> str:
         # No bars in the terminal the server runs in: the page shows them.

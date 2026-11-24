@@ -26,7 +26,7 @@ lazy from rich.traceback import install
 from .. import __version__
 from ..config import DEFAULT_CONFIG_PATH, PACES
 from .accounts_cli import accounts, login, logout, verify
-from .plan import show_plan
+from .options import SOURCES, finish, previewable, sources_callback
 from .playlist_cli import playlist
 from .stopping import terminate
 
@@ -45,7 +45,7 @@ lazy from ..media.csv_playlist import read_tracks
 lazy from ..utils.ssl_utils import print_ssl_error_help
 lazy from ..web import create_app
 lazy from .interactive import Confirm, Prompt
-lazy from .main import Main, fallback_chain
+lazy from .main import Main
 lazy from .prompter import has_screen, launch
 lazy from .repair import repair_downloads
 
@@ -200,16 +200,6 @@ def _require_config(ctx) -> Config:
     return cfg
 
 
-def _sources(ctx, param, value: str | None) -> str | None:
-    """A list of sources, "tidal,deezer", each of which must be one."""
-    unknown = [s for s in fallback_chain(value, "") if s not in SOURCES]
-    if unknown:
-        raise click.BadParameter(
-            f"{', '.join(unknown)}: choose from {', '.join(SOURCES)}."
-        )
-    return value
-
-
 def _git_note() -> str:
     """Tell the user the update command needs git, and warn if it is not there."""
     if shutil.which("git"):
@@ -332,6 +322,36 @@ class _StreamripGroup(_ColoredHelp, click.Group):
 
     command_class = _StreamripCommand
     group_class = type  # subgroups are this class too, so their help is colored
+
+    # The commands in the sections of the web interface's navigation.
+    SECTIONS = (
+        ("Download", ("url", "file", "id", "search", "csv", "lastfm")),
+        ("Playlists", ("playlist",)),
+        ("Accounts", ("accounts", "login", "logout", "verify")),
+        ("Library", ("database", "repair")),
+        ("Settings", ("config",)),
+        ("Web", ("web",)),
+    )
+
+    def format_commands(self, ctx, formatter):
+        commands = {
+            name: command
+            for name in self.list_commands(ctx)
+            if (command := self.get_command(ctx, name)) and not command.hidden
+        }
+        limit = formatter.width - 6 - max(map(len, commands), default=0)
+        placed: set[str] = set()
+        sections = [*self.SECTIONS, ("Other", tuple(commands))]
+        for title, names in sections:
+            rows = [
+                (name, commands[name].get_short_help_str(limit))
+                for name in names
+                if name in commands and name not in placed
+            ]
+            placed.update(names)
+            if rows:
+                with formatter.section(title):
+                    formatter.write_dl(rows)
 
     def main(self, *args, **kwargs):
         """Check for updates, run the command, then print a notice if newer."""
@@ -568,34 +588,17 @@ def rip(
 
 @rip.command()
 @click.argument("urls", nargs=-1, required=True)
+@previewable
 @click.pass_context
 @coro
-async def url(ctx, urls):
+async def url(ctx, urls, preview):
     """Download content from URLs."""
     _require_config(ctx)
 
     async with main_session(ctx) as main:
         await main.add_all(urls)
         await main.resolve()
-        await main.rip()
-
-
-@rip.command()
-@click.argument("urls", nargs=-1, required=True)
-@click.pass_context
-@coro
-async def plan(ctx, urls):
-    """Show what downloading URLs would do, and download nothing.
-
-    Looks everything up like `url` does, then says per item its quality and
-    how many tracks are new, and per account how long that takes at its pace.
-    """
-    _require_config(ctx)
-
-    async with main_session(ctx) as main:
-        await main.add_all(urls)
-        await main.resolve()
-        show_plan(main)
+        await finish(main, preview)
 
 
 @rip.command()
@@ -606,9 +609,10 @@ async def plan(ctx, urls):
         exists=True, readable=True, file_okay=True, dir_okay=False, path_type=Path
     ),
 )
+@previewable
 @click.pass_context
 @coro
-async def file(ctx, path):
+async def file(ctx, path, preview):
     """Download content from URLs in a file.
 
     Example usage:
@@ -651,7 +655,7 @@ async def file(ctx, path):
             await main.add_all(unique)
 
         await main.resolve()
-        await main.rip()
+        await finish(main, preview)
 
 
 @rip.group()
@@ -851,18 +855,6 @@ async def repair(ctx, yes, flat):
             )
 
 
-# The sources, and what a download from each gives: shown when asked.
-SOURCES = frozendict(
-    {
-        "qobuz": "lossless, up to 24-bit",
-        "tidal": "lossless, hi-res where there is some",
-        "deezer": "FLAC or MP3, as your subscription allows",
-        "spotify": "lossy: the audio comes from YouTube Music",
-        "soundcloud": "MP3, and only uploads by the artists themselves",
-    }
-)
-
-
 @rip.command()
 @click.option(
     "-f",
@@ -889,9 +881,12 @@ SOURCES = frozendict(
     type=click.Choice(["track", "album", "artist", "playlist"], case_sensitive=False),
 )
 @click.argument("query")
+@previewable
 @click.pass_context
 @coro
-async def search(ctx, first, output_file, num_results, source, media_type, query):
+async def search(
+    ctx, first, output_file, num_results, source, media_type, query, preview
+):
     """Search for content using a specific source.
 
     Example:
@@ -916,7 +911,7 @@ async def search(ctx, first, output_file, num_results, source, media_type, query
                 )
             await main.search_interactive(source, media_type, query, limit)
         await main.resolve()
-        await main.rip()
+        await finish(main, preview)
 
 
 @rip.command()
@@ -929,14 +924,15 @@ async def search(ctx, first, output_file, num_results, source, media_type, query
 @click.option(
     "-fs",
     "--fallback-source",
-    callback=_sources,
+    callback=sources_callback,
     help="The source to search tracks on if no results were found with the main "
     "source. Several, comma separated, are tried in turn.",
 )
 @click.argument("url", required=True)
+@previewable
 @click.pass_context
 @coro
-async def lastfm(ctx, source, fallback_source, url):
+async def lastfm(ctx, source, fallback_source, url, preview):
     """Download tracks from a last.fm playlist."""
     config = _require_config(ctx)
     if source is not None:
@@ -945,7 +941,7 @@ async def lastfm(ctx, source, fallback_source, url):
         config.session.lastfm.fallback_source = fallback_source
     async with main_session(ctx) as main:
         await main.resolve_lastfm(url)
-        await main.rip()
+        await finish(main, preview)
 
 
 def _ask_source(count: int) -> str:
@@ -974,7 +970,7 @@ def _ask_source(count: int) -> str:
 @click.option(
     "-fs",
     "--fallback-source",
-    callback=_sources,
+    callback=sources_callback,
     help="The source to search for a track the main source does not have. "
     "Several, comma separated, are tried in turn: tidal,deezer.",
 )
@@ -985,9 +981,10 @@ def _ask_source(count: int) -> str:
         exists=True, readable=True, file_okay=True, dir_okay=False, path_type=Path
     ),
 )
+@previewable
 @click.pass_context
 @coro
-async def csv_list(ctx, source, fallback_source, path):
+async def csv_list(ctx, source, fallback_source, path, preview):
     """Download the tracks of a CSV list, found by searching a source.
 
     One track per row: its title and artist, and its album and length if you
@@ -1014,7 +1011,7 @@ async def csv_list(ctx, source, fallback_source, path):
         source = _ask_source(len(tracks))
     async with main_session(ctx) as main:
         await main.resolve_csv(path.stem, tracks, source, fallback_source)
-        await main.rip()
+        await finish(main, preview)
 
 
 @rip.command("id")
@@ -1026,15 +1023,16 @@ async def csv_list(ctx, source, fallback_source, path):
     ),
 )
 @click.argument("item_id", metavar="ID")
+@previewable
 @click.pass_context
 @coro
-async def by_id(ctx, source, media_type, item_id):
+async def by_id(ctx, source, media_type, item_id, preview):
     """Download an item by ID."""
     _require_config(ctx)
     async with main_session(ctx) as main:
         await main.add_by_id(source, media_type, item_id)
         await main.resolve()
-        await main.rip()
+        await finish(main, preview)
 
 
 def _version_tuple(version: str) -> tuple[int, ...]:

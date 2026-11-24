@@ -16,6 +16,26 @@ async function api(url, init = {}) {
 const postJson = (body) => ({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 const PHASES = { read: 'Read', match: 'Match', check: 'Compare', add: 'Add', find: 'Look up', download: 'Download', login: 'Log in' };
 const pageTitle = document.title;
+
+// Jobs the person closed. Kept for this tab, so a reload does not bring one back.
+const dismissed = new Set();
+try {
+  for (const id of JSON.parse(sessionStorage.getItem('dismissed') || '[]')) dismissed.add(id);
+} catch {
+  // No storage: a dismissed job just comes back after a reload.
+}
+function dismiss(id) {
+  dismissed.add(id);
+  try {
+    sessionStorage.setItem('dismissed', JSON.stringify([...dismissed].slice(-20)));
+  } catch {
+    // Same.
+  }
+  $('job').hidden = true;
+  document.title = pageTitle;
+  busy(false);
+}
+let shown = null; // the id of the job in the panel
 const count = (n) => n.toLocaleString();
 const percent = (done, total) => Math.floor((100 * done) / Math.max(total, 1));
 
@@ -67,6 +87,8 @@ function row({ desc, done, total }) {
 }
 
 function render(id, job) {
+  if (dismissed.has(id)) return;
+  shown = id;
   const running = job.status === 'running';
   const failed = job.status === 'error';
   $('job').hidden = false;
@@ -96,7 +118,7 @@ function render(id, job) {
   }
 
   const bar = $('job-bar');
-  bar.hidden = !running || job.kind === 'login';
+  bar.hidden = !running; // a login that waits slides too: it has no end in sight
   if (job.total === null) {
     bar.removeAttribute('value');
   } else {
@@ -128,6 +150,8 @@ function render(id, job) {
 
   $('job-download').hidden = !job.download;
   $('job-download-link').href = `/jobs/${id}/download`;
+  $('job-report').hidden = !job.report;
+  $('job-report-link').href = `/jobs/${id}/report.csv`;
 
   $('job-log').hidden = !job.log.length;
   $('job-log-lines').replaceChildren(...job.log.map(({ level, text }) => el('li', { textContent: text, className: level })));
@@ -144,6 +168,7 @@ async function follow(id, { opened = false } = {}) {
   for (;;) {
     const job = await api(`/jobs/${id}`);
     render(id, job);
+    if (dismissed.has(id)) return job;
     if (job.link && !opened && job.kind === 'login') {
       opened = true;
       window.open(job.link, '_blank', 'noopener');
@@ -187,26 +212,30 @@ async function start(url, init) {
 async function resume() {
   try {
     const { id } = await api('/jobs/running');
-    if (id) await track(id, { opened: true }); // a login's page was opened already
+    if (id && !dismissed.has(id)) await track(id, { opened: true }); // a login's page was opened already
   } catch {
     // Not knowing is fine: the page just starts empty.
   }
 }
 if ($('job')) resume();
 
-// A form sent as JSON: its fields by name.
-const fields = (form) => Object.fromEntries(new FormData(form));
+// A form sent as JSON: its fields by name, and the button that sent it (Preview says plan=1).
+const fields = (form, submitter) => Object.fromEntries(new FormData(form, submitter));
+// The same, as a form with its files.
+const upload = (form, submitter) => ({ body: new FormData(form, submitter) });
 function onSubmit(id, handler) {
   $(id)?.addEventListener('submit', (e) => {
     e.preventDefault();
-    handler(e.target);
+    handler(e.target, e.submitter);
   });
 }
 
 // --- the download page -------------------------------------------------------------------------------
 
-onSubmit('urls-form', (form) => start('/download', postJson(fields(form))));
-onSubmit('csv-form', (form) => start('/download/csv', { body: new FormData(form) }));
+onSubmit('urls-form', (form, who) => start('/download', upload(form, who)));
+onSubmit('csv-form', (form, who) => start('/download/csv', upload(form, who)));
+onSubmit('id-form', (form, who) => start('/download/id', postJson(fields(form, who))));
+onSubmit('lastfm-form', (form, who) => start('/download/lastfm', postJson(fields(form, who))));
 
 // One search result, to tick.
 function result(r, i) {
@@ -245,20 +274,24 @@ onSubmit('search-form', async (form) => {
   }
 });
 
-$('search-download')?.addEventListener('click', () => {
+function downloadChosen(plan) {
   const chosen = [...$('search-results').querySelectorAll('input:checked')].map((box) => found[Number(box.value)]);
   if (!chosen.length) {
     show('Tick one or more results first.', { error: true });
     return;
   }
-  start('/download', postJson({ items: chosen.map(({ source, media_type, id }) => ({ source, media_type, id })) }));
-});
+  const items = chosen.map(({ source, media_type, id }) => ({ source, media_type, id }));
+  start('/download', postJson({ items, plan }));
+}
+$('search-download')?.addEventListener('click', () => downloadChosen(false));
+$('search-preview')?.addEventListener('click', () => downloadChosen(true));
 
 // --- the playlist page ---------------------------------------------------------------------------------
 
 // Fill a playlist picker with the readable playlists of a service. Empty ones cannot be picked.
 async function fillPlaylists(service, select) {
   select.replaceChildren(new Option('Liked songs', ''));
+  if (select.hasAttribute('data-all')) select.add(new Option('Everything: liked songs and every playlist', '*'));
   if (!service) return;
   try {
     for (const p of await api(`/playlists/${service}/list`)) {
@@ -282,13 +315,13 @@ for (const [service, playlist] of [
 }
 
 onSubmit('export-form', (form) => {
-  const { service, playlist } = fields(form);
-  start(`/playlists/${service}/export`, postJson({ playlist: playlist || null }));
+  const { service, ...rest } = fields(form);
+  start(`/playlists/${service}/export`, postJson(rest));
 });
 onSubmit('import-form', (form) => start(`/playlists/${new FormData(form).get('service')}/import`, { body: new FormData(form) }));
 onSubmit('transfer-form', (form) => start('/playlists/transfer', postJson(fields(form))));
-onSubmit('pl-download-form', (form) => {
-  const { service, ...rest } = fields(form);
+onSubmit('pl-download-form', (form, who) => {
+  const { service, ...rest } = fields(form, who);
   start(`/playlists/${service}/download`, postJson(rest));
 });
 
@@ -300,6 +333,13 @@ for (const button of document.querySelectorAll('[data-browser-login]')) {
   button.addEventListener('click', () => start(`/accounts/${button.dataset.browserLogin}/login`));
 }
 
+$('job-dismiss')?.addEventListener('click', () => {
+  if (!shown) return $('job').setAttribute('hidden', '');
+  const id = shown;
+  // A login that waits holds a port: giving up on it frees that.
+  if (!$('job-cancel')?.hidden) api(`/jobs/${id}/cancel`, { method: 'POST' }).catch(() => {});
+  dismiss(id);
+});
 $('job-cancel')?.addEventListener('click', (e) => api(`/jobs/${e.target.dataset.job}/cancel`, { method: 'POST' }).catch(() => {}));
 
 onSubmit('job-paste', async (form) => {
@@ -322,5 +362,16 @@ for (const button of document.querySelectorAll('[data-copy]')) {
       button.textContent = 'Select it and copy it yourself';
     }
     setTimeout(() => (button.textContent = 'Copy'), 2000);
+  });
+}
+
+// --- the library page ------------------------------------------------------------------------------------
+
+$('repair')?.addEventListener('click', () => start('/library/repair', postJson({ flat: $('repair-flat').checked })));
+
+// A form that asks before it forgets.
+for (const form of document.querySelectorAll('form[data-confirm]')) {
+  form.addEventListener('submit', (e) => {
+    if (!confirm(form.dataset.confirm)) e.preventDefault();
   });
 }

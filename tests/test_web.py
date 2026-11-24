@@ -11,6 +11,7 @@ import os
 import re
 import threading
 import time
+from types import SimpleNamespace
 
 import pytest
 from playlist_support import ISRC_A, FakeProvider, FakeServices, track
@@ -56,8 +57,27 @@ class FakeRunner(Runner):
             async def resolve_csv(self, name, tracks, source, fallback):
                 added.append(("csv", name, [t.title for t in tracks], source, fallback))
 
+            async def add_by_id(self, source, media_type, item_id):
+                added.append(("id", source, media_type, item_id))
+
+            async def resolve_lastfm(self, url):
+                lastfm = self.config.session.lastfm
+                added.append(("lastfm", url, lastfm.source, lastfm.fallback_source))
+
+            config = SimpleNamespace(session=SimpleNamespace(lastfm=SimpleNamespace()))
+
         asyncio.run(add(Main()))
         return "1 track downloaded"
+
+    def plan(self, job, add):
+        self.planned = True
+        self.download(job, add)
+        job.log.append(("info", "Album: 9 tracks"))
+        return "Nothing was downloaded."
+
+    def repair(self, job, flat=False):
+        self.added.append(("repair", flat))
+        return "Repaired 1 of 1 download."
 
     def search(self, source, media_type, query):
         self.added.append(("search", source, media_type, query))
@@ -835,3 +855,143 @@ def test_checking_all_logins_is_a_job_that_reports_each(client, services, monkey
         ("info", "Qobuz: ok, Studio, hi-res"),
         ("error", "Deezer: failed, expired"),
     ]
+
+
+# --- everything the command line downloads, from the page --------------------------------------------
+
+
+def run(client, path, **kwargs):
+    return wait_for(client, started(client.post(path, headers=JSON, **kwargs)))
+
+
+def test_an_item_is_downloaded_by_its_id(client, runner):
+    job = run(
+        client,
+        "/download/id",
+        json={"source": "qobuz", "media_type": "album", "id": "234793"},
+    )
+    assert job["status"] == "done"
+    assert runner.added == [("id", "qobuz", "album", "234793")]
+    assert (
+        client.post(
+            "/download/id",
+            json={"source": "qobuz", "media_type": "album"},
+            headers=JSON,
+        ).status_code
+        == 400
+    )
+
+
+def test_links_can_come_from_a_file_and_be_previewed(client, runner):
+    data = {
+        "urls": "https://tidal.com/browse/album/1",
+        "file": (io.BytesIO(b"https://www.deezer.com/album/2\n"), "links.txt"),
+    }
+    job = run(
+        client,
+        "/download",
+        data={**data, "plan": "1"},
+        content_type="multipart/form-data",
+    )
+    assert job["title"].startswith("Preview: ")
+    assert getattr(runner, "planned", False)
+    assert runner.added == [
+        ("urls", ["https://tidal.com/browse/album/1", "https://www.deezer.com/album/2"])
+    ]
+
+
+def test_a_lastfm_playlist_is_searched_on_a_source_with_a_chain_of_fallbacks(
+    client, runner
+):
+    body = {
+        "url": "https://www.last.fm/user/x/playlists/1",
+        "source": "tidal",
+        "fallback": "qobuz",
+        "then": "deezer",
+    }
+    run(client, "/download/lastfm", json=body)
+    assert runner.added == [
+        ("lastfm", "https://www.last.fm/user/x/playlists/1", "tidal", "qobuz,deezer")
+    ]
+    assert (
+        client.post(
+            "/download/lastfm",
+            json={**body, "url": "https://example.com/x"},
+            headers=JSON,
+        ).status_code
+        == 400
+    )
+
+
+def test_a_csv_list_takes_a_chain_of_fallbacks(client, runner):
+    data = {
+        "file": (io.BytesIO(b"title,artist\nSong,Band\n"), "l.csv"),
+        "source": "tidal",
+        "fallback": "qobuz",
+        "then": "qobuz",
+    }
+    run(client, "/download/csv", data=data, content_type="multipart/form-data")
+    assert runner.added[0][3:] == ("tidal", "qobuz")  # one source once
+
+
+def test_the_library_page_counts_and_forgets(client, services, tmp_path):
+    from streamrip import db
+
+    c = services.config.session.database
+    c.downloads_path = str(tmp_path / "downloads.db")
+    c.failed_downloads_path = str(tmp_path / "failed.db")
+    downloads = db.Downloads(c.downloads_path)
+    downloads.add((db.download_key("qobuz", "1"),))
+    page = client.get("/library").get_data(as_text=True)
+    assert "<strong>1</strong>" in page
+    assert client.post("/library/clear/downloads").status_code == 302
+    assert "Forgot 1 downloaded track" in client.get("/library").get_data(as_text=True)
+    assert len(downloads.all()) == 0
+
+
+def test_failed_downloads_are_retried_as_a_job(client, runner):
+    job = run(client, "/library/repair", json={"flat": True})
+    assert job["message"] == "Repaired 1 of 1 download."
+    assert runner.added == [("repair", True)]
+
+
+def test_a_transfer_checks_its_options_and_can_report_how_tracks_matched(
+    client, services
+):
+    body = {"source": "spotify", "target": "tidal", "dry_run": "1", "min_score": "0.9"}
+    assert (
+        client.post(
+            "/playlists/transfer", json={**body, "min_score": "2"}, headers=JSON
+        ).status_code
+        == 400
+    )
+    job_id = started(client.post("/playlists/transfer", json=body, headers=JSON))
+    job = wait_for(client, job_id)
+    assert job["report"] is True
+    report = client.get(f"/jobs/{job_id}/report.csv").get_data(as_text=True)
+    assert report.splitlines()[0].startswith("result,how,score")
+    assert "matched" in report
+    assert "not found" in report
+
+
+def test_everything_can_be_exported_as_m3u8_to_a_folder(client, services):
+    from pathlib import Path
+
+    folder = Path.home() / "exports"
+    body = {
+        "playlist": "*",
+        "format": "m3u8",
+        "folder": str(folder),
+        "library": str(Path.home()),
+    }
+    job = wait_for(
+        client,
+        started(client.post("/playlists/spotify/export", json=body, headers=JSON)),
+    )
+    assert job["status"] == "done", job["message"]
+    assert list(folder.glob("*.m3u8"))
+    outside = client.post(
+        "/playlists/spotify/export", json={**body, "folder": "/etc"}, headers=JSON
+    )
+    assert outside.status_code == 400
+    assert "inside your home folder" in outside.get_json()["message"]

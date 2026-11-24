@@ -32,20 +32,29 @@ def _line(item) -> str | None:
     return None
 
 
+def plan_lines(main: Main) -> tuple[list[str], list[str]]:
+    """What is about to be downloaded, per item and per account, without
+    downloading it."""
+    items = [line for item in main.media if (line := _line(item))]
+    pace = main.config.session.downloads.pacing
+    accounts = []
+    for client, count in planned_tracks(main.media).items():
+        client.pace(pace, count)
+        accounts.append(_account(client, count))
+    return items, accounts
+
+
 def show_plan(main: Main):
-    """Print what is about to be downloaded, without downloading it."""
+    """Print the plan."""
     if not main.media:
         console.print("Nothing to download: not found, or already downloaded.")
         return
-    for item in main.media:
-        if line := _line(item):
-            console.print(f"  {line}", markup=False, highlight=False)
-    planned = planned_tracks(main.media)
-    pace = main.config.session.downloads.pacing
+    items, accounts = plan_lines(main)
+    for line in items:
+        console.print(f"  {line}", markup=False, highlight=False)
     console.print()
-    for client, count in planned.items():
-        client.pace(pace, count)
-        console.print(f"{_account(client, count)}", markup=False, highlight=False)
+    for line in accounts:
+        console.print(line, markup=False, highlight=False)
     console.print("Nothing was downloaded.")
 
 

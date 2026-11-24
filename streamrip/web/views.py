@@ -2,8 +2,8 @@
 playlist tools, and the logins of every service."""
 
 import io
-from pathlib import PureWindowsPath
-from urllib.parse import quote
+from pathlib import Path, PureWindowsPath
+from urllib.parse import quote, urlsplit
 
 from flask import (
     Blueprint,
@@ -17,19 +17,24 @@ from flask import (
 
 from .. import __version__
 from ..accounts import LIBRARY_LOGINS, Accounts
+from ..console import plural
 from ..rip.parse_url import parse_url
 from ..sync.csvio import decode, parse_csv, slug, write_csv
 from ..sync.engine import LIKED, import_albums, import_tracks, select_tracks
 from ..sync.errors import CsvError, ProviderError
+from ..sync.export import export_lists
+from ..sync.report import report_csv
 from ..sync.services import LABELS, SERVICES
 from .common import (
     SOURCE_LABELS,
+    chain,
     choice,
     find_job,
     get_config,
     get_jobs,
     get_runner,
     get_services,
+    payload,
     sent,
     start,
 )
@@ -153,6 +158,19 @@ def job_unmatched(job_id: str) -> Response:
     return _attachment("unmatched", [miss.track for miss in find_job(job_id).misses])
 
 
+@pages.get("/jobs/<job_id>/report.csv")
+def job_report(job_id: str) -> Response:
+    """How each track was matched, as `--report` writes it."""
+    job = find_job(job_id)
+    out = io.StringIO()
+    report_csv(out, job.matched, job.misses)
+    return Response(
+        out.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="report.csv"'},
+    )
+
+
 @pages.get("/jobs/<job_id>/download")
 def job_download(job_id: str) -> Response:
     """The CSV an export made."""
@@ -184,10 +202,38 @@ def job_paste(job_id: str) -> Response:
 # --- downloading ---------------------------------------------------------------
 
 
+def _matching(data) -> tuple[bool, float]:
+    """The options of a transfer or an import: only look, and how sure a match must be."""
+    try:
+        score = float(data.get("min_score") or 0.8)
+    except TypeError, ValueError:
+        score = -1.0
+    if not 0 <= score <= 1:
+        raise ProviderError("The score a match needs is between 0 and 1.")
+    return bool(data.get("dry_run")), score
+
+
+def _download_or_preview(title: str, add, preview: bool) -> tuple[Response, int]:
+    """Download what `add` brings, or only say what that would do."""
+    runner = get_runner()
+    if preview:
+        return start("plan", f"Preview: {title}", lambda job: runner.plan(job, add))
+    return start("download", title, lambda job: runner.download(job, add))
+
+
+def _links_in(data: dict) -> list[str]:
+    """The links typed in, and those in a file, once each."""
+    text = str(data.get("urls") or "")
+    if (upload := request.files.get("file")) and upload.filename:
+        text += "\n" + decode(upload.stream.read(), upload.filename)
+    return list(dict.fromkeys(text.split()))
+
+
 @pages.post("/download")
 def download() -> tuple[Response, int]:
-    """Download links ({"urls": "..."}) or search results ({"items": [...]})."""
-    data = sent()
+    """Download links, typed or from a file, or search results ({"items": [...]})."""
+    data = payload()
+    preview = bool(data.get("plan"))
     if items := data.get("items"):
         try:
             chosen = [
@@ -204,39 +250,79 @@ def download() -> tuple[Response, int]:
         async def add(main: Main):
             await main.add_all_by_id(chosen)
 
-        title = f"Downloading {len(chosen)} search result{'s' * (len(chosen) > 1)}"
+        title = f"{len(chosen)} search result{'s' * (len(chosen) > 1)}"
     else:
-        urls = list(dict.fromkeys(str(data.get("urls") or "").split()))
+        urls = _links_in(data)
         if not urls:
-            raise ProviderError("Paste one or more links first.")
+            raise ProviderError("Paste one or more links, or choose a file with links.")
         if bad := [url for url in urls if parse_url(url) is None]:
             raise ProviderError(f"Not a link streamrip knows: {bad[0][:200]}")
 
         async def add(main: Main):
             await main.add_all(urls)
 
-        title = f"Downloading {len(urls)} link{'s' * (len(urls) > 1)}"
-    runner = get_runner()
-    return start("download", title, lambda job: runner.download(job, add))
+        title = f"{len(urls)} link{'s' * (len(urls) > 1)}"
+    return _download_or_preview(
+        title if preview else f"Downloading {title}", add, preview
+    )
+
+
+@pages.post("/download/id")
+def download_by_id() -> tuple[Response, int]:
+    """One item by its id on a source (as `streamrip id`)."""
+    data = payload()
+    source = choice(data.get("source"), SOURCES, "source")
+    media_type = choice(data.get("media_type"), MEDIA_TYPES, "kind")
+    if not (item_id := str(data.get("id") or "").strip()):
+        raise ProviderError("Type the id.")
+
+    async def add(main: Main):
+        await main.add_by_id(source, media_type, item_id)
+
+    title = f"{media_type} {item_id[:40]} from {SOURCE_LABELS[source]}"
+    preview = bool(data.get("plan"))
+    return _download_or_preview(
+        title if preview else f"Downloading {title}", add, preview
+    )
+
+
+@pages.post("/download/lastfm")
+def download_lastfm() -> tuple[Response, int]:
+    """The tracks of a Last.fm playlist, searched on a source (as `streamrip lastfm`)."""
+    data = payload()
+    url = str(data.get("url") or "").strip()
+    if (urlsplit(url).hostname or "").removeprefix("www.") != "last.fm":
+        raise ProviderError("Paste the address of a last.fm playlist.")
+    source = choice(data.get("source"), SOURCES, "source")
+    fallback = chain(data, SOURCES)
+
+    async def add(main: Main):
+        lastfm = main.config.session.lastfm
+        lastfm.source, lastfm.fallback_source = source, fallback or ""
+        await main.resolve_lastfm(url)
+
+    preview = bool(data.get("plan"))
+    title = f"a last.fm playlist from {SOURCE_LABELS[source]}"
+    return _download_or_preview(
+        title if preview else f"Downloading {title}", add, preview
+    )
 
 
 @pages.post("/download/csv")
 def download_csv() -> tuple[Response, int]:
     """A CSV list, each track searched on a source (as `streamrip csv`)."""
     name, tracks = _uploaded_tracks()
-    source = choice(request.form.get("source"), SOURCES, "source")
-    fallback = request.form.get("fallback") or None
-    if fallback is not None:
-        choice(fallback, SOURCES, "fallback source")
-    runner = get_runner()
+    data = payload()
+    source = choice(data.get("source"), SOURCES, "source")
+    fallback = chain(data, SOURCES)
 
     async def add(main: Main):
         await main.resolve_csv(name, tracks, source, fallback)
 
-    return start(
-        "download",
-        f"Downloading {name} from {SOURCE_LABELS[source]}",
-        lambda job: runner.download(job, add),
+    preview = bool(data.get("plan"))
+    title = f"{name} from {SOURCE_LABELS[source]}"
+    return _download_or_preview(
+        title if preview else f"Downloading {title}", add, preview
     )
 
 
@@ -281,6 +367,7 @@ def transfer() -> tuple[Response, int]:
     playlist = str(data.get("playlist") or "") or None  # str: an id may be a number
     name = str(data.get("name") or "").strip()
     favorites = data.get("into") == "favorites"
+    dry_run, min_score = _matching(data)
     services = get_services()  # the job runs on a thread of its own: no request there
     source_provider = services.provider(source)
     target_provider = services.provider(target)
@@ -300,13 +387,17 @@ def transfer() -> tuple[Response, int]:
                 if source_name == LIKED
                 else source_name
             )
-        return import_tracks(
+        result = import_tracks(
             target_provider,
             tracks,
             destination,
+            min_score=min_score,
+            dry_run=dry_run,
             progress=job.progress,
             musicbrainz=services.musicbrainz(),
-        ).summary()
+        )
+        job.matched = result.matched
+        return result.summary()
 
     return start(
         "transfer", f"Transfer from {LABELS[source]} to {LABELS[target]}", work
@@ -328,18 +419,58 @@ def playlist_list(service: str) -> Response:
     )
 
 
+def _folder(value, what: str, default: Path) -> Path:
+    """A folder the page named, inside the home folder (a page must not write anywhere)."""
+    path = Path(str(value or "").strip() or default).expanduser().resolve()
+    if not path.is_relative_to(Path.home().resolve()):
+        raise ProviderError(f"Choose a {what} inside your home folder.")
+    return path
+
+
 @playlist_pages.post("/export")
 def export(service: str) -> tuple[Response, int]:
-    """Read liked songs or a playlist; the page then saves the CSV."""
-    playlist = str(sent().get("playlist") or "") or None
+    """Read liked songs, a playlist or all of them. One list as CSV is saved by
+    the page; the rest (everything, or M3U8) is written to a folder here."""
+    data = sent()
+    playlist = str(data.get("playlist") or "") or None
+    everything = playlist == "*"
+    m3u8 = data.get("format") == "m3u8"
     provider = get_services().provider(service)  # here: a missing app fails the request
+    downloads = Path(get_config().session.downloads.folder).expanduser()
+    library = _folder(data.get("library"), "music folder", downloads) if m3u8 else None
+    if library is not None and not library.is_dir():
+        raise ProviderError(f"{library} is no folder.")
+    folder = (
+        _folder(data.get("folder"), "folder to save in", downloads / "Playlists")
+        if m3u8 or everything
+        else None
+    )
 
     def work(job: Job) -> str:
-        ((name, tracks),) = select_tracks(
-            provider, liked=not playlist, playlist=playlist, progress=job.progress
+        selected = select_tracks(
+            provider,
+            liked=not playlist,
+            playlist=None if everything else playlist,
+            progress=job.progress,
         )
-        job.download = (name, tracks)
-        return f"{name}: {len(tracks)} tracks exported."
+        if folder is None:
+            ((name, tracks),) = selected
+            job.download = (name, tracks)
+            return f"{name}: {len(tracks)} tracks exported."
+        lines, missing = export_lists(
+            selected,
+            everything=everything,
+            output=folder if everything else folder / f"{slug(selected[0][0])}.m3u8",
+            service=service,
+            m3u8=m3u8,
+            library=library,
+            say=lambda line: job.log.append(("info", line)),
+        )
+        for line in lines:
+            job.log.append(("info", line))
+        return f"{plural(len(lines), 'file')} written in {folder}." + (
+            f" {len(missing)} tracks are not in the music folder." if missing else ""
+        )
 
     return start("export", f"Export from {LABELS[service]}", work)
 
@@ -350,20 +481,32 @@ def import_csv(service: str) -> tuple[Response, int]:
     playlist = request.form.get("playlist", "").strip() or "streamrip import"
     into_favorites = request.form.get("into") == "favorites"
     albums = request.form.get("contains") == "albums"  # a row per album
+    dry_run, min_score = _matching(request.form)
     services = get_services()
     provider = services.provider(service)
 
     def work(job: Job) -> str:
         if albums:
-            return import_albums(provider, tracks, progress=job.progress).summary()
-        destination = None if into_favorites else playlist
-        return import_tracks(
-            provider,
-            tracks,
-            destination,
-            progress=job.progress,
-            musicbrainz=services.musicbrainz(),
-        ).summary()
+            result = import_albums(
+                provider,
+                tracks,
+                min_score=min_score,
+                dry_run=dry_run,
+                progress=job.progress,
+            )
+        else:
+            destination = None if into_favorites else playlist
+            result = import_tracks(
+                provider,
+                tracks,
+                destination,
+                min_score=min_score,
+                dry_run=dry_run,
+                progress=job.progress,
+                musicbrainz=services.musicbrainz(),
+            )
+        job.matched = result.matched
+        return result.summary()
 
     return start("import", f"Import into {LABELS[service]}", work)
 
@@ -374,9 +517,8 @@ def playlist_download(service: str) -> tuple[Response, int]:
     data = sent()
     playlist = str(data.get("playlist") or "") or None
     source = choice(data.get("source"), SOURCES, "source to download from")
-    fallback = data.get("fallback") or None
-    if fallback is not None:
-        choice(fallback, SOURCES, "fallback source")
+    fallback = chain(data, SOURCES)
+    preview = bool(data.get("plan"))
     provider = get_services().provider(service)
     runner = get_runner()
 
@@ -388,7 +530,9 @@ def playlist_download(service: str) -> tuple[Response, int]:
         async def add(main: Main):
             await main.resolve_csv(name, tracks, source, fallback)
 
-        return runner.download(job, add)
+        return (runner.plan if preview else runner.download)(job, add)
 
-    title = f"Downloading from {LABELS[service]}, via {SOURCE_LABELS[source]}"
-    return start("playlist-download", title, work)
+    title = f"from {LABELS[service]}, via {SOURCE_LABELS[source]}"
+    if preview:
+        return start("plan", f"Preview: {title}", work)
+    return start("playlist-download", f"Downloading {title}", work)

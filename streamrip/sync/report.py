@@ -64,14 +64,19 @@ def _row(
     ]
 
 
-def write_report(path: Path, matched: Iterable[Match], misses: Iterable) -> int:
+def report_csv(fh, matched: Iterable[Match], misses: Iterable) -> int:
     """Write a row for every track wanted: the match it got, or why it got none
     (with the closest candidate, if there was one). Returns the rows written."""
     rows = [_row("matched", m.wanted, m) for m in matched]
     rows += [_row("not found", miss.track, miss.closest, miss.why) for miss in misses]
+    writer = csv.writer(fh)
+    writer.writerow(COLUMNS)
+    writer.writerows(rows)
+    return len(rows)
+
+
+def write_report(path: Path, matched: Iterable[Match], misses: Iterable) -> int:
+    """`report_csv` into the file at `path`."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8", newline="") as fh:
-        writer = csv.writer(fh)
-        writer.writerow(COLUMNS)
-        writer.writerows(rows)
-    return len(rows)
+        return report_csv(fh, matched, misses)

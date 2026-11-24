@@ -28,6 +28,7 @@ from ..sync.errors import SyncError
 from ..sync.services import Services
 from .accounts import accounts_pages
 from .jobs import JobManager, explain
+from .library import library_pages
 from .runner import Runner
 from .views import pages, playlist_pages
 lazy from ..config import Config
@@ -147,5 +148,6 @@ def create_app(
         app.register_error_handler(error, _report)
     app.register_blueprint(pages)
     app.register_blueprint(accounts_pages)
+    app.register_blueprint(library_pages)
     app.register_blueprint(playlist_pages)
     return app

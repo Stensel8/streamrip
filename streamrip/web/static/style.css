@@ -32,7 +32,7 @@ a { color: inherit; text-decoration: none; }
 h1, h2, p { margin: 0; }
 h1 { margin-bottom: 0.25rem; font-size: 1.5rem; font-weight: 600; letter-spacing: -0.01em; }
 h2 { font-size: 1.05rem; font-weight: 600; }
-code { word-break: break-all; }
+code { overflow-wrap: anywhere; }
 hr { margin: 2rem 0; border: 0; border-top: 1px solid var(--border); }
 
 /* page frame */
@@ -51,11 +51,11 @@ hr { margin: 2rem 0; border: 0; border-top: 1px solid var(--border); }
 }
 .topbar nav a { font-size: 0.875rem; }
 .brand:hover, .topbar nav a:hover { background: var(--line); }
-.page { max-width: 96rem; margin: 0 auto; padding: 2rem 2rem 4rem; }
+.page { max-width: 110rem; margin: 0 auto; padding: 2rem 2rem 4rem; }
 .page > .row { margin-bottom: 2rem; }
 
 /* cards */
-.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 25rem), 1fr)); gap: 1.25rem; align-items: start; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); gap: 1.25rem; }
 .cards.single { grid-template-columns: 1fr; }
 h2 + .cards { margin-top: 1rem; }
 .cards.playlists { grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); gap: 1rem; max-width: none; }
@@ -94,7 +94,7 @@ select, input {
   background: var(--surface); color: var(--text); font: inherit; font-size: 0.875rem;
 }
 /* forms: labelled fields in a grid, the button on its own line */
-.fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); gap: 0.75rem 1rem; margin-top: 0.5rem; }
+.fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr)); gap: 0.75rem 1rem; margin-top: 0.5rem; }
 .field { display: flex; flex-direction: column; gap: 0.3rem; min-width: 0; }
 .field > span { color: var(--muted); font-size: 0.75rem; }
 .field > select, .field > input { width: 100%; }
@@ -246,7 +246,7 @@ details.help summary { width: fit-content; color: var(--accent); cursor: pointer
 details.help[open] summary { margin-bottom: 0.5rem; }
 details.help p, details.help ol { margin: 0; }
 .actions { gap: 0.5rem; }
-.card > .actions:last-child { margin-top: 0.25rem; }
+.card > .actions:last-child { margin-top: auto; }
 .card-head h2 + .badge { flex: none; }
 .badge { white-space: nowrap; }
 /* a count with its label, for the library */
@@ -257,3 +257,12 @@ details.help p, details.help ol { margin: 0; }
 .table th { color: var(--muted); font-weight: 500; text-align: left; }
 .table th, .table td { padding: 0.35rem 0.5rem 0.35rem 0; border-bottom: 1px solid var(--line); }
 .scroll { max-height: 22rem; overflow-y: auto; }
+.check { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: var(--muted); }
+.check input { width: 1rem; height: 1rem; accent-color: var(--accent); }
+
+.check.wide { grid-column: 1 / -1; }
+.if-m3u8, .if-saved { display: none; }
+form:has([value="m3u8"]:checked) .if-m3u8, form:has([value="m3u8"]:checked) .if-saved { display: flex; }
+form:has([name="playlist"] option[value="*"]:checked) .if-saved { display: flex; }
+.card-head .tools { display: flex; align-items: center; gap: 0.5rem; }
+.icon-btn { width: 1.5rem; padding: 0; font-size: 1rem; line-height: 1; }

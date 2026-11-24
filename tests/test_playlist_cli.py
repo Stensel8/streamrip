@@ -12,7 +12,6 @@ from streamrip.rip import accounts_cli, playlist_cli
 from streamrip.rip.cli import rip
 from streamrip.sync.auth import Token
 from streamrip.sync.csvio import read_tracks, write_tracks
-from streamrip.sync.errors import ApiError
 from streamrip.sync.models import Track
 from streamrip.sync.services import Services
 
@@ -358,28 +357,6 @@ def test_accounts_and_logout(tmp_path, monkeypatch, capsys):
     assert "Logged out of Tidal library" in stdout
     saved = Config(tmp_path / "config.toml").file.tidal
     assert (saved.api_access_token, saved.api_client_id) == ("", "c")  # the app stays
-
-
-def test_doctor_reports_failures_with_a_nonzero_exit(tmp_path, monkeypatch, capsys):
-    class Denied(FakeProvider):
-        def lookup_isrcs(self, isrcs):
-            raise ApiError(403, "Forbidden")
-
-    tidal = Denied(
-        "tidal",
-        CATALOG,
-        liked=[track("Song A", "Artist A", ids={"tidal": "1"}, isrc=ISRC_A)],
-    )
-    code, stdout, _ = run(
-        tmp_path,
-        monkeypatch,
-        capsys,
-        ["doctor", "tidal"],
-        FakeServices(tmp_path, tidal=tidal),
-    )
-    assert code == 1
-    assert "ok    read liked songs" in stdout
-    assert "FAIL  look up by ISRC: HTTP 403: Forbidden" in stdout
 
 
 def test_download_hands_each_list_to_the_downloads(tmp_path, monkeypatch, capsys):

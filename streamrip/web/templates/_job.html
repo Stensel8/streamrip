@@ -2,7 +2,10 @@
 <section id="job" class="card job" hidden>
   <div class="card-head">
     <h2 id="job-title">Starting</h2>
-    <span id="job-clock" class="muted small" title="Time taken"></span>
+    <span class="tools">
+      <span id="job-clock" class="muted small" title="Time taken"></span>
+      <button id="job-dismiss" class="btn tiny icon-btn" type="button" title="Dismiss" aria-label="Dismiss">&times;</button>
+    </span>
   </div>
   <ol id="job-steps" class="steps" hidden></ol>
   <p id="job-text" class="small"></p>
@@ -25,6 +28,7 @@
   <p id="job-current" class="tiny muted current-track"></p>
   <ul id="job-rows" class="rows" hidden></ul>
   <p id="job-download" hidden><a id="job-download-link" class="btn primary">Download the CSV again</a></p>
+  <p id="job-report" hidden><a id="job-report-link" class="btn tiny">How every track was matched (CSV)</a></p>
   <div id="job-unmatched" hidden>
     <p id="job-unmatched-title" class="small strong"></p>
     <ul id="job-unmatched-list" class="list"></ul>

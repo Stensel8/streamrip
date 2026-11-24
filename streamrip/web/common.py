@@ -44,6 +44,22 @@ def sent() -> dict:
     return data if isinstance(data, dict) else {}
 
 
+def payload() -> dict:
+    """What the page sent: JSON, or a form (which may carry a file)."""
+    return sent() or request.form.to_dict()
+
+
+def chain(
+    data: dict, sources, first: str = "fallback", then: str = "then"
+) -> str | None:
+    """The fallback chain the two selects of a form name, "tidal,deezer", or None."""
+    names = [str(data.get(key) or "") for key in (first, then)]
+    names = [n for n in names if n]
+    for name in names:
+        choice(name, sources, "fallback source")
+    return ",".join(dict.fromkeys(names)) or None
+
+
 def form(name: str) -> str:
     return request.form.get(name, "").strip()
 

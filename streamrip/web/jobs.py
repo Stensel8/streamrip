@@ -15,7 +15,7 @@ import aiohttp
 
 from ..progress import NO_PROGRESS, Handle, Observer
 from ..sync.engine import Miss, Step, remaining
-lazy from ..sync.models import Track
+lazy from ..sync.models import Match, Track
 
 logger = logging.getLogger("streamrip")
 
@@ -60,6 +60,7 @@ class Job:
     current: str = ""  # the track being looked up
     found: int = 0
     misses: list[Miss] = field(default_factory=list)  # tracks not found, and why
+    matched: list[Match] = field(default_factory=list)  # tracks found, for the report
     message: str = ""  # the summary, or what went wrong
     # An export's file name and tracks, once it is done.
     download: tuple[str, list[Track]] | None = None
@@ -120,6 +121,7 @@ class Job:
                 for miss in self.misses[:SHOWN_MISSES]
             ],
             "download": self.download is not None,
+            "report": self.status != "running" and bool(self.matched or self.misses),
             "rows": [
                 {"desc": row.desc, "done": row.done, "total": row.total}
                 for row in list(self.rows.values())

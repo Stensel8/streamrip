@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Library · streamrip{% endblock %}
+
+{% macro rows(title, items, cols) %}
+{% if items %}
+<details class="help"><summary>Show {{ "the last " ~ shown if items|length >= shown }}</summary>
+  <div class="scroll"><table class="table">
+    <thead><tr>{% for c in cols %}<th>{{ c }}</th>{% endfor %}</tr></thead>
+    <tbody>{% for row in items %}<tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+  </table></div>
+</details>
+{% endif %}
+{% endmacro %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Library</h1>
+    <p class="lead">What streamrip has downloaded, and what failed. A track in the downloaded list is skipped the next time, even if you deleted its file: forget it to download it again.</p>
+  </div>
+</div>
+
+{% include "_job.html" %}
+
+<div class="cards">
+  <section class="card">
+    <div class="card-head"><h2>Downloaded</h2></div>
+    <div class="stats"><div class="stat"><strong>{{ "{:,}".format(downloaded) }}</strong><span>tracks</span></div></div>
+    {{ rows("Downloaded", recent, ["Source", "Id"]) }}
+    {% if downloaded %}
+    <form method="post" action="{{ url_for('library.clear', table='downloads') }}" class="actions" data-confirm="Forget {{ downloaded }} downloaded tracks? They will be downloaded again.">
+      <button class="btn" type="submit">Forget them</button>
+    </form>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <div class="card-head"><h2>Failed</h2></div>
+    <div class="stats"><div class="stat"><strong>{{ "{:,}".format(failed) }}</strong><span>downloads</span></div></div>
+    {{ rows("Failed", failures, ["Source", "Kind", "Id"]) }}
+    {% if failed %}
+    <p class="muted small">Retrying goes through the album of each failed track, so repaired tracks rejoin it.</p>
+    <div class="actions">
+      <label class="check"><input type="checkbox" id="repair-flat"> Put repaired tracks straight in the download folder</label>
+    </div>
+    <div class="actions">
+      <form method="post" action="{{ url_for('library.clear', table='failed') }}" data-confirm="Forget {{ failed }} failed downloads?"><button class="btn" type="submit">Forget them</button></form>
+      <button class="btn primary" id="repair" data-job-button>Retry them</button>
+    </div>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}
