@@ -369,7 +369,7 @@ def test_a_login_that_ends_without_a_login_is_no_login_and_keeps_the_old_one(
     set_user_defaults(tmp_path / "config.toml")
     log_in_to_qobuz(Config(tmp_path / "config.toml"))
 
-    async def stopped(_config, _source):
+    async def stopped(_config, _source, method=None):
         pass  # `coro` ends a Ctrl-C quietly, like this
 
     monkeypatch.setattr(accounts_cli, "_log_in", stopped)
