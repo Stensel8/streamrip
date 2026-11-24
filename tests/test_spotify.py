@@ -241,7 +241,6 @@ async def test_a_stale_token_is_refreshed_and_kept(
     for saved in (client.config, client.global_config.file.spotify):
         assert (saved.access_token, saved.refresh_token) == ("NEW", refresh)
         assert float(saved.token_expiry) > time.time() + 3000
-    assert client.global_config.file.modified
 
 
 @pytest.mark.login
@@ -1282,3 +1281,45 @@ async def test_a_cancelled_login_lets_go_of_the_port_at_once(monkeypatch):
             await asyncio.sleep(0.1)
     else:
         raise AssertionError("the port is still taken 3 seconds after Ctrl-C")
+
+
+async def test_a_refresh_is_saved_at_once_and_one_another_program_made_is_used(
+    make_client, spotify, tmp_path
+):
+    from streamrip.config import Config, set_user_defaults
+
+    path = tmp_path / "config.toml"
+    set_user_defaults(path)
+    config = Config(path)
+    config.update_logins(
+        "spotify",
+        {
+            "client_id": "CID",
+            "access_token": "old",
+            "refresh_token": "R1",
+            "token_expiry": "1",
+        },
+    )
+    config.session.downloads.requests_per_minute = -1
+    spotify.on("POST", "/token", token_answer())
+    client = SpotifyClient(config)
+    await client.login()  # expired: refreshed
+    # Saved without waiting for the end of a run:
+    assert Config(path).file.spotify.access_token == "NEW"
+
+    other = Config(path)  # another program refreshes again, and saves the rotated token
+    other.update_logins(
+        "spotify",
+        {
+            "access_token": "ELSEWHERE",
+            "refresh_token": "R3",
+            "token_expiry": str(int(time.time()) + 3600),
+        },
+    )
+    before = len(spotify.requests("/token"))
+    await client._refresh()
+    assert client.config.access_token == "ELSEWHERE"
+    assert (
+        len(spotify.requests("/token")) == before
+    )  # it did not spend the dead refresh token
+    await client.close()

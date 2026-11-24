@@ -295,6 +295,12 @@ class SpotifyClient(Client):
         return bool(c.access_token) and time.time() < expiry - TOKEN_MARGIN
 
     async def _refresh(self):
+        # Another program may have refreshed (and so rotated) it meanwhile: its
+        # token is the one to use, and the one in hand is spent.
+        before = self.config.access_token
+        self.global_config.reload_logins("spotify")
+        if self.config.access_token != before and self._token_valid():
+            return
         await self._token_request(
             {
                 "grant_type": "refresh_token",
@@ -333,6 +339,9 @@ class SpotifyClient(Client):
             c.token_expiry = expiry
             c.scope = scope
         self.global_config.file.set_modified()
+        # The refresh token Spotify rotated is spent the moment the new one is
+        # back: save it now, not at the end of a run that may not get there.
+        self.global_config.save_file()
 
     async def _fresh_token(self, stale: str | None = None) -> str:
         """An access token that works. `stale` is one that was just rejected."""

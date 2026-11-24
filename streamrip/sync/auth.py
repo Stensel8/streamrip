@@ -64,6 +64,10 @@ class ConfigTokenStore:
         except KeyError:
             raise ValueError(f"unknown service {service!r}") from None
 
+    def reload(self, service: str):
+        """See what another program saved of this login (see Config.reload_logins)."""
+        self.config.reload_logins(self._fields(service)[0])
+
     def load(self, service: str) -> Token | None:
         section, prefix = self._fields(service)
         c = getattr(self.config.session, section)
@@ -258,7 +262,9 @@ class StoredToken:
             f"Your {self.oauth.label} login has expired. Run: {login_command(name)}"
         )
         with self.store.lock:
-            # Another job may have refreshed this very login while we waited.
+            # Another job, or another program, may have refreshed this very
+            # login while we waited.
+            self.store.reload(name)
             current = self.store.load(name)
             if current is None:
                 raise expired

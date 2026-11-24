@@ -36,6 +36,9 @@ the same things, in the same sections.
   lossless step lower
   ([#122](https://opencommit.eu/Stensel8/streamrip/issues/122)), and an
   album's description is tagged as plain text
+- fix: Spotify's refresh token, which rotates at every refresh, is saved at once,
+  and a refresh made by another program (the web server and a command, say) is
+  used instead of spending the dead one
 - chore: one matching module and CSV reader, AGPL-3.0, a browser version that
   follows Chrome's release calendar, dependency updates, and an image build
   that fails on a release tag without the `v`

@@ -249,3 +249,20 @@ def test_client_credentials_are_cached():
     provider = ClientCredentials(demo("S"))
     assert provider() == provider() == "APP"
     assert len(responses.calls) == 1
+
+
+@responses.activate
+def test_a_token_another_program_already_refreshed_is_used_and_not_refreshed_again(
+    tmp_path,
+):
+    config_at(tmp_path)
+    ours, theirs = Config(tmp_path / "config.toml"), Config(tmp_path / "config.toml")
+    ConfigTokenStore(ours).save(
+        "spotify", Token("old", "R1", 0)
+    )  # spent, in this program's eyes
+    # Meanwhile another program refreshed it, and saved the rotated one.
+    ConfigTokenStore(theirs).reload("spotify")
+    ConfigTokenStore(theirs).save("spotify", Token("fresh", "R2", time.time() + 3600))
+
+    assert StoredToken(demo(), ConfigTokenStore(ours))() == "fresh"
+    assert len(responses.calls) == 0  # no refresh with the dead refresh token

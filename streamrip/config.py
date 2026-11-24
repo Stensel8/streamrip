@@ -400,8 +400,8 @@ class Config:
             self.file: ConfigData = ConfigData.from_toml(toml_file.read())
 
         # The logins are in state.toml, next to the config.
-        is_template = path.samefile(BLANK_CONFIG_PATH)
-        self.state = State(None if is_template else path.with_name(STATE_NAME))
+        self._template = path.samefile(BLANK_CONFIG_PATH)
+        self.state = State(None if self._template else path.with_name(STATE_NAME))
         self._stored = self._load_logins()
 
         self.session: ConfigData = copy.deepcopy(self.file)
@@ -423,6 +423,20 @@ class Config:
             for name, value in values.items():
                 setattr(getattr(data, section), name, copy.deepcopy(value))
         self.save_file()
+
+    def reload_logins(self, section: str):
+        """Take on what another program (the web server, a command) saved of
+        this section's logins since this one read them. A token that rotates at
+        every refresh is dead once the new one is saved: refreshing with the old
+        one would fail. Changes made here and not saved yet are left alone."""
+        stored = self.state.read().get(section, {})
+        for name in CREDENTIALS[section]:
+            value = stored.get(name, blank(name))
+            if value == self._stored[section][name]:
+                continue  # nobody else changed it
+            for data in (self.session, self.file):
+                setattr(getattr(data, section), name, copy.deepcopy(value))
+            self._stored[section][name] = copy.deepcopy(value)
 
     def _load_logins(self) -> dict[str, dict]:
         """Lay the logins of the state file over self.file. Returns what the
@@ -460,6 +474,8 @@ class Config:
         undid whatever was changed in config.toml meanwhile, by hand or by
         another streamrip saving its own new token.
         """
+        if self._template:
+            return  # the packaged template is nobody's config to write
         with self._saving:
             self._save_file()
 

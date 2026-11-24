@@ -586,3 +586,30 @@ def test_a_logout_is_saved(config_path):
     with Config(config_path) as config:
         config.file.deezer.arl = ""
     assert Config(config_path).session.deezer.arl == ""
+
+
+def test_a_login_another_program_saved_is_taken_on_before_a_token_is_refreshed(
+    config_path,
+):
+    web, terminal = Config(config_path), Config(config_path)
+    terminal.update_logins(
+        "spotify", {"access_token": "new", "refresh_token": "rotated"}
+    )
+
+    web.session.spotify.client_id = "not saved yet"  # a change of this program's own
+    web.reload_logins("spotify")
+
+    assert (web.session.spotify.access_token, web.session.spotify.refresh_token) == (
+        "new",
+        "rotated",
+    )
+    assert web.file.spotify.refresh_token == "rotated"
+    assert web.session.spotify.client_id == "not saved yet"  # left alone
+
+
+def test_reloading_changes_nothing_when_nobody_else_saved(config_path):
+    config = Config(config_path)
+    config.update_logins("spotify", {"access_token": "a"})
+    config.session.spotify.access_token = "unsaved"
+    config.reload_logins("spotify")
+    assert config.session.spotify.access_token == "unsaved"
