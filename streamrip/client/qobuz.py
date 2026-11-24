@@ -218,6 +218,7 @@ class QobuzClient(Client):
         # streaming subscription. Such a (free) account cannot stream, but it
         # CAN still download albums it has purchased from the Qobuz download
         # store, so flag the client as download-only instead of refusing.
+        self._credential = resp["user"]["credential"]
         if not resp["user"]["credential"]["parameters"]:
             self.download_only = True
             logger.warning(
@@ -228,6 +229,20 @@ class QobuzClient(Client):
         self._login_headers["X-User-Auth-Token"] = resp["user_auth_token"]
 
         self.secret = await self._get_valid_secret(c.secrets)
+
+    async def account_plan(self) -> tuple[str, int | None]:
+        credential = getattr(self, "_credential", None) or {}
+        flags = credential.get("parameters") or {}
+        if flags.get("hires_streaming"):
+            kind, best = "hi-res", 4
+        elif flags.get("lossless_streaming"):
+            kind, best = "lossless", 2
+        elif flags.get("lossy_streaming"):
+            kind, best = "mp3 only", 1
+        else:
+            return "downloads of purchases only", None
+        label = credential.get("label")
+        return f"{label}, {kind}" if label else kind, best
 
     async def get_metadata(self, item_id: str, media_type: str) -> dict:
         if media_type in {"artist", "label"}:

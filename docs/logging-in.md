@@ -7,9 +7,15 @@ streamrip asks for what it needs the first time you use a source and saves it in
 
 ```bash
 streamrip accounts            # which services you are logged in to
+streamrip verify              # asks every service: does it work, what is the plan
+streamrip verify --fix        # and logs in to what needs it
 streamrip login qobuz         # log in, or log in again (without a name: it asks)
 streamrip logout qobuz        # forget a login; the app you made for it stays
 ```
+
+`verify` shows the plan of each account (Qobuz's subscription, Deezer's licence,
+Tidal's best quality, Spotify's Premium), says when your `quality` setting asks
+for more than the plan gives, and exits 1 when a saved login no longer works.
 
 The names are `qobuz`, `tidal`, `deezer` and `spotify`; `tidal-library` is Tidal's
 official API, for [playlists](playlists.md). `streamrip web` shows the same

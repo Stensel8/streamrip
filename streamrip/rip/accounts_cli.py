@@ -16,6 +16,8 @@ lazy from ..console import console
 lazy from ..sync.auth import pkce_pair
 lazy from ..sync.errors import SyncError
 lazy from ..sync.services import DEVELOPER_DASHBOARDS, Services
+lazy from ..verify import FAILED
+lazy from ..verify import verify as run_verify
 lazy from .cli import _require_config, coro
 lazy from .interactive import Prompt
 lazy from .prompter import get_prompter, has_screen, launch
@@ -52,25 +54,10 @@ def accounts(ctx):
     console.print(f"Kept in {config.state.path}", highlight=False, soft_wrap=True)
 
 
-@click.command()
-@click.argument("service", type=LOGIN, required=False)
-@click.pass_context
-def login(ctx, service):
-    """Log in to a service, or log in again.
-
-    tidal logs in for downloading. tidal-library is Tidal's official API, for
-    your playlists and favourites, with a developer app of your own. spotify
-    is one login for downloading and playlists alike. Without a name, it asks.
-    """
-    config = _require_config(ctx)
+def _log_in_again(config: Config, service: str):
+    """Log in to `service` from nothing, and put the old login back if that does
+    not work out: a login that works is not asked for twice."""
     accounts = Accounts(config)
-    service = service or Prompt.ask(
-        "Log in to",
-        choices=list(LOGIN_IDS),
-        default=next((s.login.id for s in accounts.all() if not s.logged_in), None),
-    )
-    # A login that works is not asked for twice: ask again from nothing, and
-    # put the old one back if it does not work out.
     held = accounts.logout(service)
     try:
         if service == "tidal-library":
@@ -84,6 +71,79 @@ def login(ctx, service):
         accounts.restore(service, held)
         raise
     console.print(f"Logged in to {BY_ID[service].label}.")
+
+
+@click.command()
+@click.argument("service", type=LOGIN, required=False)
+@click.pass_context
+def login(ctx, service):
+    """Log in to a service, or log in again.
+
+    tidal logs in for downloading. tidal-library is Tidal's official API, for
+    your playlists and favourites, with a developer app of your own. spotify
+    is one login for downloading and playlists alike. Without a name, it asks.
+    """
+    config = _require_config(ctx)
+    service = service or Prompt.ask(
+        "Log in to",
+        choices=list(LOGIN_IDS),
+        default=next(
+            (s.login.id for s in Accounts(config).all() if not s.logged_in), None
+        ),
+    )
+    _log_in_again(config, service)
+
+
+@click.command()
+@click.argument("service", type=LOGIN, required=False)
+@click.option(
+    "--fix",
+    is_flag=True,
+    help="Log in to what is not logged in or no longer works, one after the other.",
+)
+@click.pass_context
+def verify(ctx, service, fix):
+    """Try every login against its service, and say what to do about it.
+
+    `streamrip accounts` shows what is saved; this asks the services, and tells
+    you the account's plan, whether your quality setting fits it, and which
+    command fixes what does not work. Exits 1 when a saved login fails.
+    """
+    config = _require_config(ctx)
+    ids = (service,) if service else LOGIN_IDS
+    results = coro(run_verify)(config, ids)
+    _print_results(results)
+    if fix:
+        for result in (r for r in results if r.fixable):
+            console.print(f"\n[bold]{BY_ID[result.id].label}[/bold]")
+            try:
+                _log_in_again(config, result.id)
+            except click.ClickException as e:
+                console.print(f"[red]{e.message}[/red]")
+        results = coro(run_verify)(config, ids)
+        console.print()
+        _print_results(results)
+    elif any(r.fixable for r in results):
+        console.print("\nRun `streamrip verify --fix` to log in to these.")
+    if any(r.state == FAILED for r in results):
+        ctx.exit(1)
+
+
+def _print_results(results):
+    for r in results:
+        arrow = f"→ {r.fix}" if r.fix else ""
+        console.print(
+            f"{r.id:14} {r.state:14} {r.detail} {arrow}".rstrip(),
+            highlight=False,
+            soft_wrap=True,
+            markup=False,
+        )
+        if r.hint:
+            console.print(
+                f"{'':14} {r.hint}", highlight=False, soft_wrap=True, markup=False
+            )
+    if not any(r.id == SOUNDCLOUD for r in results):
+        console.print(f"{SOUNDCLOUD:14} {'ok':14} no login needed", highlight=False)
 
 
 @click.command()

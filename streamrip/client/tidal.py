@@ -25,6 +25,16 @@ lazy from ..config import Config
 logger = logging.getLogger("streamrip")
 
 BASE = "https://api.tidalhifi.com/v1"
+# What a subscription's highestSoundQuality says, and the `quality` setting it allows.
+PLAN_TIERS = frozendict(
+    {
+        "LOW": ("AAC 96", 0),
+        "HIGH": ("AAC 320", 1),
+        "LOSSLESS": ("lossless", 2),
+        "HI_RES": ("hi-res", 3),
+        "HI_RES_LOSSLESS": ("hi-res", 3),
+    }
+)
 AUTH_URL = "https://auth.tidal.com/v1/oauth2"
 
 
@@ -194,6 +204,19 @@ class TidalClient(Client):
             await self._login_by_access_token(t.access_token, c.user_id)
 
         self.logged_in = True
+
+    async def account_plan(self) -> tuple[str, int | None]:
+        """The subscription: Tidal names the best quality it plays."""
+        try:
+            resp = await self._api_request(f"users/{self.config.user_id}/subscription")
+        except aiohttp.ClientError, ItemNotFoundError, ValueError:
+            return "", None  # an account Tidal does not describe is no failed login
+        best = str(resp.get("highestSoundQuality", ""))
+        if best not in PLAN_TIERS:
+            return "", None
+        kind = str((resp.get("subscription") or {}).get("type", "")).title()
+        text, tier = PLAN_TIERS[best]
+        return f"{kind}, up to {text}" if kind else f"up to {text}", tier
 
     async def get_metadata(self, item_id: str, media_type: str) -> dict:
         """An item's metadata, with an album's or playlist's tracks and an

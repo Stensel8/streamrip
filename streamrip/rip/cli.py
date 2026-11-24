@@ -25,7 +25,7 @@ lazy from rich.traceback import install
 
 from .. import __version__
 from ..config import DEFAULT_CONFIG_PATH, PACES
-from .accounts_cli import accounts, login, logout
+from .accounts_cli import accounts, login, logout, verify
 from .playlist_cli import playlist
 from .stopping import terminate
 
@@ -1221,7 +1221,7 @@ if __name__ == "__main__":
 
 
 rip.add_command(playlist)
-for _command in (accounts, login, logout):
+for _command in (accounts, login, logout, verify):
     rip.add_command(_command)
 
 

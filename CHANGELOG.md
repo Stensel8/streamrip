@@ -14,8 +14,10 @@ Music-Sync is part of streamrip, and logins are in one place.
   ([docs/playlists.md](docs/playlists.md))
 - feat: `streamrip web`, a web interface for downloads, search, the playlist
   tools and logins ([docs/web.md](docs/web.md))
-- feat: `streamrip accounts`, `login` and `logout`. Logins and their apps are in
-  `state.toml`, next to `config.toml`, and shared with `streamrip web`
+- feat: `streamrip accounts`, `login`, `logout` and `verify`, which asks every
+  service whether the login works, what the plan is and what to do about it.
+  Logins and their apps are in `state.toml`, next to `config.toml`, and shared
+  with `streamrip web`
 - feat: Spotify on Premium is downloaded from Spotify itself, with YouTube
   Music as the fallback, and one Spotify app and login does downloads and
   playlists

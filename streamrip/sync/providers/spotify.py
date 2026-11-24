@@ -92,6 +92,10 @@ class SpotifyProvider(Provider):
     def liked_count(self) -> int | None:
         return self._request("GET", "/me/tracks", params={"limit": 1}).get("total")
 
+    def account(self) -> str:
+        product = str(self._request("GET", "/me").get("product", "")).title()
+        return ", ".join(filter(None, (product, super().account())))
+
     def playlists(self) -> list[PlaylistInfo]:
         found = []
         for page in self._pages("/me/playlists"):

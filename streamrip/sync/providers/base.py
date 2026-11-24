@@ -5,6 +5,7 @@ from functools import partial
 lazy from collections.abc import Collection, Iterator, Mapping
 
 from ...client.audio_match import best_match, rank, searchable, simplify_title
+from ...console import plural
 from ..errors import ApiError, ProviderError
 from ..models import Match, PlaylistInfo, Track
 
@@ -50,6 +51,13 @@ class Provider(ABC):
     def liked_count(self) -> int | None:
         """How many liked tracks there are, if the service says so without reading them all."""
         return None
+
+    def account(self) -> str:
+        """A few words on the account, for `streamrip verify`. Asking for them
+        shows that the login works."""
+        if (count := self.liked_count()) is not None:
+            return plural(count, "liked song")
+        return plural(len(self.playlists()), "playlist")
 
     @abstractmethod
     def playlists(self) -> list[PlaylistInfo]:

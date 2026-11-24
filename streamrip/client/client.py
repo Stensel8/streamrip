@@ -953,6 +953,11 @@ class Client(RequestClient, ABC):
         if getattr(self, "session", None) is not None:
             await self.session.close()
 
+    async def account_plan(self) -> tuple[str, int | None]:
+        """What the logged-in account may do, for `streamrip verify`: a few
+        words, and the highest `quality` setting it can use (None: unknown)."""
+        return "", None
+
     @abstractmethod
     async def login(self):
         raise NotImplementedError
