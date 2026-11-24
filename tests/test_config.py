@@ -121,6 +121,7 @@ def test_the_sample_config_loads_into_its_sections():
             renumber_playlist_tracks=True,
             exclude=[],
             prefer_explicit=True,
+            musicbrainz=True,
         ),
         "artist_filters": ArtistFilterConfig(
             extras=False,

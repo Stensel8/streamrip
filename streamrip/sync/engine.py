@@ -6,10 +6,11 @@ from functools import partial
 from itertools import batched
 from typing import Literal
 
-from ..client.audio_match import best_match, rejection, song_key
+from ..client.audio_match import best_match, rank, rejection, song_key
 from .errors import ApiError, ProviderError
 from .models import Match, PlaylistInfo, Track
 from .providers.base import UNLOOKUPABLE, Provider
+lazy from .musicbrainz import MusicBrainz
 
 LIKED = "Liked Songs"  # our name for a service's liked / saved tracks
 DESCRIPTION = "Imported with streamrip: https://opencommit.eu/Stensel8/streamrip"  # of the playlists it creates
@@ -224,6 +225,7 @@ def resolve_tracks(
     min_score: float = 0.8,
     progress: Progress | None = None,
     present: Iterable[Track] = (),
+    musicbrainz: MusicBrainz | None = None,
 ) -> tuple[list[Match], list[Miss]]:
     """Look every track up on ``provider``, except the ones in ``present`` (the target playlist), which are
     matched to those. Returns the matches, and the tracks that were not found with why."""
@@ -247,6 +249,8 @@ def resolve_tracks(
                 # the service refuses).
                 found = provider.find(track, known)
                 match = found if found and found.score >= min_score else None
+                if match is None and musicbrainz:
+                    match = _second_opinion(provider, musicbrainz, track)
                 miss = None if match else _miss(track, found, provider, min_score)
             if match:
                 match.wanted = track
@@ -266,6 +270,18 @@ def resolve_tracks(
                     )
                 )
     return matches, misses
+
+
+def _second_opinion(
+    provider: Provider, musicbrainz: MusicBrainz, track: Track
+) -> Match | None:
+    """The track under another ISRC of the same recording, which MusicBrainz knows."""
+    isrcs, sure = musicbrainz.isrcs_for(track)
+    known = provider.lookup_isrcs(isrcs) if isrcs else {}
+    for isrc in isrcs:
+        if found := known.get(isrc):
+            return Match(max(found, key=partial(rank, track)), sure, "musicbrainz")
+    return None
 
 
 def _unique(provider: Provider, matches: list[Match]) -> dict[str, Match]:
@@ -305,6 +321,7 @@ def import_tracks(
     dry_run: bool = False,
     description: str = DESCRIPTION,
     progress: Progress | None = None,
+    musicbrainz: MusicBrainz | None = None,
 ) -> ImportResult:
     """Add ``tracks`` to the playlist called ``playlist`` (created if missing), or with None to the liked
     songs, skipping what is already there."""
@@ -333,7 +350,9 @@ def import_tracks(
     else:
         already = []
 
-    matches, misses = resolve_tracks(provider, tracks, min_score, progress, already)
+    matches, misses = resolve_tracks(
+        provider, tracks, min_score, progress, already, musicbrainz
+    )
     result = ImportResult(
         playlist or LIKED,
         existing.id if existing else None,

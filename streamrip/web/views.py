@@ -349,8 +349,9 @@ def transfer() -> tuple[Response, int]:
     playlist = str(data.get("playlist") or "") or None  # str: an id may be a number
     name = str(data.get("name") or "").strip()
     favorites = data.get("into") == "favorites"
-    source_provider = _services().provider(source)
-    target_provider = _services().provider(target)
+    services = _services()  # the job runs on a thread of its own: no request there
+    source_provider = services.provider(source)
+    target_provider = services.provider(target)
 
     def work(job: Job) -> str:
         ((source_name, tracks),) = select_tracks(
@@ -368,7 +369,11 @@ def transfer() -> tuple[Response, int]:
                 else source_name
             )
         return import_tracks(
-            target_provider, tracks, destination, progress=job.progress
+            target_provider,
+            tracks,
+            destination,
+            progress=job.progress,
+            musicbrainz=services.musicbrainz(),
         ).summary()
 
     return _start(
@@ -413,14 +418,19 @@ def import_csv(service: str) -> tuple[Response, int]:
     playlist = request.form.get("playlist", "").strip() or "streamrip import"
     into_favorites = request.form.get("into") == "favorites"
     albums = request.form.get("contains") == "albums"  # a row per album
-    provider = _services().provider(service)
+    services = _services()
+    provider = services.provider(service)
 
     def work(job: Job) -> str:
         if albums:
             return import_albums(provider, tracks, progress=job.progress).summary()
         destination = None if into_favorites else playlist
         return import_tracks(
-            provider, tracks, destination, progress=job.progress
+            provider,
+            tracks,
+            destination,
+            progress=job.progress,
+            musicbrainz=services.musicbrainz(),
         ).summary()
 
     return _start("import", f"Import into {LABELS[service]}", work)

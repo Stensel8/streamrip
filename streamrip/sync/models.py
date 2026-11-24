@@ -30,5 +30,5 @@ class Match:
     track: Track
     score: float
     # "playlist": already in the target playlist, no lookup needed.
-    method: Literal["id", "isrc", "search", "playlist"]
+    method: Literal["id", "isrc", "search", "playlist", "musicbrainz"]
     wanted: Track | None = None  # the track it was looked up for

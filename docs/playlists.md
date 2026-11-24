@@ -122,6 +122,13 @@ service (when the CSV was exported from it), then by ISRC, then by searching for
 title and artist. As a last resort streamrip searches the album's tracklist, like
 spotify_to_tidal does.
 
+A track still not found gets a second opinion from
+[MusicBrainz](https://musicbrainz.org), which knows the other ISRCs of a
+recording (a reissue, another country). It is sent the ISRC, or the title and
+artist, of those tracks only, one request a second. Set `musicbrainz = false`
+under `[metadata]` in `config.toml` to leave it out. `--report` shows which
+tracks were matched this way (`musicbrainz` in the `how` column).
+
 Each search result gets a score from 0 to 1. The title counts for half, the
 artist for 0.4 and the length for 0.1. From 0.8 (`--min-score`) it's a match.
 

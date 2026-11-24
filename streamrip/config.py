@@ -186,6 +186,7 @@ class MetadataConfig:
     renumber_playlist_tracks: bool
     exclude: list[str]
     prefer_explicit: bool
+    musicbrainz: bool
 
 
 @dataclass(slots=True)

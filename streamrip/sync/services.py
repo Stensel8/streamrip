@@ -27,6 +27,7 @@ from .providers.spotify import SpotifyOAuth, SpotifyProvider
 from .providers.tidal import API as TIDAL_API
 from .providers.tidal import JSONAPI, TidalOAuth, TidalProvider
 lazy from ..config import Config
+lazy from .musicbrainz import MusicBrainz
 lazy from .providers.base import Provider
 
 SERVICES = ("spotify", "tidal")
@@ -92,6 +93,12 @@ class Services:
         )
 
     # --- building ----------------------------------------------------------
+
+    def musicbrainz(self) -> MusicBrainz | None:
+        """MusicBrainz as a second opinion, unless the config turns it off."""
+        if self.config.session.metadata.musicbrainz:
+            return MusicBrainz(self.http())
+        return None
 
     def http(self) -> requests.Session:
         """A requests session that checks certificates as the config says."""

@@ -472,7 +472,8 @@ def import_csv(
     tracks = read_tracks(file)
     if not tracks:
         raise click.ClickException(f"No tracks found in {file}.")
-    provider, progress = _services(ctx).provider(service), _progress(quiet)
+    services = _services(ctx)
+    provider, progress = services.provider(service), _progress(quiet)
     if albums:  # a row per album, as csv2tidal took them
         result = import_albums(
             provider, tracks, min_score=min_score, dry_run=dry_run, progress=progress
@@ -485,6 +486,7 @@ def import_csv(
             min_score=min_score,
             dry_run=dry_run,
             progress=progress,
+            musicbrainz=services.musicbrainz(),
         )
     console.print(result.summary(), markup=False, highlight=False)
     _report_unmatched(result.misses, unmatched)
@@ -540,7 +542,7 @@ def transfer(
         services.provider(source),
         services.provider(target),
     )
-    progress = _progress(quiet)
+    progress, musicbrainz = _progress(quiet), services.musicbrainz()
     misses: list[Miss] = []
     matched: list = []
     selected = _select(source_provider, liked or sync_favorites, playlist, progress)
@@ -559,6 +561,7 @@ def transfer(
             min_score=min_score,
             dry_run=dry_run,
             progress=progress,
+            musicbrainz=musicbrainz,
         )
         console.print(result.summary(), markup=False, highlight=False)
         misses.extend(result.misses)
