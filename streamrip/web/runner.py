@@ -141,18 +141,6 @@ class Runner:
 
     # --- logging in to the download sources --------------------------------
 
-    def logged_in(self) -> dict[str, bool]:
-        """Whether each download source has a login saved (not whether it
-        still works: that shows when it is used)."""
-        c = self.config.session
-        return {
-            "qobuz": bool(c.qobuz.user_id and c.qobuz.auth_token),
-            "tidal": bool(c.tidal.access_token),
-            "deezer": bool(c.deezer.arl),
-            "soundcloud": True,  # needs no login
-            "spotify": bool(c.spotify.client_id and c.spotify.refresh_token),
-        }
-
     def login_qobuz(self, user_id: str, token: str):
         """Log in to Qobuz with a user id and token, and keep them if they work."""
         values = {"user_id": user_id, "auth_token": token}

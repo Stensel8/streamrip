@@ -12,15 +12,6 @@ from .base import Provider
 lazy from ..http import ApiClient
 
 API = "https://api.spotify.com/v1"
-# What the playlist tools need of a login; streamrip's Spotify login asks for these and more.
-NEEDED_SCOPES = (
-    "user-library-read",
-    "user-library-modify",
-    "playlist-read-private",
-    "playlist-read-collaborative",
-    "playlist-modify-private",
-    "playlist-modify-public",
-)
 PAGE_SIZE = 50
 
 # Since February 2026 Spotify refuses apps whose owner has no Premium subscription, with a plain 403.
@@ -39,12 +30,6 @@ class SpotifyOAuth(OAuthClient):
     authorize_endpoint = AUTHORIZE_URL
     token_endpoint = TOKEN_URL
     scopes = SCOPES
-
-
-def missing_scopes(granted: str) -> list[str]:
-    """The scopes the playlist tools need that a login does not have. Nothing when the login does not say (one
-    saved before streamrip kept them): then a refusal tells."""
-    return [s for s in NEEDED_SCOPES if s not in granted.split()] if granted else []
 
 
 def parse_track(obj: dict[str, Any] | None) -> Track | None:

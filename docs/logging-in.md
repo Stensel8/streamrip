@@ -3,11 +3,20 @@
 # Logging in
 
 streamrip asks for what it needs the first time you use a source and saves it in
-the config. If a login stops working, it asks again.
+`state.toml`, next to `config.toml`. If a login stops working, it asks again.
+
+```bash
+streamrip accounts            # which services you are logged in to
+streamrip login qobuz         # log in, or log in again (without a name: it asks)
+streamrip logout qobuz        # forget a login; the app you made for it stays
+```
+
+The names are `qobuz`, `tidal`, `deezer` and `spotify`; `tidal-library` is Tidal's
+official API, for [playlists](playlists.md). `streamrip web` shows the same
+accounts and shares them.
 
 The isolated browser window mentioned below is only offered when it can work.
-The `browser` extra must be installed (the installers include it), and on Linux
-there has to be a screen to open it on. In a container or over SSH, your browser
+On Linux there has to be a screen to open it on. In a container or over SSH, your browser
 runs somewhere else and can't reach streamrip. Qobuz and Deezer then ask you to
 log in by hand, and for Spotify you paste the address.
 

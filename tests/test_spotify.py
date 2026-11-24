@@ -964,10 +964,12 @@ def test_spotify_credentials_are_written_when_the_config_is_saved(tmp_path):
         config.file.spotify.refresh_token = "r"
         config.file.set_modified()
 
-    saved = tomlkit.parse(path.read_text())
-    assert saved["spotify"]["client_id"] == "abc"
-    assert saved["spotify"]["refresh_token"] == "r"
-    assert saved["spotify"]["audio_format"] == "m4a"
+    # The login is in state.toml, the setting stays in config.toml.
+    state = tomlkit.parse((tmp_path / "state.toml").read_text())
+    assert state["spotify"] == {"client_id": "abc", "refresh_token": "r"}
+    config_toml = tomlkit.parse(path.read_text())
+    assert "client_id" not in config_toml["spotify"]
+    assert config_toml["spotify"]["audio_format"] == "m4a"
 
 
 @pytest.fixture

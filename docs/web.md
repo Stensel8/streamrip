@@ -21,13 +21,11 @@ a web page.
   A browser login finds its way back to streamrip on this computer. If your
   browser is on another device, paste the address it ends up on.
 
-It all goes into the same `config.toml` as the command line, so a login made on
+Logins go into the same `state.toml` as the command line's, so a login made on
 the page also works in the terminal, and the other way round.
 
-The web interface needs the `web` extra (Flask). The installers, the container
-image and the Nix flake include it. With a wheel, run
-`uv tool install "./streamrip-*.whl[web]"`. Use `--port` for another port and
-`--no-browser` to keep the browser closed.
+The web interface is part of streamrip, nothing extra to install. Use `--port`
+for another port and `--no-browser` to keep the browser closed.
 
 ## It's for you alone
 

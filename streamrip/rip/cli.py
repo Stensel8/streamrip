@@ -25,6 +25,7 @@ lazy from rich.traceback import install
 
 from .. import __version__
 from ..config import DEFAULT_CONFIG_PATH, PACES
+from .accounts_cli import accounts, login, logout
 from .playlist_cli import playlist
 from .stopping import terminate
 
@@ -1220,6 +1221,8 @@ if __name__ == "__main__":
 
 
 rip.add_command(playlist)
+for _command in (accounts, login, logout):
+    rip.add_command(_command)
 
 
 LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
@@ -1245,18 +1248,9 @@ def web(ctx, port, host, no_browser):
     and pick, download a CSV list, move and download playlists, and log in to
     every service. It has no password: it only answers to 127.0.0.1 and
     localhost, and must not be reachable from a network.
-
-    Needs the web extra: uv tool install "streamrip[web]" (the installers
-    include it).
     """
     config = _require_config(ctx)
-    try:
-        app = create_app(config)
-    except ImportError as e:
-        raise click.ClickException(
-            "The web interface needs Flask: install streamrip with the web extra, "
-            'e.g. uv tool install "./streamrip-*.whl[web]"'
-        ) from e
+    app = create_app(config)
     if host not in LOOPBACK_HOSTS:
         err_console.print(
             f"[yellow]Listening on {escape(host)}. The page has no password: publish "

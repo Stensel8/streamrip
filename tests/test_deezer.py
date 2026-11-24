@@ -708,7 +708,7 @@ def test_deezer_and_qobuz_announce_a_save_the_same_way(monkeypatch, prompter):
     qobuz_says = output.call_args.args[0]
 
     assert deezer_says == qobuz_says
-    assert "saved to config file at" in deezer_says
+    assert "Login saved to" in deezer_says
 
 
 # --- the ARL from a browser window --------------------------------------------

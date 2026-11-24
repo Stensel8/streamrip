@@ -52,9 +52,8 @@ Spotify account under *Settings > User Management*. It takes about a minute:
 Now run streamrip with any Spotify link. The first time, it asks for the Client
 ID and opens your browser so you can log in. streamrip picks up the response
 itself on `127.0.0.1:9900`. If streamrip runs on another machine, you can paste
-the address your browser ends up on instead. The login is saved in the
-`[spotify]` section of the config (the Client ID as `client_id`) and renews
-itself. The [playlist tools](playlists.md) use the same app and login, and you
+the address your browser ends up on instead. The app and the login
+are saved in `state.toml`, next to the config, and the login renews itself. The [playlist tools](playlists.md) use the same app and login, and you
 can also set it up on the Accounts page of [`streamrip web`](web.md).
 
 ![What you see without Premium: "Your application is blocked from accessing the Web API since you do not have a Spotify Premium subscription."](images/spotify-premium-required.avif)

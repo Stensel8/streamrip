@@ -18,8 +18,8 @@ never counts as the studio recording ([details](#how-tracks-are-matched)).
 Running the same transfer again doesn't add duplicates.
 
 ```bash
-streamrip playlist login spotify                          # once per service
-streamrip playlist login tidal
+streamrip login spotify                                   # once per service
+streamrip login tidal-library
 
 streamrip playlist transfer spotify tidal --sync-favorites   # liked songs, to your Tidal favourites
 streamrip playlist transfer spotify tidal --liked         # liked songs, to a new playlist
@@ -32,7 +32,7 @@ streamrip playlist import tidal liked.csv --playlist "From CSV"
 streamrip playlist import tidal albums.csv --albums       # artist,album per row, to your favourite albums
 
 streamrip playlist list spotify                           # your playlists, with their ids
-streamrip playlist status                                 # what is set up and logged in
+streamrip accounts                                        # what is set up and logged in
 streamrip playlist doctor                                 # tries the real APIs
 ```
 
@@ -74,10 +74,8 @@ Without `--library`, the playlist only describes the tracks.
 
 Downloading and the playlist tools share one Spotify app and one login. Set up
 the app as described in [Spotify](spotify.md#setting-up-a-spotify-app); the
-account that owns it needs Premium. `streamrip playlist login spotify` is the
-same login a Spotify link asks for. The playlist tools need a bit more access
-(reading and changing your liked songs and playlists), so if you logged in
-before streamrip had them, you'll be asked once more.
+account that owns it needs Premium. `streamrip login spotify` is the
+same login a Spotify link asks for.
 
 ### Tidal
 
@@ -94,22 +92,13 @@ that needs a developer app of your own with a separate login.
 
 ![The Scopes panel of a TIDAL app.](images/tidal-scopes.avif)
 
-`streamrip playlist login tidal` asks for both the first time. You can also put
-them in `config.toml` (`streamrip config open`):
-
-```toml
-[spotify]
-client_id = "..."
-
-[tidal]
-api_client_id = "..."
-api_client_secret = "..."
-```
+`streamrip login tidal-library` asks for both the first time. You can also enter
+them on the Accounts page of [`streamrip web`](web.md).
 
 streamrip searches the Tidal catalogue of the country of your Tidal download
 login, or of your system if you don't have one. All logins are stored in
-`config.toml`, like the download logins, so keep that file private. streamrip
-makes it readable only by you.
+`state.toml`, next to `config.toml`, so keep that folder private. streamrip
+makes the file readable only by you.
 
 ### Coming from Music-Sync
 
@@ -120,7 +109,7 @@ streamrip playlist migrate
 copies the apps and logins from Music-Sync's settings (`~/.config/music-sync/`,
 or `%APPDATA%\music-sync` on Windows) for anything streamrip doesn't have yet.
 After that, add streamrip's redirect URIs to both apps. Music-Sync used port
-8888, streamrip uses 9900, and `streamrip playlist status` shows the URIs. The
+8888, streamrip uses 9900, and `streamrip accounts` shows the URIs. The
 `music-sync` commands are now `streamrip playlist` commands (`playlists` became
 `list`), and `music-sync web` is now [`streamrip web`](web.md).
 

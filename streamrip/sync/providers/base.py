@@ -95,7 +95,7 @@ class Provider(ABC):
     def _refused(self, what: str) -> ProviderError:
         """A write that the service refused (HTTP 403): a login from before streamrip asked to change ``what``."""
         return ProviderError(
-            f"{self.label} did not let streamrip change your {what}. Log in again (streamrip playlist login "
+            f"{self.label} did not let streamrip change your {what}. Log in again (streamrip login "
             f"{self.name}, or Accounts in streamrip web) and allow it: a login made for downloading alone did not "
             "ask for that."
         )

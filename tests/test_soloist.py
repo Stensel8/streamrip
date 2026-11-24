@@ -147,13 +147,11 @@ async def test_the_backend_is_built_on_first_use_and_cached():
     client = make_client()
     assert isinstance(client.soloist_backend, SoloistBackend)
     assert client.soloist_backend is client.soloist_backend  # one per process
-    assert client.backend_available is True
 
 
 async def test_the_backend_is_none_where_it_cannot_serve():
     for client in (make_client(backend="youtube"), make_client(soloist_api_key="")):
         assert client.soloist_backend is None
-        assert client.backend_available is False
 
 
 async def test_pairing_stores_the_key_and_pairs_the_device(monkeypatch):

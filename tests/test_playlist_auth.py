@@ -63,7 +63,7 @@ def test_the_authorize_url_carries_pkce_state_and_scopes():
     assert query["redirect_uri"] == ["http://127.0.0.1:8888/cb"]
 
 
-# --- the tokens in config.toml ---------------------------------------------------------------------
+# --- the tokens in state.toml ---------------------------------------------------------------------
 
 
 def test_a_login_is_written_to_the_config_at_once(tmp_path):
@@ -82,9 +82,6 @@ def test_a_login_is_written_to_the_config_at_once(tmp_path):
         "",
     )
     assert ConfigTokenStore(again).load("tidal") == Token("TA", "TR", 99.0)
-    assert store.delete("tidal")
-    assert not store.delete("tidal")
-    assert ConfigTokenStore(Config(tmp_path / "config.toml")).load("tidal") is None
 
 
 def test_the_download_login_of_spotify_is_the_playlist_login(tmp_path):
@@ -231,7 +228,7 @@ def test_a_failed_refresh_asks_for_a_new_login(tmp_path):
     store = store_at(tmp_path)
     store.save("spotify", Token("old", "R", 0))
     responses.post(TOKEN_URL, status=400, json={"error": "invalid_grant"})
-    with pytest.raises(NotLoggedInError, match="streamrip playlist login spotify"):
+    with pytest.raises(NotLoggedInError, match="streamrip login spotify"):
         StoredToken(demo(), store)()
 
 

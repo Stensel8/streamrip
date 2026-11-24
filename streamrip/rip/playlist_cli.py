@@ -6,22 +6,18 @@ itself is in streamrip/sync; this is the command line around it.
 """
 
 import logging
-import secrets
 import shutil
 import sys
 import time
 from functools import wraps
 from itertools import count
 from pathlib import Path
-lazy import asyncio
 lazy from collections.abc import Callable
 
 import click
 
-lazy from ..client.spotify import SpotifyClient
 lazy from ..config import Config
 lazy from ..console import console, err_console, plural
-lazy from ..sync.auth import pkce_pair
 lazy from ..sync.csvio import read_tracks, slug, write_tracks
 lazy from ..sync.engine import (
     LIKED,
@@ -46,9 +42,6 @@ lazy from ..sync.services import (
     music_sync_dir,
 )
 lazy from .cli import _ask_source, coro, main_session
-lazy from .interactive import Prompt
-lazy from .prompter import SpotifyPrompter, has_screen, launch
-lazy from .spotify_login import capture_code, code_from_redirect_url
 
 logger = logging.getLogger("streamrip")
 
@@ -249,161 +242,12 @@ def playlist():
 
     \b
     Examples:
-        streamrip playlist login spotify
+        streamrip login spotify
         streamrip playlist transfer spotify tidal --liked
         streamrip playlist export spotify --all -o backup/
         streamrip playlist import tidal liked.csv --playlist "From CSV"
         streamrip playlist download spotify --playlist "Road trip" --source qobuz
     """
-
-
-# --- logging in -----------------------------------------------------------------
-
-
-def _browser_code(url: str, redirect_uri: str, state: str, label: str) -> str:
-    """Send the user to `url` to log in, and take the code back: caught on
-    this computer, or pasted from a browser elsewhere."""
-    console.print(
-        f"\nHow do you want to log in to {label}?\n"
-        "  1. In the browser on this computer: streamrip catches the login itself\n"
-        "  2. In a browser on another device (streamrip runs on a server, say):\n"
-        "     open the link there and paste the address you end up on\n"
-    )
-    choice = Prompt.ask(
-        "Choose", choices=["1", "2"], default="1" if has_screen() else "2"
-    )
-    if choice == "1":
-        console.print(
-            f"\nOpening your browser. If nothing opens, go to:\n{url}\n"
-            f"{label} must send you back to [bold]{redirect_uri}[/bold]; add that "
-            "to your app as a redirect URI if it says it is not allowed."
-        )
-        launch(url)
-        return asyncio.run(capture_code(redirect_uri, state, label))
-    console.print(f"\nOpen this link and log in:\n{url}\n")
-    console.print(
-        "The page you end up on will not load: that is as it should be. "
-        "Copy its whole address from the address bar."
-    )
-    return code_from_redirect_url(Prompt.ask("Paste the address"), state, label)
-
-
-async def _spotify_login(config: Config):
-    """The login streamrip's Spotify downloads use, asked for again: the one
-    login is for both."""
-    client = SpotifyClient(config)
-    try:
-        prompter = SpotifyPrompter(config, client)
-        await prompter.prompt_and_login()
-        prompter.save()
-    finally:
-        await client.close()
-
-
-def _tidal_app(services: Services):
-    """Ask for the Tidal developer app, unless the config has one."""
-    tidal = services.config.session.tidal
-    if tidal.api_client_id and tidal.api_client_secret:
-        return
-    console.print(
-        "\n[bold]Tidal's official API needs a developer app of your own.[/bold] "
-        "It is free and takes a minute. (Downloading from Tidal does not need it; "
-        "only reading and changing your playlists and favourites does.)\n\n"
-        f"  1. Go to [blue underline]{DEVELOPER_DASHBOARDS['tidal']}[/blue underline] "
-        "and choose [italic]Create New App[/italic].\n"
-        f"  2. Redirect URI: [bold]{tidal.api_redirect_uri}[/bold]\n"
-        "  3. Scopes: collection.read, collection.write, playlists.read, "
-        "playlists.write and user.read\n"
-        "  4. Copy its Client ID and Client Secret.\n"
-    )
-    launch(DEVELOPER_DASHBOARDS["tidal"])
-    client_id = ""
-    while not client_id:
-        client_id = Prompt.ask("Enter the Client ID of your Tidal app").strip()
-    secret = ""
-    while not secret:
-        secret = Prompt.ask(
-            "Enter its Client Secret (invisible)", password=True
-        ).strip()
-    for data in (services.config.session, services.config.file):
-        data.tidal.api_client_id, data.tidal.api_client_secret = client_id, secret
-    services.config.file.set_modified()
-    services.config.save_file()
-
-
-def login_tidal_api(services: Services):
-    """Log in to Tidal's official API in the browser, and keep the login."""
-    _tidal_app(services)
-    oauth = services.oauth("tidal")
-    verifier, challenge = pkce_pair()
-    state = secrets.token_urlsafe(16)
-    code = _browser_code(
-        oauth.authorize_url(state, challenge), oauth.redirect_uri, state, "Tidal"
-    )
-    services.store.save("tidal", oauth.exchange(code, verifier))
-
-
-@playlist.command()
-@click.argument("service", type=SERVICE)
-@click.pass_context
-@_explained
-def login(ctx, service):
-    """Log in to a service in your browser.
-
-    Spotify: the login streamrip downloads with, now also allowed to change
-    your library. Tidal: a login to its official API with a developer app of
-    your own, next to the login streamrip downloads with.
-    """
-    services = _services(ctx)
-    if service == "spotify":
-        # As every command that logs in: Ctrl-C stops it cleanly, and a
-        # refused login is a message, not a traceback.
-        coro(_spotify_login)(services.config)
-        services.config.save_file()
-    else:
-        login_tidal_api(services)
-    console.print(f"Logged in to {LABELS[service]}.")
-
-
-@playlist.command()
-@click.argument("service", type=SERVICE)
-@click.pass_context
-@_explained
-def logout(ctx, service):
-    """Forget the saved login of a service.
-
-    For Spotify that is also the login streamrip downloads with; for Tidal only
-    the official API's.
-    """
-    removed = _services(ctx).store.delete(service)
-    label = LABELS[service]
-    console.print(
-        f"Logged out of {label}." if removed else f"Not logged in to {label}."
-    )
-
-
-@playlist.command()
-@click.pass_context
-@_explained
-def status(ctx):
-    """Show which apps are set up and logged in."""
-    services = _services(ctx)
-    for service in SERVICES:
-        token = services.store.load(service)
-        if token is None:
-            login = "not logged in"
-        elif token.expired() and not token.refresh_token:
-            login = "login expired"
-        else:
-            login = "logged in"
-        app = "set up" if services.is_configured(service) else "MISSING"
-        console.print(f"{LABELS[service]:8} app: {app:8} {login}", highlight=False)
-        if services.is_configured(service):
-            console.print(
-                f"         redirect URI: {services.redirect_uri(service)}",
-                highlight=False,
-            )
-    console.print(f"Read from {services.config.path}", highlight=False)
 
 
 @playlist.command()

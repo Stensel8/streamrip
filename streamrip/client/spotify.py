@@ -213,11 +213,6 @@ class SpotifyClient(Client):
             self._soloist_backend = soloist.SoloistBackend(c)
         return self._soloist_backend
 
-    @property
-    def backend_available(self) -> bool:
-        """Whether the Spotify backend can serve audio at all."""
-        return self.soloist_backend is not None
-
     async def pair_soloist(self, api_key: str) -> str:
         """Pair the Soloist device once, and keep its API key in the config.
 

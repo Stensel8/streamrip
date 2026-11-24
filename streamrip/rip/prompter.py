@@ -109,7 +109,7 @@ class CredentialPrompter(ABC):
     def _announce_saved(self):
         """Say where the credentials just went."""
         console.print(
-            f"[green]Credentials saved to config file at [bold cyan]{self.config.path}",
+            f"[green]Login saved to [bold cyan]{self.config.state.path or self.config.path}",
         )
 
 
@@ -544,7 +544,6 @@ class SpotifyPrompter(CredentialPrompter):
             "backend",
             "device_name",
             "soloist_api_key",
-            "credentials",
         ):
             setattr(cf, name, getattr(c, name))
         self.config.file.set_modified()

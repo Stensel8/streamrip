@@ -5,7 +5,6 @@ import logging
 import os
 import subprocess
 import sys
-import tempfile
 import threading
 from dataclasses import MISSING, dataclass, fields, is_dataclass
 from pathlib import Path
@@ -14,6 +13,8 @@ from typing import ClassVar
 import click
 from tomlkit.api import dumps, parse
 lazy from tomlkit.toml_document import TOMLDocument
+
+from .state import CREDENTIALS, STATE_NAME, State, blank, write_private
 
 logger = logging.getLogger("streamrip")
 
@@ -74,7 +75,6 @@ class TidalConfig(ServiceLimits):
     hires_token_client_id: str
     # The developer app and login of Tidal's official API, which the playlist
     # tools (streamrip/sync) read and change playlists and favourites with.
-    # Not in a config from before they were; the defaults stand in.
     api_client_id: str = ""
     api_client_secret: str = ""
     api_redirect_uri: str = "http://127.0.0.1:9900/tidal/callback"
@@ -118,7 +118,7 @@ class SpotifyConfig(ServiceLimits):
     refresh_token: str
     token_expiry: str
     # What the login allows (Spotify says so); the playlist tools need more
-    # than downloading does. Not in a config from before it was.
+    # than downloading does.
     scope: str = ""
     # Where the audio comes from: "spotify" plays the track with Spotify's
     # own headless client (Soloist), at the account's quality, and streamrip
@@ -133,10 +133,6 @@ class SpotifyConfig(ServiceLimits):
     # account). A secret, like a password: streamrip fills it in and keeps
     # it here, and Spotify will not say to which account it belongs.
     soloist_api_key: str = ""
-    # The login the spotify backend used before Spotify Soloist: the username
-    # and reusable credentials the device sign-in earned. Kept so a config
-    # with it still loads; streamrip no longer uses it.
-    credentials: str = ""
     # The quality of the audio, where the source serves it in more than one:
     # 0 is the one quality Spotify has (its own client follows the account
     # tier, YouTube Music its best AAC stream).
@@ -330,7 +326,10 @@ class ConfigData:
     def from_toml(cls, toml_str: str):
         """Parse a config file. Raises if its schema doesn't match this version."""
         toml = parse(toml_str)
-        sections = {f.name: f.type(**toml[f.name]) for f in _section_fields()}  # type: ignore
+        sections = {
+            f.name: f.type(**_blank_logins(f.name) | dict(toml[f.name]))  # type: ignore
+            for f in _section_fields()
+        }
         return cls(toml=toml, **sections)
 
     def set_modified(self):
@@ -343,7 +342,14 @@ class ConfigData:
     def update_toml(self):
         """Write every section's current dataclass values back into self.toml."""
         for f in _section_fields():
-            update_toml_section_from_config(self.toml[f.name], getattr(self, f.name))
+            update_toml_section_from_config(
+                self.toml[f.name], getattr(self, f.name), CREDENTIALS.get(f.name, ())
+            )
+
+
+def _blank_logins(section: str) -> dict:
+    """The logins of a section, as they are while none is stored."""
+    return {name: blank(name) for name in CREDENTIALS.get(section, ())}
 
 
 def _section_fields():
@@ -351,8 +357,11 @@ def _section_fields():
     return [f for f in fields(ConfigData) if is_dataclass(f.type)]
 
 
-def update_toml_section_from_config(toml_section, config):
+def update_toml_section_from_config(toml_section, config, logins=()):
     for field in fields(config):
+        if field.name in logins:
+            toml_section.pop(field.name, None)  # kept in state.toml
+            continue
         value = getattr(config, field.name)
         # An option the file leaves out (commented out in the template) stays
         # out while it has its default. Written back, it would sit beside the
@@ -386,6 +395,11 @@ class Config:
                 _make_private(path, toml_file.fileno())
             self.file: ConfigData = ConfigData.from_toml(toml_file.read())
 
+        # The logins are in state.toml, next to the config.
+        is_template = path.samefile(BLANK_CONFIG_PATH)
+        self.state = State(None if is_template else path.with_name(STATE_NAME))
+        self._stored = self._load_logins()
+
         self.session: ConfigData = copy.deepcopy(self.file)
         # "~/Music" is in the home folder, not in a folder named "~" where
         # streamrip happens to be run. The file keeps it as it was written.
@@ -397,6 +411,39 @@ class Config:
         # changed in self.file (a new token, a fetched app id).
         self._loaded: ConfigData = copy.deepcopy(self.file)
         self._saving = threading.Lock()
+
+    def update_logins(self, section: str, values: dict):
+        """Set logins of [section] (a login, a logout) here and in what is
+        saved, and save them."""
+        for data in (self.session, self.file):
+            for name, value in values.items():
+                setattr(getattr(data, section), name, copy.deepcopy(value))
+        self.save_file()
+
+    def _load_logins(self) -> dict[str, dict]:
+        """Lay the logins of the state file over self.file. Returns what the
+        state file holds of them, to tell at saving what this run changed."""
+        stored = self.state.read()
+        known = {}
+        for section, names in CREDENTIALS.items():
+            data = getattr(self.file, section)
+            held = stored.get(section, {})
+            known[section] = {name: held.get(name, blank(name)) for name in names}
+            for name, value in known[section].items():
+                if value != blank(name):
+                    setattr(data, name, copy.deepcopy(value))
+        return known
+
+    def _changed_logins(self) -> dict[str, dict]:
+        """The logins this run changed since it loaded or last saved them."""
+        changed: dict[str, dict] = {}
+        for section, names in CREDENTIALS.items():
+            data = getattr(self.file, section)
+            for name in names:
+                value = getattr(data, name)
+                if value != self._stored[section][name]:
+                    changed.setdefault(section, {})[name] = copy.deepcopy(value)
+        return changed
 
     def save_file(self):
         """Write what was changed in self.file back to path, unless nothing was.
@@ -413,6 +460,11 @@ class Config:
             self._save_file()
 
     def _save_file(self):
+        # The logins first: they are out of config.toml once that is written.
+        if changed := self._changed_logins():
+            self.state.update(changed)
+            for section, values in changed.items():
+                self._stored[section].update(copy.deepcopy(values))
         if not self.file.modified:
             return
 
@@ -467,32 +519,9 @@ def _make_private(path: Path, fd: int):
 
 
 def _write_config(path: Path, toml: TOMLDocument):
-    """Write toml to path in one step, private from its first byte.
-
-    The contents go to a temporary file next to it, which replaces the config
-    only once it is complete. A crash, a Ctrl-C or a full disk part way
-    through leaves the old config, tokens and all, instead of a truncated one.
-    """
-    contents = dumps(toml)
-    # A symlinked config (kept in a dotfiles repo, say) is written through, not
-    # replaced by a regular file.
-    target = path.resolve()
-    target.parent.mkdir(parents=True, exist_ok=True)  # --config-path new/folder/...
-    # mkstemp creates the file 0600 whatever the umask, so there is no moment
-    # at which the new tokens are readable by others.
-    fd, tmp_name = tempfile.mkstemp(dir=target.parent, prefix=".config-", suffix=".tmp")
-    tmp_path = Path(tmp_name)
-    try:
-        with os.fdopen(fd, "w") as f:
-            if os.name == "posix":
-                os.fchmod(f.fileno(), 0o600)
-            f.write(contents)
-            f.flush()
-            os.fsync(f.fileno())
-        tmp_path.replace(target)
-    except BaseException:
-        tmp_path.unlink(missing_ok=True)
-        raise
+    """Write toml to path in one step, private from its first byte (see
+    state.write_private)."""
+    write_private(path, dumps(toml))
 
 
 def set_user_defaults(path: Path, /):

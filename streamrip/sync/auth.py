@@ -43,7 +43,6 @@ class Token:
 # Where each service's playlist login is kept: the config section, and the
 # prefix of its access_token, refresh_token and token_expiry there.
 TOKEN_FIELDS = frozendict({"spotify": ("spotify", ""), "tidal": ("tidal", "api_")})
-_TOKEN_NAMES = ("access_token", "refresh_token", "token_expiry", "scope")
 
 
 class ConfigTokenStore:
@@ -80,13 +79,15 @@ class ConfigTokenStore:
 
     def _set(self, service: str, values: dict[str, str]):
         section, prefix = self._fields(service)
-        for data in (self.config.session, self.config.file):
-            c = getattr(data, section)
-            for name, value in values.items():
-                if hasattr(c, f"{prefix}{name}"):
-                    setattr(c, f"{prefix}{name}", value)
-        self.config.file.set_modified()
-        self.config.save_file()
+        c = getattr(self.config.session, section)
+        self.config.update_logins(
+            section,
+            {
+                f"{prefix}{name}": value
+                for name, value in values.items()
+                if hasattr(c, f"{prefix}{name}")
+            },
+        )
 
     def save(self, service: str, token: Token):
         self._set(
@@ -98,12 +99,6 @@ class ConfigTokenStore:
                 "scope": token.scope,
             },
         )
-
-    def delete(self, service: str) -> bool:
-        if self.load(service) is None:
-            return False
-        self._set(service, dict.fromkeys(_TOKEN_NAMES, ""))
-        return True
 
 
 def pkce_pair() -> tuple[str, str]:
@@ -234,7 +229,7 @@ class OAuthClient:
 
 
 def login_command(service: str) -> str:
-    return f"streamrip playlist login {service}"
+    return f"streamrip login {'tidal-library' if service == 'tidal' else service}"
 
 
 class StoredToken:

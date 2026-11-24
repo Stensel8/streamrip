@@ -12,11 +12,18 @@ from pathlib import Path
 
 import requests
 
-from .auth import ClientCredentials, ConfigTokenStore, OAuthClient, StoredToken, Token
-from .errors import ConfigError, NotLoggedInError
+from .auth import (
+    ClientCredentials,
+    ConfigTokenStore,
+    OAuthClient,
+    StoredToken,
+    Token,
+    login_command,
+)
+from .errors import ConfigError
 from .http import ApiClient
 from .providers.spotify import API as SPOTIFY_API
-from .providers.spotify import SpotifyOAuth, SpotifyProvider, missing_scopes
+from .providers.spotify import SpotifyOAuth, SpotifyProvider
 from .providers.tidal import API as TIDAL_API
 from .providers.tidal import JSONAPI, TidalOAuth, TidalProvider
 lazy from ..config import Config
@@ -66,9 +73,6 @@ class Services:
     def is_configured(self, service: str) -> bool:
         return bool(self.client_id(service))
 
-    def is_logged_in(self, service: str) -> bool:
-        return self.is_configured(service) and self.store.load(service) is not None
-
     @property
     def country(self) -> str:
         """Which Tidal catalogue is searched: that of the account streamrip
@@ -79,17 +83,12 @@ class Services:
         """A ConfigError that says how to set the app up, unless it is."""
         if self.is_configured(service):
             return
-        where = (
-            "[spotify] client_id"
-            if service == "spotify"
-            else "[tidal] api_client_id and api_client_secret"
-        )
         raise ConfigError(
             f"No {LABELS[service]} app yet. Create one at "
             f"{DEVELOPER_DASHBOARDS[service]} with the redirect URI "
-            f"{self.redirect_uri(service)}, and put it in {where} of "
-            f"{self.config.path} (streamrip config open), or set it up on the "
-            "Accounts page of streamrip web. docs/playlists.md has the steps."
+            f"{self.redirect_uri(service)}, then run `{login_command(service)}` "
+            "and enter it, or set it up on the Accounts page of streamrip web. "
+            "docs/playlists.md has the steps."
         )
 
     # --- building ----------------------------------------------------------
@@ -123,13 +122,6 @@ class Services:
         oauth = self.oauth(service)
         user_token = StoredToken(oauth, self.store)
         if service == "spotify":
-            token = self.store.load("spotify")
-            if token and (missing := missing_scopes(token.scope)):
-                raise NotLoggedInError(
-                    "Your Spotify login was made for downloading only; the playlist "
-                    f"tools also need {', '.join(missing)}. Log in again: "
-                    "streamrip playlist login spotify"
-                )
             return SpotifyProvider(
                 ApiClient(SPOTIFY_API, user_token, session=self.http())
             )
@@ -164,8 +156,8 @@ def migrate_music_sync(services: Services, folder: Path | None = None) -> list[s
 
     A Spotify login only comes along with its app: a token is the app's own.
     The redirect URIs do not come along (Music-Sync's were on port 8888, the
-    web interface's): the apps need streamrip's added, which `status` and the
-    Accounts page show.
+    web interface's): the apps need streamrip's added, which `streamrip accounts`
+    and the Accounts page show.
     """
     folder = folder or music_sync_dir()
     try:
@@ -190,16 +182,17 @@ def migrate_music_sync(services: Services, folder: Path | None = None) -> list[s
     ours = config.session
     same_spotify_app = spotify_id and ours.spotify.client_id in {"", spotify_id}
     if spotify_id and not ours.spotify.client_id:
-        for data in (config.session, config.file):
-            data.spotify.client_id = spotify_id
+        config.update_logins("spotify", {"client_id": spotify_id})
         taken.append("the Spotify app")
     if tidal_id and not ours.tidal.api_client_id:
-        for data in (config.session, config.file):
-            data.tidal.api_client_id = tidal_id
-            data.tidal.api_client_secret = text("tidal", "client_secret")
+        config.update_logins(
+            "tidal",
+            {
+                "api_client_id": tidal_id,
+                "api_client_secret": text("tidal", "client_secret"),
+            },
+        )
         taken.append("the Tidal app")
-    config.file.set_modified()
-    config.save_file()
 
     for service, allowed in (("spotify", same_spotify_app), ("tidal", bool(tidal_id))):
         saved = tokens.get(service)

@@ -7,7 +7,7 @@ from click.testing import CliRunner
 from playlist_support import ISRC_A, FakeProvider, FakeServices, config_at, track
 
 from streamrip.config import Config
-from streamrip.rip import playlist_cli
+from streamrip.rip import accounts_cli, playlist_cli
 from streamrip.rip.cli import rip
 from streamrip.sync.auth import Token
 from streamrip.sync.csvio import read_tracks, write_tracks
@@ -34,6 +34,18 @@ def run(tmp_path, monkeypatch, capsys, args, services: Services | None = None):
     if not config.exists():
         config_at(tmp_path)
     result = CliRunner().invoke(rip, ["--config-path", str(config), "playlist", *args])
+    captured = capsys.readouterr()
+    return result.exit_code, result.stdout + captured.out, result.stderr + captured.err
+
+
+def run_root(tmp_path, monkeypatch, capsys, args, services: Services | None = None):
+    """`streamrip *args` (accounts, login, logout); (exit code, stdout, stderr)."""
+    if services is not None:
+        monkeypatch.setattr(accounts_cli, "Services", lambda _config: services)
+    config = tmp_path / "config.toml"
+    if not config.exists():
+        config_at(tmp_path)
+    result = CliRunner().invoke(rip, ["--config-path", str(config), *args])
     captured = capsys.readouterr()
     return result.exit_code, result.stdout + captured.out, result.stderr + captured.err
 
@@ -283,45 +295,34 @@ def test_without_an_app_it_says_how_to_make_one(tmp_path, monkeypatch, capsys):
     code, _, stderr = run(tmp_path, monkeypatch, capsys, ["list", "tidal"])
     assert code == 1
     assert "developer.tidal.com" in stderr
-    assert "api_client_id" in stderr
+    assert "streamrip login tidal-library" in stderr
 
 
-def test_a_download_only_spotify_login_is_asked_to_log_in_again(
-    tmp_path, monkeypatch, capsys
-):
-    """streamrip's Spotify login of before only asked to read playlists."""
+def test_accounts_and_logout(tmp_path, monkeypatch, capsys):
+    code, stdout, _ = run_root(tmp_path, monkeypatch, capsys, ["accounts"])
+    assert code == 0
+    assert "needs an app first" in stdout
+    assert "not logged in" in stdout
+    assert "soundcloud" in stdout
+
     config_at(
         tmp_path,
-        spotify={
-            "client_id": "c",
-            "access_token": "a",
-            "refresh_token": "r",
-            "scope": "playlist-read-private",
+        tidal={
+            "api_client_id": "c",
+            "api_client_secret": "s",
+            "api_access_token": "a",
+            "api_refresh_token": "r",
         },
     )
-    code, _, stderr = run(tmp_path, monkeypatch, capsys, ["list", "spotify"])
-    assert code == 1
-    assert "user-library-modify" in stderr
-    assert "streamrip playlist login spotify" in stderr
-
-
-def test_status_and_logout(tmp_path, monkeypatch, capsys):
-    code, stdout, _ = run(tmp_path, monkeypatch, capsys, ["status"])
-    assert code == 0
-    assert "MISSING" in stdout
-    assert "not logged in" in stdout
-
-    config_at(
-        tmp_path,
-        tidal={"api_client_id": "c", "api_access_token": "a", "api_refresh_token": "r"},
+    code, stdout, _ = run_root(tmp_path, monkeypatch, capsys, ["accounts"])
+    assert "tidal-library  logged in" in stdout
+    code, stdout, _ = run_root(
+        tmp_path, monkeypatch, capsys, ["logout", "tidal-library"]
     )
-    code, stdout, _ = run(tmp_path, monkeypatch, capsys, ["status"])
-    assert "Tidal    app: set up" in stdout
-    assert "logged in" in stdout
-    code, stdout, _ = run(tmp_path, monkeypatch, capsys, ["logout", "tidal"])
     assert code == 0
-    assert "Logged out of Tidal" in stdout
-    assert Config(tmp_path / "config.toml").file.tidal.api_access_token == ""
+    assert "Logged out of Tidal library" in stdout
+    saved = Config(tmp_path / "config.toml").file.tidal
+    assert (saved.api_access_token, saved.api_client_id) == ("", "c")  # the app stays
 
 
 def test_doctor_reports_failures_with_a_nonzero_exit(tmp_path, monkeypatch, capsys):
@@ -388,9 +389,9 @@ def test_the_tidal_api_login_asks_for_the_app_and_keeps_the_login(
     services = FakeServices(tmp_path)
     services.config.session.tidal.api_client_id = ""
     answers = iter(["my-client-id", "my-secret"])
-    monkeypatch.setattr(playlist_cli.Prompt, "ask", lambda *_a, **_k: next(answers))
-    monkeypatch.setattr(playlist_cli, "launch", lambda _url: None)
-    monkeypatch.setattr(playlist_cli, "_browser_code", lambda url, *_: "CODE")
+    monkeypatch.setattr(accounts_cli.Prompt, "ask", lambda *_a, **_k: next(answers))
+    monkeypatch.setattr(accounts_cli, "launch", lambda _url: None)
+    monkeypatch.setattr(accounts_cli, "_browser_code", lambda url, *_: "CODE")
 
     def exchange(_code, _verifier):
         return Token("ACCESS", "REFRESH", 4_000_000_000)
@@ -403,9 +404,11 @@ def test_the_tidal_api_login_asks_for_the_app_and_keeps_the_login(
         return client
 
     monkeypatch.setattr(FakeServices, "oauth", oauth)
-    code, stdout, _ = run(tmp_path, monkeypatch, capsys, ["login", "tidal"], services)
+    code, stdout, _ = run_root(
+        tmp_path, monkeypatch, capsys, ["login", "tidal-library"], services
+    )
     assert code == 0
-    assert "Logged in to Tidal" in stdout
+    assert "Logged in to Tidal library" in stdout
     saved = Config(tmp_path / "config.toml").file.tidal
     assert (saved.api_client_id, saved.api_client_secret) == (
         "my-client-id",

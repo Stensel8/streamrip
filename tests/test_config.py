@@ -4,6 +4,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -335,9 +336,12 @@ def test_the_new_contents_appear_in_one_step(config_path, monkeypatch):
 
     config.save_file()
 
-    assert seen == [True]
+    assert seen == [True, True]  # state.toml's swap, then config.toml's
     assert Config(config_path).file.deezer.arl == "new-synthetic-cookie"
-    assert [p.name for p in config_path.parent.iterdir()] == ["config.toml"]
+    assert [p.name for p in config_path.parent.iterdir()] == [
+        "config.toml",
+        "state.toml",
+    ]
 
 
 @pytest.mark.parametrize(
@@ -382,7 +386,8 @@ def test_a_symlinked_config_is_written_through(tmp_path):
     _new_token(link).save_file()
 
     assert link.is_symlink()
-    assert Config(real).file.deezer.arl == "new-synthetic-cookie"
+    # The login is in the folder the config is used from, not in the repo.
+    assert Config(link).file.deezer.arl == "new-synthetic-cookie"
     assert sorted(p.name for p in repo.iterdir()) == ["config.toml"]
 
 
@@ -539,3 +544,44 @@ def test_a_value_set_back_is_saved_on_a_later_save(tmp_path):
         config.file.set_modified()
         config.save_file()
         assert Config(path).file.tidal.api_access_token == value
+
+
+# --- logins live in state.toml ------------------------------------------------
+
+
+def test_logins_are_saved_in_state_toml_and_leave_config_toml(config_path):
+    with Config(config_path) as config:
+        config.file.deezer.arl = "cookie"
+        config.file.deezer.quality = 1
+        config.file.set_modified()
+
+    state = tomllib.loads((config_path.parent / "state.toml").read_text())
+    assert state == {"deezer": {"arl": "cookie"}}
+    saved = tomllib.loads(config_path.read_text())
+    assert "arl" not in saved["deezer"]
+    assert saved["deezer"]["quality"] == 1
+    assert Config(config_path).session.deezer.arl == "cookie"
+    if os.name == "posix":
+        assert mode(config_path.parent / "state.toml") == 0o600
+
+
+def test_two_programs_saving_their_own_logins_keep_each_others(config_path):
+    web, terminal = Config(config_path), Config(config_path)
+    web.file.spotify.access_token = "spotify-token"
+    terminal.file.deezer.arl = "deezer-cookie"
+    web.save_file()
+    terminal.save_file()
+
+    saved = Config(config_path).file
+    assert (saved.spotify.access_token, saved.deezer.arl) == (
+        "spotify-token",
+        "deezer-cookie",
+    )
+
+
+def test_a_logout_is_saved(config_path):
+    with Config(config_path) as config:
+        config.file.deezer.arl = "cookie"
+    with Config(config_path) as config:
+        config.file.deezer.arl = ""
+    assert Config(config_path).session.deezer.arl == ""

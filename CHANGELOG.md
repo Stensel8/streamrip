@@ -3,46 +3,31 @@
 All notable changes in this fork of [nathom/streamrip](https://github.com/nathom/streamrip). Numbers can refer to
 upstream issues and pull requests.
 
-## 2.8.0-rc-1
+## 2.8.0
 
-**Music-Sync is part of streamrip.** Moving playlists between Spotify, Tidal and
-CSV files is `streamrip playlist`, and its web interface became streamrip's.
+Music-Sync is part of streamrip, and logins are in one place.
 
-- feat: `streamrip playlist` transfers liked songs and playlists between
-  Spotify and Tidal, exports them to CSV and imports CSV files, as Music-Sync
-  did ([docs/playlists.md](docs/playlists.md)); `streamrip playlist migrate`
-  takes Music-Sync's apps and logins
-- feat: `streamrip playlist export --format m3u8 --library DIR` writes M3U8
-  playlists whose entries are the files of your own music folder, found by
-  ISRC, for Navidrome, Jellyfin and the like
-  ([Music-Sync#11](https://github.com/Stensel8/Music-Sync/issues/11))
-- feat: `streamrip playlist download` reads a Spotify or Tidal list and
-  downloads it from the source you pick: a Spotify playlist in lossless from
-  Qobuz, Tidal or Deezer
-- feat: `streamrip web`, a web interface for downloads (links, search with
-  covers, CSV lists), the playlist tools and the logins of every service
-  ([docs/web.md](docs/web.md)); the installers, the image and the flake include
-  its `web` extra
-- feat: one Spotify app and login for downloads and playlists alike. It asks
-  for a little more than before (your library), so the playlist tools ask for
-  it once again
-- feat: on Premium, Spotify can also be downloaded from Spotify itself, through
-  its own client: it plays the track in full and records it, a little slower,
-  and when that is not possible it falls back to the same song on YouTube Music
-  at 320 kbps
-- chore: one matching module and one CSV reader for YouTube Music, CSV lists
-  and transfers, the best of both projects
-- chore: licensed AGPL-3.0 as a whole, the code from nathom/streamrip GPL-3.0
-  as well ([LICENSE](LICENSE), [LICENSES/](LICENSES), [how](README.md#license))
-- chore: current browser identities and a round of dependency updates
-- docs: why streamrip exists: you have a right to own the media you pay for
-- fix: a config saved twice in one run (now the web interface's way) dropped a
-  value set back to what it was, like a logout
-- fix: a Qobuz album's description is tagged as plain text, without its HTML
-- fix: a track whose download breaks off right away is resumed, not started
-  over, and one that keeps failing at hi-res is downloaded one lossless step
-  lower (24/96 to 16/44.1, never to MP3), with a warning saying so
-  ([#122](https://opencommit.eu/Stensel8/streamrip/issues/122))
+- feat: `streamrip playlist` moves liked songs and playlists between Spotify,
+  Tidal and CSV, writes M3U8 for Navidrome and Jellyfin
+  ([Music-Sync#11](https://github.com/Stensel8/Music-Sync/issues/11)) and
+  downloads a list from Qobuz, Tidal or Deezer
+  ([docs/playlists.md](docs/playlists.md))
+- feat: `streamrip web`, a web interface for downloads, search, the playlist
+  tools and logins ([docs/web.md](docs/web.md))
+- feat: `streamrip accounts`, `login` and `logout`. Logins and their apps are in
+  `state.toml`, next to `config.toml`, and shared with `streamrip web`
+- feat: Spotify on Premium is downloaded from Spotify itself, with YouTube
+  Music as the fallback, and one Spotify app and login does downloads and
+  playlists
+- change: one wheel, no extras: `web`, `browser` and `ffmpeg` are part of it
+- fix: a Qobuz hi-res download that breaks off is resumed, or goes one
+  lossless step lower
+  ([#122](https://opencommit.eu/Stensel8/streamrip/issues/122)), and an
+  album's description is tagged as plain text
+- chore: one matching module and CSV reader, AGPL-3.0, current browser
+  identities, dependency updates, and an image build that fails on a release
+  tag without the `v`
+- docs: why streamrip exists
 
 ## 2.7.2
 

@@ -20,6 +20,7 @@ from flask import (
 )
 lazy from werkzeug.wrappers import Response as WerkzeugResponse
 
+from ..accounts import Accounts
 from ..rip.parse_url import parse_url
 from ..sync.csvio import decode, parse_csv, slug, write_csv
 from ..sync.engine import LIKED, import_albums, import_tracks, select_tracks
@@ -127,28 +128,33 @@ def _uploaded_tracks() -> tuple[str, list[Track]]:
     return PureWindowsPath(upload.filename).stem or "CSV list", tracks
 
 
+# The login of each playlist service, as Accounts calls it.
+LIBRARY_LOGINS = {"spotify": "spotify", "tidal": "tidal-library"}
+
+
 def _accounts() -> list[dict]:
     """What the templates need to know about each playlist service."""
-    services = _services()
+    accounts = Accounts(_config())
+    statuses = {name: accounts.status(LIBRARY_LOGINS[name]) for name in SERVICES}
     return [
         {
             "name": name,
             "label": LABELS[name],
-            "configured": services.is_configured(name),
-            "connected": services.is_logged_in(name),
+            "configured": not status.app_missing,
+            "connected": status.logged_in,
         }
-        for name in SERVICES
+        for name, status in statuses.items()
     ]
 
 
 def _download_sources() -> list[dict]:
-    logged_in = _runner().logged_in()
+    accounts = Accounts(_config())
     return [
         {
             "name": s,
             "label": SOURCE_LABELS[s],
             "note": SOURCE_NOTES[s],
-            "ready": logged_in[s],
+            "ready": s == "soundcloud" or accounts.logged_in(s),  # it needs none
         }
         for s in SOURCES
     ]
@@ -486,14 +492,15 @@ def set_app(service: str) -> WerkzeugResponse:
             "error",
         )
     config = _config()
-    for data in (config.session, config.file):
-        if service == "spotify":
-            data.spotify.client_id = client_id
-        else:
-            data.tidal.api_client_id = client_id
-            data.tidal.api_client_secret = secret or data.tidal.api_client_secret
-    config.file.set_modified()
-    config.save_file()
+    config.update_logins(
+        service,
+        {"client_id": client_id}
+        if service == "spotify"
+        else {
+            "api_client_id": client_id,
+            "api_client_secret": secret or config.session.tidal.api_client_secret,
+        },
+    )
     # A login that is waiting was started with the old app.
     for login in list(current_app.extensions["logins"].values()):
         if login.oauth.name == service:
@@ -523,5 +530,5 @@ def browser_login(service: str) -> tuple[Response, int]:
 
 @pages.post("/accounts/<any(spotify, tidal):service>/logout")
 def logout(service: str) -> WerkzeugResponse:
-    _services().store.delete(service)
+    Accounts(_config()).logout(LIBRARY_LOGINS[service])
     return _back(f"Logged out of {LABELS[service]}.")

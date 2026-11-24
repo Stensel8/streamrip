@@ -69,15 +69,8 @@ quality = 4
 # This will download booklet pdfs that are included with some albums
 download_booklets = true
 
-# Your Qobuz login. Leave these empty: streamrip asks you to log in on first
-# use and fills them in (by hand: user.id and user_auth_token from the
-# user/login response in DevTools -> Network on play.qobuz.com).
-user_id = ""
-auth_token = ""
-# Do not change
-app_id = ""
-# Do not change
-secrets = []
+# Logins (and the apps they belong to) are not kept in this file but in
+# state.toml, next to it: streamrip asks you to log in on first use.
 
 [tidal]
 # 0: 256kbps AAC, 1: 320kbps AAC, 2: 16/44.1 FLAC, 3: best available
@@ -96,37 +89,14 @@ hires_client = true
 client_id = ""
 client_secret = ""
 
-# Do not change any of the fields below
-user_id = ""
-country_code = ""
-access_token = ""
-refresh_token = ""
-# Tokens last 1 week after refresh. This is the Unix timestamp of the expiration
-# time. If you haven't used streamrip in more than a week, you may be asked to
-# log in again.
-token_expiry = ""
-# The client id the tokens above were issued to
-token_client_id = ""
-# The same four for the hi-res client (see hires_client)
-hires_access_token = ""
-hires_refresh_token = ""
-hires_token_expiry = ""
-hires_token_client_id = ""
 
-# For `streamrip playlist` and the playlist pages of `streamrip web` only:
+# For the playlist tools and the playlist pages of `streamrip web` only:
 # reading and changing your Tidal playlists and favourites goes through Tidal's
 # official API, which needs a developer app of your own (downloading does not).
-# Create it at https://developer.tidal.com/dashboard with the redirect URI
-# below and the scopes collection.read, collection.write, playlists.read,
-# playlists.write and user.read, then copy its Client ID and Client Secret here.
-# docs/playlists.md has the details.
-api_client_id = ""
-api_client_secret = ""
+# Create it at https://developer.tidal.com/dashboard with this redirect URI and
+# the scopes collection.read, collection.write, playlists.read, playlists.write
+# and user.read. docs/playlists.md has the details.
 api_redirect_uri = "http://127.0.0.1:9900/tidal/callback"
-# Do not change: the login of that app
-api_access_token = ""
-api_refresh_token = ""
-api_token_expiry = ""
 
 [deezer]
 # 0: 128kbps MP3, 1: 320kbps MP3, 2: FLAC. Limited to what the account's
@@ -134,15 +104,9 @@ api_token_expiry = ""
 quality = 2
 # If the target quality is not available, fallback to best quality available
 lower_quality_if_not_available = true
-# The authentication cookie of a logged-in Deezer session. Left empty,
-# streamrip offers to log in through a browser window the first time. To find
-# it by hand, see https://github.com/nathom/streamrip/wiki/Finding-Your-Deezer-ARL-Cookie
-arl = ""
 
 [soundcloud]
-# Found and kept up to date by streamrip. Leave these alone.
-client_id = ""
-app_version = ""
+# Nothing to set: what streamrip finds out is kept in state.toml.
 
 [spotify]
 # Spotify gives streamrip the track list, tags and cover art.
@@ -162,10 +126,9 @@ app_version = ""
 # https://developer.spotify.com/dashboard:
 #   - Redirect URI: exactly the redirect_uri below
 #   - "Which API/SDKs are you planning to use?": tick Web API only
-# Then copy its Client ID here (no client secret is needed), or leave it empty
-# and streamrip asks for it, and logs you in through your browser.
-# docs/spotify.md has the details, with screenshots.
-client_id = ""
+# Then give streamrip its Client ID (no client secret is needed): it asks for it,
+# and logs you in through your browser. docs/spotify.md has the details, with
+# screenshots.
 # Must be added to the app as a Redirect URI, character for character. Use
 # 127.0.0.1, not localhost: Spotify no longer accepts that.
 redirect_uri = "http://127.0.0.1:9900/callback"
@@ -185,21 +148,10 @@ backend = "spotify"
 # The name of the device the Spotify app on this network picks to pair with,
 # and that streamrip plays to.
 device_name = "streamrip"
-# The Soloist API key: one per person, for a Premium account, made at
-# developer.spotify.com/dashboard/soloist. A secret, like a password:
-# streamrip never prints it, logs it, or sends it anywhere but Spotify.
-soloist_api_key = ""
-
-# Do not change any of the fields below
-access_token = ""
-refresh_token = ""
-# Unix timestamp of when the access token expires
-token_expiry = ""
-# What the login allows; `streamrip playlist` needs more than downloading does
-scope = ""
-# The login the spotify backend earned before Spotify Soloist: streamrip no
-# longer reads it; a config that has it still loads.
-credentials = ""
+# The Soloist API key (one per person, for a Premium account, made at
+# developer.spotify.com/dashboard/soloist) is a secret, like a password: it is
+# kept in state.toml, and streamrip never prints it, logs it, or sends it
+# anywhere but Spotify.
 
 [database]
 # Create a database that contains all the track IDs downloaded so far

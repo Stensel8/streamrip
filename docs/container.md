@@ -23,7 +23,8 @@ live in `/data`, which is what the folder is for. Downloads go to `/data/Music`,
 your own music folder. On a Linux desktop in another language,
 `xdg-user-dir MUSIC` tells you its name. Without the second `-v`, downloads end
 up in `./streamrip/Music`. `-it` is needed for the prompts, progress bars and
-search menu. The config file is `./streamrip/.config/streamrip/config.toml`.
+search menu. The config file is `./streamrip/.config/streamrip/config.toml`, and your logins
+are in `state.toml` next to it.
 
 - **Docker:** same command, but add `--user "$(id -u):$(id -g)"` after `run` so
   the files belong to you. Under rootless Podman they already do.

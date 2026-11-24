@@ -11,7 +11,6 @@ import os
 import re
 import threading
 import time
-from pathlib import Path
 
 import pytest
 from playlist_support import ISRC_A, FakeProvider, FakeServices, track
@@ -767,20 +766,3 @@ def test_unknown_jobs_are_a_404(client):
     assert client.get("/jobs/nope/unmatched.csv").status_code == 404
     assert client.get("/jobs/nope/download").status_code == 404
     assert client.post("/jobs/nope/paste", json={}, headers=JSON).status_code == 404
-
-
-def test_the_web_command_needs_flask_and_says_so(tmp_path, monkeypatch):
-    from click.testing import CliRunner
-
-    from streamrip.rip import cli
-
-    def no_flask(_config):
-        raise ImportError("No module named 'flask'")
-
-    monkeypatch.setenv("STREAMRIP_NO_UPDATE_CHECK", "1")
-    monkeypatch.setattr(cli, "create_app", no_flask)
-    result = CliRunner().invoke(
-        cli.rip, ["--config-path", str(Path(tmp_path) / "c.toml"), "web"]
-    )
-    assert result.exit_code == 1
-    assert "web extra" in result.output
