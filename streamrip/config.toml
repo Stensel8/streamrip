@@ -256,7 +256,7 @@ truncate_to = 120
 # The source on which to search for the tracks.
 source = "qobuz"
 # If no results were found with the primary source, the item is searched for 
-# on this one.
+# on this one. Several, comma separated, are tried in turn: "tidal,deezer".
 fallback_source = ""
 
 [cli]

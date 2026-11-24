@@ -6,11 +6,13 @@
 on a source. It asks **which source to search and download from** (Qobuz, Tidal,
 Deezer, Spotify or SoundCloud) and shows what each one offers. `--source tidal`
 skips the question, which is handy in scripts, and `--fallback-source qobuz`
-tries a second source for tracks the first one doesn't have.
+tries a second source for tracks the first one doesn't have. Name several,
+`--fallback-source qobuz,deezer`, and they are tried in that order until one has
+the track.
 
 ```bash
 streamrip csv playlist.csv
-streamrip csv playlist.csv --source tidal --fallback-source qobuz
+streamrip csv playlist.csv --source tidal --fallback-source qobuz,deezer
 ```
 
 The list can come from anywhere: `streamrip playlist export spotify --liked -o

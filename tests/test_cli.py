@@ -1178,3 +1178,37 @@ def test_pyproject_and_the_package_have_the_same_version():
     m = re.search(r'^version\s*=\s*"([^"]+)"', pyproject, re.MULTILINE)
     assert m is not None
     assert m.group(1) == __version__
+
+
+@pytest.mark.parametrize(
+    ("given", "primary", "chain"),
+    [
+        (None, "qobuz", []),
+        ("", "qobuz", []),
+        ("tidal", "qobuz", ["tidal"]),
+        ("Tidal, deezer", "qobuz", ["tidal", "deezer"]),
+        (
+            "tidal,qobuz,tidal deezer",
+            "qobuz",
+            ["tidal", "deezer"],
+        ),  # no primary, no repeats
+    ],
+)
+def test_a_fallback_chain_is_read_in_order(given, primary, chain):
+    from streamrip.rip.main import fallback_chain
+
+    assert fallback_chain(given, primary) == chain
+
+
+def test_a_fallback_source_that_is_no_source_is_refused(tmp_path, monkeypatch):
+    monkeypatch.setenv("STREAMRIP_NO_UPDATE_CHECK", "1")
+    path = tmp_path / "config.toml"
+    set_user_defaults(path)
+    runner = CliRunner()
+    list_ = tmp_path / "l.csv"
+    list_.write_text("title,artist\nSong,Band\n")
+    result = runner.invoke(
+        rip, ["--config-path", str(path), "csv", "-fs", "tidal,nope", str(list_)]
+    )
+    assert result.exit_code == 2
+    assert "nope" in result.output

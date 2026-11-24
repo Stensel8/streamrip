@@ -1042,7 +1042,7 @@ def _lastfm_playlist(monkeypatch, total_tracks, fail_page=None):
     playlist = PendingLastfmPlaylist(
         "https://www.last.fm/playlist/test",
         MagicMock(),
-        None,
+        [],
         Config.defaults(),
         MagicMock(),
     )
@@ -1095,7 +1095,7 @@ async def test_lastfm_tracks_are_searched_like_a_csv_lists(monkeypatch):
     # way a CSV list's are (below), not by the first search hit.
     searched = AsyncMock(return_value=None)
     monkeypatch.setattr("streamrip.media.playlist.searched_playlist", searched)
-    playlist = PendingLastfmPlaylist("url", "client", "fallback", "config", "db")
+    playlist = PendingLastfmPlaylist("url", "client", ["fallback"], "config", "db")
     playlist._parse_lastfm_playlist = AsyncMock(
         return_value=("Mix", [("Song", "Band"), ("Other", "Act")])
     )
@@ -1103,7 +1103,7 @@ async def test_lastfm_tracks_are_searched_like_a_csv_lists(monkeypatch):
     await playlist.resolve()
 
     name, tracks, *rest = searched.await_args.args
-    assert (name, rest) == ("Mix", ["client", "fallback", "config", "db"])
+    assert (name, rest) == ("Mix", ["client", ["fallback"], "config", "db"])
     assert [(t.title, t.artists) for t in tracks] == [
         ("Song", ["Band"]),
         ("Other", ["Act"]),
@@ -1264,7 +1264,7 @@ async def test_remote_playlist_title_is_checked_before_tracks_are_created(
     query = AsyncMock(return_value=(client, MagicMock(id="1")))
     monkeypatch.setattr("streamrip.media.playlist.find_track", query)
     lastfm_playlist = await PendingLastfmPlaylist(
-        "https://example.test/playlist", client, None, config, MagicMock()
+        "https://example.test/playlist", client, [], config, MagicMock()
     ).resolve()
 
     for playlist in (api_playlist, lastfm_playlist):
@@ -1667,7 +1667,8 @@ def _csv_playlist(tmp_path, tracks, client, fallback=None, name="Mix"):
     config = Config.defaults()
     config.session.downloads.folder = str(tmp_path)
     config.session.cli.progress_bars = False
-    return PendingCsvPlaylist(name, tracks, client, fallback, config, MagicMock())
+    fallbacks = [fallback] if fallback is not None else []
+    return PendingCsvPlaylist(name, tracks, client, fallbacks, config, MagicMock())
 
 
 ONE = MatchTrack("Song One", ["Band"], duration_ms=200_000)
@@ -1761,6 +1762,24 @@ async def test_the_tracks_of_a_list_are_found_where_they_are(
         assert [(t.id, t.position, t.client.source) for t in playlist.tracks] == found
     if said:
         assert said in caplog.text
+
+
+async def test_the_fallbacks_are_tried_in_turn_until_one_has_the_track(tmp_path):
+    tidal = Catalogue("tidal", HAS_ONE)
+    deezer = Catalogue("deezer", {})  # has nothing: the next is asked
+    spotify = Catalogue("spotify", HAS_TWO)
+    config = Config.defaults()
+    config.session.downloads.folder = str(tmp_path)
+    config.session.cli.progress_bars = False
+    playlist = await PendingCsvPlaylist(
+        "Mix", [ONE, TWO], tidal, [deezer, spotify], config, MagicMock()
+    ).resolve()
+    assert [(t.id, t.client.source) for t in playlist.tracks] == [
+        ("11", "tidal"),
+        ("22", "spotify"),
+    ]
+    assert deezer.asked  # asked, as tidal lacked a track
+    assert all("Two" in q for _, q, _ in deezer.asked)  # but only about that one
 
 
 async def test_the_full_title_is_tried_when_the_short_one_finds_nothing(tmp_path):

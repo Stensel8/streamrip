@@ -514,7 +514,7 @@ async def test_sessions_follow_verify_ssl(verify_ssl):
 async def test_lastfm_session_follows_verify_ssl():
     config = MagicMock()
     config.session.downloads.verify_ssl = False
-    playlist = PendingLastfmPlaylist("url", MagicMock(), None, config, MagicMock())
+    playlist = PendingLastfmPlaylist("url", MagicMock(), [], config, MagicMock())
     with (
         patch(
             "streamrip.media.playlist.new_session", side_effect=RuntimeError("stop")

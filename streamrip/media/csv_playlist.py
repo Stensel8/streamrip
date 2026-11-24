@@ -24,12 +24,12 @@ __all__ = ["PendingCsvPlaylist", "read_tracks"]
 
 @dataclass(slots=True)
 class PendingCsvPlaylist(Pending):
-    """A CSV list, to be searched on a source (and on another for what it lacks)."""
+    """A CSV list, to be searched on a source (and on others, in turn, for what it lacks)."""
 
     name: str
     tracks: list[MatchTrack]
     client: Client
-    fallback_client: Client | None
+    fallbacks: list[Client]
     config: Config
     db: Database
 
@@ -39,7 +39,7 @@ class PendingCsvPlaylist(Pending):
             self.name,
             self.tracks,
             self.client,
-            self.fallback_client,
+            self.fallbacks,
             self.config,
             self.db,
         )

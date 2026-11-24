@@ -45,7 +45,7 @@ lazy from ..media.csv_playlist import read_tracks
 lazy from ..utils.ssl_utils import print_ssl_error_help
 lazy from ..web import create_app
 lazy from .interactive import Confirm, Prompt
-lazy from .main import Main
+lazy from .main import Main, fallback_chain
 lazy from .prompter import has_screen, launch
 
 logger = logging.getLogger("streamrip")
@@ -197,6 +197,16 @@ def _require_config(ctx) -> Config:
     if cfg is None:
         ctx.exit(1)
     return cfg
+
+
+def _sources(ctx, param, value: str | None) -> str | None:
+    """A list of sources, "tidal,deezer", each of which must be one."""
+    unknown = [s for s in fallback_chain(value, "") if s not in SOURCES]
+    if unknown:
+        raise click.BadParameter(
+            f"{', '.join(unknown)}: choose from {', '.join(SOURCES)}."
+        )
+    return value
 
 
 def _git_note() -> str:
@@ -998,8 +1008,9 @@ async def search(ctx, first, output_file, num_results, source, media_type, query
 @click.option(
     "-fs",
     "--fallback-source",
-    type=click.Choice(list(SOURCES), case_sensitive=False),
-    help="The source to search tracks on if no results were found with the main source.",
+    callback=_sources,
+    help="The source to search tracks on if no results were found with the main "
+    "source. Several, comma separated, are tried in turn.",
 )
 @click.argument("url", required=True)
 @click.pass_context
@@ -1042,8 +1053,9 @@ def _ask_source(count: int) -> str:
 @click.option(
     "-fs",
     "--fallback-source",
-    type=click.Choice(list(SOURCES), case_sensitive=False),
-    help="The source to search for a track the main source does not have.",
+    callback=_sources,
+    help="The source to search for a track the main source does not have. "
+    "Several, comma separated, are tried in turn: tidal,deezer.",
 )
 @click.argument(
     "path",

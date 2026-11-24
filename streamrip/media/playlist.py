@@ -135,19 +135,20 @@ async def searched_playlist(
     name: str,
     tracks: list[MatchTrack],
     client: Client,
-    fallback_client: Client | None,
+    fallbacks: list[Client],
     config: Config,
     db: Database,
 ) -> Playlist | None:
-    """A playlist of the tracks found by searching client (and fallback_client
-    for what it lacks), in a folder named name; None if none was found."""
+    """A playlist of the tracks found by searching client (and each of the
+    fallbacks, in turn, for what it lacks), in a folder named name; None if
+    none was found."""
     try:
         folder = _playlist_folder(config, name)
     except ValueError as e:
         logger.error("Error creating playlist: %s", e)
         return None
 
-    clients = [c for c in (client, fallback_client) if c is not None]
+    clients = [client, *fallbacks]
     found = failed = 0
 
     def status() -> Text:
@@ -384,7 +385,7 @@ class PendingLastfmPlaylist(Pending):
 
     lastfm_url: str
     client: Client
-    fallback_client: Client | None
+    fallbacks: list[Client]
     config: Config
     db: Database
 
@@ -397,7 +398,7 @@ class PendingLastfmPlaylist(Pending):
             return None
         tracks = [MatchTrack(t, [a]) for t, a in titles_artists]
         return await searched_playlist(
-            title, tracks, self.client, self.fallback_client, self.config, self.db
+            title, tracks, self.client, self.fallbacks, self.config, self.db
         )
 
     async def _parse_lastfm_playlist(

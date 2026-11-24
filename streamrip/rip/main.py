@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import re
 import sys
 from itertools import starmap
 lazy from pathlib import Path
@@ -55,6 +56,16 @@ logger = logging.getLogger("streamrip")
 # What an album counts as until it is resolved, in an artist's or a label's
 # tracks to come.
 ALBUM_TRACKS = 10
+
+
+def fallback_chain(sources: str | None, primary: str) -> list[str]:
+    """The sources of a fallback chain, in order: "tidal, deezer" is Tidal, then
+    Deezer. The primary source and repeats are left out."""
+    chain: list[str] = []
+    for name in re.split(r"[,\s]+", (sources or "").lower()):
+        if name and name != primary and name not in chain:
+            chain.append(name)
+    return chain
 
 
 def planned_tracks(media: list[Media]) -> dict[Client, int]:
@@ -437,15 +448,15 @@ class Main:
         c = self.config.session.lastfm
         client = await self.get_logged_in_client(c.source)
 
-        if len(c.fallback_source) > 0:
-            fallback_client = await self.get_logged_in_client(c.fallback_source)
-        else:
-            fallback_client = None
+        fallbacks = [
+            await self.get_logged_in_client(name)
+            for name in fallback_chain(c.fallback_source, c.source)
+        ]
 
         pending_playlist = PendingLastfmPlaylist(
             playlist_url,
             client,
-            fallback_client,
+            fallbacks,
             self.config,
             self.database,
         )
@@ -463,16 +474,16 @@ class Main:
     ):
         """Search the tracks of a CSV list on `source`, and queue what is found.
 
-        A track `source` does not have is looked for on `fallback_source`.
+        A track `source` does not have is looked for on each of `fallback_source`
+        ("tidal, deezer": one after the other) until one has it.
         """
         client = await self.get_logged_in_client(source)
-        fallback_client = (
-            await self.get_logged_in_client(fallback_source)
-            if fallback_source and fallback_source != source
-            else None
-        )
+        fallbacks = [
+            await self.get_logged_in_client(name)
+            for name in fallback_chain(fallback_source, source)
+        ]
         playlist = await PendingCsvPlaylist(
-            name, tracks, client, fallback_client, self.config, self.database
+            name, tracks, client, fallbacks, self.config, self.database
         ).resolve()
         if playlist is not None:
             self.media.append(playlist)
