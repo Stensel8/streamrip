@@ -121,16 +121,18 @@ lower_quality_if_not_available = true
 # it is AAC or MP3, never lossless. A track the spotify backend cannot serve
 # is routed to youtube either way, so nothing is lost by choosing it.
 #
-# You need your own Spotify app for the metadata, and Spotify only lets an
-# app whose owner has Premium use its API. Create it at
-# https://developer.spotify.com/dashboard:
-#   - Redirect URI: exactly the redirect_uri below
-#   - "Which API/SDKs are you planning to use?": tick Web API only
-# Then give streamrip its Client ID (no client secret is needed): it asks for it,
-# and logs you in through your browser. docs/spotify.md has the details, with
-# screenshots.
-# Must be added to the app as a Redirect URI, character for character. Use
-# 127.0.0.1, not localhost: Spotify no longer accepts that.
+# You log in to Spotify with one of two ways:
+# - The pair link, the default: `streamrip login spotify` shows a link and a
+#   short code. Open the link on any device and approve it with the code. It
+#   needs no app of your own.
+# - Your own app: Spotify only lets an app whose owner has Premium use its API.
+#   Create one at https://developer.spotify.com/dashboard:
+#     - Redirect URI: exactly the redirect_uri below
+#     - "Which API/SDKs are you planning to use?": tick Web API only
+#   Then `streamrip login spotify --configure` (no client secret is needed).
+# docs/spotify.md has the details, with screenshots.
+# For your own app, added to it as a Redirect URI, character for character.
+# Use 127.0.0.1, not localhost: Spotify no longer accepts that.
 redirect_uri = "http://127.0.0.1:9900/callback"
 # What the downloaded files are: "m4a" (AAC, tagged with cover art) or "mp3".
 # YouTube Music's best AAC stream is used as it is; anything else is re-encoded.

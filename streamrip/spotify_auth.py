@@ -3,13 +3,12 @@ used by the downloads, the playlist tools and `streamrip web` alike.
 
 Two ways to get it:
 
-- "device" (the default): Spotify's own desktop client, through the Device
-  Authorization Grant. No app of your own to make, no browser to send back,
-  works over SSH and in a container: the only human step is approving one
-  link. The token that comes back is the one Spotify's own client uses.
+- "device" (the default): a pair link, approved on any device. No app of
+  one's own to make, no browser to send back: the only human step is
+  approving one link, and it works over SSH and in a container.
 - "app": your own app from the developer dashboard, OAuth with PKCE, the
-  login a browser makes (`streamrip login spotify --app`, or the Accounts
-  page of streamrip web).
+  login a browser makes (`streamrip login spotify --configure`, or the
+  Accounts page of streamrip web).
 
 Spotify rotates the refresh token at every refresh, and the old one is dead
 the moment the new one is back. A refresh saves its tokens at once, then, and
@@ -28,9 +27,8 @@ AUTHORIZE_URL = "https://accounts.spotify.com/authorize"
 TOKEN_URL = "https://accounts.spotify.com/api/token"
 DEVICE_AUTHORIZE_URL = "https://accounts.spotify.com/oauth2/device/authorize"
 DEVICE_GRANT = "urn:ietf:params:oauth:grant-type:device_code"
-# The client id of Spotify's own desktop client: the "device" login logs in
-# as that client, so it needs no app of the user's own.
-DESKTOP_CLIENT_ID = "65b708073fc0480ea92a077233ca87bd"
+# The client id the default login uses, so it needs no app of the user's own.
+DEFAULT_CLIENT_ID = "65b708073fc0480ea92a077233ca87bd"
 # What an app of your own asks for: reading the user's own and shared
 # playlists, for downloads (tracks, albums, artists and search need no
 # scope); and reading and changing the liked songs and playlists, for the
@@ -50,6 +48,8 @@ TOKEN_MARGIN = 60
 PAIR_LIFETIME = 3599
 # Seconds a login server gets to answer.
 TIMEOUT = 20
+# The command that logs in the manual way, when the automated login fails.
+CONFIGURE = "streamrip login spotify --configure"
 
 # One login, one refresh at a time: a refresh token Spotify rotates is spent
 # once the new one arrives, and two logins must not both spend the same one.
@@ -109,24 +109,24 @@ def auth_method(config: Config) -> str:
     """How the stored login was made: "device" or "app".
 
     A login made before the method was recorded says it by its client id:
-    one of the user's own is an app, anything else is Spotify's own client.
+    one of the user's own is an app, anything else is the pair link.
     """
     c = config.session.spotify
     if c.auth_method in {"device", "app"}:
         return c.auth_method
-    if c.client_id and c.client_id != DESKTOP_CLIENT_ID:
+    if c.client_id and c.client_id != DEFAULT_CLIENT_ID:
         return "app"
     return "device"
 
 
 def client_id(config: Config) -> str:
-    """The client id the stored login belongs to: Spotify's own for a device
-    login, the user's app for an app login. A refresh must use it, or
+    """The client id the stored login belongs to: the user's app for an app
+    login, the default where there is none. A refresh must use it, or
     Spotify refuses the token it gave to another client."""
     c = config.session.spotify
     if auth_method(config) == "app" and c.client_id:
         return c.client_id
-    return DESKTOP_CLIENT_ID
+    return DEFAULT_CLIENT_ID
 
 
 def load(config: Config) -> Token | None:
@@ -146,8 +146,9 @@ def save(config: Config, token: Token, method: str) -> None:
     once the new one is stored, and the other logins read the same file.
 
     `method` is how this login was made, and is kept with it. The app a login
-    belongs to is not written here: a device login belongs to Spotify's own
-    client, and an app login's client id is the user's, set before the login.
+    belongs to is not written here: where there is no app of the user's own
+    the default is used, and an app login's client id is the user's, set
+    before the login.
     """
     config.update_logins(
         "spotify",
@@ -245,9 +246,9 @@ def _verify(config: Config | None) -> bool | None:
 def request_device_code(
     config: Config | None = None, session: requests.Session | None = None
 ) -> DeviceCode:
-    """Ask Spotify for a pair link, for Spotify's own desktop client."""
+    """Ask Spotify for a pair link."""
     answer = _post(
-        session, DEVICE_AUTHORIZE_URL, {"client_id": DESKTOP_CLIENT_ID}, _verify(config)
+        session, DEVICE_AUTHORIZE_URL, {"client_id": DEFAULT_CLIENT_ID}, _verify(config)
     )
     if answer.status != 200 or "device_code" not in answer.payload:
         raise DeviceLoginRefusedError(_detail(answer))
@@ -294,7 +295,7 @@ def poll_for_token(
             {
                 "grant_type": DEVICE_GRANT,
                 "device_code": device_code,
-                "client_id": DESKTOP_CLIENT_ID,
+                "client_id": DEFAULT_CLIENT_ID,
             },
             _verify(config),
         )

@@ -411,11 +411,8 @@ class SoundcloudPrompter(CredentialPrompter):
 
 
 def spotify_device_login(config: Config) -> None:
-    """Spotify's own desktop client: a pair link, approved on any device.
-
-    No app of one's own, no browser to send back: the token that comes is the
-    one Spotify's own client uses, and it is kept as a "device" login.
-    """
+    """A pair link, approved on any device: no app of one's own, no browser
+    to send back."""
     pair = spotify_auth.request_device_code(config)
     console.print(
         "\nSpotify: approve the login on any device, in the Spotify app or a "
@@ -467,14 +464,17 @@ class SpotifyPrompter(CredentialPrompter):
         await self._offer_spotify_backend()
 
     def _log_in_device(self):
-        """The pair link, approved anywhere: Spotify's own desktop client."""
+        """The pair link, approved anywhere."""
         while True:
             try:
                 spotify_device_login(self.config)
             except spotify_auth.SpotifyAuthError as e:
                 console.print(str(e), style="yellow", markup=False)
                 if not Confirm.ask("Try again?", default=True):
-                    raise AuthenticationError("Spotify login cancelled.") from e
+                    raise AuthenticationError(
+                        f"our automated oAuth2 failed. Please run "
+                        f"`{spotify_auth.CONFIGURE}`."
+                    ) from e
             else:
                 break
 

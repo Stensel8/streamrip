@@ -1,11 +1,10 @@
 """Logging in to Spotify, or to Tidal's official API, from the web interface.
 
-Spotify has two ways: the pair link (Spotify's own desktop client, approved
-on any device, no app of one's own), and the browser login of the command
-line (rip/spotify_login.py) with one's own app: the service sends the browser
-back to a port on this computer, caught here. Where that cannot work (the
-browser is on another device), the page takes the address the browser ended
-up on instead.
+Spotify has two ways: the pair link (approved on any device, no app of
+one's own), and the browser login of the command line (rip/spotify_login.py)
+with one's own app: the service sends the browser back to a port on this
+computer, caught here. Where that cannot work (the browser is on another
+device), the page takes the address the browser ended up on instead.
 """
 
 import itertools
@@ -90,8 +89,8 @@ class BrowserLogin:
 
 
 class DeviceLogin:
-    """Spotify's own desktop client: a pair link, approved on any device, no
-    app of one's own. The token that comes is kept as a "device" login."""
+    """A pair link, approved on any device, no app of one's own. The token
+    that comes is kept as a "device" login."""
 
     label = "Spotify"
 
@@ -104,18 +103,24 @@ class DeviceLogin:
 
     def run(self, job: Job) -> str:
         job.enter("login", "Asking Spotify for the pair link")
-        pair = spotify_auth.request_device_code(self.config)
-        job.link = pair.verification_uri_complete
-        job.text = (
-            f"Open the link on any device, and approve the login with the "
-            f"code {pair.user_code}."
-        )
-        token = spotify_auth.poll_for_token(
-            pair.device_code,
-            self.config,
-            expires_in=pair.expires_in,
-            interval=pair.interval,
-            stop=self._stop.is_set,
-        )
+        try:
+            pair = spotify_auth.request_device_code(self.config)
+            job.link = pair.verification_uri_complete
+            job.text = (
+                f"Open the link on any device, and approve the login with the "
+                f"code {pair.user_code}."
+            )
+            token = spotify_auth.poll_for_token(
+                pair.device_code,
+                self.config,
+                expires_in=pair.expires_in,
+                interval=pair.interval,
+                stop=self._stop.is_set,
+            )
+        except spotify_auth.SpotifyAuthError:
+            raise spotify_auth.SpotifyAuthError(
+                "our automated oAuth2 failed. Use the 'Log in with your own "
+                "app' button on this page."
+            ) from None
         spotify_auth.save(self.config, token, "device")
         return f"Logged in to {self.label}."

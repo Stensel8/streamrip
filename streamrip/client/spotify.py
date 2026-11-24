@@ -8,10 +8,11 @@ finds the same recording on YouTube Music (see `ytmusic`) for yt-dlp to
 download, the way spotDL does. A track the Spotify backend cannot serve is
 routed to YouTube Music either way.
 
-The login is one of two (spotify_auth): the "device" one, Spotify's own
-desktop client, which needs no app of the user's own and is the default, or
-the "app" one, the user's own app from the developer dashboard, whose owner
-must have Premium (a rule since February 2026), logged in with OAuth and PKCE.
+The login is one of two (spotify_auth): the "device" one, a pair link to
+approve on any device, which needs no app of the user's own and is the
+default, or the "app" one, the user's own app from the developer dashboard,
+whose owner must have Premium (a rule since February 2026), logged in with
+OAuth and PKCE.
 The API keeps the development-mode rules either way: at most 10 search results
 per request; playlist tracks under "item"; and only playlists the user owns or
 collaborates on can be read.

@@ -28,6 +28,15 @@ the same things, in the same sections.
 - feat: a fallback can be a chain, `--fallback-source qobuz,deezer`: a track
   the first source lacks is looked for on the next, in order
 - feat: the quality asked for stays within a Qobuz or Deezer plan
+- feat: `streamrip verify --fix` and the downloads log Spotify in with the pair
+  link when they need a new login
+- feat: Spotify's login can be a pair link, with no app of your own:
+  `streamrip login spotify` shows a link you open on any device and approve with
+  the code. The own-app login stays, as `streamrip login spotify --configure`,
+  and the Accounts page of `streamrip web` offers both. When the automated
+  login does not work, streamrip points to --configure. `streamrip verify`
+  says who the Spotify account is and how it was logged in, and a rate limit
+  is not shown as a broken login
 - feat: Spotify on Premium is downloaded from Spotify itself, with YouTube
   Music as the fallback, and one Spotify app and login does downloads and
   playlists

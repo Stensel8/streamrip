@@ -102,9 +102,9 @@ class ConfigTokenStore:
             "scope": token.scope,
         }
         if method:
-            # A Spotify login says how it was made: "device" is Spotify's own
-            # client, "app" one of the user's own. A service without the field
-            # simply drops it.
+            # A Spotify login says how it was made: "device" needs no app of
+            # the user's own, "app" uses one of the user's own. A service
+            # without the field simply drops it.
             values["auth_method"] = method
         self._set(service, values)
 

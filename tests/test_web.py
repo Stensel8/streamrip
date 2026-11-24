@@ -575,7 +575,7 @@ def test_a_browser_login_takes_a_pasted_address(client, services, monkeypatch):
 
 
 def test_the_spotify_pair_link_needs_no_app(client, services, monkeypatch):
-    """Spotify's own desktop client: no app, a pair link, approved anywhere."""
+    """No app of one's own: a pair link, approved anywhere."""
     pair = spotify_auth.DeviceCode(
         "DC",
         "ABC123",

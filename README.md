@@ -208,7 +208,7 @@ the config. If a login stops working, it asks again.
 | Tidal | A subscription. You log in with a link on any device (twice for hi-res). |
 | Deezer | The `arl` cookie of a logged-in session, from an isolated browser window or by hand. |
 | SoundCloud | Nothing: it works as a guest. A login (the `oauth_token` cookie) gives better quality and higher limits. |
-| Spotify | Your own Spotify app, and Premium on the account that owns it. Lossless, up to 44.1 kHz. The track plays in full and is recorded, so it rips slower than the other sources, and where Spotify will not play a track it falls back to a 320 kbps match on YouTube Music. The playlist tools use the same app and login. |
+| Spotify | The pair link (`streamrip login spotify`), no app of your own; or your own Spotify app, and Premium on the account that owns it. Lossless, up to 44.1 kHz. The track plays in full and is recorded, so it rips slower than the other sources, and where Spotify will not play a track it falls back to a 320 kbps match on YouTube Music. The playlist tools use the same login. |
 
 For your Tidal playlists, the playlist tools also need a Tidal developer app
 ([how](docs/playlists.md#tidal)). More per source in [Logging in](docs/logging-in.md)
@@ -219,7 +219,7 @@ of `streamrip web`.
 
 - [Playlists](docs/playlists.md): transfer, export, import and download your playlists and liked songs
 - [Web interface](docs/web.md): what it does, and why it should only run on your own machine
-- [Spotify](docs/spotify.md): setting up the app, what works, and the quality you get
+- [Spotify](docs/spotify.md): how to log in, what works, and the quality you get
 - [CSV lists](docs/csv-lists.md): download a list from streamrip, Exportify or a spreadsheet
 - [Lyrics](docs/lyrics.md): where they come from and how to turn the lookup off
 - [Podman and Docker](docs/container.md): the image, its volumes and building it yourself

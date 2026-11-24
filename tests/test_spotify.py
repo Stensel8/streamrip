@@ -188,8 +188,8 @@ def token_answer(**fields):
 
 @pytest.mark.login
 async def test_login_without_a_saved_login_asks_for_one(make_client):
-    # A login without a client id of one's own is fine: the device login
-    # belongs to Spotify's own client.
+    # A login without a client id of one's own is fine: the default login
+    # needs no app of the user's own.
     client = make_client(refresh_token="", access_token="", token_expiry="")
     with pytest.raises(MissingCredentialsError, match="Not logged in"):
         await client.login()
@@ -1114,8 +1114,13 @@ async def test_a_pair_link_spotify_refuses_can_be_tried_again(
             prompter_module.Confirm, "ask", staticmethod(lambda *a, **k: False)
         )
         _answer(monkeypatch, "1")
-        with pytest.raises(AuthenticationError, match="cancelled"):
+        with pytest.raises(AuthenticationError, match="oAuth2 failed") as err:
             await prompter.prompt_and_login()
+        # The automated login failing points at --configure, and says little
+        # else: the how of it is not explained.
+        says = str(err.value)
+        assert "Please run" in says
+        assert "streamrip login spotify --configure" in says
 
 
 async def test_a_saved_client_id_is_not_asked_again(prompter, monkeypatch):

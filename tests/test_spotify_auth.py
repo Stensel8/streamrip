@@ -13,7 +13,7 @@ from playlist_support import config_at
 
 from streamrip import spotify_auth
 from streamrip.spotify_auth import (
-    DESKTOP_CLIENT_ID,
+    DEFAULT_CLIENT_ID,
     AuthServerDownError,
     DeviceLoginRefusedError,
     LoginRefusedError,
@@ -151,11 +151,11 @@ def test_a_token_that_still_lasts_is_used_as_it_is(tmp_path):
 
 
 def test_the_refresh_uses_the_client_id_the_login_belongs_to(tmp_path):
-    # A device login: Spotify's own client, and the method is kept with it.
+    # A login without an app of one's own: the method is kept with it.
     saved(tmp_path, token_expiry="1")
     fake = FakeServer((200, {"access_token": "A2", "expires_in": 3600}))
     spotify_auth.refresh(config_at(tmp_path), fake)
-    assert fake.forms[0]["client_id"] == DESKTOP_CLIENT_ID
+    assert fake.forms[0]["client_id"] == DEFAULT_CLIENT_ID
     assert kept(tmp_path).auth_method == "device"
     # An app login: the user's app.
     saved(tmp_path, client_id="MYAPP", auth_method="app", token_expiry="1")
@@ -216,7 +216,7 @@ def test_requesting_a_pair_link_asks_for_spotify_s_own_client(tmp_path):
     assert (pair.device_code, pair.user_code) == ("DC", "WYGVFF")
     assert pair.verification_uri_complete == "https://spotify.com/pair?code=WYGVFF"
     assert fake.forms[0]["url"] == spotify_auth.DEVICE_AUTHORIZE_URL
-    assert fake.forms[0]["client_id"] == DESKTOP_CLIENT_ID
+    assert fake.forms[0]["client_id"] == DEFAULT_CLIENT_ID
 
 
 def test_polling_takes_the_token_when_it_is_approved():
@@ -373,7 +373,7 @@ def test_the_playlist_tools_refresh_the_shared_login_once(tmp_path):
     assert saved_token.refresh_token == "R2"
 
 
-# --- the command line: the pair link is the way, --app the other ------------
+# --- the command line: the pair link is the way, --configure the other ------
 
 
 @pytest.fixture
@@ -433,7 +433,7 @@ def test_a_device_login_that_fails_keeps_the_old_login(
         ),
     )
 
-    with pytest.raises(Exception, match="trouble"):
+    with pytest.raises(Exception, match="oAuth2 failed"):
         device_login._log_in_again(config, "spotify")
 
     kept = config_at(tmp_path).session.spotify

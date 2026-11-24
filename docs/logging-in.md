@@ -80,5 +80,7 @@ your login: log in at soundcloud.com, open DevTools, Application (or Storage),
 Cookies, and copy its value. Leave it empty to stay a guest. When SoundCloud does
 not take a saved login, streamrip says so and goes on as a guest.
 
-Spotify needs an app of your own and a one-time login in your browser; see
-[Spotify](spotify.md).
+Spotify's default needs no app of your own: `streamrip login spotify` shows a
+pair link, and you open it on any device and approve it with the code. Your own
+app is the other way (`streamrip login spotify --configure`), and the account
+that owns it needs Premium. See [Spotify](spotify.md).

@@ -73,10 +73,11 @@ Without `--library`, the playlist only describes the tracks.
 
 ### Spotify
 
-Downloading and the playlist tools share one Spotify app and one login. Set up
-the app as described in [Spotify](spotify.md#setting-up-a-spotify-app); the
-account that owns it needs Premium. `streamrip login spotify` is the
-same login a Spotify link asks for.
+Downloading and the playlist tools share one Spotify login. The default way
+needs no app of your own: `streamrip login spotify` shows a pair link you open
+and approve on any device; your own app is the other way, and the account that
+owns it needs Premium. See [Spotify](spotify.md#logging-in). `streamrip login
+spotify` is the same login a Spotify link asks for.
 
 ### Tidal
 

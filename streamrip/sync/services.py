@@ -82,7 +82,7 @@ class Services:
         if self.is_configured(service):
             return
         if service == "spotify" and self.store.load("spotify") is not None:
-            return  # a device login: Spotify's own client, no app of one's own
+            return  # a device login: no app of one's own
         raise ConfigError(
             f"No {LABELS[service]} app yet. Create one at "
             f"{DEVELOPER_DASHBOARDS[service]} with the redirect URI "

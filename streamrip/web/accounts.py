@@ -114,8 +114,7 @@ def browser_login(login_id: str) -> tuple[Response, int]:
 
 @accounts_pages.post("/spotify/pair")
 def spotify_pair() -> tuple[Response, int]:
-    """Spotify's own desktop client: a pair link, approved on any device, no
-    app of one's own."""
+    """A pair link, approved on any device, no app of one's own."""
     login = DeviceLogin(get_config())
     logins = current_app.extensions["logins"]
     # One login at a time: a device login waits a long time.
@@ -154,8 +153,8 @@ def set_app(login_id: str) -> WerkzeugResponse:
             "api_client_secret": secret or config.session.tidal.api_client_secret,
         },
     )
-    # A login that is waiting was started with the old app. A pair link
-    # belongs to Spotify's own client, and keeps going.
+    # A login that is waiting was started with the old app. A pair link login
+    # does not use the app, and keeps going.
     for login in list(current_app.extensions["logins"].values()):
         if isinstance(login, BrowserLogin) and login.oauth.name == service:
             login.cancel()

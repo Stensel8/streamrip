@@ -30,13 +30,29 @@ also needs yt-dlp, which needs a JavaScript runtime to read YouTube. If a
 download fails and says so, install [Deno](https://deno.com) or
 [Node.js](https://nodejs.org).
 
-## Setting up a Spotify app
+## Logging in
 
-Since February 2026, Spotify has no shared login for other programs. You create
-a small app of your own in Spotify's developer dashboard, and **the account that
-owns the app needs Spotify Premium**. Without Premium, Spotify refuses every
-request. If you don't have it, someone who does can create the app and add your
-Spotify account under *Settings > User Management*. It takes about a minute:
+Two ways, and they save the same login, in `state.toml` next to the config:
+one login does the downloads and the [playlist tools](playlists.md) alike, and
+it renews itself.
+
+**The pair link (the default).** Run `streamrip login spotify`. It shows a
+link and a short code:
+
+1. Open the link on any device that has Spotify, this computer or a phone, and
+   log in there if you are not.
+2. Approve the login with the code. The link stays open about an hour.
+
+No app of your own, no developer dashboard, no browser to send back, and it
+works over SSH and in a container. If it says the link expired, approve it
+sooner, or start the login again.
+
+**Your own app (optional).** The classic way, with an app from Spotify's
+developer dashboard. It needs one thing the pair link does not: **the account
+that owns the app needs Spotify Premium**. Without Premium, Spotify refuses
+every request. If you don't have it, someone who does can create the app and
+add your Spotify account under *Settings > User Management*. It takes about a
+minute:
 
 1. Go to the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard),
    log in and choose **Create app**. The name and description can be anything.
@@ -49,12 +65,11 @@ Spotify account under *Settings > User Management*. It takes about a minute:
 4. Save, open the app's *Settings* and copy the **Client ID**. You don't need the
    client secret.
 
-Now run streamrip with any Spotify link. The first time, it asks for the Client
-ID and opens your browser so you can log in. streamrip picks up the response
-itself on `127.0.0.1:9900`. If streamrip runs on another machine, you can paste
-the address your browser ends up on instead. The app and the login
-are saved in `state.toml`, next to the config, and the login renews itself. The [playlist tools](playlists.md) use the same app and login, and you
-can also set it up on the Accounts page of [`streamrip web`](web.md).
+Then `streamrip login spotify --configure` asks for the Client ID and opens
+your browser so you can log in. streamrip picks up the response itself on
+`127.0.0.1:9900`. If streamrip runs on another machine, you can paste the
+address your browser ends up on instead. The [web interface](web.md) offers
+both ways on its Accounts page: the pair link, and the login with your own app.
 
 ![What you see without Premium: "Your application is blocked from accessing the Web API since you do not have a Spotify Premium subscription."](images/spotify-premium-required.avif)
 
@@ -104,14 +119,15 @@ Spotify limits what apps like this can do:
   ones. Copy those into a playlist of your own first.
 - Podcasts and local files in a playlist are skipped.
 - At most five people can use an app: the ones you add under *User Management*.
-  That's Spotify's limit for apps in development mode.
+  That's Spotify's limit for apps in development mode (for your own app; the
+  pair link needs no app).
 
 The options are in the `[spotify]` section of `streamrip config open`:
 `backend` (`spotify` or `youtube`), `soloist_api_key` and `device_name` for the
 `spotify` backend, and `audio_format` (`m4a` or `mp3`), `audio_bitrate` (only
 used when audio has to be re-encoded) and `match_videos` (accept an official
 video when YouTube Music has no matching song; turn it off to be strict) for the
-`youtube` backend, and `redirect_uri`.
+`youtube` backend, and `redirect_uri` (for your own app).
 
 ## Credits
 
