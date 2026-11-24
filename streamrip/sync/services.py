@@ -77,9 +77,12 @@ class Services:
         return (self.config.session.tidal.country_code or _locale_country()).upper()
 
     def require(self, service: str):
-        """A ConfigError that says how to set the app up, unless it is."""
+        """A ConfigError that says how to set the app up, unless it is, or the
+        login has none to set up."""
         if self.is_configured(service):
             return
+        if service == "spotify" and self.store.load("spotify") is not None:
+            return  # a device login: Spotify's own client, no app of one's own
         raise ConfigError(
             f"No {LABELS[service]} app yet. Create one at "
             f"{DEVELOPER_DASHBOARDS[service]} with the redirect URI "

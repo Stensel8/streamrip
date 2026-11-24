@@ -8,12 +8,13 @@ finds the same recording on YouTube Music (see `ytmusic`) for yt-dlp to
 download, the way spotDL does. A track the Spotify backend cannot serve is
 routed to YouTube Music either way.
 
-How the login and the API are used follows the rules for apps in development
-mode that Spotify has had since February 2026, as Music-Sync
-(https://github.com/Stensel8/Music-Sync) handles them: an app of the user's own,
-whose owner has Premium; OAuth with PKCE, so a client id is all it needs; at
-most 10 search results per request; playlist tracks under "item"; and only
-playlists the user owns or collaborates on can be read.
+The login is one of two (spotify_auth): the "device" one, Spotify's own
+desktop client, which needs no app of the user's own and is the default, or
+the "app" one, the user's own app from the developer dashboard, whose owner
+must have Premium (a rule since February 2026), logged in with OAuth and PKCE.
+The API keeps the development-mode rules either way: at most 10 search results
+per request; playlist tracks under "item"; and only playlists the user owns or
+collaborates on can be read.
 """
 
 import asyncio
@@ -23,11 +24,9 @@ import logging
 import os
 import re
 import secrets
-import time
 from urllib.parse import urlencode
 
-lazy import aiohttp
-
+from .. import spotify_auth
 from ..console import plural
 from ..exceptions import (
     APIError,
@@ -36,8 +35,9 @@ from ..exceptions import (
     MissingCredentialsError,
     NonStreamableError,
 )
+from ..spotify_auth import AUTHORIZE_URL, SCOPES
 from .audio_match import MatchTrack
-from .client import Client, api_headers
+from .client import Client
 from .downloadable import SoloistDownloadable, YtDlpDownloadable
 from .ytmusic import YouTubeMusicMatcher
 lazy from ..config import Config
@@ -46,19 +46,6 @@ lazy from . import soloist
 logger = logging.getLogger("streamrip")
 
 API_URL = "https://api.spotify.com/v1"
-AUTHORIZE_URL = "https://accounts.spotify.com/authorize"
-TOKEN_URL = "https://accounts.spotify.com/api/token"
-# Reading the user's own and shared playlists, for downloads (tracks, albums,
-# artists and search need no scope); and reading and changing the liked songs
-# and playlists, for `streamrip playlist`. One login does both.
-SCOPES = (
-    "playlist-read-private",
-    "playlist-read-collaborative",
-    "user-library-read",
-    "user-library-modify",
-    "playlist-modify-private",
-    "playlist-modify-public",
-)
 
 PAGE_SIZE = 50
 # Apps in development mode get at most 10 results per search request, and the
@@ -66,8 +53,6 @@ PAGE_SIZE = 50
 SEARCH_PAGE_SIZE = 10
 # A menu of more results than this is five requests, and no one reads them all.
 SEARCH_MAX_RESULTS = 50
-# A token is refreshed this long before it expires.
-TOKEN_MARGIN = 60
 
 MEDIA_TYPES = ("track", "album", "artist", "playlist")
 
@@ -189,7 +174,6 @@ class SpotifyClient(Client):
         # Track responses by id: a playlist already carries its tracks in full,
         # and a track is fetched once for its tags and once for its audio.
         self._tracks: dict[str, dict] = {}
-        self._token_lock = asyncio.Lock()
         # The Soloist backend this process uses for Spotify's own audio,
         # or None: built on first use; it keeps nothing open between runs.
         self._soloist_backend = None
@@ -243,16 +227,17 @@ class SpotifyClient(Client):
         takes the user through one), and AuthenticationError when Spotify no
         longer accepts the saved one.
         """
-        c = self.config
-        if not c.client_id:
-            raise MissingCredentialsError(
-                "No Spotify client id: see [spotify] in the config."
-            )
-        if not c.refresh_token:
-            raise MissingCredentialsError("Not logged in to Spotify.")
         self._ensure_session()
-        if not self._token_valid():
-            await self._refresh()
+        try:
+            await asyncio.to_thread(spotify_auth.token, self.global_config)
+        except spotify_auth.NotLoggedInError as e:
+            raise MissingCredentialsError(str(e)) from e
+        except spotify_auth.AuthServerDownError as e:
+            raise AuthenticationError(str(e)) from e
+        except spotify_auth.SpotifyAuthError as e:
+            raise AuthenticationError(
+                f"Spotify did not accept the login ({e}). Log in again to fix it."
+            ) from e
         self.logged_in = True
 
     def authorization_url(self) -> tuple[str, str, str]:
@@ -274,84 +259,36 @@ class SpotifyClient(Client):
 
     async def finish_login(self, code: str, verifier: str):
         """Trade the code from the login redirect for tokens, and log in."""
-        self._ensure_session()
-        await self._token_request(
-            {
-                "grant_type": "authorization_code",
-                "code": code,
-                "redirect_uri": self.config.redirect_uri,
-                "client_id": self.config.client_id,
-                "code_verifier": verifier,
-            }
-        )
-        self.logged_in = True
-
-    def _token_valid(self) -> bool:
         c = self.config
         try:
-            expiry = float(c.token_expiry)
-        except ValueError:
-            return False
-        return bool(c.access_token) and time.time() < expiry - TOKEN_MARGIN
-
-    async def _refresh(self):
-        # Another program may have refreshed (and so rotated) it meanwhile: its
-        # token is the one to use, and the one in hand is spent.
-        before = self.config.access_token
-        self.global_config.reload_logins("spotify")
-        if self.config.access_token != before and self._token_valid():
-            return
-        await self._token_request(
-            {
-                "grant_type": "refresh_token",
-                "refresh_token": self.config.refresh_token,
-                "client_id": self.config.client_id,
-            }
-        )
-
-    async def _token_request(self, data: dict):
-        """Ask the token endpoint for tokens and keep them, here and in the file."""
-        async with self.session.post(
-            TOKEN_URL, data=data, headers=api_headers()
-        ) as resp:
-            try:
-                # None for an empty body (aiohttp), which has nothing either.
-                payload = await resp.json(content_type=None) or {}
-            except ValueError, aiohttp.ClientError:
-                payload = {}
-            if resp.status != 200 or "access_token" not in payload:
-                detail = (
-                    payload.get("error_description")
-                    or payload.get("error")
-                    or f"HTTP {resp.status}"
-                )
-                raise AuthenticationError(
-                    f"Spotify did not accept the login ({detail}). "
-                    "Log in again to fix it."
-                )
-        expiry = str(int(time.time() + float(payload.get("expires_in", 3600))))
-        # Spotify only sends a new refresh token when it rotates them.
-        refresh = payload.get("refresh_token") or self.config.refresh_token
-        scope = payload.get("scope") or self.config.scope
-        for c in (self.config, self.global_config.file.spotify):
-            c.access_token = payload["access_token"]
-            c.refresh_token = refresh
-            c.token_expiry = expiry
-            c.scope = scope
-        self.global_config.file.set_modified()
-        # The refresh token Spotify rotated is spent the moment the new one is
-        # back: save it now, not at the end of a run that may not get there.
-        self.global_config.save_file()
+            token = await asyncio.to_thread(
+                spotify_auth.exchange,
+                code,
+                verifier,
+                c.redirect_uri,
+                c.client_id,
+                self.global_config,
+            )
+        except spotify_auth.AuthServerDownError as e:
+            raise AuthenticationError(str(e)) from e
+        except spotify_auth.SpotifyAuthError as e:
+            raise AuthenticationError(
+                f"Spotify did not accept the login ({e}). Log in again to fix it."
+            ) from e
+        spotify_auth.save(self.global_config, token, "app")
+        self.logged_in = True
 
     async def _fresh_token(self, stale: str | None = None) -> str:
-        """An access token that works. `stale` is one that was just rejected."""
-        async with self._token_lock:
-            token = self.config.access_token
-            # Another request may have refreshed it while this one waited.
-            if token and token != stale and self._token_valid():
-                return token
-            await self._refresh()
-            return self.config.access_token
+        """An access token that works. `stale` is one that was just rejected.
+
+        The token service keeps the rotated pair at once, and takes the pair
+        another login in this process already made, so a refresh token is
+        spent once and the newest pair is the one that is kept.
+        """
+        token = await asyncio.to_thread(
+            spotify_auth.refresh, self.global_config, stale=stale
+        )
+        return token.access_token
 
     # --- API ---------------------------------------------------------------
 

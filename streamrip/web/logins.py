@@ -60,7 +60,11 @@ class BrowserLogin:
                 raise
         code = self._pasted or check_redirect(params, self.state, label)
         job.text = f"Finishing the {label} login"
-        self.store.save(self.oauth.name, self.oauth.exchange(code, self.verifier))
+        token = self.oauth.exchange(code, self.verifier)
+        # A Spotify login made in the browser is an app login; Tidal has no
+        # notion of a method.
+        method = "app" if self.oauth.name == "spotify" else ""
+        self.store.save(self.oauth.name, token, method)
         return f"Logged in to {label}."
 
     def _wait(self) -> dict[str, str]:

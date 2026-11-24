@@ -14,10 +14,8 @@ def test_nothing_is_logged_in_on_a_first_run(tmp_path):
     assert tuple(statuses) == LOGIN_IDS
     assert not any(s.logged_in for s in statuses.values())
     # Only the logins that need an app of one's own can be missing it.
-    assert {i for i, s in statuses.items() if s.app_missing} == {
-        "tidal-library",
-        "spotify",
-    }
+    # Spotify's device login needs none.
+    assert {i for i, s in statuses.items() if s.app_missing} == {"tidal-library"}
 
 
 def test_a_login_needs_all_its_parts(tmp_path):

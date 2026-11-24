@@ -149,7 +149,9 @@ async def spotify():
 async def make_client(spotify, monkeypatch):
     """Build a client for the fake server, with the options given as keywords."""
     monkeypatch.setattr(spotify_module, "API_URL", f"{spotify.base}/v1")
-    monkeypatch.setattr(spotify_module, "TOKEN_URL", f"{spotify.base}/token")
+    # The login goes through the shared Spotify token service, with its own
+    # token endpoint.
+    monkeypatch.setattr("streamrip.spotify_auth.TOKEN_URL", f"{spotify.base}/token")
     # A 429 would otherwise pause the test for seconds.
     monkeypatch.setattr("streamrip.client.client.retry_after", lambda *_: 0.01)
     clients = []
@@ -184,21 +186,12 @@ def token_answer(**fields):
 
 
 @pytest.mark.login
-@pytest.mark.parametrize(
-    ("missing", "message"),
-    [
-        ({"client_id": ""}, "client id"),
-        (
-            {"refresh_token": "", "access_token": "", "token_expiry": ""},
-            "Not logged in",
-        ),
-    ],
-)
-async def test_login_without_an_app_or_a_saved_login_asks_for_one(
-    make_client, missing, message
-):
-    with pytest.raises(MissingCredentialsError, match=message):
-        await make_client(**missing).login()
+async def test_login_without_a_saved_login_asks_for_one(make_client):
+    # A login without a client id of one's own is fine: the device login
+    # belongs to Spotify's own client.
+    client = make_client(refresh_token="", access_token="", token_expiry="")
+    with pytest.raises(MissingCredentialsError, match="Not logged in"):
+        await client.login()
 
 
 @pytest.mark.login
@@ -1011,9 +1004,9 @@ def test_the_prompter_is_registered_for_spotify(prompter):
 @pytest.mark.login
 @pytest.mark.parametrize(
     ("client_id", "refresh_token", "has"),
-    [("", "", False), ("cid", "", False), ("", "r", False), ("cid", "r", True)],
+    [("", "", False), ("cid", "", False), ("", "r", True), ("cid", "r", True)],
 )
-def test_a_login_needs_the_app_and_a_refresh_token(
+def test_a_login_is_a_saved_token_with_or_without_an_app(
     prompter, client_id, refresh_token, has
 ):
     prompter.config.session.spotify.client_id = client_id
@@ -1317,7 +1310,8 @@ async def test_a_refresh_is_saved_at_once_and_one_another_program_made_is_used(
         },
     )
     before = len(spotify.requests("/token"))
-    await client._refresh()
+    token = await client._fresh_token()
+    assert token == "ELSEWHERE"
     assert client.config.access_token == "ELSEWHERE"
     assert (
         len(spotify.requests("/token")) == before

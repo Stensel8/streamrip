@@ -21,6 +21,7 @@ from urllib.parse import urlencode
 
 import requests
 
+from .. import spotify_auth
 from .errors import LoginError, NetworkError, NotLoggedInError
 from .http import error_message, json_body
 lazy from ..config import Config
@@ -93,16 +94,19 @@ class ConfigTokenStore:
             },
         )
 
-    def save(self, service: str, token: Token):
-        self._set(
-            service,
-            {
-                "access_token": token.access_token,
-                "refresh_token": token.refresh_token or "",
-                "token_expiry": str(int(token.expires_at)),
-                "scope": token.scope,
-            },
-        )
+    def save(self, service: str, token: Token, method: str = ""):
+        values = {
+            "access_token": token.access_token,
+            "refresh_token": token.refresh_token or "",
+            "token_expiry": str(int(token.expires_at)),
+            "scope": token.scope,
+        }
+        if method:
+            # A Spotify login says how it was made: "device" is Spotify's own
+            # client, "app" one of the user's own. A service without the field
+            # simply drops it.
+            values["auth_method"] = method
+        self._set(service, values)
 
 
 def pkce_pair() -> tuple[str, str]:
@@ -222,6 +226,15 @@ class OAuthClient:
         fresh.scope = fresh.scope or token.scope
         return fresh
 
+    def refresh_stored(self, store: ConfigTokenStore, current: Token) -> Token:
+        """A refresh of `current`, kept in the store at once. A login shared
+        outside this process (Spotify's, with the downloads) refreshes through
+        its own token service instead, so the rotated refresh token is spent
+        once."""
+        token = self.refresh(current)
+        store.save(self.name, token)
+        return token
+
     def client_credentials(self) -> Token:
         """An app-level token (no user), for looking things up in a catalogue."""
         if not self.client_secret:
@@ -271,11 +284,11 @@ class StoredToken:
             if current.access_token != stale.access_token and not current.expired():
                 return current
             try:
-                fresh = self.oauth.refresh(current)
-            except LoginError as exc:
+                return self.oauth.refresh_stored(self.store, current)
+            except spotify_auth.AuthServerDownError as exc:
+                raise NetworkError(str(exc)) from exc
+            except (LoginError, spotify_auth.SpotifyAuthError) as exc:
                 raise expired from exc
-            self.store.save(name, fresh)
-            return fresh
 
 
 class ClientCredentials:

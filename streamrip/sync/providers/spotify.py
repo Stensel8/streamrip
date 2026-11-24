@@ -4,8 +4,9 @@ from functools import cached_property
 from typing import Any
 lazy from collections.abc import Collection, Iterator
 
-from ...client.spotify import AUTHORIZE_URL, SCOPES, TOKEN_URL
-from ..auth import OAuthClient
+from ... import spotify_auth
+from ...spotify_auth import AUTHORIZE_URL, SCOPES, TOKEN_URL
+from ..auth import ConfigTokenStore, OAuthClient, Token
 from ..errors import ApiError, ProviderError
 from ..models import PlaylistInfo, Track, normalize_isrc
 from .base import Provider
@@ -23,13 +24,23 @@ PREMIUM_REQUIRED = (
 
 
 class SpotifyOAuth(OAuthClient):
-    """The login streamrip's Spotify downloads use, with the same scopes: one app and one login for both."""
+    """The login streamrip's Spotify downloads use, with the same scopes: one
+    login for both, and one refresh of it, so the rotated refresh token is
+    spent once."""
 
     name = "spotify"
     label = "Spotify"
     authorize_endpoint = AUTHORIZE_URL
     token_endpoint = TOKEN_URL
     scopes = SCOPES
+
+    def refresh_stored(self, store: ConfigTokenStore, current: Token) -> Token:
+        """The downloads refresh this very login: the shared Spotify token
+        service spends the rotated refresh token once and keeps the new pair."""
+        fresh = spotify_auth.refresh(store.config, stale=current.access_token)
+        return Token(
+            fresh.access_token, fresh.refresh_token, fresh.expires_at, fresh.scope
+        )
 
 
 def parse_track(obj: dict[str, Any] | None) -> Track | None:

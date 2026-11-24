@@ -416,7 +416,8 @@ class SpotifyPrompter(CredentialPrompter):
 
     def has_creds(self) -> bool:
         c = self.config.session.spotify
-        return c.client_id != "" and c.refresh_token != ""
+        # A login is a saved token: a device one has no client id of one's own.
+        return bool(c.refresh_token or c.access_token)
 
     async def prompt_and_login(self):
         """Ask for the app's client id unless one is saved, then log in."""
@@ -561,6 +562,7 @@ class SpotifyPrompter(CredentialPrompter):
             "refresh_token",
             "token_expiry",
             "scope",
+            "auth_method",
             "backend",
             "device_name",
             "soloist_api_key",

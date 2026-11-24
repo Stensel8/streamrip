@@ -45,7 +45,10 @@ async def test_nothing_is_tried_where_there_is_no_login(config):
     found = {r.id: r for r in await verify_module.verify(config)}
     assert found["qobuz"].state == verify_module.NOT_LOGGED_IN
     assert found["qobuz"].fix == "streamrip login qobuz"
-    assert found["spotify"].state == verify_module.NEEDS_APP
+    # Spotify's device login needs no app of one's own, so it is a plain
+    # "not logged in", not "needs an app".
+    assert found["spotify"].state == verify_module.NOT_LOGGED_IN
+    assert found["spotify"].fix == "streamrip login spotify"
     assert not any(r.state == verify_module.OK for r in found.values())
 
 
