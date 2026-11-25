@@ -5,9 +5,9 @@ description = "Keep the music you pay for. Take your playlists with you. streamr
 authors = [{ name = "nathom", email = "nathanthomas707@gmail.com" }]
 maintainers = [{ name = "Stensel8", email = "stentijhuis@protonmail.com" }]
 # The whole is AGPL-3.0 (LICENSE); the code from nathom/streamrip is GPL-3.0
-# as well (LICENSES/). README.md says how the two came together.
+# as well (both texts are in LICENSE). README.md says how the two came together.
 license = "AGPL-3.0-only AND GPL-3.0-only"
-license-files = ["LICENSE", "LICENSES/*.txt"]
+license-files = ["LICENSE"]
 readme = "README.md"
 requires-python = ">=3.15,<3.16"
 keywords = ["hi-res", "free", "music", "download", "playlist", "spotify", "tidal"]

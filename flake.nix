@@ -35,7 +35,7 @@
         workspaceRoot = lib.fileset.toSource {
           root = ./.;
           fileset = lib.fileset.unions
-            [ ./pyproject.toml ./uv.lock ./README.md ./LICENSE ./LICENSES ./streamrip ];
+            [ ./pyproject.toml ./uv.lock ./README.md ./LICENSE ./streamrip ];
         };
       };
       pythonSet =
