@@ -31,6 +31,7 @@ youtube backend instead (a NonStreamableError, which the track's fallback
 turns into a YouTube Music download).
 """
 
+import array
 import asyncio
 import contextlib
 import logging
@@ -75,6 +76,12 @@ PLAY_SHARE = 0.95
 SINK = "soloist_cap"
 RATE = 44100
 SINK_SPEC = f"float32le 2ch {RATE}Hz"
+# The sink is exact silence until a track plays: sound above this (-90 dBFS)
+# is the track. Soloist says "playing" some 25 to 150 ms before its first
+# sound, so the cut starts at that sound (and 1 ms before it).
+SOUND = 10 ** (-90 / 20)
+SOUND_LEAD = 0.001
+SOUND_WINDOW = 2.0
 # Soloist's prefs (in <data dir>/settings/Users/<user>/prefs). Quality 5 is
 # the lossless FLAC (3 and 4 are Ogg Vorbis at 160 and 320 kbps, and without a
 # pref it plays 160). It has one for a metered connection and one for an
@@ -570,8 +577,15 @@ class SoloistBackend:
             # them a moment, and stop it, so the capture is whole.
             time.sleep(0.5)
             self._stop(recorder)
-            # The cut starts where "playing" came; the rest is pre-roll.
+            # The cut starts where "playing" came; the rest is pre-roll. That
+            # line is early by a different 25 to 150 ms each time, which
+            # would move the whole track and cut its end: so the cut is made
+            # at the first sound after it, where the track really begins.
             offset = t_playing - t_recorder if t_playing is not None else None
+            if offset is not None:
+                sound = self._first_sound(capture, max(offset - 0.5, 0.0))
+                if sound is not None:
+                    offset = max(sound - SOUND_LEAD, 0.0)
             # Encode and check while the capture still exists: the cleanup in
             # the finally below removes it, and ffmpeg reads it. A refusal
             # here is the track's, so the partial FLAC goes with it.
@@ -587,6 +601,25 @@ class SoloistBackend:
                 player.kill()
                 player.wait()
             capture.unlink(missing_ok=True)
+
+    @staticmethod
+    def _first_sound(capture: Path, earliest: float) -> float | None:
+        """When the first sound is in the raw capture, in seconds from its
+        start: the first sample above SOUND within SOUND_WINDOW of `earliest`,
+        or None when it is silent that long (the caller keeps its own guess)."""
+        frame = 8  # two 32-bit floats
+        first = int(earliest * RATE)
+        with capture.open("rb") as f:
+            f.seek(first * frame)
+            data = f.read(int(SOUND_WINDOW * RATE) * frame)
+        samples = array.array("f")
+        samples.frombytes(data[: len(data) // 4 * 4])
+        if sys.byteorder == "big":
+            samples.byteswap()  # parec writes little-endian
+        for i, value in enumerate(samples):
+            if abs(value) > SOUND:
+                return (first + i // 2) / RATE
+        return None
 
     @staticmethod
     def _warn_if_lossy(lines: list[str]) -> None:

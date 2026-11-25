@@ -35,6 +35,9 @@ the same things, in the same sections.
   and login does downloads and playlists
 - change: every default is the highest quality there is; to go lower, use
   `[conversion]` (it no longer downsamples by default)
+- feat: every track gets the same ReplayGain (measured at -18 LUFS, as Qobuz gives it),
+  for Deezer and Spotify that had none, and for Tidal, whose value was one for the
+  whole album
 - feat: every login says whether it is Free or Paid and which files it gives (FLAC,
   MP3, AAC), on its card and in `streamrip verify`
 - feat: the Accounts page logs in to Qobuz with a short script you run on its web

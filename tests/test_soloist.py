@@ -31,6 +31,7 @@ from streamrip.config import Config
 from streamrip.exceptions import AuthenticationError, NonStreamableError
 from streamrip.media import track as track_module
 from streamrip.media.track import Track
+from streamrip.metadata.album import AlbumMetadata
 from streamrip.rip import prompter as prompter_module
 from streamrip.rip.prompter import SpotifyPrompter
 
@@ -121,6 +122,21 @@ async def test_the_audio_is_spotifys_own_when_the_backend_is_on(make_client):
     assert (downloadable.extension, downloadable.duration_ms) == ("flac", 135_000)
     assert client._tracks[TRACK]["album"]["container"] == "FLAC"
     client.matcher.find.assert_not_awaited()
+
+
+async def test_an_album_from_spotifys_own_audio_says_what_its_files_are(make_client):
+    client = make_client()
+    client._soloist_backend = FakeBackend()
+    album = {"id": "1", "name": "Album", "tracks": [], **client._audio()}
+
+    meta = AlbumMetadata.from_spotify(album).at_quality(
+        0, "spotify"
+    )  # no tier lowers it
+
+    folder = meta.format_folder_path(
+        "{title} [{container}] [{bit_depth}B-{sampling_rate}kHz]"
+    )
+    assert folder.name == "Album [FLAC] [24B-44.1kHz]"
 
 
 async def test_an_album_is_named_flac_when_spotifys_own_audio_is_on(make_client):
@@ -252,6 +268,34 @@ def test_the_encode_writes_a_24_bit_flac_at_spotifys_rate(tmp_path):
     info = FLAC(out).info
     assert (info.bits_per_sample, info.sample_rate) == (24, 44100)
     assert info.length == pytest.approx(2.0, abs=0.2)
+
+
+def test_the_track_is_cut_at_its_first_sound_not_at_the_line_that_says_it_plays(
+    tmp_path,
+):
+    import array
+
+    capture = tmp_path / "capture.raw"
+    # 1 s of the sink's silence, then a sound, in stereo 32-bit floats.
+    silence = array.array("f", [0.0] * (2 * soloist.RATE))
+    sound = array.array("f", [0.5, 0.5] * 100)
+    capture.write_bytes(silence.tobytes() + sound.tobytes())
+
+    found = SoloistBackend._first_sound(capture, earliest=0.5)
+
+    assert found == pytest.approx(1.0, abs=1 / soloist.RATE)
+    assert (
+        SoloistBackend._first_sound(capture, earliest=0.0) == found
+    )  # the same from before
+
+
+def test_a_silence_that_lasts_longer_than_the_search_leaves_the_cut_alone(tmp_path):
+    import array
+
+    capture = tmp_path / "capture.raw"
+    capture.write_bytes(array.array("f", [0.0] * (2 * 4 * soloist.RATE)).tobytes())
+
+    assert SoloistBackend._first_sound(capture, earliest=0.0) is None
 
 
 def test_the_prefs_ask_for_lossless_without_normalization(monkeypatch, tmp_path):

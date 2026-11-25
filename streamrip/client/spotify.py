@@ -455,6 +455,14 @@ class SpotifyClient(Client):
             return "FLAC"
         return "MP3" if self.config.audio_format.lower() == "mp3" else "AAC"
 
+    def _audio(self) -> dict:
+        """What an album's files are, for its folder name and labels: the
+        container, and for Spotify's own audio the 24-bit/44.1 kHz it is
+        recorded and saved as (the YouTube download is lossy: no bits to name)."""
+        if self.soloist_backend is None:
+            return {"container": self.container}
+        return {"container": "FLAC", "bit_depth": 24, "sampling_rate": 44.1}
+
     # --- Spotify's own audio (the `spotify` backend) ---------------------------
 
     @property
@@ -670,7 +678,7 @@ class SpotifyClient(Client):
 
     def _remember(self, track: dict) -> dict:
         """Keep a track response for reuse, with the container of its audio."""
-        track.setdefault("album", {})["container"] = self.container
+        track.setdefault("album", {}).update(self._audio())
         self._tracks[track["id"]] = track
         return track
 
@@ -687,7 +695,7 @@ class SpotifyClient(Client):
             async for page in self._pages(next_url):
                 tracks.extend(page.get("items") or [])
         album["tracks"] = [t for t in tracks if t and t.get("id")]
-        album["container"] = self.container
+        album.update(self._audio())
         return album
 
     async def _get_playlist(self, item_id: str) -> dict:

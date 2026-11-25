@@ -2,6 +2,7 @@
 
 import asyncio
 import functools
+import re
 import shutil
 lazy from pathlib import Path
 
@@ -85,3 +86,34 @@ async def run_ffmpeg(
             await proc.wait()
         output.unlink(missing_ok=True)
         raise
+
+
+async def measure_replaygain(path: Path) -> tuple[float, float] | None:
+    """(gain in dB, peak as a fraction of full scale) of a track, the way
+    ReplayGain 2 says: the gain that brings its loudness to -18 LUFS. None
+    when ffmpeg could not measure it."""
+    proc = await asyncio.create_subprocess_exec(
+        require_ffmpeg(),
+        "-nostdin",
+        "-hide_banner",
+        "-nostats",
+        "-i",
+        str(path),
+        "-vn",
+        "-af",
+        "ebur128=peak=true",
+        "-f",
+        "null",
+        "-",
+        stdin=asyncio.subprocess.DEVNULL,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _, stderr = await proc.communicate()
+    summary = stderr.decode(errors="replace")
+    summary = summary[summary.rfind("Summary:") :]
+    loudness = re.search(r"I:\s+(-?[\d.]+) LUFS", summary)
+    peak = re.search(r"Peak:\s+(-?[\d.]+) dBFS", summary)
+    if proc.returncode or not (loudness and peak):
+        return None
+    return -18.0 - float(loudness[1]), 10 ** (float(peak[1]) / 20)

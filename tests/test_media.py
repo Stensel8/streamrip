@@ -3,6 +3,7 @@
 import asyncio
 import json
 import shutil
+import subprocess
 from contextlib import asynccontextmanager
 from itertools import starmap
 from pathlib import Path
@@ -43,6 +44,7 @@ from streamrip.metadata import (
     TrackInfo,
     TrackMetadata,
 )
+from streamrip.utils.ffmpeg_utils import measure_replaygain
 
 FIXTURES = {
     "flac": "tests/silence.flac",
@@ -1279,3 +1281,79 @@ async def test_a_saved_cover_that_fails_leaves_the_embedded_one(tmp_path, monkey
     assert saved is None
     assert embedded.read_bytes() == b"image"
     artwork.remove_artwork_tempdirs()
+
+
+async def test_the_replaygain_of_a_track_is_measured_whatever_its_source_said(
+    tmp_path, monkeypatch
+):
+    # Tidal says -11.66 dB for every track of an album, the quiet intro too.
+    track = _make_track(tmp_path, "flac")
+    track.meta.replaygain_gain, track.meta.replaygain_peak = -11.66, 1.0
+    monkeypatch.setattr(
+        "streamrip.media.track.measure_replaygain", AsyncMock(return_value=(-7.5, 1.1))
+    )
+
+    await track._fill_replaygain()
+
+    assert (track.meta.replaygain_gain, track.meta.replaygain_peak) == (-7.5, 1.1)
+
+
+async def test_the_replaygain_a_source_gave_stays_when_it_cannot_be_measured(
+    tmp_path, monkeypatch
+):
+    track = _make_track(tmp_path, "flac")
+    track.meta.replaygain_gain, track.meta.replaygain_peak = -11.66, 1.0
+    monkeypatch.setattr(
+        "streamrip.media.track.measure_replaygain", AsyncMock(return_value=None)
+    )
+
+    await track._fill_replaygain()
+
+    assert (track.meta.replaygain_gain, track.meta.replaygain_peak) == (-11.66, 1.0)
+
+
+async def test_replaygain_is_not_measured_for_a_tag_that_is_left_out(
+    tmp_path, monkeypatch
+):
+    track = _make_track(tmp_path, "flac")
+    track.config.session.metadata.exclude = [
+        "replaygain_track_gain",
+        "replaygain_track_peak",
+    ]
+    measured = AsyncMock()
+    monkeypatch.setattr("streamrip.media.track.measure_replaygain", measured)
+
+    await track._fill_replaygain()
+
+    measured.assert_not_awaited()
+
+
+def _sine(path: Path, amplitude: float):
+    subprocess.run(
+        [
+            shutil.which("ffmpeg"),
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            f"sine=frequency=440:duration=3,volume={amplitude}",
+            "-ac",
+            "2",
+            str(path),
+        ],
+        check=True,
+    )
+
+
+async def test_replaygain_brings_a_track_to_minus_18_lufs(tmp_path):
+    if shutil.which("ffmpeg") is None:
+        pytest.skip("ffmpeg is not available")
+    gains = {}
+    for name, amplitude in {"quiet": 0.05, "loud": 0.5}.items():
+        _sine(tmp_path / f"{name}.flac", amplitude)
+        gains[name] = await measure_replaygain(tmp_path / f"{name}.flac")
+
+    # Ten times the amplitude is 20 dB: the gain falls by as much, the peak is ten times as high.
+    assert gains["quiet"][0] - gains["loud"][0] == pytest.approx(20.0, abs=0.5)
+    assert gains["loud"][1] / gains["quiet"][1] == pytest.approx(10.0, rel=0.05)

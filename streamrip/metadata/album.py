@@ -152,8 +152,8 @@ class AlbumMetadata:
         the service has: the folder name and the labels are about the files.
         """
         info = self.info
-        if not (info.bit_depth and info.sampling_rate):
-            return self
+        if source == "spotify" or not (info.bit_depth and info.sampling_rate):
+            return self  # Spotify has one quality: no tier lowers it
         if tier < 2:
             info.container = "AAC" if source == "tidal" else "MP3"
             info.bit_depth = info.sampling_rate = None
@@ -320,8 +320,8 @@ class AlbumMetadata:
         """Build album metadata from a Spotify album, full or as a track lists it.
 
         Spotify gives no bit depth or sampling rate (the audio is Spotify's own,
-        recorded, or a YouTube Music match); SpotifyClient says which container
-        it ends up in.
+        recorded, or a YouTube Music match); SpotifyClient says what the files
+        are: their container, and for its own audio their bits and rate.
         """
         date = resp.get("release_date")
         artists = [a["name"] for a in resp.get("artists") or [] if a.get("name")]
@@ -332,6 +332,8 @@ class AlbumMetadata:
             quality=1,
             container=resp.get("container") or "AAC",
             label=resp.get("label"),
+            bit_depth=resp.get("bit_depth"),
+            sampling_rate=resp.get("sampling_rate"),
         )
         title = (resp.get("name") or "Unknown Album").strip()
         return cls(

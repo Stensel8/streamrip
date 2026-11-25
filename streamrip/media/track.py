@@ -25,6 +25,7 @@ from ..metadata import AlbumMetadata, TrackMetadata, tag_file
 from ..metadata.tagger import TAGGABLE_EXTENSIONS
 from ..metadata.util import format_quality
 from ..progress import add_title, get_progress_callback, remove_title
+from ..utils.ffmpeg_utils import measure_replaygain
 from .artwork import download_artwork
 from .media import Media, Pending, PendingItem
 from .semaphore import global_download_semaphore
@@ -389,6 +390,7 @@ class Track(Media):
 
         exclude = self.config.session.metadata.exclude
         await self._look_up_lyrics()
+        await self._fill_replaygain()
         await tag_file(self.download_path, self.meta, self.cover_path, exclude)
         if self.config.session.conversion.enabled:
             try:
@@ -480,6 +482,23 @@ class Track(Media):
         if plain or not self.config.session.downloads.save_lrc:
             return
         self._sibling_path("lrc").write_text(self.meta.lyrics)
+
+    async def _fill_replaygain(self):
+        """The ReplayGain of the track, measured here for every source alike
+        (-18 LUFS, as Qobuz gives it): Deezer, Spotify and SoundCloud give none,
+        and Tidal gives one value for a whole album. What the source gave stays
+        when ffmpeg cannot measure."""
+        meta = self.meta
+        wanted = {"replaygain_track_gain", "replaygain_track_peak"}
+        if wanted <= set(self.config.session.metadata.exclude):
+            return
+        try:
+            measured = await measure_replaygain(self.download_path)
+        except Exception as e:  # no ReplayGain is no reason to lose the track
+            logger.debug("Could not measure the ReplayGain of '%s': %s", meta.title, e)
+            return
+        if measured is not None:
+            meta.replaygain_gain, meta.replaygain_peak = measured
 
     async def _convert(self):
         c = self.config.session.conversion
