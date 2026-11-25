@@ -13,7 +13,7 @@ from .. import progress
 from ..client import Client, new_session
 from ..client.audio_match import MatchTrack, rank, score, simplify_title
 from ..console import console
-from ..filepath_utils import clean_filename
+from ..filepath_utils import clean_filename, restricted
 from ..metadata import (
     AlbumMetadata,
     PlaylistMetadata,
@@ -51,7 +51,11 @@ def _playlist_folder(config: Config, name: str) -> Path:
     resolve outside the downloads root.
     """
     c = config.session
-    folder = clean_filename(name, c.filepaths.restrict_characters)
+    folder = (
+        restricted(name, "Playlist")
+        if c.filepaths.restrict_characters
+        else clean_filename(name)
+    )
     if folder in {"", ".", ".."}:
         raise ValueError(f"Invalid playlist folder: {name!r}")
     root = Path(c.downloads.folder).resolve()

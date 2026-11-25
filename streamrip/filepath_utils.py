@@ -67,6 +67,14 @@ def clean_filename(fn: str, restrict: bool = False) -> str:
     return truncate_str(name.lstrip(".") or name)
 
 
+def restricted(value: str, fallback: str) -> str:
+    """`value` as restrict_characters leaves it, or `fallback` when that leaves no
+    letter or digit of it (a name in another script): names that empty would
+    put albums in one folder and their tracks over each other."""
+    kept = clean_filename(value, restrict=True)
+    return kept if any(c.isalnum() for c in kept) or not value.strip() else fallback
+
+
 def clean_filepath(fn: str, restrict: bool = False) -> Path:
     """Clean a relative folder path made from a template and metadata.
 

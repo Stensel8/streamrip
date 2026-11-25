@@ -1,6 +1,7 @@
 import functools
 import html
 import re
+from collections import Counter
 
 SOURCES = frozenset({"qobuz", "tidal", "deezer", "soundcloud", "spotify"})
 
@@ -14,6 +15,27 @@ def get_album_track_ids(source: str, resp) -> list[str]:
     if source == "qobuz":
         tracklist = tracklist["items"]
     return [track["id"] for track in tracklist]
+
+
+# Where each source puts a track's disc: Qobuz, Tidal, Deezer, Spotify.
+_DISC_KEYS = ("media_number", "volumeNumber", "disk_number", "disc_number")
+
+
+def disc_track_totals(resp: dict) -> frozendict[int, int]:
+    """How many tracks each disc of an album has, from the tracks its response
+    lists; empty when it lists none, or one without its disc."""
+    tracks = resp.get("tracks")
+    if isinstance(tracks, dict):  # Qobuz, when it still inlines them
+        tracks = tracks.get("items")
+    discs = [
+        next((t[k] for k in _DISC_KEYS if t.get(k)), None)
+        if isinstance(t, dict)
+        else None
+        for t in tracks or []
+    ]
+    if not discs or None in discs:
+        return frozendict()
+    return frozendict(Counter(map(int, discs)))
 
 
 def deezer_artists(resp: dict) -> list[str]:

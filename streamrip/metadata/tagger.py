@@ -109,13 +109,19 @@ def _tag_values(meta: TrackMetadata) -> dict:
         # "Unknown" names a folder; it is no year.
         "year": None if album.year == "Unknown" else album.year,
         "description": album.description,
-        "genre": album.get_genres(),
+        "genre": _names(album.genre, album.get_genres()),
         "lyrics": meta.lyrics,
         "copyright": album.get_copyright(),
         "compilation": album.compilation,
         "tracknumber": meta.tracknumber,
         "discnumber": meta.discnumber,
-        "tracktotal": _total(album.tracktotal, meta.tracknumber),
+        # On a disc of several, its own count (the number starts over on each).
+        "tracktotal": _total(
+            album.disc_tracktotals.get(meta.discnumber)
+            if (album.disctotal or 1) > 1
+            else album.tracktotal,
+            meta.tracknumber,
+        ),
         "disctotal": _total(album.disctotal, meta.discnumber),
         "date": album.date,
         "isrc": meta.isrc,

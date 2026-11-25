@@ -540,7 +540,7 @@ class Track(Media):
         c = self.config.session.filepaths
         formatter = c.track_format
         track_path = clean_filename(
-            self.meta.format_track_path(formatter),
+            self.meta.format_track_path(formatter, c.restrict_characters),
             restrict=c.restrict_characters,
         )
         if c.truncate_to > 0 and len(track_path) > c.truncate_to:
@@ -612,7 +612,9 @@ def album_folder(config: Config, source: str, album: AlbumMetadata) -> Path:
         # nothing for ensure_inside to validate; `parent` (root, or
         # root/Source) is already known-safe.
         return parent
-    folder = album.format_folder_path(c.filepaths.folder_format)
+    folder = album.format_folder_path(
+        c.filepaths.folder_format, c.filepaths.restrict_characters
+    )
     return ensure_inside(
         root,
         parent / clean_filepath(folder.as_posix(), c.filepaths.restrict_characters),

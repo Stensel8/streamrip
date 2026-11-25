@@ -2,6 +2,7 @@ import logging
 import re
 from dataclasses import dataclass
 
+from ..filepath_utils import restricted
 from .util import (
     SOURCES,
     deezer_artists,
@@ -189,20 +190,24 @@ class TrackMetadata:
             raise ValueError(f"Invalid source {source}")
         return getattr(cls, f"from_{source}")(album, resp)
 
-    def format_track_path(self, format_string: str) -> str:
+    def format_track_path(self, format_string: str, restrict: bool = False) -> str:
         # Available keys: "id", "tracknumber", "discnumber", "artist", "album",
         # "albumartist", "composer", "title", "explicit", "albumcomposer"
         none_text = "Unknown"
+
+        def name(value: str, fallback: str = none_text) -> str:
+            return restricted(value, fallback) if restrict else value
+
         info = {
             "id": self.info.id,
-            "title": self.title,
+            "title": name(self.title, self.info.id),  # the id: one file per track
             "tracknumber": self.tracknumber,
             "discnumber": self.discnumber,
-            "artist": self.artist,
-            "album": self.album.album,
+            "artist": name(self.artist),
+            "album": name(self.album.album),
             # Alias requested upstream (PR #826).
-            "albumtitle": self.album.album,
-            "albumartist": self.album.albumartist,
+            "albumtitle": name(self.album.album),
+            "albumartist": name(self.album.albumartist),
             "albumcomposer": self.album.albumcomposer or none_text,
             "composer": self.composer or none_text,
             "explicit": " (Explicit) " if self.info.explicit else "",

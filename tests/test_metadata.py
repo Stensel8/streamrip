@@ -23,7 +23,12 @@ from streamrip.metadata import (
     tag_file,
 )
 from streamrip.metadata.search_results import SearchResults
-from streamrip.metadata.util import edition_of, gtin13, qobuz_artists
+from streamrip.metadata.util import (
+    disc_track_totals,
+    edition_of,
+    gtin13,
+    qobuz_artists,
+)
 from streamrip.rip import cover_preview
 
 TESTS = Path(__file__).parent
@@ -142,6 +147,22 @@ def test_a_qobuz_version_is_added_unless_the_title_says_it(title, version, expec
     album = AlbumMetadata.from_qobuz(QOBUZ_TRACK["album"])
     track = QOBUZ_TRACK | {"title": title, "version": version}
     assert TrackMetadata.from_qobuz(album, track).title == expected
+
+
+@pytest.mark.parametrize(
+    ("resp", "totals"),
+    [
+        (
+            {"tracks": [{"volumeNumber": 1}, {"volumeNumber": 2}, {"volumeNumber": 2}]},
+            {1: 1, 2: 2},
+        ),
+        ({"tracks": {"items": [{"media_number": 1}]}}, {1: 1}),
+        ({"track_ids": ["1", "2"]}, {}),  # Qobuz, which no longer lists its tracks
+        ({"tracks": [{"id": 1}]}, {}),  # a track without its disc
+    ],
+)
+def test_the_tracks_of_each_disc_are_counted(resp, totals):
+    assert disc_track_totals(resp) == totals
 
 
 def test_qobuz_track():
@@ -592,8 +613,9 @@ def sample_metadata() -> TrackMetadata:
             "1999",
             ["rock", "pop"],
             Covers(),
-            tracktotal=14,
+            tracktotal=40,  # the whole album's; disc 1 has 14
             disctotal=3,
+            disc_tracktotals=frozendict({1: 14, 2: 13, 3: 13}),
             albumcomposer="testalbumcomposer",
             copyright="(c) stuff (p) other stuff",
             date="1998-02-13",
@@ -616,7 +638,7 @@ async def test_tag_flac_no_cover(sample_metadata, flac_path):
     assert file["artist"][0] == "testartist"
     assert file["albumartist"][0] == "testalbumartist"
     assert file["year"][0] == "1999"
-    assert file["genre"][0] == "rock, pop"
+    assert file["genre"] == ["rock", "pop"]  # several values, as artists
     assert file["tracknumber"][0] == "03"
     assert file["discnumber"][0] == "01"
     assert file["copyright"][0] == "© stuff ℗ other stuff"

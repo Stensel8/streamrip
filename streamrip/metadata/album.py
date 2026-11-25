@@ -3,11 +3,12 @@ import re
 from dataclasses import dataclass
 lazy from pathlib import Path
 
-from ..filepath_utils import clean_filename, clean_filepath
+from ..filepath_utils import clean_filename, clean_filepath, restricted
 from .covers import Covers
 from .util import (
     SOURCES,
     deezer_artists,
+    disc_track_totals,
     edition_of,
     get_quality_id,
     gtin13,
@@ -100,6 +101,9 @@ class AlbumMetadata:
     barcode: str | None = None
     # album, ep, single or compilation
     releasetype: str | None = None
+    # How many tracks each disc has, where the source lists the album's tracks
+    # with their disc: the TRACKTOTAL of a disc, not of the whole album.
+    disc_tracktotals: frozendict[int, int] = frozendict()
 
     def get_genres(self) -> str:
         return ", ".join(self.genre)
@@ -115,7 +119,7 @@ class AlbumMetadata:
         phonographic = re.sub(r"(?i)\(P\)", PHON_COPYRIGHT, self.copyright)
         return re.sub(r"(?i)\(C\)", COPYRIGHT, phonographic)
 
-    def format_folder_path(self, formatter: str) -> Path:
+    def format_folder_path(self, formatter: str, restrict: bool = False) -> Path:
         """Render `formatter` into this album's folder name."""
         # Available keys: "albumartist", "title", "year", "bit_depth", "sampling_rate",
         # "id", "albumcomposer", "container", "tracktotal", and "version".
@@ -132,17 +136,21 @@ class AlbumMetadata:
             formatter = _QUALITY_BRACKET.sub("", formatter)
 
         none_str = "Unknown"
+
+        def name(value: str, fallback: str = none_str) -> str:
+            return restricted(value, fallback) if restrict else clean_filename(value)
+
         info: dict[str, str | int | float] = {
-            "albumartist": clean_filename(self.albumartist),
-            "albumcomposer": clean_filename(self.albumcomposer or "") or none_str,
+            "albumartist": name(self.albumartist),
+            "albumcomposer": name(self.albumcomposer or "") or none_str,
             "bit_depth": self.info.bit_depth or none_str,
             "id": self.info.id,
             "sampling_rate": self.info.sampling_rate or none_str,
-            "title": clean_filename(self.album),
+            "title": name(self.album, self.info.id),  # the id: one folder per album
             "year": self.year,
             "container": self.info.container,
             "tracktotal": self.tracktotal,
-            "version": clean_filename(self.version or "") or none_str,
+            "version": name(self.version or "") or none_str,
         }
 
         return clean_filepath(formatter.format(**info))
@@ -454,4 +462,7 @@ class AlbumMetadata:
     def from_album_resp(cls, resp: dict, source: str) -> AlbumMetadata | None:
         if source not in SOURCES:
             raise ValueError(f"Invalid source {source}")
-        return getattr(cls, f"from_{source}")(resp)
+        meta = getattr(cls, f"from_{source}")(resp)
+        if meta is not None:
+            meta.disc_tracktotals = disc_track_totals(resp)
+        return meta

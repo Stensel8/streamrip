@@ -117,17 +117,22 @@ def test_album_folder(settings, artist, expected):
 
 
 @pytest.mark.parametrize(
-    ("restrict", "folder"),
-    [(False, "/music/Björk - Homogénic"), (True, "/music/Bjork - Homogenic")],
+    ("restrict", "artist", "title", "folder"),
+    [
+        (False, "Björk", "Homogénic", "/music/Björk - Homogénic"),
+        (True, "Björk", "Homogénic", "/music/Bjork - Homogenic"),
+        # Nothing left of another script: the album's id keeps albums apart.
+        (True, "ДДТ", "Мы разбиваемся", "/music/Unknown - 1"),
+    ],
 )
-def test_album_folder_follows_restrict_characters(restrict, folder):
+def test_album_folder_follows_restrict_characters(restrict, artist, title, folder):
     # Singles built their album folder without it, so with it on they landed
     # beside their album instead of in it.
     config = _config()
     config.session.filepaths.folder_format = "{albumartist} - {title}"
     config.session.filepaths.restrict_characters = restrict
 
-    assert album_folder(config, "qobuz", _album("Björk", "Homogénic")) == Path(folder)
+    assert album_folder(config, "qobuz", _album(artist, title)) == Path(folder)
 
 
 @pytest.mark.parametrize(
