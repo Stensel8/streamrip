@@ -47,9 +47,15 @@ To build the image yourself from this checkout, run `podman build -t streamrip .
 
 ## Logging in
 
-A container has no screen and your browser can't reach it, so Qobuz and Deezer
-ask for the login by hand, and for Spotify you paste the address. See
-[Logging in](logging-in.md).
+A container has no screen and your browser can't reach it. Qobuz logs in with the
+short script on the Accounts page of [the web interface](#the-web-interface) (it
+works through the published port) or by hand, Deezer by hand, and for Spotify and
+Tidal you paste the address. See [Logging in](logging-in.md).
+
+Spotify's own audio records from a sound server, which a container does not have,
+so there a Spotify track comes from YouTube Music ([Spotify](spotify.md)). Everything
+else works: downloads, tags, ReplayGain, `[conversion]` to every codec, YouTube Music,
+and the web interface.
 
 ## The web interface
 
