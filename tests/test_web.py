@@ -584,6 +584,17 @@ def test_a_pairing_that_fails_keeps_no_key(client, services, monkeypatch):
     assert not Config(services.config.path).file.spotify.soloist_api_key
 
 
+def test_the_playlist_page_offers_the_services_that_are_logged_in(client, services):
+    login = {"client_id": "id", "access_token": "a", "refresh_token": "r"}
+    services.config.update_logins("spotify", login)
+
+    page = client.get("/playlists").get_data(as_text=True)
+
+    # A select of the services to move playlists between, not of the sources.
+    assert page.count('<option value="spotify">Spotify</option>') >= 3
+    assert '<option value="tidal">Tidal</option>' not in page  # not logged in
+
+
 def test_the_accounts_page_says_what_each_login_is_and_gives(client, monkeypatch):
     from streamrip.verify import Result
 

@@ -22,10 +22,10 @@
 </select>
 {% endmacro %}
 
-{# A select with the playlist services that are logged in. #}
+{# A select with the playlist services that are logged in (the page lists only those). #}
 {% macro service_select(id, name, accounts) %}
 <select id="{{ id }}" name="{{ name }}" required>
   <option value="">Choose…</option>
-  {% for a in accounts if a.connected %}<option value="{{ a.name }}">{{ a.label }}</option>{% endfor %}
+  {% for a in accounts %}<option value="{{ a.name }}">{{ a.label }}</option>{% endfor %}
 </select>
 {% endmacro %}
