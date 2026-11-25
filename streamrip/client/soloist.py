@@ -78,6 +78,11 @@ SINK_SPEC = f"float32le 2ch {RATE}Hz"
 PREFS = {"audio.play_bitrate_enumeration": "5", "audio.normalize_v2": "false"}
 # Soloist's exit code for a build past its 90 days.
 EXPIRED_BUILD = 10
+# What Soloist says when another one has the data dir: it takes one session,
+# and Spotify plays on one device at a time. Such a run waits its turn.
+BUSY = "another session is running"
+BUSY_WAIT = 15.0
+BUSY_TRIES = 20
 UNSUPPORTED_PLATFORM = (
     "Spotify's own audio is not supported on this platform yet; "
     "the audio comes from YouTube Music"
@@ -99,6 +104,10 @@ _ANSI = re.compile(r"\x1b\[[0-9;]*m")
 
 class _ExpiredBuildError(Exception):
     """The build has outlived its 90 days: a fresh one, and one more try."""
+
+
+class _BusyError(Exception):
+    """Another Soloist has the data dir: wait, and try again."""
 
 
 def build_archive() -> str | None:
@@ -222,6 +231,10 @@ class SoloistBackend:
         self.refused: set[str] = set()
         # One machine at a time may download a build.
         self._binary_lock = threading.Lock()
+        # One track at a time is played and recorded: Spotify plays on one
+        # device at a time, Soloist takes one session, and the recordings
+        # share one sink. The tracks of an album wait here for their turn.
+        self._play_lock = threading.Lock()
 
     @property
     def supported(self) -> bool:
@@ -416,7 +429,8 @@ class SoloistBackend:
     ) -> None:
         """Play `uri` with Soloist and record it as FLAC at out_path.
 
-        Blocking, worker thread. Progress is the account's seconds against
+        Blocking, worker thread; one track is played at a time, and the
+        others wait. Progress is the account's seconds against
         the FLAC's estimated size. A failure is a NonStreamableError (the
         youtube backend is the fallback), and the track is refused for the
         rest of the process; the one exception is an expired build (exit
@@ -424,9 +438,28 @@ class SoloistBackend:
         """
         if not self.supported:
             raise NonStreamableError(UNSUPPORTED_PLATFORM)
-        binary = self.ensure_binary()
-        self.ensure_sink()
-        self.set_prefs()
+        with self._play_lock:
+            binary = self.ensure_binary()
+            self.ensure_sink()
+            self.set_prefs()
+            for _ in range(BUSY_TRIES):
+                try:
+                    self._play_with_fresh_build(
+                        binary, uri, duration_s, out_path, report
+                    )
+                except _BusyError:
+                    logger.info("Soloist is busy with another session: waiting")
+                    time.sleep(BUSY_WAIT)
+                else:
+                    return
+        # Not the track's fault: it is not refused, but this one goes to the
+        # youtube backend.
+        raise NonStreamableError("Soloist stayed busy with another session")
+
+    def _play_with_fresh_build(
+        self, binary: Path, uri: str, duration_s: float, out_path: Path, report
+    ) -> None:
+        """One play, and one more with a fresh build when this one expired."""
         try:
             self._play_once(binary, uri, duration_s, out_path, report)
         except _ExpiredBuildError:
@@ -505,6 +538,8 @@ class SoloistBackend:
             if rc == EXPIRED_BUILD:
                 # The thing that refused is the build, not the track.
                 raise _ExpiredBuildError
+            if rc != 0 and any(BUSY in line for line in lines):
+                raise _BusyError
             if rc != 0:
                 raise self._refuse(
                     uri,

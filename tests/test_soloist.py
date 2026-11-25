@@ -1,12 +1,14 @@
 """Spotify's own audio with Soloist: playing and recording a track, the
 pairing, and the fallback to YouTube Music when Spotify will not play it."""
 
+import asyncio
 import shutil
 import subprocess
 import sys
 import time
 from contextlib import nullcontext
 from pathlib import Path
+from time import sleep as real_sleep
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -334,6 +336,52 @@ def test_a_track_spotify_did_not_play_as_flac_is_said(play, caplog):
     play(process([*PLAYING_LINES, "08:40:36.225 I [f:347 ] codec: vorbis"]))
 
     assert "played this track as vorbis" in caplog.text
+
+
+async def test_the_tracks_of_an_album_are_played_one_at_a_time(backend, tmp_path):
+    # Five at once (max_connections) made four of them fail with "another session
+    # is running", and the failures went to YouTube Music.
+    playing = most = 0
+
+    def play_once(*_):
+        nonlocal playing, most
+        playing += 1
+        most = max(most, playing)
+        real_sleep(0.05)  # the fixture's time.sleep does nothing
+        playing -= 1
+
+    backend._play_once = play_once
+    tracks = [SoloistDownloadable(backend, f"id{i}", 1000) for i in range(5)]
+
+    await asyncio.gather(
+        *(
+            t.download(tmp_path / f"{i}.flac", lambda n: None)
+            for i, t in enumerate(tracks)
+        )
+    )
+
+    assert most == 1
+
+
+BUSY_LINES = ['Error: another session is running for data directory "/x". Stop it.']
+
+
+def test_a_busy_soloist_is_waited_for_not_refused(play, backend):
+    play(process(BUSY_LINES, rc=1), process(PLAYING_LINES))
+
+    assert backend.calls == ["encode", "check"]
+    assert not backend.refused
+
+
+def test_a_soloist_that_stays_busy_gives_the_track_to_youtube_not_a_refusal(
+    play, backend, monkeypatch
+):
+    monkeypatch.setattr(soloist, "BUSY_TRIES", 2)
+
+    with pytest.raises(NonStreamableError, match="stayed busy"):
+        play(process(BUSY_LINES, rc=1), process(BUSY_LINES, rc=1))
+
+    assert not backend.refused
 
 
 def test_an_expired_build_is_refreshed_and_retried_once(play, backend):
