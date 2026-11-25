@@ -1,0 +1,64 @@
+# Builds and tests the image on amd64 and on arm64 (the pi) for every push to
+# dev and every pull request that changes what goes into it; releases are
+# container.yml. The pi is at home: a pull request reaches it only from a branch
+# of this repository (Patchbot's included), never from someone else's fork.
+name: Image
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - Containerfile
+      - .dockerignore
+      - .forgejo/workflows/image.yml
+      - checks/container_smoke.py
+      - pyproject.toml
+      - uv.lock
+      - README.md
+      - LICENSE
+      - streamrip/**
+  pull_request:
+    paths:
+      - Containerfile
+      - .dockerignore
+      - .forgejo/workflows/image.yml
+      - checks/container_smoke.py
+      - pyproject.toml
+      - uv.lock
+      - README.md
+      - LICENSE
+      - streamrip/**
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: https://opencommit.eu/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - shell: bash
+        run: |
+          set -euo pipefail
+          trap 'docker image rm --force streamrip:ci >/dev/null 2>&1 || true' EXIT
+          docker buildx build --load --file Containerfile --tag streamrip:ci .
+          docker run --rm streamrip:ci --version
+          docker run --rm -i --entrypoint /opt/streamrip/bin/python streamrip:ci - < checks/container_smoke.py
+
+  smoke-arm64:
+    if: >-
+      github.event_name == 'push'
+      || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: pi
+    timeout-minutes: 45
+    steps:
+      - uses: https://opencommit.eu/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - shell: bash
+        run: |
+          set -euo pipefail
+          trap 'docker image rm --force streamrip:ci >/dev/null 2>&1 || true' EXIT
+          docker buildx build --load --file Containerfile --tag streamrip:ci .
+          docker run --rm streamrip:ci --version
+          docker run --rm -i --entrypoint /opt/streamrip/bin/python streamrip:ci - < checks/container_smoke.py

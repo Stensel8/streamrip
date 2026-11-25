@@ -1,9 +1,8 @@
-# The image for opencommit.eu/stensel8/streamrip. A pull request only builds and
-# tests it. A v* tag builds amd64 on the shared runner and arm64 on the pi, then
-# joins them under the version, its minor and `latest`. "Run workflow" with an
-# existing tag publishes that version again; without a tag it builds and tests
-# both, and publishes nothing. The pi is at home: a pull request reaches it only from a branch of
-# this repository (Patchbot's included), never from someone else's fork.
+# The image for opencommit.eu/stensel8/streamrip. A v* tag builds amd64 on the
+# shared runner and arm64 on the pi, tests both, then joins them under the
+# version, its minor and `latest`. "Run workflow" with an existing tag publishes
+# that version again; without a tag it builds and tests both, and publishes
+# nothing. Pushes and pull requests test the image in image.yml.
 #
 # Pushing needs the secret REGISTRY_TOKEN: a token of Stensel8 with write:package.
 name: Container
@@ -11,17 +10,6 @@ name: Container
 on:
   push:
     tags: ["v*"]
-  pull_request:
-    paths:
-      - Containerfile
-      - .dockerignore
-      - .forgejo/workflows/container.yml
-      - checks/container_smoke.py
-      - pyproject.toml
-      - uv.lock
-      - README.md
-      - LICENSE
-      - streamrip/**
   workflow_dispatch:
     inputs:
       tag:
@@ -36,38 +24,7 @@ env:
   BUILDKIT: moby/buildkit:v0.35.1@sha256:baf6138eb8c37644800c7c913fba051e840ebb9ba13eaf92d92ef9a1712d0b4c
 
 jobs:
-  smoke:
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: https://opencommit.eu/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - run: |
-          docker buildx build --load --file Containerfile --tag streamrip:ci .
-          docker run --rm streamrip:ci --version
-          docker run --rm -i --entrypoint /opt/streamrip/bin/python streamrip:ci - < checks/container_smoke.py
-          docker image rm streamrip:ci
-
-  smoke-arm64:
-    if: >-
-      github.event_name == 'pull_request'
-      && github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: pi
-    timeout-minutes: 45
-    steps:
-      - uses: https://opencommit.eu/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - run: |
-          docker buildx build --load --file Containerfile --tag streamrip:ci .
-          docker run --rm streamrip:ci --version
-          docker run --rm -i --entrypoint /opt/streamrip/bin/python streamrip:ci - < checks/container_smoke.py
-          docker image rm streamrip:ci
-
   build:
-    if: github.event_name != 'pull_request'
     strategy:
       fail-fast: false
       matrix:

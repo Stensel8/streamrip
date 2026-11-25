@@ -30,6 +30,7 @@ from streamrip.metadata.util import (
     qobuz_artists,
 )
 from streamrip.rip import cover_preview
+from streamrip.utils.ffmpeg_utils import find_ffmpeg
 
 TESTS = Path(__file__).parent
 TEST_FLAC = TESTS / "silence.flac"
@@ -707,9 +708,11 @@ async def test_tag_m4a(sample_metadata, tmp_path):
 
 @pytest.fixture
 def opus_path(tmp_path) -> Path:
+    if (ffmpeg := find_ffmpeg()) is None:
+        pytest.skip("needs ffmpeg")
     path = tmp_path / "track.opus"
     args = ["-f", "lavfi", "-i", "anullsrc=d=0.2", "-c:a", "libopus", str(path)]
-    subprocess.run(["ffmpeg", "-v", "error", *args], check=True)
+    subprocess.run([ffmpeg, "-v", "error", *args], check=True)
     return path
 
 
