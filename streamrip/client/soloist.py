@@ -482,6 +482,9 @@ class SoloistBackend:
             binary = self.ensure_binary()
             self.ensure_sink()
             self.set_prefs()
+            # Given up on while it waited for its turn or for the build.
+            if stop.is_set():
+                raise asyncio.CancelledError
             for _ in range(BUSY_TRIES):
                 try:
                     self._play_with_fresh_build(

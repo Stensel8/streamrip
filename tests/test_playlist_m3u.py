@@ -94,12 +94,23 @@ def test_a_file_is_found_however_its_tag_joins_the_artists(tmp_path):
 def test_a_linked_file_keeps_its_path_in_the_library(tmp_path):
     # A player may see only the library, not the disk a link in it leads to.
     real = tagged(tmp_path / "disk", "a.flac", "silence.flac", title="A", isrc=ISRC_A)
+    tagged(
+        tmp_path / "nas" / "Artist", "b.flac", "silence.flac", title="B", isrc=ISRC_B
+    )
     music = tmp_path / "Music"
     music.mkdir()
     (music / "a.flac").symlink_to(real)
-    playlist = music / "Playlists" / "x.m3u8"
-    write_m3u8(playlist, [track("A", isrc=ISRC_A)], Library.scan(music))
-    assert playlist.read_text(encoding="utf-8").splitlines()[2] == "../a.flac"
+    (music / "Artist").symlink_to(tmp_path / "nas" / "Artist")  # a linked folder
+    # The playlists through a link to the library, the library by its real path.
+    (tmp_path / "home").mkdir()
+    (tmp_path / "home" / "Music").symlink_to(music)
+    playlist = tmp_path / "home" / "Music" / "Playlists" / "x.m3u8"
+    wanted = [track("A", isrc=ISRC_A), track("B", isrc=ISRC_B)]
+    write_m3u8(playlist, wanted, Library.scan(music))
+    assert playlist.read_text(encoding="utf-8").splitlines()[2::2] == [
+        "../a.flac",
+        "../Artist/b.flac",
+    ]
 
 
 def test_without_a_library_the_playlist_only_describes_the_tracks(tmp_path):

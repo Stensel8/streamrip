@@ -142,6 +142,8 @@ class Converter:
             own = [
                 r for r in rates if source and (r % 44100 == 0) == (source % 11025 == 0)
             ]
+            if source and source <= self.sampling_rate:
+                own = [source]  # under the cap: left as it is, never raised
             aformat.append(f"sample_rates={'|'.join(map(str, own or rates))}")
         if self.lossless and self.bit_depth is not None:
             if self.bit_depth not in {16, 24, 32}:

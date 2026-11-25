@@ -900,13 +900,19 @@ class SoloistDownloadable(Downloadable):
     def _download_blocking(self, path: Path, report, stop: threading.Event):
         """The blocking part, in the worker thread: one track at a time, the
         way the device wants it."""
-        self.backend.play_and_capture(
-            f"spotify:track:{self.track_id}",
-            self.duration_ms / 1000,
-            path,
-            report,
-            stop,
-        )
+        try:
+            self.backend.play_and_capture(
+                f"spotify:track:{self.track_id}",
+                self.duration_ms / 1000,
+                path,
+                report,
+                stop,
+            )
+        finally:
+            # Given up on while it encoded (a second Ctrl-C does not wait for
+            # it): the file it wrote is nobody's.
+            if stop.is_set():
+                path.unlink(missing_ok=True)
 
 
 async def concat_audio_files(

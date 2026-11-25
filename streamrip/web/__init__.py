@@ -12,6 +12,7 @@ import secrets
 from urllib.parse import urlsplit
 
 import aiohttp
+import click
 from flask import Flask, Response, abort, jsonify, render_template, request
 from werkzeug.exceptions import HTTPException, SecurityError
 
@@ -48,6 +49,7 @@ EXPLAINED = (
     SpotifyLoginError,
     SpotifyAuthError,
     AccountPausedError,
+    click.ClickException,  # what the command line says too: a database that cannot be made
 )
 
 # The pages use only their own scripts and styles, and nothing inline; covers

@@ -68,7 +68,9 @@ class Library:
     def scan(cls, root: Path, on_file: Callable[[int], None] | None = None) -> Library:
         """Read the tags of every audio file under `root`."""
         library = cls(root)
-        for path in sorted(root.rglob("*")):
+        for path in sorted(
+            root.rglob("*", recurse_symlinks=True)
+        ):  # a linked artist folder too
             if path.suffix.lower() not in AUDIO_EXTENSIONS or not path.is_file():
                 continue
             if (track := read_file(path)) is None:
@@ -132,11 +134,20 @@ def write_m3u8(
         if (file := library.find(track, min_score)) is None:
             missing.append(track)
             continue
-        # Not resolve(): the path in the library, not where a link in it leads, as
-        # a player may see only the library.
         target = os.path.abspath(file.ids["file"])  # noqa: PTH100
         try:
-            entry = target if absolute else os.path.relpath(target, path.parent)
+            # The two folders where they really are (either may be reached
+            # through a link), the file by its place in the library, not where
+            # a link in it leads: a player may see only the library.
+            entry = (
+                target
+                if absolute
+                else os.path.relpath(
+                    library.root.resolve()
+                    / Path(target).relative_to(library.root.absolute()),
+                    path.parent.resolve(),
+                )
+            )
         except ValueError:  # another drive than the playlist's, on Windows
             entry = str(target)
         lines += [_extinf(file), entry.replace(os.sep, "/")]

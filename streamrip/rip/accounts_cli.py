@@ -130,7 +130,9 @@ def verify(ctx, service, fix):
                 _log_in_again(config, result.id)
             except click.ClickException as e:
                 console.print(f"[red]{e.message}[/red]")
-            except SystemExit:  # `coro` exits for a login that was refused
+            except SystemExit as e:  # `coro` exits for a login that was refused
+                if e.code in {130, 143}:  # Ctrl-C or a stop: the whole command ends
+                    raise
                 console.print(
                     f"[red]{BY_ID[result.id].label}: the login did not work.[/red]"
                 )

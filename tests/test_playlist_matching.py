@@ -49,6 +49,8 @@ def t(title: str, *artists: str, duration_ms: int | None = 200_000, album: str =
         ),
         # A long track differs a little more between services.
         (t("Echoes", duration_ms=1_412_000), t("Echoes", duration_ms=1_380_000)),
+        # A YouTube Music song can be up to 20 s off, a short one too.
+        (t("Song", duration_ms=140_000), t("Song", duration_ms=157_000)),
     ],
 )
 def test_the_same_recording_written_differently_matches(wanted, found):

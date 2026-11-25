@@ -424,6 +424,7 @@ def play(backend, monkeypatch, tmp_path):
         players = iter(players)
 
         def start_cmd(cmd, quiet=False):
+            play.started.append(Path(cmd[0]).name)
             if quiet:  # the recorder: its last argument is the capture file
                 Path(cmd[-1]).write_bytes(b"wave")
                 return process()
@@ -432,6 +433,7 @@ def play(backend, monkeypatch, tmp_path):
         monkeypatch.setattr(soloist, "start_cmd", start_cmd)
         backend.play_and_capture(URI, 135.0, tmp_path / "track.flac", report, stop)
 
+    play.started = []  # what was started, in order
     return play
 
 
@@ -581,7 +583,9 @@ def test_a_track_spotify_refused_is_not_played_again(play, backend):
     assert backend.calls == []
 
 
-@pytest.mark.parametrize("busy", [False, True], ids=["playing", "waiting its turn"])
+@pytest.mark.parametrize(
+    "busy", [False, True], ids=["before it plays", "waiting its turn"]
+)
 def test_a_cancelled_play_stops_and_refuses_nothing(play, backend, busy):
     stop = threading.Event()
     player = process(BUSY_LINES if busy else PLAYING_LINES, rc=1 if busy else 0)
@@ -595,6 +599,8 @@ def test_a_cancelled_play_stops_and_refuses_nothing(play, backend, busy):
 
     assert not backend.refused
     assert backend.calls == []
+    if not busy:  # given up on while it waited for its turn: nothing starts
+        assert play.started == []
 
 
 def test_a_capture_that_fails_the_check_is_refused(play, backend):

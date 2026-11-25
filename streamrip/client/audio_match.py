@@ -307,8 +307,8 @@ def _duration_score(a: int | None, b: int | None) -> float:
 
 def _apart(a: int | None, b: int | None) -> bool:
     """Whether two lengths are too far apart for one recording: two services list it
-    seconds apart, a long one a little more."""
-    return bool(a and b) and abs(a - b) > max(15_000, 0.1 * max(a, b))
+    seconds apart, a long one a little more (20 s: YouTube Music's songs too)."""
+    return bool(a and b) and abs(a - b) > max(20_000, 0.1 * max(a, b))
 
 
 def other_version(wanted: MatchTrack, candidate: MatchTrack) -> bool:

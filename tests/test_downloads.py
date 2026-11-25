@@ -349,7 +349,13 @@ async def test_a_16_bit_source_stays_16_bit_as_aiff(tmp_path):
 
 @pytest.mark.parametrize(
     ("source", "rates"),
-    [(88200, "44100"), (176400, "44100"), (96000, "48000"), (None, "44100|48000")],
+    [
+        (88200, "44100"),
+        (176400, "44100"),
+        (96000, "48000"),
+        (32000, "32000"),  # under the cap: never raised
+        (None, "44100|48000"),
+    ],
 )
 def test_a_capped_rate_keeps_to_the_family_of_the_source(monkeypatch, source, rates):
     # ffmpeg takes the allowed rate closest to the source's: 48 kHz for 88.2.

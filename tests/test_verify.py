@@ -299,6 +299,19 @@ def test_verify_fix_logs_in_to_what_needs_it_and_checks_again(tmp_path, monkeypa
     assert "Studio, hi-res" in output  # the second round
 
 
+def test_ctrl_c_during_verify_fix_ends_the_whole_command(tmp_path, monkeypatch):
+    set_user_defaults(tmp_path / "config.toml")
+    asked = []
+
+    def log_in(config, service):
+        asked.append(service)
+        raise SystemExit(130)  # what `coro` does after a Ctrl-C
+
+    monkeypatch.setattr(accounts_cli, "_log_in_again", log_in)
+    code, _output = run_cli(tmp_path, "verify", "--fix")
+    assert (code, len(asked)) == (130, 1)  # not on to the next login
+
+
 def test_a_login_that_ends_without_a_login_keeps_the_old_one(tmp_path, monkeypatch):
     set_user_defaults(tmp_path / "config.toml")
     log_in_to_qobuz(Config(tmp_path / "config.toml"))

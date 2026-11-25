@@ -407,7 +407,7 @@ class Config:
             self.file: ConfigData = ConfigData.from_toml(toml_file.read())
         if self.file.unused:
             logger.warning(
-                "Ignoring %s in %s: streamrip no longer has it.",
+                "Ignoring %s in %s: not an option of this streamrip (a typo, or an old one).",
                 ", ".join(self.file.unused),
                 path,
             )
