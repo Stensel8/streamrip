@@ -374,7 +374,8 @@ class SoloistBackend:
                 f"rate={RATE}",
                 "format=float32le",
                 "channels=2",
-                "sink_properties=device.description=streamrip capture",
+                # Quoted twice: PulseAudio (not PipeWire) fails the module on a bare space.
+                "sink_properties=\"device.description='streamrip capture'\"",
             ]
         )
         if loaded.returncode != 0:
@@ -556,6 +557,9 @@ class SoloistBackend:
                     "-d",
                     SINK,
                     "-i",
+                    "100",
+                    # Its smallest cache: without a limit it keeps every track it played.
+                    "-z",
                     "100",
                     "-s",
                     uri,
