@@ -73,6 +73,15 @@ the same things, in the same sections.
   folder name says what the files are
 - fix: the playlist page offers the services you are logged in to, and a finished
   transfer counts what it found once each
+- fix: a transfer no longer takes a live, remix, sped-up or other-length version
+  for the studio track, keeps playlists of one name apart, and says what came
+  closest; M3U8 paths hold through links
+- fix: Ctrl-C exits 130 and leaves no half files; a config from 2.6 or 2.7 moves
+  its logins to `state.toml` (logging out works), unknown options are named
+  instead of failing, and `folder = ""` is the Music folder
+- fix: more reliable downloads and names: an existing `cover.jpg` is kept, OPUS
+  files are tagged, editions get their own folder, the track total is the disc's,
+  names starting with dots make no hidden folders, and short share links work
 - chore: one matching module and CSV reader, AGPL-3.0, a browser version that
   follows Chrome's release calendar, dependency updates, and an image build
   that fails on a release tag without the `v`
