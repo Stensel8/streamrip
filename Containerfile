@@ -49,7 +49,7 @@ RUN set -eux; \
 # --- build: Python from uv and streamrip with its packages ---
 FROM docker.io/library/debian:trixie-slim@sha256:8aa5a7bf5a1955bddbe7d74fcdd0b91ab30e74362a8b73af672b0481b35b44a0 AS build
 
-COPY --from=ghcr.io/astral-sh/uv:0.13.9@sha256:d3b601f0c7b118bc1753febf7c41cc80981df678445e0254284eecf84db79a7d /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.13.10@sha256:a3ea1357342c1a4bf9a0c53a3deb1b55379aefa037338d8113d5771efa01774f /uv /usr/local/bin/uv
 
 # strip, for the packages below. A layer of its own: a change to streamrip's
 # code doesn't fetch Debian's package lists again.
@@ -100,7 +100,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 
 # --- the image: distroless, so no shell and no apt; Patchbot keeps the digest current ---
-FROM gcr.io/distroless/cc-debian13:latest@sha256:dac90a25ffe03ebaace90cda886b081e61ab6cd77ac47eda51f7bcc15c320765
+FROM gcr.io/distroless/cc-debian13:latest@sha256:e8343d4a7da8bb210df0c3ea29de38bbadbba6c773bed0cd8bde506fca3a5c44
 
 LABEL org.opencontainers.image.title="streamrip" \
       org.opencontainers.image.description="Keep the music you pay for. Take your playlists with you. streamrip downloads from Qobuz, Tidal, Deezer, SoundCloud and Spotify, and moves your playlists between Spotify, Tidal and CSV." \
