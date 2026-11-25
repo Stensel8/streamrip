@@ -366,7 +366,7 @@ def rejection(wanted: MatchTrack, candidate: MatchTrack) -> str:
     or "low score" (close, but not close enough)."""
     if _title_similarity(wanted.title, candidate.title) < SAME_SONG:
         return "other song"
-    if version_tags(wanted.title) != version_tags(candidate.title):
+    if other_version(wanted, candidate):  # live, a remix, an edit of another length
         return "other version"
     return "low score"
 

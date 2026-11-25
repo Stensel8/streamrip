@@ -183,6 +183,12 @@ def test_quota_and_server_errors_stop_the_run(error):
             "score too low for a match (0.90, needs 0.95)",
             "Song B",
         ),
+        # A minute longer: an edit of another length, and shown as such.
+        (
+            Track("Song B", ["Artist B"], duration_ms=240_000),
+            "only another version",
+            "Song B",
+        ),
     ],
 )
 def test_each_track_not_found_says_why(wanted, reason, closest):

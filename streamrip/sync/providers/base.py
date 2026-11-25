@@ -4,7 +4,13 @@ from abc import ABC, abstractmethod
 from functools import partial
 lazy from collections.abc import Collection, Iterator, Mapping
 
-from ...client.audio_match import best_match, rank, searchable, simplify_title
+from ...client.audio_match import (
+    best_match,
+    other_version,
+    rank,
+    searchable,
+    simplify_title,
+)
 from ...console import plural
 from ..errors import ApiError, ProviderError
 from ..models import Match, PlaylistInfo, Track
@@ -159,7 +165,10 @@ class Provider(ABC):
             )
             if best and best[1] >= CONVINCING:
                 break
-        return Match(best[0], best[1], "search") if best and best[1] > 0 else None
+        # Another length scores 0, but is worth showing as what came closest.
+        if best and (best[1] > 0 or other_version(track, best[0])):
+            return Match(best[0], best[1], "search")
+        return None
 
     def _on_album(self, track: Track) -> list[Track]:
         """The tracks of the album ``track`` is on, if that album can be found."""
