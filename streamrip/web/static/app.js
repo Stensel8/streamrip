@@ -114,7 +114,8 @@ function render(id, job) {
     $('job-link').href = job.link || '#';
     $('job-paste-box').hidden = !(running && job.pasteable);
     $('job-cancel').hidden = !(running && (job.pasteable || job.script));
-    $('job-script').hidden = !(running && job.script);
+    $('job-script').hidden = $('job-script-run').hidden = !(running && job.script);
+    $('job-link').textContent = job.script ? 'Open Qobuz' : 'Open the login page';
     if (job.script && $('job-script-text').value !== job.script) $('job-script-text').value = job.script;
     $('job-paste').dataset.job = id;
     $('job-cancel').dataset.job = id;
@@ -172,7 +173,8 @@ async function follow(id, { opened = false } = {}) {
     const job = await api(`/jobs/${id}`);
     render(id, job);
     if (dismissed.has(id)) return job;
-    if (job.link && !opened && job.kind === 'login') {
+    // A login with a script is opened by the person, once the steps have been read.
+    if (job.link && !job.script && !opened && job.kind === 'login') {
       opened = true;
       window.open(job.link, '_blank', 'noopener');
     }

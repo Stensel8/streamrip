@@ -11,13 +11,15 @@
   <p id="job-text" class="small"></p>
   {% if with_login %}
   <div id="job-login" hidden>
-    <p><a id="job-link" class="btn primary" target="_blank" rel="noopener noreferrer">Open the login page</a>
-      <button id="job-cancel" class="btn" type="button" hidden>Cancel</button></p>
     <div id="job-script" hidden>
-      <p class="small muted">Log in on that page first. Then open its console (F12) and paste this. If the browser asks you to type "allow pasting", do that.</p>
+      <p class="small"><strong>1.</strong> Copy this script.</p>
       <textarea id="job-script-text" readonly rows="6" class="mono" aria-label="The script"></textarea>
       <p><button id="job-script-copy" class="btn" type="button">Copy the script</button></p>
+      <p class="small"><strong>2.</strong> Open the login page and log in.</p>
     </div>
+    <p><a id="job-link" class="btn primary" target="_blank" rel="noopener noreferrer">Open the login page</a>
+      <button id="job-cancel" class="btn" type="button" hidden>Cancel</button></p>
+    <p id="job-script-run" class="small" hidden><strong>3.</strong> On that page, press F12, paste the script into the console and press Enter. If the browser asks you to type "allow pasting", do that.</p>
     <details id="job-paste-box" hidden>
       <summary class="small muted">Is the browser on another device?</summary>
       <p class="tiny muted">Log in there. It ends on a page that cannot be reached: paste that page's address here.</p>

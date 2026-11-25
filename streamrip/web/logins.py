@@ -113,7 +113,7 @@ class QobuzScriptLogin:
         """Wait for the script's post, then log in with it (`finish`)."""
         job.enter(
             "login",
-            "Log in at Qobuz in the tab that opened. Then run the script below on that page.",
+            "Log in to Qobuz in three steps:",
         )
         job.link, job.script = QOBUZ_LOGIN_URL, self.script
         self._arrived.wait(LOGIN_TIMEOUT)
