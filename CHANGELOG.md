@@ -61,6 +61,18 @@ the same things, in the same sections.
   the Soloist API key and the pairing, as `streamrip login spotify` does
 - fix: the texts said the Spotify audio always comes from YouTube Music; it is
   Spotify's own with a Soloist API key, and a YouTube Music match without one
+- fix: Spotify's own audio is set to its lossless FLAC and no volume
+  normalization (it played Ogg Vorbis at 160 kbps, some 6 dB quieter), recorded at
+  Spotify's 44.1 kHz in 24 bits, and cut at the first sound (it started 25 to
+  150 ms late and lost its end)
+- fix: the tracks of an album from Spotify's own audio play one at a time, with a
+  progress bar that follows the track and a time left (four of five used to go to
+  YouTube Music), and one that finds Soloist busy waits instead
+- fix: the same tags from every service: Qobuz's artist in capitals, one barcode
+  format, the edition as VERSION for Tidal, Deezer and Spotify too, and Spotify's
+  folder name says what the files are
+- fix: the playlist page offers the services you are logged in to, and a finished
+  transfer counts what it found once each
 - chore: one matching module and CSV reader, AGPL-3.0, a browser version that
   follows Chrome's release calendar, dependency updates, and an image build
   that fails on a release tag without the `v`

@@ -260,8 +260,14 @@ class SoloistBackend:
 
     @property
     def supported(self) -> bool:
-        """Linux: the recording is a sink monitor, a PipeWire/PulseAudio thing."""
-        return sys.platform.startswith("linux")
+        """Linux with a sound server's tools: the recording is a sink monitor
+        (PipeWire or PulseAudio), made with pactl and parec. A container
+        has neither, and must not fetch Soloist only to find that out."""
+        return (
+            sys.platform.startswith("linux")
+            and shutil.which("pactl") is not None
+            and shutil.which("parec") is not None
+        )
 
     # --- the binary ----------------------------------------------------------
 

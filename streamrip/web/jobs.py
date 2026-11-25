@@ -122,7 +122,11 @@ class Job:
             "done": self.done,
             "total": self.total,
             "current": self.current,
-            "found": self.found,
+            # Once it is over: the tracks matched, each once (the running count
+            # still has the ones the playlist lists twice, which "repeated" says).
+            "found": len(self.matched)
+            if self.status != "running" and self.matched
+            else self.found,
             "not_found": len(self.misses),
             "elapsed": round(now - self.started, 1),
             "eta": _rounded(eta),

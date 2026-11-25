@@ -102,6 +102,10 @@ async def measure_replaygain(path: Path) -> tuple[float, float] | None:
         "-vn",
         "-af",
         "ebur128=peak=true",
+        # Nothing is written, but ffmpeg wants an encoder: the image's ffmpeg
+        # has no pcm_s16le, which is the null muxer's default.
+        "-c:a",
+        "pcm_s16be",
         "-f",
         "null",
         "-",

@@ -366,6 +366,18 @@ def test_failed_downloads_are_retried_as_a_job(client, runner):
     assert runner.added == [("repair", True)]
 
 
+def test_a_finished_transfer_counts_what_it_found_once_each():
+    from streamrip.web.jobs import Job
+
+    job = Job("id", "transfer", "Transfer from Spotify to Tidal")
+    job.found = 61  # the running count: 58 tracks, and 3 that the playlist lists twice
+    job.matched = [object()] * 58
+
+    assert job.to_json()["found"] == 61  # still running: the count so far
+    job.status = "done"
+    assert job.to_json()["found"] == 58
+
+
 def test_a_download_says_how_long_it_has_to_go_from_the_first_track():
     # Three tracks had to be done before there was any estimate, and an album
     # of long tracks takes ten minutes for them.

@@ -77,8 +77,8 @@ too: paste the key, press *Pair*, and pick the device in the app.
 
 **Linux, with PipeWire or PulseAudio.** The recording is a sink monitor, made
 with `pactl` and `parec` (PulseAudio's tools, which PipeWire has too), so the
-`spotify` backend runs on Linux for now. On macOS or Windows, or
-if any of the above is missing, streamrip does not fail: it falls back to
+`spotify` backend runs on Linux for now. On macOS, Windows or in a
+container (which has no sound server), or if any of the above is missing, streamrip does not fail: it falls back to
 YouTube Music for that track, so you still get the file.
 
 streamrip sets two prefs in Soloist's data folder before each play: the lossless

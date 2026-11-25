@@ -32,7 +32,7 @@ RUN set -eux; \
         --enable-encoder=flac,alac,aac,libmp3lame,libopus,libvorbis,pcm_s16be,pcm_s24be,pcm_s32be \
         --enable-parser=flac,aac,mpegaudio,opus,vorbis,mjpeg,png \
         --enable-bsf=aac_adtstoasc \
-        --enable-filter=aformat,aresample,anull,null,format; \
+        --enable-filter=aformat,aresample,anull,null,format,ebur128; \
     make -j"$(nproc)" ffmpeg; \
     install -m 755 ffmpeg /usr/local/bin/ffmpeg
 
