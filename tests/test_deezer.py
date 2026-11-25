@@ -296,23 +296,30 @@ async def test_public_api_waits_out_its_quota_error(monkeypatch):
     assert waits == [5]
 
 
+URL = {"data": [{"media": [{"sources": [{"url": "u"}]}]}]}
+LIMITED = ({}, 429)
+
+
 @pytest.mark.parametrize(
-    ("user", "fmt", "reply", "expected"),
+    ("user", "fmt", "replies", "expected"),
     [
-        (FREE | {"can_stream_lossless": False}, "FLAC", None, WrongLicenseError),
+        (FREE | {"can_stream_lossless": False}, "FLAC", [], WrongLicenseError),
         (
             FREE,
             "MP3_128",
-            {"data": [{"errors": [{"code": 2002}]}]},
+            [{"data": [{"errors": [{"code": 2002}]}]}],
             WrongGeolocationError,
         ),
-        (FREE, "MP3_128", {"data": [{"media": [{"sources": [{"url": "u"}]}]}]}, "u"),
-        (FREE, "MP3_128", ({}, 429), None),
+        (FREE, "MP3_128", [URL], "u"),
+        # Waited out: taken for "no such format", it made a track look delisted.
+        (FREE, "MP3_128", [LIMITED, URL], "u"),
+        (FREE, "MP3_128", [LIMITED] * 4, None),
     ],
-    ids=["no licence", "wrong country", "a url", "rate limited"],
+    ids=["no licence", "wrong country", "a url", "rate limited", "rate limited on"],
 )
-async def test_track_url(user, fmt, reply, expected):
-    client = _dz(reply)
+async def test_track_url(monkeypatch, user, fmt, replies, expected):
+    monkeypatch.setattr("streamrip.client.deezer.asyncio.sleep", AsyncMock())
+    client = _dz(*replies)
     client.client.current_user = user
     if isinstance(expected, type):
         with pytest.raises(expected):

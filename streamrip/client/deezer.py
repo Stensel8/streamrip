@@ -110,12 +110,19 @@ class _Deezer:
             ],
             "track_tokens": [track_token],
         }
-        try:
-            resp = await self.request(
-                "POST", "https://media.deezer.com/v1/get_url", json=body
-            )
-        except aiohttp.ClientResponseError:
-            return None  # a failed request, not an answer (see get_downloadable)
+        for wait in (2, 4, 8, None):
+            try:
+                resp = await self.request(
+                    "POST", "https://media.deezer.com/v1/get_url", json=body
+                )
+                break
+            except aiohttp.ClientResponseError as e:
+                if e.status != 429 or wait is None:
+                    return (
+                        None  # a failed request, not an answer (see get_downloadable)
+                    )
+                # Too many at once: waited out, or the track would seem delisted.
+                await asyncio.sleep(wait)
         data = (resp.get("data") or [{}])[0]  # one track asked for, one answer
         if errors := data.get("errors"):
             if errors[0].get("code") == 2002:

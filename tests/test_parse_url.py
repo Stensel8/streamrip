@@ -34,6 +34,9 @@ INTERPRETER = (
         ("https://www.deezer.com/en/track/4195713", "deezer", "track", "4195713"),
         # The share sheet appends "/u", which was taken as the item id.
         ("https://tidal.com/album/152697662/u", "tidal", "album", "152697662"),
+        # So were the pages under an item.
+        ("https://tidal.com/browse/album/123/credits", "tidal", "album", "123"),
+        ("https://www.deezer.com/en/artist/27/top_track", "deezer", "artist", "27"),
         ("https://listen.tidal.com/track/3083287", "tidal", "track", "3083287"),
     ],
 )
