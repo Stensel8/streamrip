@@ -67,6 +67,13 @@ def page() -> str:
     )
 
 
+@accounts_pages.get("/overview")
+def overview() -> Response:
+    """What every login is and gives, for the lines on the cards. A check asks
+    the services, so the page asks for it after it is shown."""
+    return jsonify(get_runner().overview(request.args.get("refresh") == "1"))
+
+
 @accounts_pages.post("/verify")
 def verify() -> tuple[Response, int]:
     """Ask every service whether its login works."""

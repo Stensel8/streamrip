@@ -584,6 +584,35 @@ def test_a_pairing_that_fails_keeps_no_key(client, services, monkeypatch):
     assert not Config(services.config.path).file.spotify.soloist_api_key
 
 
+def test_the_accounts_page_says_what_each_login_is_and_gives(client, monkeypatch):
+    from streamrip.verify import Result
+
+    asked = []
+
+    async def check(config):
+        asked.append(1)
+        return [
+            Result(
+                "qobuz", "ok", "x", plan="Paid", formats="FLAC up to 24-bit/192 kHz"
+            ),
+            Result("deezer", "ok", "x", plan="Free", formats="MP3 128"),
+        ]
+
+    monkeypatch.setattr(runner_module, "verify_logins", check)
+
+    first = client.get("/accounts/overview", headers=JSON).get_json()
+    client.get("/accounts/overview", headers=JSON)  # the last check is still good
+    client.get("/accounts/overview?refresh=1", headers=JSON)
+
+    assert first["qobuz"] == {
+        "state": "ok",
+        "plan": "Paid",
+        "formats": "FLAC up to 24-bit/192 kHz",
+    }
+    assert first["deezer"]["plan"] == "Free"
+    assert len(asked) == 2  # the second answer came from the first check
+
+
 def test_qobuz_logs_in_with_a_script_run_on_its_web_player(client, runner):
     job_id = started(client.post("/accounts/qobuz/script", json={}, headers=JSON))
     script = wait_for(client, job_id, lambda job: job["script"])["script"]

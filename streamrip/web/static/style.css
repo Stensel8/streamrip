@@ -72,6 +72,9 @@ h2 + .cards { margin-top: 1rem; }
 }
 .badge.ok { background: var(--ok); color: var(--on-ok); }
 .badge.warn { background: var(--warn); color: var(--on-warn); }
+/* what a login is and gives, under the name of its card */
+.plan { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin: 0 0 0.5rem; font-size: 0.875rem; }
+.plan:empty { display: none; }
 
 /* buttons and form controls */
 .btn {

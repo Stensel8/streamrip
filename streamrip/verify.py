@@ -13,6 +13,7 @@ from .client.spotify import SpotifyAuthError
 from .exceptions import AuthenticationError, MissingCredentialsError
 from .sync.errors import ApiError, NotLoggedInError, QuotaExceededError
 lazy from .client import DeezerClient, QobuzClient, SoundcloudClient, TidalClient
+lazy from .client.soloist import SoloistBackend
 lazy from .config import Config
 lazy from .sync.http import ApiClient
 lazy from .sync.providers.spotify import API, PREMIUM_REQUIRED
@@ -24,6 +25,47 @@ OK, NOT_LOGGED_IN, NEEDS_APP, FAILED = "ok", "not logged in", "needs an app", "f
 GUEST = "guest"  # works without a login (SoundCloud)
 
 
+# The files each source gives at each of its `quality` levels.
+FILES = {
+    "qobuz": {
+        1: "MP3 320",
+        2: "FLAC 16-bit/44.1 kHz",
+        3: "FLAC up to 24-bit/96 kHz",
+        4: "FLAC up to 24-bit/192 kHz",
+    },
+    "tidal": {
+        0: "AAC",
+        1: "AAC 320",
+        2: "FLAC 16-bit/44.1 kHz",
+        3: "FLAC up to 24-bit/192 kHz",
+    },
+    "deezer": {0: "MP3 128", 1: "MP3 320", 2: "FLAC 16-bit/44.1 kHz"},
+}
+
+
+def describe(source: str, plan: str, best: int | None) -> tuple[str, str]:
+    """(Free or Paid, the files it gives) of an account, from what its source
+    said of its plan: the plan's words, and the best `quality` it allows."""
+    files = FILES.get(source, {}).get(best, "") if best is not None else ""
+    kind = plan.partition(",")[0].strip().lower()
+    if source == "qobuz":
+        return ("Paid" if best is not None else "Purchases only"), files
+    if source == "tidal":
+        return ("" if best is None else "Free" if kind == "free" else "Paid"), files
+    if source == "deezer":
+        return ("" if best is None else "Free" if best == 0 else "Paid"), files
+    return "", "AAC or MP3" if source == "soundcloud" else ""
+
+
+def _spotify_files(config: Config) -> str:
+    """What a Spotify link gives: Spotify's own audio when it is set up."""
+    c = config.session.spotify
+    backend = SoloistBackend(c)
+    if c.backend == "spotify" and c.soloist_api_key and backend.paired():
+        return "FLAC 24-bit/44.1 kHz"
+    return "AAC or MP3 (from YouTube Music)"
+
+
 @dataclass(frozen=True, slots=True)
 class Result:
     id: str
@@ -31,6 +73,8 @@ class Result:
     detail: str  # what the account is, or why it is not working
     fix: str = ""  # what to do about it
     hint: str = ""  # something to know, though it works
+    plan: str = ""  # Free, Paid, Purchases only or Guest, when it is known
+    formats: str = ""  # the files it gives: "FLAC up to 24-bit/192 kHz", "MP3 320"
 
     @property
     def fixable(self) -> bool:
@@ -39,8 +83,9 @@ class Result:
         )
 
 
-async def _download_login(config: Config, source: str) -> tuple[str, str]:
-    """Log in as a download does, and ask what the account may do."""
+async def _download_login(config: Config, source: str) -> tuple[str, str, str, str]:
+    """Log in as a download does, and ask what the account may do: its plan, a
+    hint, and what it is (Free or Paid) and gives."""
     client = {
         "qobuz": QobuzClient,
         "tidal": TidalClient,
@@ -64,22 +109,22 @@ async def _download_login(config: Config, source: str) -> tuple[str, str]:
             f"[{source}] quality = {quality} asks for more than {plan} gives: "
             f"set it to {best}"
         )
-    return plan, hint
+    return plan, hint, *describe(source, plan, best)
 
 
-async def _library_login(config: Config, name: str) -> tuple[str, str]:
+async def _library_login(config: Config, name: str) -> tuple[str, str, str, str]:
     provider = await asyncio.to_thread(Services(config).provider, name)
-    return await asyncio.to_thread(provider.account), ""
+    return await asyncio.to_thread(provider.account), "", "", ""
 
 
-async def _spotify_check(config: Config) -> tuple[str, str]:
+async def _spotify_check(config: Config) -> tuple[str, str, str, str]:
     """Spotify: is the login accepted, and what does it say about you?
 
     One call to /me, without retries: this is a check, not a sync, and the
     budget is for an answer, not for waiting out a rate limit.
     """
 
-    def check() -> tuple[str, str]:
+    def check() -> tuple[str, str, str, str]:
         api = ApiClient(
             API,
             lambda _stale: spotify.login_token(config).access_token,
@@ -88,12 +133,18 @@ async def _spotify_check(config: Config) -> tuple[str, str]:
         me = api.request("GET", "/me")
         product = str(me.get("product", "")).title()
         name = me.get("display_name") or me.get("id")
-        return ", ".join(filter(None, (product, name))), ""
+        kind = "" if not product else "Free" if product == "Free" else "Paid"
+        return (
+            ", ".join(filter(None, (product, name))),
+            "",
+            kind,
+            _spotify_files(config),
+        )
 
     return await asyncio.to_thread(check)
 
 
-async def _check(config: Config, login_id: str) -> tuple[str, str]:
+async def _check(config: Config, login_id: str) -> tuple[str, str, str, str]:
     if login_id == "spotify":
         return await _spotify_check(config)
     if login_id == "tidal-library":
@@ -117,10 +168,14 @@ async def _verify_one(config: Config, accounts: Accounts, login_id: str) -> Resu
                 GUEST,
                 "works without a login; one gives better quality and higher limits",
                 f"streamrip login {login_id}",
+                plan="Guest",
+                formats="AAC or MP3",
             )
         return Result(login_id, NOT_LOGGED_IN, "", f"streamrip login {login_id}")
     try:
-        detail, hint = await asyncio.wait_for(_check(config, login_id), TIMEOUT)
+        detail, hint, plan, formats = await asyncio.wait_for(
+            _check(config, login_id), TIMEOUT
+        )
     except (AuthenticationError, MissingCredentialsError, NotLoggedInError) as e:
         # The error already says "Run: streamrip login x"; the fix is shown apart.
         why = str(e).split(" Run: ")[0]
@@ -157,7 +212,7 @@ async def _verify_one(config: Config, accounts: Accounts, login_id: str) -> Resu
         return Result(login_id, FAILED, f"no answer in {TIMEOUT} s")
     except Exception as e:  # not a login problem: a network or service one
         return Result(login_id, FAILED, str(e) or type(e).__name__)
-    return Result(login_id, OK, detail, hint=hint)
+    return Result(login_id, OK, detail, hint=hint, plan=plan, formats=formats)
 
 
 async def verify(config: Config, ids: tuple[str, ...] = LOGIN_IDS) -> list[Result]:

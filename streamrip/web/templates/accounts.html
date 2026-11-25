@@ -37,6 +37,7 @@
 <div class="cards">
   <section class="card" id="qobuz">
     <div class="card-head"><h2>Qobuz</h2>{{ badge('qobuz') }}</div>
+    <p class="plan" data-plan="qobuz"></p>
     <p class="muted small">A subscription, or the albums you bought.</p>
     <div class="actions">
       {{ logout('qobuz') }}
@@ -55,6 +56,7 @@
 
   <section class="card" id="tidal">
     <div class="card-head"><h2>Tidal</h2>{{ badge('tidal') }}</div>
+    <p class="plan" data-plan="tidal"></p>
     <p class="muted small">A subscription. You get a link to log in with, on any device. With hi-res on (the default) there are two logins, one after the other.</p>
     <div class="actions">
       {{ logout('tidal') }}
@@ -64,6 +66,7 @@
 
   <section class="card" id="deezer">
     <div class="card-head"><h2>Deezer</h2>{{ badge('deezer') }}</div>
+    <p class="plan" data-plan="deezer"></p>
     <p class="muted small">A subscription. Streamrip needs the cookie of your login.</p>
     <details class="help"><summary>Where do I find it?</summary>
       <p class="small muted">Log in at <a class="link" href="https://www.deezer.com/login" target="_blank" rel="noopener noreferrer">deezer.com</a>, open DevTools → Application (or Storage) → Cookies and copy the value of the <strong>arl</strong> cookie.</p>
@@ -77,6 +80,7 @@
 
   <section class="card" id="soundcloud">
     <div class="card-head"><h2>SoundCloud</h2>{{ badge('soundcloud') }}</div>
+    <p class="plan" data-plan="soundcloud"></p>
     <p class="muted small">Works as a guest. A login gives better quality and higher limits; if it fails, streamrip goes on as a guest.</p>
     <details class="help"><summary>Where do I find it?</summary>
       <p class="small muted">Log in at <a class="link" href="https://soundcloud.com/signin" target="_blank" rel="noopener noreferrer">soundcloud.com</a>, open DevTools → Application (or Storage) → Cookies and copy the value of the <strong>oauth_token</strong> cookie.</p>
@@ -93,6 +97,7 @@
 <div class="cards">
   <section class="card" id="spotify">
     <div class="card-head"><h2>Spotify</h2>{{ badge('spotify') }}</div>
+    <p class="plan" data-plan="spotify"></p>
     <p class="muted small">One login for downloads (the track lists and tags; the audio is set up in the next card) and for your liked songs and playlists. It needs an app of your own, and for the app's owner Spotify needs Premium. Create it in the <a class="link" href="{{ dashboards.spotify }}" target="_blank" rel="noopener noreferrer">Spotify developer dashboard</a>, tick <strong>Web API</strong> only, and add this redirect URI: {{ copy(redirect_uris.spotify) }}</p>
     <form method="post" action="{{ url_for('accounts.set_app', login_id='spotify') }}" class="fields">
       {% call field("Client ID", "wide") %}<input name="client_id" placeholder="{{ 'saved: paste another to change it' if not accounts.spotify.app_missing else 'the Client ID of your app' }}" autocomplete="off">{% endcall %}

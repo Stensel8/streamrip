@@ -190,6 +190,7 @@ async function track(id, options) {
     const job = await follow(id, options);
     if (job.download) window.location.href = `/jobs/${id}/download`; // saves the file; the page stays
     if (job.kind === 'login' && job.status === 'done') setTimeout(() => window.location.reload(), 1500);
+    if (job.kind === 'verify' && job.status === 'done') showPlans();
   } catch (err) {
     show(err.message, { error: true });
     document.title = pageTitle;
@@ -343,6 +344,26 @@ onSubmit('pl-download-form', (form, who) => {
 // --- the accounts page ------------------------------------------------------------------------------------
 
 $('verify')?.addEventListener('click', () => start('/accounts/verify'));
+
+// The lines under the names of the cards: what each login is (Free or Paid) and the files it
+// gives. Asking the services takes a few seconds, so the page is shown first.
+async function showPlans() {
+  const slots = document.querySelectorAll('[data-plan]');
+  if (!slots.length) return;
+  try {
+    const answers = await api('/accounts/overview');
+    for (const slot of slots) {
+      const a = answers[slot.dataset.plan] || {};
+      slot.replaceChildren();
+      if (a.state === 'failed') slot.append(el('span', { className: 'badge warn', textContent: "The login doesn't work" }));
+      if (a.plan) slot.append(el('span', { className: a.plan === 'Paid' ? 'badge ok' : 'badge', textContent: a.plan }));
+      if (a.formats) slot.append(el('span', { textContent: a.formats }));
+    }
+  } catch {
+    // Not knowing is fine: the cards just have no line.
+  }
+}
+showPlans();
 $('tidal-login')?.addEventListener('click', () => start('/accounts/tidal/login'));
 $('qobuz-script')?.addEventListener('click', () => start('/accounts/qobuz/script'));
 

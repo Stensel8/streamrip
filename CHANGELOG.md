@@ -35,6 +35,8 @@ the same things, in the same sections.
   and login does downloads and playlists
 - change: every default is the highest quality there is; to go lower, use
   `[conversion]` (it no longer downsamples by default)
+- feat: every login says whether it is Free or Paid and which files it gives (FLAC,
+  MP3, AAC), on its card and in `streamrip verify`
 - feat: the Accounts page logs in to Qobuz with a short script you run on its web
   player, instead of copying a token out of DevTools
 - change: the config file is easier to read, with the choices of each option

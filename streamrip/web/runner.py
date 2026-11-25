@@ -9,7 +9,9 @@ import asyncio
 import contextlib
 import logging
 import threading
+import time
 from dataclasses import dataclass
+from pathlib import Path
 lazy from collections.abc import Awaitable, Callable, Coroutine
 lazy from typing import Any
 
@@ -71,6 +73,10 @@ class Result:
     image: str | None
 
 
+# Seconds a check of the logins is still good for the Accounts page.
+OVERVIEW_FRESH = 600
+
+
 class Runner:
     """The event loop downloads run on, and whose turn it is."""
 
@@ -79,6 +85,10 @@ class Runner:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._started = threading.Lock()
         self._turn = threading.Lock()  # one download at a time
+        # What the last check of the logins said, for the Accounts page: when,
+        # which state of the saved logins it was for, and the answers.
+        self._overview: tuple[float, int, dict] | None = None
+        self._checking = threading.Lock()
 
     def _ensure_loop(self) -> asyncio.AbstractEventLoop:
         with self._started:
@@ -236,13 +246,46 @@ class Runner:
             )
         )
 
+    def _logins_stamp(self) -> int:
+        """Changes when a login is saved, renewed or removed."""
+        try:
+            return Path(self.config.state.path).stat().st_mtime_ns
+        except OSError:
+            return 0
+
+    def _check_logins(self) -> list:
+        """Ask every service, and keep the answers for the Accounts page."""
+        results = self.call(verify_logins(self.config))
+        answers = {
+            r.id: {"state": r.state, "plan": r.plan, "formats": r.formats}
+            for r in results
+        }
+        self._overview = (time.monotonic(), self._logins_stamp(), answers)
+        return results
+
+    def overview(self, refresh: bool = False) -> dict:
+        """What every login is (Free or Paid) and gives, from the last check
+        while it is fresh and the logins are the same, else from a new one."""
+        with self._checking:
+            if (
+                not refresh
+                and self._overview is not None
+                and time.monotonic() - self._overview[0] < OVERVIEW_FRESH
+                and self._overview[1] == self._logins_stamp()
+            ):
+                return self._overview[2]
+            self._check_logins()
+            return self._overview[2]
+
     def verify(self, job: Job) -> str:
         """Ask every service whether its login works; the results go in the log."""
         job.enter("login", "Asking every service")
-        results = self.call(verify_logins(self.config))
+        results = self._check_logins()
         for r in results:
             label = BY_ID[r.id].label
             text = f"{label}: {r.state}" + (f", {r.detail}" if r.detail else "")
+            if r.plan or r.formats:
+                text += " · " + " · ".join(filter(None, (r.plan, r.formats)))
             level = {"ok": "info", "guest": "info", "failed": "error"}.get(
                 r.state, "warning"
             )

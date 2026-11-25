@@ -146,8 +146,9 @@ def verify(ctx, service, fix):
 def _print_results(results):
     for r in results:
         arrow = f"→ {r.fix}" if r.fix else ""
+        what = " · ".join(filter(None, (r.detail, r.plan, r.formats)))
         console.print(
-            f"{r.id:14} {r.state:14} {r.detail} {arrow}".rstrip(),
+            f"{r.id:14} {r.state:14} {what} {arrow}".rstrip(),
             highlight=False,
             soft_wrap=True,
             markup=False,

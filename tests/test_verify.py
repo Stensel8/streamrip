@@ -159,6 +159,24 @@ async def test_a_saved_soundcloud_login_that_is_not_taken_is_reported(
     assert "HTTP 401" in found.detail
 
 
+@pytest.mark.parametrize(
+    ("source", "plan", "best", "described"),
+    [
+        ("qobuz", "streaming-studio, hi-res", 4, ("Paid", "FLAC up to 24-bit/192 kHz")),
+        ("qobuz", "downloads of purchases only", None, ("Purchases only", "")),
+        ("tidal", "Premium, up to hi-res", 3, ("Paid", "FLAC up to 24-bit/192 kHz")),
+        ("tidal", "Free, up to AAC 96", 0, ("Free", "AAC")),
+        ("deezer", "lossless (FLAC)", 2, ("Paid", "FLAC 16-bit/44.1 kHz")),
+        ("deezer", "free (MP3 128)", 0, ("Free", "MP3 128")),
+        ("soundcloud", "sten", None, ("", "AAC or MP3")),
+    ],
+)
+def test_a_plan_is_described_as_free_or_paid_with_the_files_it_gives(
+    source, plan, best, described
+):
+    assert verify_module.describe(source, plan, best) == described
+
+
 async def test_spotify_says_who_you_are(config, monkeypatch):
     reply = {"product": "premium", "display_name": "Sten"}
     log_in_to_spotify(config, monkeypatch, reply=reply)
