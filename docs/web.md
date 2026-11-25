@@ -19,8 +19,9 @@ a web page.
   (CSV, or M3U8 for a player) and import CSV files. Only look (dry run) and
   the score a match needs are there too, and a finished job offers a CSV of how
   every track was matched (see [Playlists](playlists.md)).
-- **Accounts**: every login: Qobuz, Tidal, Deezer, SoundCloud, and the apps for
-  Spotify and Tidal's API. *Check all logins* asks every service whether its
+- **Accounts**: every login: Qobuz, Tidal, Deezer, SoundCloud, Spotify's own
+  audio (the Soloist key and its pairing), and the apps for Spotify and Tidal's
+  API. *Check all logins* asks every service whether its
   login works, and shows the plan. A login that waits can be dismissed.
 - **Library**: what was downloaded and what failed. Retry the failures, or
   forget them (and what was downloaded, to download it again).

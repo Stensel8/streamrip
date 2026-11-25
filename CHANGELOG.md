@@ -28,18 +28,11 @@ the same things, in the same sections.
 - feat: a fallback can be a chain, `--fallback-source qobuz,deezer`: a track
   the first source lacks is looked for on the next, in order
 - feat: the quality asked for stays within a Qobuz or Deezer plan
-- feat: `streamrip verify --fix` and the downloads log Spotify in with the pair
-  link when they need a new login
-- feat: Spotify's login can be a pair link, with no app of your own:
-  `streamrip login spotify` shows a link you open on any device and approve with
-  the code. The own-app login stays, as `streamrip login spotify --configure`,
-  and the Accounts page of `streamrip web` offers both. When the automated
-  login does not work, streamrip points to --configure. `streamrip verify`
-  says who the Spotify account is and how it was logged in, and a rate limit
-  is not shown as a broken login
-- feat: Spotify on Premium is downloaded from Spotify itself, with YouTube
-  Music as the fallback, and one Spotify app and login does downloads and
-  playlists
+- feat: `streamrip verify` says who the Spotify account is, and a rate limit is
+  not shown as a broken login
+- feat: Spotify on Premium is downloaded from Spotify itself, as lossless FLAC
+  (24-bit, 44.1 kHz), with YouTube Music as the fallback, and one Spotify app
+  and login does downloads and playlists
 - change: one wheel, no extras: `web`, `browser` and `ffmpeg` are part of it
 - fix: a Qobuz hi-res download that breaks off is resumed, or goes one
   lossless step lower
@@ -48,6 +41,16 @@ the same things, in the same sections.
 - fix: Spotify's refresh token, which rotates at every refresh, is saved at once,
   and a refresh made by another program (the web server and a command, say) is
   used instead of spending the dead one
+- fix: when streamrip stops for an account's rate limits, `streamrip web` says
+  so, instead of "Failed to fetch" or a job that never ends. Spotify's rate
+  limit is the app's: streamrip waits once and says so, with no pacing or ban
+  guard
+- fix: SoundCloud has no album or artist search: `streamrip search` and the
+  web page say so, and the page only offers what a source can search for
+- feat: the Accounts page of `streamrip web` sets up Spotify's own audio too:
+  the Soloist API key and the pairing, as `streamrip login spotify` does
+- fix: the texts said the Spotify audio always comes from YouTube Music; it is
+  Spotify's own with a Soloist API key, and a YouTube Music match without one
 - chore: one matching module and CSV reader, AGPL-3.0, a browser version that
   follows Chrome's release calendar, dependency updates, and an image build
   that fails on a release tag without the `v`

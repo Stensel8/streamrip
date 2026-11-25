@@ -98,6 +98,7 @@ class TidalClient(Client):
 
     source = "tidal"
     max_quality = 3
+    search_types = ("track", "album", "artist", "playlist", "video")
 
     def __init__(self, config: Config, hires_of: TidalClient | None = None):
         """Build a client lane; hires_of makes this the hi-res lane behind it."""
@@ -389,8 +390,7 @@ class TidalClient(Client):
 
     async def search(self, media_type: str, query: str, limit: int = 100) -> list[dict]:
         """One page of search results (Tidal returns at most 100)."""
-        if media_type not in {"album", "track", "playlist", "video", "artist"}:
-            raise ValueError(f"Cannot search Tidal for {media_type}s")
+        self.check_search_type(media_type)
         params = {"query": query, "limit": limit}
         resp = await self._api_request(f"search/{media_type}s", params=params)
         # A single hit is still a result: last.fm playlists search with limit=1.

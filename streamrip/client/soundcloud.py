@@ -37,6 +37,7 @@ class SoundcloudClient(Client):
     take it, streamrip goes on as a guest."""
 
     source = "soundcloud"
+    search_types = ("track", "playlist")  # it has no albums or artists to look up
 
     NON_STREAMABLE = "_non_streamable"
     ORIGINAL_DOWNLOAD = "_original_download"
@@ -108,8 +109,7 @@ class SoundcloudClient(Client):
         limit: int = 50,
         offset: int = 0,
     ) -> list[dict]:
-        if media_type not in {"track", "playlist"}:
-            raise ValueError(f"Cannot search SoundCloud for {media_type}s")
+        self.check_search_type(media_type)
         params = {
             "q": query,
             "facet": "genre",

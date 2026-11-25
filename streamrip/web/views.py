@@ -17,6 +17,7 @@ from flask import (
 
 from .. import __version__
 from ..accounts import LIBRARY_LOGINS, Accounts
+from ..client import CLIENTS
 from ..console import plural
 from ..rip.parse_url import parse_url
 from ..sync.csvio import decode, parse_csv, slug, write_csv
@@ -59,7 +60,7 @@ SOURCE_NOTES = frozendict(
         "tidal": "FLAC up to 24/192",
         "deezer": "FLAC 16/44.1",
         "soundcloud": "MP3 or AAC, better with a login",
-        "spotify": "AAC from YouTube Music",
+        "spotify": "its own audio (Soloist), else AAC from YouTube Music",
     }
 )
 
@@ -108,6 +109,8 @@ def _download_sources() -> list[dict]:
             "name": s,
             "label": SOURCE_LABELS[s],
             "note": SOURCE_NOTES[s],
+            # What it can be searched for: not every source has all four.
+            "kinds": [t for t in MEDIA_TYPES if t in CLIENTS[s].search_types],
             "ready": s == "soundcloud" or accounts.logged_in(s),  # it needs none
         }
         for s in SOURCES

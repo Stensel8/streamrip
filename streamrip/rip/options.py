@@ -12,7 +12,7 @@ SOURCES = frozendict(
         "qobuz": "lossless, up to 24-bit",
         "tidal": "lossless, hi-res where there is some",
         "deezer": "FLAC or MP3, as your subscription allows",
-        "spotify": "lossy: the audio comes from YouTube Music",
+        "spotify": "its own audio (Soloist, Linux), else AAC from YouTube Music",
         "soundcloud": "MP3, and only uploads by the artists themselves",
     }
 )

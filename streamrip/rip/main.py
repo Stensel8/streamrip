@@ -12,14 +12,7 @@ lazy from rich.table import Table
 lazy from rich.text import Text
 
 from .. import db, lyrics
-from ..client import (
-    Client,
-    DeezerClient,
-    QobuzClient,
-    SoundcloudClient,
-    SpotifyClient,
-    TidalClient,
-)
+from ..client import CLIENTS, Client
 from ..console import console, plural
 from ..exceptions import (
     APIError,
@@ -182,13 +175,7 @@ class Main:
         self.config = config
         # Sources the user has been told about (see rip/notices.py).
         self._announced: set[str] = set()
-        self.clients: dict[str, Client] = {
-            "qobuz": QobuzClient(config),
-            "tidal": TidalClient(config),
-            "deezer": DeezerClient(config),
-            "soundcloud": SoundcloudClient(config),
-            "spotify": SpotifyClient(config),
-        }
+        self.clients: dict[str, Client] = {s: c(config) for s, c in CLIENTS.items()}
         c = self.config.session.database
         self.database = db.Database(
             db.Downloads(c.downloads_path) if c.downloads_enabled else db.Dummy(),
@@ -279,7 +266,11 @@ class Main:
         if source in self._announced:
             return
         self._announced.add(source)
-        backend = self.config.session.spotify.backend if source == "spotify" else None
+        spotify = self.config.session.spotify
+        # Without a Soloist API key the audio is YouTube Music's, whatever `backend` says.
+        backend = None
+        if source == "spotify":
+            backend = spotify.backend if spotify.soloist_api_key else "youtube"
         if (notice := notice_for(source, backend)) is not None:
             console.print(notice)
 

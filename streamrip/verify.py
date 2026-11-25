@@ -7,10 +7,10 @@ to do about what does not work.
 import asyncio
 from dataclasses import dataclass
 
-from . import spotify_auth
 from .accounts import LOGIN_IDS, Accounts
+from .client import spotify
+from .client.spotify import SpotifyAuthError
 from .exceptions import AuthenticationError, MissingCredentialsError
-from .spotify_auth import SpotifyAuthError
 from .sync.errors import ApiError, NotLoggedInError, QuotaExceededError
 lazy from .client import DeezerClient, QobuzClient, SoundcloudClient, TidalClient
 lazy from .config import Config
@@ -82,18 +82,13 @@ async def _spotify_check(config: Config) -> tuple[str, str]:
     def check() -> tuple[str, str]:
         api = ApiClient(
             API,
-            lambda _stale: spotify_auth.token(config).access_token,
+            lambda _stale: spotify.login_token(config).access_token,
             max_retries=0,
         )
         me = api.request("GET", "/me")
         product = str(me.get("product", "")).title()
         name = me.get("display_name") or me.get("id")
-        how = (
-            "the pair link"
-            if spotify_auth.auth_method(config) == "device"
-            else "your own app"
-        )
-        return ", ".join(filter(None, (product, name, how))), ""
+        return ", ".join(filter(None, (product, name))), ""
 
     return await asyncio.to_thread(check)
 

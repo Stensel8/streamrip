@@ -70,6 +70,12 @@ class APIError(Exception):
     """
 
 
+class SearchTypeError(APIError):
+    """A source has no search for this kind: SoundCloud has no albums to look up."""
+
+    http_status = 400  # what the web interface answers with
+
+
 class IncompleteDownloadError(Exception):
     """A resumed download does not line up with the file the server announced."""
 

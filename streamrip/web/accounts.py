@@ -12,9 +12,11 @@ from flask import (
 lazy from werkzeug.wrappers import Response as WerkzeugResponse
 
 from ..accounts import BY_ID, LOGIN_IDS, Accounts
+from ..client.soloist import SoloistBackend
+from ..sync.errors import ProviderError
 from ..sync.services import DEVELOPER_DASHBOARDS, LABELS
-from .common import form, get_config, get_runner, get_services, start
-from .logins import BrowserLogin, DeviceLogin
+from .common import form, get_config, get_runner, get_services, sent, start
+from .logins import BrowserLogin
 lazy from .jobs import Job
 
 accounts_pages = Blueprint("accounts", __name__, url_prefix="/accounts")
@@ -31,6 +33,19 @@ def _back(message: str, category: str = "ok") -> WerkzeugResponse:
     return redirect(url_for("accounts.page"))
 
 
+def _soloist(config) -> dict:
+    """What the card of Spotify's own audio says: is it on, set up, paired."""
+    c = config.session.spotify
+    backend = SoloistBackend(c)
+    return {
+        "on": c.backend == "spotify",
+        "supported": backend.supported,
+        "key": bool(c.soloist_api_key),
+        "paired": backend.paired(),
+        "device": backend.device_name,
+    }
+
+
 @accounts_pages.route("")
 def page() -> str:
     services = get_services()
@@ -44,6 +59,7 @@ def page() -> str:
             login_id: services.redirect_uri(BY_ID[login_id].section)
             for login_id in APP_LOGINS
         },
+        soloist=_soloist(config),
         state_path=config.state.path,
         tidal_secret=bool(services.client_secret("tidal")),
     )
@@ -112,23 +128,18 @@ def browser_login(login_id: str) -> tuple[Response, int]:
     return start("login", f"Log in to {LABELS[service]}{what}", work)
 
 
-@accounts_pages.post("/spotify/pair")
-def spotify_pair() -> tuple[Response, int]:
-    """A pair link, approved on any device, no app of one's own."""
-    login = DeviceLogin(get_config())
-    logins = current_app.extensions["logins"]
-    # One login at a time: a device login waits a long time.
-    for earlier in list(logins.values()):
-        earlier.cancel()
-
-    def work(job: Job) -> str:
-        logins[job.id] = login
-        try:
-            return login.run(job)
-        finally:
-            logins.pop(job.id, None)
-
-    return start("login", "Log in to Spotify with the pair link", work)
+@accounts_pages.post("/soloist/pair")
+def soloist_pair() -> tuple[Response, int]:
+    """Spotify's own audio: the Soloist API key, and one pairing."""
+    c = get_config().session.spotify
+    if c.backend != "spotify":
+        raise ProviderError('Spotify\'s own audio is off: backend is "youtube".')
+    if not (key := str(sent().get("api_key") or "").strip() or c.soloist_api_key):
+        raise ProviderError("Paste the Soloist API key first.")
+    runner = get_runner()
+    return start(
+        "login", "Pair Spotify's own audio", lambda job: runner.pair_soloist(job, key)
+    )
 
 
 @accounts_pages.post(f"/<any({_APP}):login_id>/app")
@@ -153,10 +164,9 @@ def set_app(login_id: str) -> WerkzeugResponse:
             "api_client_secret": secret or config.session.tidal.api_client_secret,
         },
     )
-    # A login that is waiting was started with the old app. A pair link login
-    # does not use the app, and keeps going.
+    # A login that is waiting was started with the old app.
     for login in list(current_app.extensions["logins"].values()):
-        if isinstance(login, BrowserLogin) and login.oauth.name == service:
+        if login.oauth.name == service:
             login.cancel()
     return _back(f"Saved the {LABELS[service]} app. Now log in.")
 

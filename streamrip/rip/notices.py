@@ -16,7 +16,8 @@ def notice_for(source: str, backend: str | None = None) -> str | None:
             "lossy. For lossless, download your Spotify playlists from Qobuz, Tidal "
             "or Deezer instead: [bold]streamrip playlist download spotify --playlist "
             "NAME --source qobuz[/bold] (or [bold]--liked[/bold]). [bold]streamrip "
-            "playlist transfer spotify tidal[/bold] moves them to Tidal for good."
+            "playlist transfer spotify tidal[/bold] moves them to Tidal for good. "
+            "Spotify's own audio needs a Soloist API key: see docs/spotify.md."
         )
     return (
         "[yellow]Spotify:[/yellow] the audio comes from Spotify itself: its "

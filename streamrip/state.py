@@ -50,7 +50,6 @@ CREDENTIALS = frozendict(
             "refresh_token",
             "token_expiry",
             "scope",
-            "auth_method",
             "soloist_api_key",
         ),
     }

@@ -21,7 +21,7 @@ from urllib.parse import urlencode
 
 import requests
 
-from .. import spotify_auth
+from ..client import spotify
 from .errors import LoginError, NetworkError, NotLoggedInError
 from .http import error_message, json_body
 lazy from ..config import Config
@@ -94,19 +94,16 @@ class ConfigTokenStore:
             },
         )
 
-    def save(self, service: str, token: Token, method: str = ""):
-        values = {
-            "access_token": token.access_token,
-            "refresh_token": token.refresh_token or "",
-            "token_expiry": str(int(token.expires_at)),
-            "scope": token.scope,
-        }
-        if method:
-            # A Spotify login says how it was made: "device" needs no app of
-            # the user's own, "app" uses one of the user's own. A service
-            # without the field simply drops it.
-            values["auth_method"] = method
-        self._set(service, values)
+    def save(self, service: str, token: Token):
+        self._set(
+            service,
+            {
+                "access_token": token.access_token,
+                "refresh_token": token.refresh_token or "",
+                "token_expiry": str(int(token.expires_at)),
+                "scope": token.scope,
+            },
+        )
 
 
 def pkce_pair() -> tuple[str, str]:
@@ -285,9 +282,9 @@ class StoredToken:
                 return current
             try:
                 return self.oauth.refresh_stored(self.store, current)
-            except spotify_auth.AuthServerDownError as exc:
+            except spotify.AuthServerDownError as exc:
                 raise NetworkError(str(exc)) from exc
-            except (LoginError, spotify_auth.SpotifyAuthError) as exc:
+            except (LoginError, spotify.SpotifyAuthError) as exc:
                 raise expired from exc
 
 

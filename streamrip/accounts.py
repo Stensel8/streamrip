@@ -84,10 +84,11 @@ LOGINS = (
     Login(
         "spotify",
         "Spotify",
-        "downloads and playlists",
+        "downloads and playlists (needs an app of your own)",
         "spotify",
-        ("access_token", "refresh_token", "token_expiry", "scope", "auth_method"),
-        (("access_token", "refresh_token"),),
+        ("access_token", "refresh_token", "token_expiry", "scope"),
+        (("client_id",), ("access_token", "refresh_token")),
+        app=("client_id",),
     ),
 )
 LOGIN_IDS = tuple(login.id for login in LOGINS)

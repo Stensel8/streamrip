@@ -208,7 +208,7 @@ the config. If a login stops working, it asks again.
 | Tidal | A subscription. You log in with a link on any device (twice for hi-res). |
 | Deezer | The `arl` cookie of a logged-in session, from an isolated browser window or by hand. |
 | SoundCloud | Nothing: it works as a guest. A login (the `oauth_token` cookie) gives better quality and higher limits. |
-| Spotify | The pair link (`streamrip login spotify`), no app of your own; or your own Spotify app, and Premium on the account that owns it. Lossless, up to 44.1 kHz. The track plays in full and is recorded, so it rips slower than the other sources, and where Spotify will not play a track it falls back to a 320 kbps match on YouTube Music. The playlist tools use the same login. |
+| Spotify | A Spotify app of your own (`streamrip login spotify` explains how), and Premium on the account that owns it. With a Soloist API key the audio is Spotify's own, the account's quality (lossless up to 44.1 kHz on Premium): the track plays in full and is recorded, so it rips slower than the other sources. Without one, or where Spotify will not play a track, it is a match on YouTube Music (AAC, or MP3). The playlist tools use the same login. |
 
 For your Tidal playlists, the playlist tools also need a Tidal developer app
 ([how](docs/playlists.md#tidal)). More per source in [Logging in](docs/logging-in.md)
@@ -261,7 +261,7 @@ version 3 only](LICENSE) (AGPL-3.0-only). It grew out of two projects:
 
 - **[streamrip](https://github.com/nathom/streamrip)** by nathom and its
   contributors, under the [GNU General Public License, version 3
-  only](LICENSES/GPL-3.0-only.txt). The code that comes from there
+  only](LICENSE). The code that comes from there
   stays available under that licence as well.
 - **[Music-Sync](https://github.com/Stensel8/Music-Sync)** by Stensel8,
   under the AGPL-3.0-only. It began as
@@ -273,8 +273,8 @@ Section 13 of both licences allows combining a work under one with a work under
 the other and conveying the result as one. streamrip is conveyed under the
 AGPL-3.0, whose section 13 (offering the source to everyone who uses it over a
 network, which `streamrip web` makes possible) applies to the whole. Every part
-keeps the licence it came with. The licence texts are unchanged copies of those
-of the Free Software Foundation, as their own terms require.
+keeps the licence it came with. [LICENSE](LICENSE) holds both texts, unchanged copies of
+those of the Free Software Foundation, as their own terms require.
 
 Copyright © nathom and the contributors of streamrip; Stensel8 and the
 contributors of this fork; Nugman, Stensel8 and the contributors of Music-Sync.

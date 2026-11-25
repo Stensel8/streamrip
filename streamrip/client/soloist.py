@@ -1,13 +1,17 @@
 """Spotify's own audio, played by Spotify's official headless client.
 
 Spotify Soloist (https://github.com/spotify/soloist) is a Spotify Connect
-device that plays a track and renders it to local audio at the account's
-quality (lossless for Premium). The `spotify` backend plays a track in its
-single-track mode and records the local audio -- a PipeWire or PulseAudio
-sink's monitor, which is exactly what the account gets, bit-exact -- and
-encodes it as FLAC.
+device that plays a track and renders it to local audio. The `spotify`
+backend plays a track in its single-track mode and records that audio -- a
+PipeWire or PulseAudio sink's monitor -- and encodes it as FLAC.
 
-Three things it manages, all one-time or automatic:
+The recording stays as close to what Spotify sends as it can: Soloist is set
+to play the lossless FLAC (it plays Ogg Vorbis at 160 kbps otherwise) without
+loudness normalization, the sink and the recording run at Spotify's 44.1 kHz
+in 32-bit float, and the FLAC is written at 24 bits. Soloist's own mixer still
+touches the samples a little, so this is not provably bit-exact.
+
+Four things it manages, all one-time or automatic:
 
   - the binary: the official builds expire after 90 days (they exit with
     code 10); this module downloads them from Spotify's CDN to its own
@@ -17,7 +21,9 @@ Three things it manages, all one-time or automatic:
     printed or raised;
   - the pairing: once, a Spotify app on the same network picks the device
     (the config's `device_name`) and plays; the session is stored in
-    Soloist's data dir and replayed by every later run.
+    Soloist's data dir and replayed by every later run;
+  - the prefs: the quality and the normalization are prefs of the account's
+    folder in that data dir, written before every play.
 
 Linux only for now: the recording is a sink monitor, which is a
 PipeWire/PulseAudio thing. On other platforms the audio comes from the
@@ -59,8 +65,17 @@ BUILDS = "https://soloist-builds.spotifycdn.com/"
 PLAYING_WAIT = 90.0
 # Past the track's own length: startup and the sink's last frames on top.
 PLAY_MARGIN = 60.0
-# The sink Soloist renders into and streamrip records, one per machine.
+# The sink Soloist renders into and streamrip records, one per machine. It runs
+# at the rate Spotify streams at (its lossless is up to 24-bit/44.1 kHz), as
+# does Soloist's stream and the recording, so nothing is resampled on the way.
 SINK = "soloist_cap"
+RATE = 44100
+SINK_SPEC = f"float32le 2ch {RATE}Hz"
+# Soloist's prefs (in <data dir>/settings/Users/<user>/prefs). Quality 5 is
+# the lossless FLAC (3 and 4 are Ogg Vorbis at 160 and 320 kbps, and without a
+# pref it plays 160), and the normalization would turn the level down by some
+# 6 dB. Both are written before every play.
+PREFS = {"audio.play_bitrate_enumeration": "5", "audio.normalize_v2": "false"}
 # Soloist's exit code for a build past its 90 days.
 EXPIRED_BUILD = 10
 UNSUPPORTED_PLATFORM = (
@@ -72,6 +87,14 @@ UNSUPPORTED_PLATFORM = (
 # so neither marker is anchored to the line's start.
 _POSITION = re.compile(r"\[(\d+):(\d+) / \d+:\d+\]$")
 _LOGGED_IN = re.compile(r"logged in as (\S+)")
+# What it plays, said by its verbose log ("codec: flac", "bitrate: 700000 bits/s").
+_CODEC = re.compile(r"\bcodec: (\w+)")
+_BITRATE = re.compile(r"\bbitrate: (\d+) bits/s")
+# A line of that verbose log ("08:40:36.225 I [f:347 ] ..."), but not a warning
+# or an error: only those are worth saying when a run fails.
+_VERBOSE = re.compile(r"^\d\d:\d\d:\d\d\.\d+ [IDT] \[")
+# The colour codes that close each of its verbose lines.
+_ANSI = re.compile(r"\x1b\[[0-9;]*m")
 
 
 class _ExpiredBuildError(Exception):
@@ -129,6 +152,7 @@ def summarize_log(lines: list[str], uri: str) -> tuple[bool, float, str | None]:
 
 def tail(lines: list[str], how_many: int = 5) -> str:
     """The end of what a process said, for an error message."""
+    lines = [line for line in lines if not _VERBOSE.match(line)] or lines
     said = " ".join(line.strip() for line in lines[-how_many:] if line.strip())
     return said[:300] or "(it said nothing)"
 
@@ -285,23 +309,30 @@ class SoloistBackend:
     # --- the sink --------------------------------------------------------------
 
     def ensure_sink(self) -> None:
-        """The virtual sink Soloist renders into, created on first use."""
-        if shutil.which("pactl") is None:
+        """The virtual sink Soloist renders into, created on first use (and
+        again when it exists at another rate, as an older streamrip made it)."""
+        if shutil.which("pactl") is None or shutil.which("parec") is None:
             raise NonStreamableError(UNSUPPORTED_PLATFORM)
         listed = run_cmd(["pactl", "list", "short", "sinks"])
         if listed.returncode != 0:
             raise NonStreamableError(UNSUPPORTED_PLATFORM)
         for line in listed.stdout.splitlines():
-            # pactl's short form: <index> <name> <description> ...
-            parts = line.split()
-            if len(parts) >= 2 and parts[1] == SINK:
-                return
+            # pactl's short form: <index> <name> <driver> <sample spec> <state>
+            parts = line.split("\t")
+            if len(parts) >= 4 and parts[1] == SINK:
+                if parts[3] == SINK_SPEC:
+                    return
+                self._unload_sink()
+                break
         loaded = run_cmd(
             [
                 "pactl",
                 "load-module",
                 "module-null-sink",
                 f"sink_name={SINK}",
+                f"rate={RATE}",
+                "format=float32le",
+                "channels=2",
                 "sink_properties=device.description=streamrip capture",
             ]
         )
@@ -309,16 +340,39 @@ class SoloistBackend:
             said = loaded.stderr.strip()[:300]
             raise NonStreamableError(f"Could not create the capture sink: {said}")
 
+    @staticmethod
+    def _unload_sink() -> None:
+        """Remove the capture sink's module, to make it again."""
+        for line in run_cmd(["pactl", "list", "short", "modules"]).stdout.splitlines():
+            parts = line.split("\t")
+            if len(parts) >= 3 and f"sink_name={SINK}" in parts[2]:
+                run_cmd(["pactl", "unload-module", parts[0]])
+
     # --- the pairing -------------------------------------------------------------
+
+    @staticmethod
+    def _data_dir() -> Path:
+        """Soloist's data dir: where its session and its prefs are kept."""
+        base = os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share"
+        return Path(base) / "soloist"
 
     def paired(self) -> bool:
         """Whether a pairing was already stored: the session lives under
         <data dir>/cache/Users. A heuristic only -- playback is the check."""
-        data_dir = (
-            Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
-            / "soloist"
-        )
-        return (data_dir / "cache" / "Users").is_dir()
+        return (self._data_dir() / "cache" / "Users").is_dir()
+
+    def set_prefs(self) -> None:
+        """Soloist's quality and normalization (see PREFS), in the prefs of
+        every account it has a folder for."""
+        for path in (self._data_dir() / "settings" / "Users").glob("*/prefs"):
+            kept = [
+                line
+                for line in path.read_text().splitlines()
+                if line.partition("=")[0] not in PREFS
+            ]
+            path.write_text(
+                "\n".join([*kept, *(f"{k}={v}" for k, v in PREFS.items())]) + "\n"
+            )
 
     def pair(self) -> str:
         """Pair the device once, with a Spotify app on this network.
@@ -353,9 +407,9 @@ class SoloistBackend:
     def estimate_size(self, duration_s: float) -> int:
         """A rough size in bytes of the FLAC that `duration_s` becomes: it
         only sizes the progress bar."""
-        # 48 kHz, stereo, 16-bit, a little under the raw size (music compresses
-        # near that).
-        return int(duration_s * 48000 * 2 * 2 * 0.6)
+        # 44.1 kHz, stereo, 24-bit, a little under the raw size (music
+        # compresses near that).
+        return int(duration_s * RATE * 2 * 3 * 0.6)
 
     def play_and_capture(
         self, uri: str, duration_s: float, out_path: Path, report: Callable[[int], None]
@@ -372,6 +426,7 @@ class SoloistBackend:
             raise NonStreamableError(UNSUPPORTED_PLATFORM)
         binary = self.ensure_binary()
         self.ensure_sink()
+        self.set_prefs()
         try:
             self._play_once(binary, uri, duration_s, out_path, report)
         except _ExpiredBuildError:
@@ -404,32 +459,35 @@ class SoloistBackend:
         """
         ffmpeg = require_ffmpeg()
         capture = (
-            Path(tempfile.gettempdir()) / f"__streamrip_soloist_{time.time_ns()}.wav"
+            Path(tempfile.gettempdir()) / f"__streamrip_soloist_{time.time_ns()}.raw"
         )
         recorder = None
         player = None
         try:
+            # ffmpeg's own pulse input is fixed at 16-bit and 48 kHz, so the
+            # recording is parec's: raw 32-bit float at the sink's rate. The
+            # small blocks (--latency-msec) are what a stop at the end loses.
             recorder = start_cmd(
                 [
-                    ffmpeg,
-                    "-hide_banner",
-                    "-loglevel",
-                    "error",
-                    "-f",
-                    "pulse",
-                    "-i",
+                    "parec",
+                    "-d",
                     f"{SINK}.monitor",
-                    "-c:a",
-                    "pcm_f32le",
+                    "--format=float32le",
+                    f"--rate={RATE}",
+                    "--channels=2",
+                    "--latency-msec=20",
+                    "--raw",
                     str(capture),
                 ],
                 quiet=True,
             )
             t_recorder = time.monotonic()
             time.sleep(2)
+            # -v: only its verbose log says what it plays (codec, bitrate).
             player = start_cmd(
                 [
                     str(binary),
+                    "-v",
                     "-n",
                     self.device_name,
                     "-k",
@@ -457,6 +515,11 @@ class SoloistBackend:
                 raise self._refuse(
                     uri, f"Soloist never began the track: {self._said(lines)}"
                 )
+            self._warn_if_lossy(lines)
+            # The last frames are still on their way to the recorder: give
+            # them a moment, and stop it, so the capture is whole.
+            time.sleep(0.5)
+            self._stop(recorder)
             # The cut starts where "playing" came; the rest is pre-roll.
             offset = t_playing - t_recorder if t_playing is not None else None
             # Encode and check while the capture still exists: the cleanup in
@@ -474,6 +537,20 @@ class SoloistBackend:
                 player.kill()
                 player.wait()
             capture.unlink(missing_ok=True)
+
+    @staticmethod
+    def _warn_if_lossy(lines: list[str]) -> None:
+        """Say so when Spotify did not play the track as FLAC (a track it has
+        no lossless file of): the FLAC then holds that lossy audio."""
+        codec = next((m[1] for line in lines if (m := _CODEC.search(line))), None)
+        if codec == "flac":
+            return
+        kbps = next((int(m[1]) // 1000 for x in lines if (m := _BITRATE.search(x))), 0)
+        logger.warning(
+            "Spotify played this track as %s%s, not lossless: the FLAC holds that",
+            codec or "an unknown format",
+            f" at {kbps} kbps" if kbps else "",
+        )
 
     def _follow(
         self, player: subprocess.Popen, uri: str, duration_s: float, report
@@ -504,7 +581,7 @@ class SoloistBackend:
             with contextlib.suppress(queue.Empty):
                 line = pending.get(timeout=0.5)
             if line is not None:
-                line = line.rstrip("\n")
+                line = _ANSI.sub("", line.rstrip("\n"))
                 lines.append(line)
                 if t_started is None and is_playing_line(line, uri):
                     t_started = time.monotonic() - (line_position_s(line) or 0.0)
@@ -548,12 +625,14 @@ class SoloistBackend:
         offset: float | None,
         duration_s: float,
     ) -> None:
-        """The track, trimmed of its pre-roll, as FLAC at out_path.
+        """The track, trimmed of its pre-roll, as 24-bit FLAC at out_path.
 
         `offset` is the pre-roll, in seconds, from the recorder's start to
         the "playing" line; None is the end of the capture, from its last
         second, when the line never came.
         """
+        # The capture is raw (parec's), so its format is said here; the flac
+        # encoder takes s16 or s32, and s32 at 24 bits is the 24-bit FLAC.
         cmd = [
             ffmpeg,
             "-nostdin",
@@ -561,6 +640,12 @@ class SoloistBackend:
             "-loglevel",
             "error",
             "-y",
+            "-f",
+            "f32le",
+            "-ar",
+            str(RATE),
+            "-ac",
+            "2",
         ]
         if offset is not None:
             cmd += [
@@ -577,7 +662,9 @@ class SoloistBackend:
             "-c:a",
             "flac",
             "-sample_fmt",
-            "s16",
+            "s32",
+            "-bits_per_raw_sample",
+            "24",
             "-compression_level",
             "5",
             str(out_path),

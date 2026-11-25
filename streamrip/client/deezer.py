@@ -459,8 +459,7 @@ class DeezerClient(Client):
         return artist
 
     async def search(self, media_type: str, query: str, limit: int = 200) -> list[dict]:
-        if media_type not in {"track", "album", "artist", "playlist"}:
-            raise ValueError(f"Cannot search Deezer for {media_type}s")
+        self.check_search_type(media_type)
         response = await self.client.api.search(media_type, query, limit)
         if response.get("total", 0) > 0:
             return [response]

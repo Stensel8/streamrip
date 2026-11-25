@@ -8,14 +8,11 @@ finds the same recording on YouTube Music (see `ytmusic`) for yt-dlp to
 download, the way spotDL does. A track the Spotify backend cannot serve is
 routed to YouTube Music either way.
 
-The login is one of two (spotify_auth): the "device" one, a pair link to
-approve on any device, which needs no app of the user's own and is the
-default, or the "app" one, the user's own app from the developer dashboard,
-whose owner must have Premium (a rule since February 2026), logged in with
-OAuth and PKCE.
-The API keeps the development-mode rules either way: at most 10 search results
-per request; playlist tracks under "item"; and only playlists the user owns or
-collaborates on can be read.
+The login is the user's own app from the developer dashboard, whose owner
+must have Premium (a rule since February 2026), logged in with OAuth and PKCE
+(see the login section below). The API keeps the development-mode rules: at
+most 10 search results per request; playlist tracks under "item"; and only
+playlists the user owns or collaborates on can be read.
 """
 
 import asyncio
@@ -25,9 +22,13 @@ import logging
 import os
 import re
 import secrets
+import threading
+import time
+from dataclasses import dataclass
 from urllib.parse import urlencode
 
-from .. import spotify_auth
+import requests
+
 from ..console import plural
 from ..exceptions import (
     APIError,
@@ -36,7 +37,6 @@ from ..exceptions import (
     MissingCredentialsError,
     NonStreamableError,
 )
-from ..spotify_auth import AUTHORIZE_URL, SCOPES
 from .audio_match import MatchTrack
 from .client import Client
 from .downloadable import SoloistDownloadable, YtDlpDownloadable
@@ -54,8 +54,6 @@ PAGE_SIZE = 50
 SEARCH_PAGE_SIZE = 10
 # A menu of more results than this is five requests, and no one reads them all.
 SEARCH_MAX_RESULTS = 50
-
-MEDIA_TYPES = ("track", "album", "artist", "playlist")
 
 DEVELOPER_DASHBOARD = "https://developer.spotify.com/dashboard"
 # Since February 2026 Spotify refuses apps whose owner has no Premium, with a 403.
@@ -162,12 +160,282 @@ def summary_item(media_type: str, item: dict) -> dict:
     }
 
 
+# --- the login ------------------------------------------------------------------
+#
+# One token, kept in the [spotify] section of the config, used by the downloads,
+# the playlist tools and `streamrip web` alike. It comes from the user's own app
+# from the developer dashboard, with OAuth and PKCE: the login a browser makes
+# (`streamrip login spotify`, or the Accounts page of streamrip web).
+#
+# Spotify rotates the refresh token at every refresh, and the old one is dead
+# the moment the new one is back. A refresh saves its tokens at once, then, and
+# one lock keeps two logins in this process from spending the same one.
+
+
+AUTHORIZE_URL = "https://accounts.spotify.com/authorize"
+TOKEN_URL = "https://accounts.spotify.com/api/token"
+# Off, but could be handy: the client id the pair link login used, so it needed
+# no app of the user's own. Everyone who used it shared one rate limit, which
+# was mostly used up (HTTP 429). `git log -S DEFAULT_CLIENT_ID` finds the login.
+# DEFAULT_CLIENT_ID = "65b708073fc0480ea92a077233ca87bd"  # noqa: ERA001
+# What an app of your own asks for: reading the user's own and shared
+# playlists, for downloads (tracks, albums, artists and search need no
+# scope); and reading and changing the liked songs and playlists, for the
+# playlist tools. One login does both.
+SCOPES = (
+    "playlist-read-private",
+    "playlist-read-collaborative",
+    "user-library-read",
+    "user-library-modify",
+    "playlist-modify-private",
+    "playlist-modify-public",
+)
+
+# Seconds a token is refreshed before it actually expires.
+TOKEN_MARGIN = 60
+# Seconds a login server gets to answer.
+AUTH_TIMEOUT = 20
+
+# One login, one refresh at a time: a refresh token Spotify rotates is spent
+# once the new one arrives, and two logins must not both spend the same one.
+_REFRESH_LOCK = threading.Lock()
+
+
+class SpotifyAuthError(Exception):
+    """Spotify's login could not be used or made."""
+
+
+class NotLoggedInError(SpotifyAuthError):
+    """No Spotify login is stored yet."""
+
+
+class LoginRefusedError(SpotifyAuthError):
+    """Spotify refused a login, or a refresh of one."""
+
+
+class AuthServerDownError(SpotifyAuthError):
+    """The login server could not be reached or is in trouble: the login
+    itself is not in question, so "log in again" would be the wrong advice."""
+
+
+@dataclass(frozen=True, slots=True)
+class Token:
+    access_token: str
+    refresh_token: str
+    expires_at: float  # unix time
+    scope: str = ""
+
+    def valid(self, margin: float = TOKEN_MARGIN) -> bool:
+        """True while the token lasts, with `margin` seconds of leeway."""
+        return bool(self.access_token) and time.time() < self.expires_at - margin
+
+
+# --- what the config says ------------------------------------------------------
+
+
+def load_login(config: Config) -> Token | None:
+    """The login stored in the [spotify] section, or None for no login."""
+    c = config.session.spotify
+    if not c.access_token and not c.refresh_token:
+        return None
+    try:
+        expires = float(c.token_expiry or 0)
+    except ValueError:
+        expires = 0.0
+    return Token(c.access_token, c.refresh_token, expires, c.scope)
+
+
+def save_login(config: Config, token: Token) -> None:
+    """Keep the token in the config, at once: a rotated refresh token is dead
+    once the new one is stored, and the other logins read the same file. The
+    app it belongs to is the user's own, set before the login."""
+    config.update_logins(
+        "spotify",
+        {
+            "access_token": token.access_token,
+            "refresh_token": token.refresh_token,
+            "token_expiry": str(int(token.expires_at)),
+            "scope": token.scope,
+        },
+    )
+
+
+# --- the token, refreshed when it is due ---------------------------------------
+
+
+def login_token(config: Config, session: requests.Session | None = None) -> Token:
+    """A token that works: the stored one, or a refreshed one kept in place."""
+    config.reload_logins("spotify")
+    current = load_login(config)
+    if current is not None and current.valid():
+        return current
+    return refresh_login(config, session)
+
+
+def refresh_login(
+    config: Config,
+    session: requests.Session | None = None,
+    stale: str | None = None,
+) -> Token:
+    """Spend the refresh token and keep the new pair, here and in the file.
+
+    `stale` is a token Spotify just refused: one that looks fresh on the
+    clock but is not. When another login has already replaced it, its new
+    token is taken instead, and the refresh token is spent once.
+    """
+    with _REFRESH_LOCK:
+        # Another program (the web server, a command) may have refreshed, and
+        # so rotated, this very login while we were not looking.
+        config.reload_logins("spotify")
+        current = load_login(config)
+        if current is None:
+            raise NotLoggedInError("Not logged in to Spotify.")
+        if not (client_id := config.session.spotify.client_id):
+            raise NotLoggedInError("Spotify needs an app of your own to log in with.")
+        if (stale is None and current.valid()) or (
+            stale is not None and current.access_token != stale
+        ):
+            return current
+        if not current.refresh_token:
+            raise LoginRefusedError("the login has no refresh token")
+        spent = current.refresh_token
+        answer = _post(
+            session,
+            TOKEN_URL,
+            {
+                "grant_type": "refresh_token",
+                "refresh_token": spent,
+                "client_id": client_id,
+            },
+            _verify(config),
+        )
+        if answer.status != 200 or "access_token" not in answer.payload:
+            # Another program may have rotated the login while this refresh was
+            # in flight: its pair is the one to use, and the one spent is the
+            # old one.
+            config.reload_logins("spotify")
+            latest = load_login(config)
+            if (
+                latest is not None
+                and latest.refresh_token not in {spent, ""}
+                and latest.valid()
+            ):
+                return latest
+            raise LoginRefusedError(_detail(answer))
+        fresh = _token_from(answer.payload)
+        # Spotify only sends a new refresh token when it rotates them, and a
+        # scope when it changed; otherwise keep the old ones.
+        fresh = Token(
+            fresh.access_token,
+            fresh.refresh_token or current.refresh_token,
+            fresh.expires_at,
+            fresh.scope or current.scope,
+        )
+        save_login(config, fresh)
+        return fresh
+
+
+def _verify(config: Config | None) -> bool | None:
+    """Whether the login server's certificate is checked, as the config says."""
+    return config.session.downloads.verify_ssl if config is not None else None
+
+
+# --- the login a browser makes ----------------------------------------------------
+
+
+def exchange_code(
+    code: str,
+    verifier: str,
+    redirect_uri: str,
+    client_id: str,
+    config: Config | None = None,
+    session: requests.Session | None = None,
+) -> Token:
+    """Trade the code from an app login's redirect for tokens."""
+    answer = _post(
+        session,
+        TOKEN_URL,
+        {
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": redirect_uri,
+            "client_id": client_id,
+            "code_verifier": verifier,
+        },
+        _verify(config),
+    )
+    if answer.status != 200 or "access_token" not in answer.payload:
+        raise LoginRefusedError(_detail(answer))
+    return _token_from(answer.payload)
+
+
+# --- the HTTP of it -------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class _Answer:
+    status: int
+    payload: dict
+
+
+def _post(
+    session: requests.Session | None,
+    url: str,
+    data: dict[str, str],
+    verify: bool | None = None,
+) -> _Answer:
+    """POST a form to the login server. Its trouble is an AuthServerDownError, not
+    a refusal of the login."""
+    session = session or requests.Session()
+    if verify is not None:
+        session.verify = verify
+    try:
+        resp = session.post(url, data=data, timeout=AUTH_TIMEOUT)
+    except requests.RequestException as e:
+        raise AuthServerDownError(
+            f"could not reach the Spotify login server: {e}"
+        ) from e
+    if resp.status_code >= 500:  # their trouble, not a refusal
+        raise AuthServerDownError(
+            f"the Spotify login server is having trouble (HTTP {resp.status_code})"
+        )
+    try:
+        payload = resp.json()
+    except ValueError:  # a page instead of JSON
+        payload = {}
+    return _Answer(resp.status_code, payload if isinstance(payload, dict) else {})
+
+
+def _detail(answer: _Answer) -> str:
+    """Spotify's own explanation, or the status where it gives none."""
+    return str(
+        answer.payload.get("error_description")
+        or answer.payload.get("error")
+        or f"HTTP {answer.status}"
+    )
+
+
+def _token_from(payload: dict) -> Token:
+    try:
+        expires = time.time() + float(payload.get("expires_in") or 3600)
+    except TypeError, ValueError:
+        expires = time.time() + 3600
+    return Token(
+        access_token=str(payload["access_token"]),
+        refresh_token=str(payload.get("refresh_token") or ""),
+        expires_at=expires,
+        scope=str(payload.get("scope") or ""),
+    )
+
+
 class SpotifyClient(Client):
     """Spotify: the user's own Spotify app; the audio from Spotify itself
     (the `spotify` backend, its official client, recorded locally) or a
     YouTube Music match (the `youtube` one)."""
 
     source = "spotify"
+    # A 429 is the app's rate limit: wait as Spotify says, once, then say so.
+    api_attempts = 2
 
     def __init__(self, config: Config):
         super().__init__(config)
@@ -181,7 +449,10 @@ class SpotifyClient(Client):
 
     @property
     def container(self) -> str:
-        """The container the downloaded audio ends up in, as albums name it."""
+        """The container the downloaded audio ends up in, as albums name it:
+        FLAC when Spotify's own audio is on, else what the YouTube download is."""
+        if self.soloist_backend is not None:
+            return "FLAC"
         return "MP3" if self.config.audio_format.lower() == "mp3" else "AAC"
 
     # --- Spotify's own audio (the `spotify` backend) ---------------------------
@@ -219,6 +490,16 @@ class SpotifyClient(Client):
         """The Spotify backend keeps nothing open between runs: nothing to close."""
         await super().close()
 
+    def _pause_requests(self, seconds: float):
+        """Spotify's limit is the app's, not a sign of an account in danger:
+        wait as Spotify says. The pacing and the ban guard are Tidal's."""
+        owner = self._paced_owner()
+        owner._retry_at = max(owner._retry_at, time.monotonic() + seconds)
+        logger.warning(
+            "Spotify is rate-limiting your app (HTTP 429); it asks for %.0fs.",
+            seconds,
+        )
+
     # --- login -------------------------------------------------------------
 
     async def login(self):
@@ -229,13 +510,18 @@ class SpotifyClient(Client):
         longer accepts the saved one.
         """
         self._ensure_session()
+        if not self.config.client_id:
+            # A login left over from the pair link has no app: it cannot be renewed.
+            raise MissingCredentialsError(
+                "Spotify needs an app of your own to log in with."
+            )
         try:
-            await asyncio.to_thread(spotify_auth.token, self.global_config)
-        except spotify_auth.NotLoggedInError as e:
+            await asyncio.to_thread(login_token, self.global_config)
+        except NotLoggedInError as e:
             raise MissingCredentialsError(str(e)) from e
-        except spotify_auth.AuthServerDownError as e:
+        except AuthServerDownError as e:
             raise AuthenticationError(str(e)) from e
-        except spotify_auth.SpotifyAuthError as e:
+        except SpotifyAuthError as e:
             raise AuthenticationError(
                 f"Spotify did not accept the login ({e}). Log in again to fix it."
             ) from e
@@ -263,20 +549,20 @@ class SpotifyClient(Client):
         c = self.config
         try:
             token = await asyncio.to_thread(
-                spotify_auth.exchange,
+                exchange_code,
                 code,
                 verifier,
                 c.redirect_uri,
                 c.client_id,
                 self.global_config,
             )
-        except spotify_auth.AuthServerDownError as e:
+        except AuthServerDownError as e:
             raise AuthenticationError(str(e)) from e
-        except spotify_auth.SpotifyAuthError as e:
+        except SpotifyAuthError as e:
             raise AuthenticationError(
                 f"Spotify did not accept the login ({e}). Log in again to fix it."
             ) from e
-        spotify_auth.save(self.global_config, token, "app")
+        save_login(self.global_config, token)
         self.logged_in = True
 
     async def _fresh_token(self, stale: str | None = None) -> str:
@@ -286,9 +572,7 @@ class SpotifyClient(Client):
         another login in this process already made, so a refresh token is
         spent once and the newest pair is the one that is kept.
         """
-        token = await asyncio.to_thread(
-            spotify_auth.refresh, self.global_config, stale=stale
-        )
+        token = await asyncio.to_thread(refresh_login, self.global_config, stale=stale)
         return token.access_token
 
     # --- API ---------------------------------------------------------------
@@ -317,8 +601,7 @@ class SpotifyClient(Client):
         self._raise_for_status(status, body)
         return body
 
-    @staticmethod
-    def _raise_for_status(status: int, body: dict):
+    def _raise_for_status(self, status: int, body: dict):
         if status < 400:
             return
         error = body.get("error")
@@ -335,9 +618,9 @@ class SpotifyClient(Client):
         if status == 429:
             raise SpotifyAPIError(
                 status,
-                "Spotify keeps answering with 'too many requests'. If this is "
-                "its quota, wait a while. Lowering requests_per_minute in "
-                "[spotify] helps too.",
+                "Spotify keeps answering with 'too many requests'. Its limit is "
+                "per app: wait a minute and try again. Lowering "
+                "requests_per_minute in [spotify] helps too.",
             )
         if status == 410:
             # 410 is final, on purpose: it is not in RETRY_STATUSES, so this
@@ -469,8 +752,7 @@ class SpotifyClient(Client):
         offset: int = 0,
     ) -> list[dict]:
         """Search results as pages of {"items": [...]}, in the shape of the menu."""
-        if media_type not in MEDIA_TYPES:
-            raise ValueError(f"Cannot search Spotify for {media_type}s")
+        self.check_search_type(media_type)
         wanted = min(limit, SEARCH_MAX_RESULTS)
         pages = []
         while wanted > 0:

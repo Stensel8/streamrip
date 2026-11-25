@@ -15,9 +15,16 @@ lazy from typing import Any
 
 from .. import db, progress
 from ..accounts import BY_ID
-from ..client import DeezerClient, QobuzClient, SoundcloudClient, TidalClient
+from ..client import (
+    CLIENTS,
+    DeezerClient,
+    QobuzClient,
+    SoundcloudClient,
+    SpotifyClient,
+    TidalClient,
+)
 from ..console import plural
-from ..exceptions import AuthenticationError
+from ..exceptions import AccountHalt, AuthenticationError
 from ..metadata import SearchResults
 from ..rip.main import Main
 from ..rip.plan import plan_lines
@@ -35,10 +42,18 @@ lazy from .jobs import Job
 
 logger = logging.getLogger("streamrip")
 
-SOURCES = ("qobuz", "tidal", "deezer", "soundcloud", "spotify")
+SOURCES = tuple(CLIENTS)
 PLANS = ("qobuz", "tidal", "deezer")  # the sources whose login can lower the quality
 MEDIA_TYPES = ("track", "album", "artist", "playlist")
 SEARCH_RESULTS = 30  # what the page lists of a search
+
+
+class AccountPausedError(Exception):
+    """streamrip stopped for the account's sake (an AccountHalt). That is a
+    BaseException, which neither a request nor a job's thread survives: the
+    browser got no answer, and the job stayed "running" for ever."""
+
+    http_status = 429
 
 
 @dataclass(slots=True)
@@ -77,7 +92,10 @@ class Runner:
 
     def call[T](self, coro: Coroutine[Any, Any, T]) -> T:
         """Run `coro` on the downloads' loop and wait for what it returns."""
-        return asyncio.run_coroutine_threadsafe(coro, self._ensure_loop()).result()
+        try:
+            return asyncio.run_coroutine_threadsafe(coro, self._ensure_loop()).result()
+        except AccountHalt as e:
+            raise AccountPausedError(str(e)) from None
 
     # --- downloading -------------------------------------------------------
 
@@ -261,6 +279,31 @@ class Runner:
             await client.close()
         prompter_type(self.config, client).save()
         self.config.save_file()
+
+    def pair_soloist(self, job: Job, api_key: str) -> str:
+        """Pair Spotify's own audio (Soloist) once: Spotify's app on this
+        network picks the device. The key is kept only if the pairing works."""
+        c = self.config.session.spotify
+        job.enter(
+            "login",
+            "In the Spotify app on a device on this network: press play, tap "
+            f"Connect to a device, pick {c.device_name or 'streamrip'} and play a track.",
+        )
+        before = c.soloist_api_key
+        client = SpotifyClient(self.config)
+
+        async def pair() -> str:
+            try:
+                return await client.pair_soloist(api_key)
+            except Exception:
+                c.soloist_api_key = before
+                raise
+            finally:
+                await client.close()
+
+        username = self.call(pair())
+        self.config.update_logins("spotify", {"soloist_api_key": api_key})
+        return f"Signed in to Spotify's own audio as {username}."
 
     def login_tidal(self, job: Job):
         """Tidal's device login, for downloading: a link to open, once per

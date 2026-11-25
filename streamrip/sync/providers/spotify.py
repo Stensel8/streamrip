@@ -4,8 +4,7 @@ from functools import cached_property
 from typing import Any
 lazy from collections.abc import Collection, Iterator
 
-from ... import spotify_auth
-from ...spotify_auth import AUTHORIZE_URL, SCOPES, TOKEN_URL
+from ...client.spotify import AUTHORIZE_URL, SCOPES, TOKEN_URL, refresh_login
 from ..auth import ConfigTokenStore, OAuthClient, Token
 from ..errors import ApiError, ProviderError
 from ..models import PlaylistInfo, Track, normalize_isrc
@@ -37,7 +36,7 @@ class SpotifyOAuth(OAuthClient):
     def refresh_stored(self, store: ConfigTokenStore, current: Token) -> Token:
         """The downloads refresh this very login: the shared Spotify token
         service spends the rotated refresh token once and keeps the new pair."""
-        fresh = spotify_auth.refresh(store.config, stale=current.access_token)
+        fresh = refresh_login(store.config, stale=current.access_token)
         return Token(
             fresh.access_token, fresh.refresh_token, fresh.expires_at, fresh.scope
         )

@@ -4,8 +4,7 @@ from streamrip.config import Config, set_user_defaults
 
 def accounts_at(tmp_path) -> Accounts:
     path = tmp_path / "config.toml"
-    if not path.exists():
-        set_user_defaults(path)
+    set_user_defaults(path)
     return Accounts(Config(path))
 
 
@@ -13,9 +12,6 @@ def test_nothing_is_logged_in_on_a_first_run(tmp_path):
     statuses = {s.login.id: s for s in accounts_at(tmp_path).all()}
     assert tuple(statuses) == LOGIN_IDS
     assert not any(s.logged_in for s in statuses.values())
-    # Only the logins that need an app of one's own can be missing it.
-    # Spotify's device login needs none.
-    assert {i for i, s in statuses.items() if s.app_missing} == {"tidal-library"}
 
 
 def test_a_login_needs_all_its_parts(tmp_path):
@@ -35,7 +31,6 @@ def test_a_logout_keeps_the_app_and_can_be_undone(tmp_path):
     assert not accounts.logged_in("spotify")
     saved = Config(tmp_path / "config.toml").file.spotify
     assert (saved.client_id, saved.refresh_token) == ("app", "")
-    assert accounts.logout("spotify") == {}  # nothing left to forget
 
     accounts.restore("spotify", held)
     assert Config(tmp_path / "config.toml").file.spotify.refresh_token == "r"

@@ -9,12 +9,11 @@ working one for every track:
 
 - `backend = "spotify"` (the default) plays each track in real time with
   Spotify's own official client,
-  [Soloist](https://github.com/spotify/soloist), and saves the local audio as
-  the account hears it. That is the account's own quality, lossless up to
-  44.1 kHz on Premium, and it is not re-encoded down. Because the track plays in
-  full and is recorded as it goes, it takes the track's own length, a minute and
-  a half to four, so it rips slower than the other sources. It runs on Linux
-  only.
+  [Soloist](https://github.com/spotify/soloist), and records the local audio.
+  That is Spotify's lossless FLAC (Premium), recorded at 44.1 kHz and saved as a
+  24-bit FLAC. Because the track plays in full and is recorded as it goes, it
+  takes the track's own length, a minute and a half to four, so it rips slower
+  than the other sources. It runs on Linux only.
 - `backend = "youtube"` finds the same recording on **YouTube Music** (by ISRC
   first, then by artist, title and length) and downloads it, the way
   [spotDL](https://github.com/spotDL/spotify-downloader) does. It is AAC at
@@ -32,27 +31,12 @@ download fails and says so, install [Deno](https://deno.com) or
 
 ## Logging in
 
-Two ways, and they save the same login, in `state.toml` next to the config:
-one login does the downloads and the [playlist tools](playlists.md) alike, and
-it renews itself.
-
-**The pair link (the default).** Run `streamrip login spotify`. It shows a
-link and a short code:
-
-1. Open the link on any device that has Spotify, this computer or a phone, and
-   log in there if you are not.
-2. Approve the login with the code. The link stays open about an hour.
-
-No app of your own, no developer dashboard, no browser to send back, and it
-works over SSH and in a container. If it says the link expired, approve it
-sooner, or start the login again.
-
-**Your own app (optional).** The classic way, with an app from Spotify's
-developer dashboard. It needs one thing the pair link does not: **the account
-that owns the app needs Spotify Premium**. Without Premium, Spotify refuses
-every request. If you don't have it, someone who does can create the app and
-add your Spotify account under *Settings > User Management*. It takes about a
-minute:
+One login, in `state.toml` next to the config, does the downloads and the
+[playlist tools](playlists.md) alike, and it renews itself. It needs **an app of
+your own** from Spotify's developer dashboard, and **the account that owns the
+app needs Spotify Premium**: without Premium, Spotify refuses every request. If
+you don't have it, someone who does can create the app and add your Spotify
+account under *Settings > User Management*. It takes about a minute:
 
 1. Go to the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard),
    log in and choose **Create app**. The name and description can be anything.
@@ -65,11 +49,10 @@ minute:
 4. Save, open the app's *Settings* and copy the **Client ID**. You don't need the
    client secret.
 
-Then `streamrip login spotify --configure` asks for the Client ID and opens
-your browser so you can log in. streamrip picks up the response itself on
-`127.0.0.1:9900`. If streamrip runs on another machine, you can paste the
-address your browser ends up on instead. The [web interface](web.md) offers
-both ways on its Accounts page: the pair link, and the login with your own app.
+Then `streamrip login spotify` asks for the Client ID and opens your browser so
+you can log in. streamrip picks up the response itself on `127.0.0.1:9900`. If
+streamrip runs on another machine, you can paste the address your browser ends
+up on instead. The [web interface](web.md) does the same on its Accounts page.
 
 ![What you see without Premium: "Your application is blocked from accessing the Web API since you do not have a Spotify Premium subscription."](images/spotify-premium-required.avif)
 
@@ -89,12 +72,20 @@ anywhere but Spotify. When it asks, paste it in, and it is saved as
 **A pairing, once.** In the Spotify app on a device on this network, press play,
 tap *Connect to a device*, and pick the device named `device_name` (default
 `streamrip`) to play a track. The session is stored on this machine and replayed
-by every later run.
+by every later run. The Accounts page of the [web interface](web.md) does this
+too: paste the key, press *Pair*, and pick the device in the app.
 
-**Linux, with PipeWire or PulseAudio.** The recording is a sink monitor, a Linux
-thing, so the `spotify` backend runs on Linux for now. On macOS or Windows, or
+**Linux, with PipeWire or PulseAudio.** The recording is a sink monitor, made
+with `pactl` and `parec` (PulseAudio's tools, which PipeWire has too), so the
+`spotify` backend runs on Linux for now. On macOS or Windows, or
 if any of the above is missing, streamrip does not fail: it falls back to
 YouTube Music for that track, so you still get the file.
+
+streamrip sets two prefs in Soloist's data folder before each play: the lossless
+quality (Soloist plays Ogg Vorbis at 160 kbps otherwise) and no volume
+normalization (which turns the level down by some 6 dB). If you use that Soloist
+as a player too, they apply there as well. If Spotify has no lossless file of a
+track, streamrip says what it played instead.
 
 streamrip keeps its own copy of the Soloist binary. The official builds expire
 after 90 days, and when one does, streamrip downloads a fresh one and carries on.
@@ -119,8 +110,7 @@ Spotify limits what apps like this can do:
   ones. Copy those into a playlist of your own first.
 - Podcasts and local files in a playlist are skipped.
 - At most five people can use an app: the ones you add under *User Management*.
-  That's Spotify's limit for apps in development mode (for your own app; the
-  pair link needs no app).
+  That's Spotify's limit for apps in development mode.
 
 The options are in the `[spotify]` section of `streamrip config open`:
 `backend` (`spotify` or `youtube`), `soloist_api_key` and `device_name` for the

@@ -15,6 +15,7 @@ import aiohttp
 from flask import Flask, Response, abort, jsonify, render_template, request
 from werkzeug.exceptions import HTTPException, SecurityError
 
+from ..client.spotify import SpotifyAuthError
 from ..config import APP_DIR
 from ..exceptions import (
     APIError,
@@ -24,13 +25,12 @@ from ..exceptions import (
     NonStreamableError,
 )
 from ..rip.spotify_login import SpotifyLoginError
-from ..spotify_auth import SpotifyAuthError
 from ..sync.errors import SyncError
 from ..sync.services import Services
 from .accounts import accounts_pages
 from .jobs import JobManager, explain
 from .library import library_pages
-from .runner import Runner
+from .runner import AccountPausedError, Runner
 from .views import pages, playlist_pages
 lazy from ..config import Config
 
@@ -47,6 +47,7 @@ EXPLAINED = (
     APIError,
     SpotifyLoginError,
     SpotifyAuthError,
+    AccountPausedError,
 )
 
 # The pages use only their own scripts and styles, and nothing inline; covers

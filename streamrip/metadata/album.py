@@ -315,8 +315,9 @@ class AlbumMetadata:
     def from_spotify(cls, resp: dict) -> AlbumMetadata:
         """Build album metadata from a Spotify album, full or as a track lists it.
 
-        The audio is lossy (it comes from YouTube Music), so there is no bit
-        depth or sampling rate; SpotifyClient says which container it ends up in.
+        Spotify gives no bit depth or sampling rate (the audio is Spotify's own,
+        recorded, or a YouTube Music match); SpotifyClient says which container
+        it ends up in.
         """
         date = resp.get("release_date")
         artists = [a["name"] for a in resp.get("artists") or [] if a.get("name")]

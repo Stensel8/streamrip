@@ -10,14 +10,7 @@ lazy import asyncio
 import click
 
 from ..accounts import BY_ID, LOGIN_IDS, Accounts
-lazy from .. import spotify_auth
-lazy from ..client import (
-    DeezerClient,
-    QobuzClient,
-    SoundcloudClient,
-    SpotifyClient,
-    TidalClient,
-)
+lazy from ..client import CLIENTS
 lazy from ..config import Config
 lazy from ..console import console
 lazy from ..sync.auth import pkce_pair
@@ -27,12 +20,7 @@ lazy from ..verify import FAILED
 lazy from ..verify import verify as run_verify
 lazy from .cli import _require_config, coro
 lazy from .interactive import Prompt
-lazy from .prompter import (
-    get_prompter,
-    has_screen,
-    launch,
-    spotify_device_login,
-)
+lazy from .prompter import get_prompter, has_screen, launch
 lazy from .spotify_login import capture_code, code_from_redirect_url
 
 LOGIN = click.Choice(LOGIN_IDS, case_sensitive=False)
@@ -66,28 +54,19 @@ def accounts(ctx):
     console.print(f"Kept in {config.state.path}", highlight=False, soft_wrap=True)
 
 
-def _log_in_again(config: Config, service: str, configure: bool = False):
+def _log_in_again(config: Config, service: str):
     """Log in to `service` from nothing, and put the old login back if that does
-    not work out: a login that works is not asked for twice. `configure` is
-    Spotify's own-app login, instead of the automated one."""
+    not work out: a login that works is not asked for twice."""
     accounts = Accounts(config)
     held = accounts.logout(service)
     try:
         if service == "tidal-library":
             _log_in_to_tidal_library(Services(config))
-        elif service == "spotify" and not configure:
-            spotify_device_login(config)
         else:
-            method = "app" if service == "spotify" else None
-            coro(_log_in)(config, service, method=method)
+            coro(_log_in)(config, service)
     except SyncError as e:
         accounts.restore(service, held)
         raise click.ClickException(str(e)) from e
-    except spotify_auth.SpotifyAuthError as e:
-        accounts.restore(service, held)
-        raise click.ClickException(
-            f"our automated oAuth2 failed. Please run `{spotify_auth.CONFIGURE}`."
-        ) from e
     except KeyboardInterrupt:
         accounts.restore(service, held)
         raise click.ClickException("Login cancelled.") from None
@@ -105,22 +84,14 @@ def _log_in_again(config: Config, service: str, configure: bool = False):
 
 @click.command()
 @click.argument("service", type=LOGIN, required=False)
-@click.option(
-    "--configure",
-    "configure",
-    is_flag=True,
-    help="Spotify: log in with your own app from the developer dashboard, "
-    "instead of the automated login.",
-)
 @click.pass_context
-def login(ctx, service, configure):
+def login(ctx, service):
     """Log in to a service, or log in again.
 
     tidal logs in for downloading. tidal-library is Tidal's official API, for
     your playlists and favourites, with a developer app of your own. spotify
-    is one login for downloading and playlists alike: the automated login by
-    default, or --configure to log in with your own app. Without a name, it
-    asks.
+    is one login for downloading and playlists alike, with an app of your own
+    too. Without a name, it asks.
     """
     config = _require_config(ctx)
     service = service or Prompt.ask(
@@ -130,7 +101,7 @@ def login(ctx, service, configure):
             (s.login.id for s in Accounts(config).all() if not s.logged_in), None
         ),
     )
-    _log_in_again(config, service, configure=configure)
+    _log_in_again(config, service)
 
 
 @click.command()
@@ -203,21 +174,12 @@ def logout(ctx, service):
     )
 
 
-async def _log_in(config: Config, source: str, method: str | None = None):
+async def _log_in(config: Config, source: str):
     """Log in to a download source as it does the first time it is used."""
-    client = {
-        "qobuz": QobuzClient,
-        "tidal": TidalClient,
-        "deezer": DeezerClient,
-        "soundcloud": SoundcloudClient,
-        "spotify": SpotifyClient,
-    }[source](config)
+    client = CLIENTS[source](config)
     try:
         prompter = get_prompter(client, config)
-        if method is None:
-            await prompter.prompt_and_login()
-        else:
-            await prompter.prompt_and_login(method)
+        await prompter.prompt_and_login()
         prompter.save()
     finally:
         await client.close()

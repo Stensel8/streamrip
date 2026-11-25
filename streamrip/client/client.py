@@ -22,7 +22,7 @@ lazy import aiohttp
 lazy import aiolimiter
 
 from ..console import plural
-from ..exceptions import AccountHalt
+from ..exceptions import AccountHalt, SearchTypeError
 from ..utils.ssl_utils import get_aiohttp_connector_kwargs
 lazy from ..config import Config
 lazy from .downloadable import Downloadable
@@ -394,6 +394,8 @@ class RequestClient:
     _hour_reported: float | None = None
     # whether this run has picked up the pacing the last one left
     _pacing_state_loaded: bool = False
+    # tries of an API request that is worth another attempt
+    api_attempts: int = MAX_API_ATTEMPTS
 
     @staticmethod
     def get_rate_limiter(
@@ -817,7 +819,7 @@ class RequestClient:
         """GET an API url, retrying what is likely to work a moment later.
 
         Connection errors, timeouts, 5xx and 429 are retried with backoff, up to
-        MAX_API_ATTEMPTS. A 429 holds back every request, not just this one,
+        `api_attempts`. A 429 holds back every request, not just this one,
         since the rate limit belongs to the account. A 401 renews the login
         once (_renew_login) and sends this request again. `read` turns the
         response into the result; it gets every response that isn't retried,
@@ -879,7 +881,7 @@ class RequestClient:
                             continue
                         if (
                             resp.status not in RETRY_STATUSES
-                            or attempt >= MAX_API_ATTEMPTS
+                            or attempt >= self.api_attempts
                         ):
                             return await read(resp)
                         if resp.status != 429:
@@ -892,7 +894,7 @@ class RequestClient:
                 aiohttp.ClientConnectionError,
                 aiohttp.ClientPayloadError,
             ) as e:
-                if attempt >= MAX_API_ATTEMPTS:
+                if attempt >= self.api_attempts:
                     raise
                 reason = type(e).__name__
                 delay = 2**attempt + random.random()
@@ -947,6 +949,17 @@ class Client(RequestClient, ABC):
     """
 
     max_quality: int
+    # What the source can be searched for: the kinds `search` takes.
+    search_types: tuple[str, ...] = ("track", "album", "artist", "playlist")
+
+    def check_search_type(self, media_type: str):
+        """Refuse a search for a kind this source has none for, in words."""
+        if media_type not in self.search_types:
+            have = [f"{t}s" for t in self.search_types]
+            raise SearchTypeError(
+                f"{self.source.capitalize()} has no search for {media_type}s; "
+                f"search for {', '.join(have[:-1])} or {have[-1]}."
+            )
 
     def __init__(self, config: Config):
         self.global_config = config

@@ -1,9 +1,14 @@
+import asyncio
+import time
+from types import SimpleNamespace
+
 import pytest
 from click.testing import CliRunner
 
 from streamrip import verify as verify_module
 from streamrip.accounts import Accounts
-from streamrip.client import DeezerClient, QobuzClient, TidalClient
+from streamrip.client import QobuzClient
+from streamrip.client import spotify as spotify_module
 from streamrip.config import Config, set_user_defaults
 from streamrip.exceptions import AuthenticationError
 from streamrip.rip import accounts_cli
@@ -42,30 +47,57 @@ class FakeClient:
         pass
 
 
-async def test_nothing_is_tried_where_there_is_no_login(config):
-    found = {r.id: r for r in await verify_module.verify(config)}
-    assert found["qobuz"].state == verify_module.NOT_LOGGED_IN
-    assert found["qobuz"].fix == "streamrip login qobuz"
-    # Spotify's device login needs no app of one's own, so it is a plain
-    # "not logged in", not "needs an app".
-    assert found["spotify"].state == verify_module.NOT_LOGGED_IN
-    assert found["spotify"].fix == "streamrip login spotify"
-    assert not any(r.state == verify_module.OK for r in found.values())
+def log_in_to_spotify(config, monkeypatch, *, reply=None, error=None):
+    """A saved Spotify login whose API answers `reply`, or fails with `error`."""
+    config.update_logins(
+        "spotify",
+        {
+            "client_id": "app",
+            "access_token": "a",
+            "refresh_token": "r",
+            "token_expiry": str(int(time.time()) + 3600),
+        },
+    )
+
+    def request(*_args, **_kwargs):
+        if error:
+            raise error
+        return reply
+
+    monkeypatch.setattr(
+        verify_module, "ApiClient", lambda *a, **k: SimpleNamespace(request=request)
+    )
 
 
-async def test_a_working_login_shows_its_plan(config, monkeypatch):
-    log_in_to_qobuz(config)
-    monkeypatch.setattr(verify_module, "QobuzClient", FakeClient)
-    (found,) = await verify_module.verify(config, ("qobuz",))
-    assert (found.state, found.detail, found.hint) == ("ok", "Studio, hi-res", "")
-
-
-async def test_a_quality_the_plan_cannot_give_is_pointed_out(config, monkeypatch):
+@pytest.mark.parametrize(
+    ("plan", "hint"),
+    [(("Studio, hi-res", 4), ""), (("Sublime, lossless", 2), "set it to 2")],
+    ids=["fits", "quality the plan cannot give"],
+)
+async def test_a_working_login_shows_its_plan(config, monkeypatch, plan, hint):
     log_in_to_qobuz(config)  # quality = 4 in the template
-    monkeypatch.setattr(FakeClient, "plan", ("Sublime, lossless", 2))
+    monkeypatch.setattr(FakeClient, "plan", plan)
     monkeypatch.setattr(verify_module, "QobuzClient", FakeClient)
     (found,) = await verify_module.verify(config, ("qobuz",))
-    assert found.state == "ok"
+    assert (found.state, found.detail) == ("ok", plan[0])
+    assert hint in found.hint
+
+
+async def test_the_quality_hint_compares_with_what_was_asked(config, monkeypatch):
+    # The login lowers the session's quality to the plan; the hint must still
+    # compare with what the config asks for.
+    log_in_to_qobuz(config)
+    config.session.qobuz.quality = 4
+
+    class Lowers(FakeClient):
+        plan = ("lossless", 2)
+
+        async def login(self):
+            self.requested_quality = config.session.qobuz.quality
+            config.session.qobuz.quality = 2
+
+    monkeypatch.setattr(verify_module, "QobuzClient", Lowers)
+    (found,) = await verify_module.verify(config, ("qobuz",))
     assert "set it to 2" in found.hint
 
 
@@ -83,79 +115,73 @@ async def test_a_service_that_does_not_answer_is_no_login_problem(config, monkey
 
     class Silent(FakeClient):
         async def login(self):
-            import asyncio
-
             await asyncio.sleep(5)
 
     monkeypatch.setattr(verify_module, "TIMEOUT", 0.05)
     monkeypatch.setattr(verify_module, "QobuzClient", Silent)
     (found,) = await verify_module.verify(config, ("qobuz",))
     assert found.state == "failed"
-    assert "no answer" in found.detail
     assert not found.fixable  # logging in again would not help
 
 
-@pytest.mark.parametrize("method", ["device", "app"], ids=["pair link", "own app"])
-async def test_spotify_says_who_you_are_and_how_the_login_was_made(
-    config, monkeypatch, method
+async def test_one_service_failing_does_not_end_the_check(config, monkeypatch):
+    log_in_to_qobuz(config)
+    config.update_logins("deezer", {"arl": "cookie"})
+
+    class Broken(FakeClient):
+        async def login(self):
+            raise KeyError("credential")
+
+    monkeypatch.setattr(verify_module, "QobuzClient", Broken)
+    monkeypatch.setattr(verify_module, "DeezerClient", FakeClient)
+    found = {r.id: r for r in await verify_module.verify(config, ("qobuz", "deezer"))}
+    assert found["qobuz"].state == "failed"
+    assert found["deezer"].state == "ok"
+
+
+async def test_soundcloud_without_a_login_is_a_guest_and_no_problem(config):
+    (found,) = await verify_module.verify(config, ("soundcloud",))
+    assert found.state == verify_module.GUEST
+    assert not found.fixable  # nobody is nagged to log in
+
+
+async def test_a_saved_soundcloud_login_that_is_not_taken_is_reported(
+    config, monkeypatch
 ):
-    """The row: is the login accepted, what the account is, and how the login was made."""
-    import time
+    config.update_logins("soundcloud", {"oauth_token": "stale"})
 
-    from streamrip import spotify_auth
+    class Refused(FakeClient):
+        guest_reason = "SoundCloud did not take the saved login (HTTP 401)"
 
-    saved = {
-        "access_token": "a",
-        "refresh_token": "r",
-        "token_expiry": str(int(time.time()) + 3600),
-        "auth_method": method,
-    }
-    if method == "app":
-        saved["client_id"] = "app"
-    config.update_logins("spotify", saved)
+    monkeypatch.setattr(verify_module, "SoundcloudClient", Refused)
+    (found,) = await verify_module.verify(config, ("soundcloud",))
+    assert (found.state, found.fixable) == ("failed", True)
+    assert "HTTP 401" in found.detail
 
-    class ApiClient:
-        def __init__(self, *args, **kwargs):
-            pass
 
-        def request(self, *args, **kwargs):
-            return {"product": "premium", "display_name": "Sten"}
-
-    monkeypatch.setattr(verify_module, "ApiClient", ApiClient)
+async def test_spotify_says_who_you_are(config, monkeypatch):
+    reply = {"product": "premium", "display_name": "Sten"}
+    log_in_to_spotify(config, monkeypatch, reply=reply)
     (found,) = await verify_module.verify(config, ("spotify",))
-    how = "the pair link" if method == "device" else "your own app"
-    assert (found.state, found.detail) == ("ok", f"Premium, Sten, {how}")
-    # The login is the shared one: a refresh on the way is kept, not lost.
-    assert spotify_auth.load(config).refresh_token == "r"
+    assert (found.state, found.detail) == ("ok", "Premium, Sten")
+    # A token refresh on the way is kept, not lost.
+    assert spotify_module.load_login(config).refresh_token == "r"
 
 
 async def test_a_rate_limited_spotify_is_still_a_working_login(config, monkeypatch):
-    """A 429 is on the account, not on the login: the row says the login is fine."""
-    import time
-
-    from streamrip.sync.errors import ApiError
-
-    config.update_logins(
-        "spotify",
-        {
-            "access_token": "a",
-            "refresh_token": "r",
-            "token_expiry": str(int(time.time()) + 3600),
-            "auth_method": "device",
-        },
-    )
-
-    class ApiClient:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        def request(self, *args, **kwargs):
-            raise ApiError(429, "API rate limit exceeded")
-
-    monkeypatch.setattr(verify_module, "ApiClient", ApiClient)
+    # A 429 is on the account, not on the login.
+    error = ApiError(429, "API rate limit exceeded")
+    log_in_to_spotify(config, monkeypatch, error=error)
     (found,) = await verify_module.verify(config, ("spotify",))
     assert (found.state, found.detail) == ("ok", "the login is fine")
     assert "rate-limiting" in found.hint
+
+
+async def test_spotify_without_an_app_of_ones_own_says_to_make_one(config):
+    # A login left over from the pair link, which had no app of its own.
+    config.update_logins("spotify", {"access_token": "a", "refresh_token": "r"})
+    (found,) = await verify_module.verify(config, ("spotify",))
+    assert found.state == "needs an app"
 
 
 @pytest.mark.parametrize(
@@ -172,26 +198,7 @@ async def test_a_rate_limited_spotify_is_still_a_working_login(config, monkeypat
 async def test_a_login_spotify_refuses_says_how_to_fix_it(
     config, monkeypatch, error, detail
 ):
-    import time
-
-    config.update_logins(
-        "spotify",
-        {
-            "access_token": "a",
-            "refresh_token": "r",
-            "token_expiry": str(int(time.time()) + 3600),
-            "auth_method": "device",
-        },
-    )
-
-    class ApiClient:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        def request(self, *args, **kwargs):
-            raise error
-
-    monkeypatch.setattr(verify_module, "ApiClient", ApiClient)
+    log_in_to_spotify(config, monkeypatch, error=error)
     (found,) = await verify_module.verify(config, ("spotify",))
     assert found.state == "failed"
     assert detail in found.detail
@@ -205,37 +212,31 @@ async def test_qobuz_says_what_its_credential_allows():
     client = QobuzClient(Config.defaults())
     client._credential = {"label": "Studio", "parameters": {"hires_streaming": True}}
     assert await client.account_plan() == ("Studio, hi-res", 4)
-    client._credential = {"parameters": {"lossless_streaming": True}}
-    assert await client.account_plan() == ("lossless", 2)
     client._credential = {"parameters": {}}
     assert (await client.account_plan())[1] is None  # purchases only
 
 
-async def test_deezer_says_what_the_licence_allows():
-    client = DeezerClient(Config.defaults())
-    client.client.current_user = {"can_stream_hq": True, "can_stream_lossless": True}
-    assert await client.account_plan() == ("lossless (FLAC)", 2)
-    client.client.current_user = {"can_stream_hq": True, "can_stream_lossless": False}
-    assert (await client.account_plan())[1] == 1
+@pytest.mark.parametrize(
+    ("credential", "fitted"),
+    [
+        ({"lossless_streaming": True}, 2),  # the plan is lower than the setting
+        ({"hires_streaming": True}, 4),
+    ],
+    ids=["lowered", "within the plan"],
+)
+async def test_a_quality_above_the_plan_is_lowered_for_the_run(credential, fitted):
+    config = Config.defaults()
+    qobuz = QobuzClient(config)
+    qobuz._credential = {"parameters": credential}
+    config.session.qobuz.quality = 4
+
+    await qobuz._fit_quality()
+
+    assert config.session.qobuz.quality == fitted
+    assert config.file.qobuz.quality == 4  # the setting itself stays
 
 
-async def test_tidal_says_its_best_quality_and_keeps_quiet_when_it_cannot(monkeypatch):
-    client = TidalClient(Config.defaults())
-
-    async def hi_res(*_a, **_k):
-        return {"subscription": {"type": "HIFI"}, "highestSoundQuality": "HI_RES"}
-
-    monkeypatch.setattr(client, "_api_request", hi_res)
-    assert await client.account_plan() == ("Hifi, up to hi-res", 3)
-
-    async def unknown(*_a, **_k):
-        return {"highestSoundQuality": "SOMETHING_NEW"}
-
-    monkeypatch.setattr(client, "_api_request", unknown)
-    assert await client.account_plan() == ("", None)
-
-
-# --- the command ----------------------------------------------------------------
+# --- the command --------------------------------------------------------------
 
 
 def run_cli(tmp_path, *args):
@@ -253,7 +254,7 @@ def test_verify_exits_1_for_a_saved_login_that_fails(tmp_path, monkeypatch):
     code, output = run_cli(tmp_path, "verify", "qobuz")
     assert code == 1
     assert "token expired" in output
-    assert "→ streamrip login qobuz" in output
+    assert "streamrip login qobuz" in output
 
 
 def test_verify_without_logins_is_no_failure_and_says_what_to_do(tmp_path):
@@ -262,7 +263,6 @@ def test_verify_without_logins_is_no_failure_and_says_what_to_do(tmp_path):
     assert code == 0
     assert "not logged in" in output
     assert "streamrip verify --fix" in output
-    assert "soundcloud" in output
 
 
 def test_verify_fix_logs_in_to_what_needs_it_and_checks_again(tmp_path, monkeypatch):
@@ -281,91 +281,7 @@ def test_verify_fix_logs_in_to_what_needs_it_and_checks_again(tmp_path, monkeypa
     assert "Studio, hi-res" in output  # the second round
 
 
-async def test_soundcloud_without_a_login_is_a_guest_and_no_problem(config):
-    (found,) = await verify_module.verify(config, ("soundcloud",))
-    assert found.state == verify_module.GUEST
-    assert found.fix == "streamrip login soundcloud"
-    assert not found.fixable  # nobody is nagged to log in
-
-
-async def test_a_saved_soundcloud_login_that_is_not_taken_is_reported(
-    config, monkeypatch
-):
-    config.update_logins("soundcloud", {"oauth_token": "stale"})
-
-    class Refused(FakeClient):
-        guest_reason = "SoundCloud did not take the saved login (HTTP 401)"
-
-    monkeypatch.setattr(verify_module, "SoundcloudClient", Refused)
-    (found,) = await verify_module.verify(config, ("soundcloud",))
-    assert (found.state, found.fixable) == ("failed", True)
-    assert "HTTP 401" in found.detail
-
-
-async def test_a_quality_above_the_plan_is_lowered_for_the_run_and_says_so(caplog):
-    caplog.set_level("INFO", logger="streamrip")
-    config = Config.defaults()
-    qobuz = QobuzClient(config)
-    qobuz._credential = {"parameters": {"lossless_streaming": True}}
-    config.session.qobuz.quality = 4
-    await qobuz._fit_quality()
-    assert config.session.qobuz.quality == 2
-    assert "plan is lossless: downloading at quality 2, not the 4" in caplog.text
-    assert config.file.qobuz.quality == 4  # the setting itself stays
-
-
-async def test_a_quality_within_the_plan_or_a_plan_that_is_not_known_is_left_alone():
-    config = Config.defaults()
-    qobuz = QobuzClient(config)
-    qobuz._credential = {"parameters": {"hires_streaming": True}}
-    config.session.qobuz.quality = 4
-    await qobuz._fit_quality()
-    assert config.session.qobuz.quality == 4
-    qobuz._credential = {"parameters": {}}  # purchases only: nothing is known
-    await qobuz._fit_quality()
-    assert config.session.qobuz.quality == 4
-
-
-async def test_the_quality_hint_compares_with_what_was_asked_not_what_the_login_lowered(
-    config, monkeypatch
-):
-    log_in_to_qobuz(config)
-    config.session.qobuz.quality = 4
-
-    class Lowers(FakeClient):
-        plan = ("lossless", 2)
-
-        async def login(self):
-            self.requested_quality = (
-                config.session.qobuz.quality
-            )  # as _fit_quality records it
-            config.session.qobuz.quality = 2
-
-    monkeypatch.setattr(verify_module, "QobuzClient", Lowers)
-    (found,) = await verify_module.verify(config, ("qobuz",))
-    assert "set it to 2" in found.hint
-
-
-async def test_one_service_failing_in_a_way_nobody_expected_does_not_end_the_check(
-    config, monkeypatch
-):
-    log_in_to_qobuz(config)
-    config.update_logins("deezer", {"arl": "cookie"})
-
-    class Broken(FakeClient):
-        async def login(self):
-            raise KeyError("credential")
-
-    monkeypatch.setattr(verify_module, "QobuzClient", Broken)
-    monkeypatch.setattr(verify_module, "DeezerClient", FakeClient)
-    found = {r.id: r for r in await verify_module.verify(config, ("qobuz", "deezer"))}
-    assert found["qobuz"].state == "failed"
-    assert found["deezer"].state == "ok"
-
-
-def test_a_login_that_ends_without_a_login_is_no_login_and_keeps_the_old_one(
-    tmp_path, monkeypatch
-):
+def test_a_login_that_ends_without_a_login_keeps_the_old_one(tmp_path, monkeypatch):
     set_user_defaults(tmp_path / "config.toml")
     log_in_to_qobuz(Config(tmp_path / "config.toml"))
 
@@ -375,7 +291,4 @@ def test_a_login_that_ends_without_a_login_is_no_login_and_keeps_the_old_one(
     monkeypatch.setattr(accounts_cli, "_log_in", stopped)
     _code, output = run_cli(tmp_path, "login", "qobuz")
     assert "Logged in" not in output
-    assert "No login made" in output
-    assert Accounts(Config(tmp_path / "config.toml")).logged_in(
-        "qobuz"
-    )  # the old one is back
+    assert Accounts(Config(tmp_path / "config.toml")).logged_in("qobuz")

@@ -113,23 +113,20 @@ lower_quality_if_not_available = true
 #
 # The audio comes from one of two backends. "spotify" plays each track in
 # real time with Spotify's official headless client, Soloist, and records the
-# local audio while it plays: bit-exact, and the account's own quality --
-# lossless FLAC on Premium. It needs a Soloist API key (one per person,
-# below), one pairing with a Spotify app on the same network, and so far runs
-# on Linux only. "youtube" finds the same recording on YouTube Music
+# local audio while it plays: lossless FLAC on Premium, at 44.1 kHz, saved as
+# 24-bit FLAC. streamrip sets Soloist to lossless and its volume normalization
+# off. It needs a Soloist API key (one per person, below), one pairing with a
+# Spotify app on the same network, and so far runs on Linux only. "youtube" finds the same recording on YouTube Music
 # (matched by ISRC, title, artist and length) and downloads it from there, so
 # it is AAC or MP3, never lossless. A track the spotify backend cannot serve
 # is routed to youtube either way, so nothing is lost by choosing it.
 #
-# You log in to Spotify with one of two ways:
-# - The pair link, the default: `streamrip login spotify` shows a link and a
-#   short code. Open the link on any device and approve it with the code. It
-#   needs no app of your own.
-# - Your own app: Spotify only lets an app whose owner has Premium use its API.
-#   Create one at https://developer.spotify.com/dashboard:
-#     - Redirect URI: exactly the redirect_uri below
-#     - "Which API/SDKs are you planning to use?": tick Web API only
-#   Then `streamrip login spotify --configure` (no client secret is needed).
+# You log in to Spotify with an app of your own: Spotify only lets an app whose
+# owner has Premium use its API. Create one at
+# https://developer.spotify.com/dashboard:
+#   - Redirect URI: exactly the redirect_uri below
+#   - "Which API/SDKs are you planning to use?": tick Web API only
+# Then `streamrip login spotify` (no client secret is needed).
 # docs/spotify.md has the details, with screenshots.
 # For your own app, added to it as a Redirect URI, character for character.
 # Use 127.0.0.1, not localhost: Spotify no longer accepts that.

@@ -334,8 +334,7 @@ class QobuzClient(Client):
         return resp
 
     async def search(self, media_type: str, query: str, limit: int = 500) -> list[dict]:
-        if media_type not in {"artist", "album", "track", "playlist"}:
-            raise ValueError(f"Cannot search Qobuz for {media_type}s")
+        self.check_search_type(media_type)
 
         params = {
             "query": query,

@@ -6,7 +6,14 @@ from .soundcloud import SoundcloudClient
 from .spotify import SpotifyClient
 from .tidal import TidalClient
 
+# The clients by source, in the order the sources are listed.
+CLIENTS = {
+    c.source: c
+    for c in (QobuzClient, TidalClient, DeezerClient, SoundcloudClient, SpotifyClient)
+}
+
 __all__ = [
+    "CLIENTS",
     "BasicDownloadable",
     "Client",
     "DeezerClient",

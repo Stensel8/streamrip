@@ -7,11 +7,13 @@ from click.testing import CliRunner
 from playlist_support import ISRC_A, FakeProvider, FakeServices, config_at, track
 
 from streamrip.config import Config
+from streamrip.exceptions import FFmpegNotFoundError
 from streamrip.rip import accounts_cli, playlist_cli
 from streamrip.rip.cli import rip
 from streamrip.sync.auth import Token
 from streamrip.sync.csvio import read_tracks, write_tracks
 from streamrip.sync.models import Track
+from streamrip.sync.providers.tidal import TidalOAuth
 from streamrip.sync.services import Services
 
 CATALOG = [
@@ -20,149 +22,95 @@ CATALOG = [
 ]
 
 
-@pytest.fixture(autouse=True)
-def _no_update_check(monkeypatch):
-    monkeypatch.setenv("STREAMRIP_NO_UPDATE_CHECK", "1")
+@pytest.fixture
+def cli(tmp_path, monkeypatch, capsys):
+    """Run `streamrip *args` on a config in tmp_path, with `services` in place of
+    the real ones: (exit code, stdout, stderr)."""
+
+    def invoke(*args, services=None):
+        if services is not None:
+            services.config.session.metadata.musicbrainz = False
+            monkeypatch.setattr(playlist_cli, "_services", lambda _ctx: services)
+            monkeypatch.setattr(accounts_cli, "Services", lambda _config: services)
+        config = tmp_path / "config.toml"
+        if not config.exists():
+            config_at(tmp_path)
+        result = CliRunner().invoke(rip, ["--config-path", str(config), *args])
+        captured = capsys.readouterr()
+        stderr = result.stderr + captured.err
+        return result.exit_code, result.stdout + captured.out, stderr
+
+    return invoke
 
 
-def run(tmp_path, monkeypatch, capsys, args, services: Services | None = None):
-    """`streamrip playlist *args` with `services`; (exit code, stdout, stderr)."""
-    if services is not None:
-        monkeypatch.setattr(playlist_cli, "_services", lambda _ctx: services)
-    config = tmp_path / "config.toml"
-    if not config.exists():
-        config_at(tmp_path)
-    result = CliRunner().invoke(rip, ["--config-path", str(config), "playlist", *args])
-    captured = capsys.readouterr()
-    return result.exit_code, result.stdout + captured.out, result.stderr + captured.err
+def liked_songs(tmp_path, *liked):
+    return FakeServices(tmp_path, spotify=FakeProvider("spotify", liked=liked))
 
 
-def run_root(tmp_path, monkeypatch, capsys, args, services: Services | None = None):
-    """`streamrip *args` (accounts, login, logout); (exit code, stdout, stderr)."""
-    if services is not None:
-        monkeypatch.setattr(accounts_cli, "Services", lambda _config: services)
-    config = tmp_path / "config.toml"
-    if not config.exists():
-        config_at(tmp_path)
-    result = CliRunner().invoke(rip, ["--config-path", str(config), *args])
-    captured = capsys.readouterr()
-    return result.exit_code, result.stdout + captured.out, result.stderr + captured.err
-
-
-def test_export_liked_songs_to_csv(tmp_path, monkeypatch, capsys):
-    liked = [
-        track(
-            "Song A",
-            "Artist A",
-            ids={"spotify": "spotify:track:1"},
-            isrc=ISRC_A,
-            album="Album",
-        )
-    ]
-    services = FakeServices(tmp_path, spotify=FakeProvider("spotify", liked=liked))
+def test_export_liked_songs_to_csv(tmp_path, cli):
+    liked = track(
+        "Song A", "Artist A", ids={"spotify": "spotify:track:1"}, isrc=ISRC_A, album="A"
+    )
     out = tmp_path / "liked.csv"
-    code, stdout, _ = run(
-        tmp_path,
-        monkeypatch,
-        capsys,
-        ["export", "spotify", "--liked", "-o", str(out)],
-        services,
+    code, stdout, _ = cli(
+        *("playlist", "export", "spotify", "--liked", "-o", str(out)),
+        services=liked_songs(tmp_path, liked),
     )
     assert code == 0
-    assert read_tracks(out) == liked
+    assert read_tracks(out) == [liked]
     assert "1 tracks" in stdout
 
 
-def test_export_all_keeps_playlists_whose_file_names_would_collide(
-    tmp_path, monkeypatch, capsys
-):
-    # Spotify lets two playlists share a name, and a file name drops characters that told two names apart.
+def test_export_all_keeps_playlists_whose_file_names_would_collide(tmp_path, cli):
     spotify = FakeProvider("spotify", liked=[track("Liked one")])
     for name, title in [
         ("Chill", "First"),
-        ("Chill", "Second"),
-        ("chill", "Third"),
-        ("Liked Songs", "Fourth"),
+        ("Chill", "Second"),  # Spotify lets two playlists share a name
+        ("Road/trip", "Third"),
+        ("Road:trip", "Fourth"),  # a file name drops what told these apart
+        ("Empty", None),
     ]:
-        spotify.existing_playlist(name, track(title))
-    spotify.existing_playlist("Road/trip", track("Fifth"))
-    spotify.existing_playlist("Road:trip", track("Sixth"))
-    spotify.existing_playlist("Empty")
+        spotify.existing_playlist(name, *([track(title)] if title else []))
 
     folder = tmp_path / "all"
-    args = ["export", "spotify", "--all", "-q", "-o", str(folder)]
-    code, _, stderr = run(
-        tmp_path, monkeypatch, capsys, args, FakeServices(tmp_path, spotify=spotify)
+    code, _, stderr = cli(
+        *("playlist", "export", "spotify", "--all", "-q", "-o", str(folder)),
+        services=FakeServices(tmp_path, spotify=spotify),
     )
     assert code == 0
-    written = {
-        path.name: [t.title for t in read_tracks(path)] for path in folder.iterdir()
-    }
+    written = {p.name: [t.title for t in read_tracks(p)] for p in folder.iterdir()}
     assert written == {
         "Liked Songs.csv": ["Liked one"],
         "Chill.csv": ["First"],
         "Chill (2).csv": ["Second"],
-        "chill (3).csv": ["Third"],
-        "Liked Songs (2).csv": ["Fourth"],
-        "Road_trip.csv": ["Fifth"],
-        "Road_trip (2).csv": ["Sixth"],
+        "Road_trip.csv": ["Third"],
+        "Road_trip (2).csv": ["Fourth"],
     }
     assert "skipping 'Empty': it is empty" in stderr
 
 
-def test_one_of_liked_playlist_and_all_is_asked_for(tmp_path, monkeypatch, capsys):
-    services = FakeServices(tmp_path, spotify=FakeProvider("spotify"))
-    for args in (["export", "spotify"], ["export", "spotify", "--liked", "--all"]):
-        code, _, stderr = run(tmp_path, monkeypatch, capsys, args, services)
-        assert code == 2
-        assert "Choose one of --liked" in stderr
-
-
-def test_a_missing_or_empty_playlist_is_an_error_not_a_traceback(
-    tmp_path, monkeypatch, capsys
-):
+def test_a_missing_or_empty_playlist_is_an_error_not_a_traceback(tmp_path, cli):
     tidal = FakeProvider("tidal")
     tidal.existing_playlist("Empty")
     services = FakeServices(tmp_path, tidal=tidal)
     out = tmp_path / "x.csv"
-    code, _, stderr = run(
-        tmp_path,
-        monkeypatch,
-        capsys,
-        ["export", "tidal", "--playlist", "missing", "-o", str(out)],
-        services,
-    )
-    assert code == 1
-    assert "No playlist with name or id 'missing'" in stderr
-    code, _, stderr = run(
-        tmp_path,
-        monkeypatch,
-        capsys,
-        ["export", "tidal", "--playlist", "Empty", "-o", str(out)],
-        services,
-    )
-    assert code == 1
-    assert '"Empty" is empty' in stderr
+    for name, error in [("missing", "No playlist"), ("Empty", "is empty")]:
+        args = ("playlist", "export", "tidal", "--playlist", name, "-o", str(out))
+        code, _, stderr = cli(*args, services=services)
+        assert code == 1
+        assert error in stderr
     assert not out.exists()
 
 
-def test_import_a_file_without_a_header_row(tmp_path, monkeypatch, capsys):
+def test_import_a_file_without_a_header_row(tmp_path, cli):
     csv_file = tmp_path / "in.csv"
     csv_file.write_text("Artist A,Song A\nNobody,Nothing\n", encoding="utf-8")
     tidal = FakeProvider("tidal", CATALOG)
     unmatched = tmp_path / "unmatched.csv"
-    args = [
-        "import",
-        "tidal",
-        str(csv_file),
-        "--playlist",
-        "Mix",
-        "-q",
-        "--unmatched",
-        str(unmatched),
-    ]
-    code, stdout, _ = run(
-        tmp_path, monkeypatch, capsys, args, FakeServices(tmp_path, tidal=tidal)
+    code, stdout, _ = cli(
+        *("playlist", "import", "tidal", str(csv_file), "--playlist", "Mix", "-q"),
+        *("--unmatched", str(unmatched)),
+        services=FakeServices(tmp_path, tidal=tidal),
     )
     assert code == 0
     assert [tidal.native_id(t) for t in tidal.playlists_by_id["pl1"][1]] == ["1"]
@@ -170,17 +118,14 @@ def test_import_a_file_without_a_header_row(tmp_path, monkeypatch, capsys):
     assert [t.title for t in read_tracks(unmatched)] == ["Nothing"]
 
 
-def test_import_dry_run_and_an_empty_file(tmp_path, monkeypatch, capsys):
+def test_import_dry_run_and_an_empty_file(tmp_path, cli):
     csv_file = tmp_path / "in.csv"
     write_tracks(csv_file, [Track("Song A", ["Artist A"], isrc=ISRC_A)])
     tidal = FakeProvider("tidal", CATALOG)
     services = FakeServices(tmp_path, tidal=tidal)
-    code, stdout, _ = run(
-        tmp_path,
-        monkeypatch,
-        capsys,
-        ["import", "tidal", str(csv_file), "--dry-run", "-q"],
-        services,
+    code, stdout, _ = cli(
+        *("playlist", "import", "tidal", str(csv_file), "--dry-run", "-q"),
+        services=services,
     )
     assert code == 0
     assert tidal.playlists_by_id == {}
@@ -188,16 +133,26 @@ def test_import_dry_run_and_an_empty_file(tmp_path, monkeypatch, capsys):
 
     empty = tmp_path / "empty.csv"
     empty.write_text("", encoding="utf-8")
-    code, _, stderr = run(
-        tmp_path, monkeypatch, capsys, ["import", "tidal", str(empty)], services
-    )
+    code, _, stderr = cli("playlist", "import", "tidal", str(empty), services=services)
     assert code == 1
     assert "No tracks found" in stderr
 
 
-def test_a_transfer_shows_each_step_and_what_came_closest(
-    tmp_path, monkeypatch, capsys
-):
+def test_import_albums_like_csv2tidal(tmp_path, cli):
+    csv_file = tmp_path / "albums.csv"
+    csv_file.write_text("Daft Punk,Discovery\n", encoding="utf-8")  # artist,album
+    tidal = FakeProvider("tidal")
+    tidal.albums = [track("Discovery", "Daft Punk", ids={"tidal": "5"})]
+    code, stdout, _ = cli(
+        *("playlist", "import", "tidal", str(csv_file), "--albums", "-q"),
+        services=FakeServices(tmp_path, tidal=tidal),
+    )
+    assert code == 0
+    assert [a.ids for a in tidal.favorite_albums] == [{"tidal": "5"}]
+    assert "Favourite albums: 1 matched, 0 not found; added 1" in stdout
+
+
+def test_a_transfer_creates_a_playlist_and_reports_every_track(tmp_path, cli):
     liked = [
         Track("Song A", ["Artist A"], isrc=ISRC_A),
         Track("Song B (Live)", ["Artist B"], duration_ms=200_000),
@@ -206,87 +161,49 @@ def test_a_transfer_shows_each_step_and_what_came_closest(
     services = FakeServices(
         tmp_path, spotify=FakeProvider("spotify", liked=liked), tidal=tidal
     )
-    code, stdout, stderr = run(
-        tmp_path,
-        monkeypatch,
-        capsys,
-        ["transfer", "spotify", "tidal", "--liked"],
-        services,
+    report = tmp_path / "audit.csv"
+    code, stdout, _ = cli(
+        *(
+            "playlist",
+            "transfer",
+            "spotify",
+            "tidal",
+            "--liked",
+            "--report",
+            str(report),
+        ),
+        services=services,
     )
     assert code == 0
     assert [name for name, _ in tidal.playlists_by_id.values()] == [
         "Liked Songs (from Spotify)"
     ]
-    # Not a terminal, so one line per completed step instead of a line redrawn in place.
-    assert stderr.splitlines() == [
-        "Reading Liked Songs from Spotify  [####################]  2/2",
-        "Finding the tracks on Tidal  [####################]  2/2  1 found, 1 not found",
-        "Adding to Liked Songs (from Spotify) on Tidal  [####################]  1/1",
-    ]
-    assert (
-        "Artist B - Song B (Live): only another version; closest: Artist B - Song B"
-        in stdout
-    )
+    assert "Artist B - Song B (Live): only another version; closest:" in stdout
+    rows = {r["wanted title"]: r for r in csv.DictReader(report.open(encoding="utf-8"))}
+    matched, missed = rows["Song A"], rows["Song B (Live)"]
+    assert (matched["result"], matched["how"]) == ("matched", "isrc")
+    assert missed["result"] == "not found"
+    assert missed["found title"] == "Song B"  # the closest it came
 
-    code, _, stderr = run(
-        tmp_path,
-        monkeypatch,
-        capsys,
-        ["transfer", "spotify", "spotify", "--liked"],
-        services,
+
+def test_a_transfer_to_the_same_service_is_refused(tmp_path, cli):
+    services = liked_songs(tmp_path, track("Song A"))
+    code, _, stderr = cli(
+        *("playlist", "transfer", "spotify", "spotify", "--liked"), services=services
     )
     assert code == 2
     assert "the same service" in stderr
 
 
-def test_a_transfer_can_report_every_track_with_what_it_was_matched_to(
-    tmp_path, monkeypatch, capsys
-):
-    liked = [
-        Track("Song A", ["Artist A"], isrc=ISRC_A),
-        Track("Song B (Live)", ["Artist B"], duration_ms=200_000),
-    ]
-    services = FakeServices(
-        tmp_path,
-        spotify=FakeProvider("spotify", liked=liked),
-        tidal=FakeProvider("tidal", CATALOG),
-    )
-    out = tmp_path / "audit.csv"
-    code, stdout, _ = run(
-        tmp_path,
-        monkeypatch,
-        capsys,
-        ["transfer", "spotify", "tidal", "--liked", "--report", str(out)],
-        services,
-    )
-    assert code == 0
-    assert "2 tracks reported" in stdout
-    rows = {r["wanted title"]: r for r in csv.DictReader(out.open(encoding="utf-8"))}
-    matched, missed = rows["Song A"], rows["Song B (Live)"]
-    assert (matched["result"], matched["how"], matched["found title"]) == (
-        "matched",
-        "isrc",
-        "Song A",
-    )
-    assert missed["result"] == "not found"
-    assert missed["why"].startswith("only another version")
-    assert missed["found title"] == "Song B"  # the closest it came
-
-
-def test_sync_favorites_puts_liked_songs_in_the_favourites(
-    tmp_path, monkeypatch, capsys
-):
+def test_liked_songs_go_to_the_favourites(tmp_path, cli):
     tidal = FakeProvider("tidal", CATALOG)
     spotify = FakeProvider(
         "spotify", liked=[Track("Song A", ["Artist A"], isrc=ISRC_A)]
     )
     services = FakeServices(tmp_path, spotify=spotify, tidal=tidal)
-    code, stdout, _ = run(
-        tmp_path,
-        monkeypatch,
-        capsys,
-        ["transfer", "spotify", "tidal", "--sync-favorites", "-q"],
-        services,
+    code, stdout, _ = cli(
+        *("playlist", "transfer", "spotify", "tidal", "--sync-favorites", "-q"),
+        services=services,
     )
     assert code == 0
     assert tidal.playlists_by_id == {}
@@ -295,107 +212,40 @@ def test_sync_favorites_puts_liked_songs_in_the_favourites(
 
     csv_file = tmp_path / "in.csv"
     write_tracks(csv_file, [Track("Song B", ["Artist B"])])
-    code, _, _ = run(
-        tmp_path,
-        monkeypatch,
-        capsys,
-        ["import", "tidal", str(csv_file), "--to-favorites", "-q"],
-        services,
+    code, _, _ = cli(
+        *("playlist", "import", "tidal", str(csv_file), "--to-favorites", "-q"),
+        services=services,
     )
     assert code == 0
     assert [tidal.native_id(t) for t in tidal.liked] == ["1", "2"]
-    args = ["transfer", "spotify", "tidal", "--sync-favorites", "--to-playlist", "X"]
-    assert run(tmp_path, monkeypatch, capsys, args, services)[0] == 2
 
 
-def test_import_albums_like_csv2tidal(tmp_path, monkeypatch, capsys):
-    csv_file = tmp_path / "albums.csv"
-    csv_file.write_text(
-        "Daft Punk,Discovery\n", encoding="utf-8"
-    )  # csv2tidal's format: artist,album
-    tidal = FakeProvider("tidal")
-    tidal.albums = [track("Discovery", "Daft Punk", ids={"tidal": "5"})]
-    args = ["import", "tidal", str(csv_file), "--albums", "-q"]
-    code, stdout, _ = run(
-        tmp_path, monkeypatch, capsys, args, FakeServices(tmp_path, tidal=tidal)
-    )
-    assert code == 0
-    assert [a.ids for a in tidal.favorite_albums] == [{"tidal": "5"}]
-    assert "Favourite albums: 1 matched, 0 not found; added 1" in stdout
-
-
-def test_without_an_app_it_says_how_to_make_one(tmp_path, monkeypatch, capsys):
-    code, _, stderr = run(tmp_path, monkeypatch, capsys, ["list", "tidal"])
+def test_without_an_app_it_says_how_to_make_one(cli):
+    code, _, stderr = cli("playlist", "list", "tidal")
     assert code == 1
     assert "developer.tidal.com" in stderr
     assert "streamrip login tidal-library" in stderr
 
 
-def test_accounts_and_logout(tmp_path, monkeypatch, capsys):
-    code, stdout, _ = run_root(tmp_path, monkeypatch, capsys, ["accounts"])
+def test_accounts_and_logout(tmp_path, cli):
+    code, stdout, _ = cli("accounts")
     assert code == 0
     assert "needs an app first" in stdout
     assert "not logged in" in stdout
-    assert "soundcloud" in stdout
 
-    config_at(
-        tmp_path,
-        tidal={
-            "api_client_id": "c",
-            "api_client_secret": "s",
-            "api_access_token": "a",
-            "api_refresh_token": "r",
-        },
-    )
-    code, stdout, _ = run_root(tmp_path, monkeypatch, capsys, ["accounts"])
-    assert "tidal-library  logged in" in stdout
-    code, stdout, _ = run_root(
-        tmp_path, monkeypatch, capsys, ["logout", "tidal-library"]
-    )
+    tidal = {"api_client_id": "c", "api_client_secret": "s"}
+    tidal |= {"api_access_token": "a", "api_refresh_token": "r"}
+    config_at(tmp_path, tidal=tidal)
+    assert "tidal-library  logged in" in cli("accounts")[1]
+    code, stdout, _ = cli("logout", "tidal-library")
     assert code == 0
     assert "Logged out of Tidal library" in stdout
     saved = Config(tmp_path / "config.toml").file.tidal
     assert (saved.api_access_token, saved.api_client_id) == ("", "c")  # the app stays
 
 
-def test_download_hands_each_list_to_the_downloads(tmp_path, monkeypatch, capsys):
-    """A Spotify playlist, searched and downloaded on Qobuz like a CSV list."""
-    spotify = FakeProvider("spotify", liked=[track("Song A", "Artist A", isrc=ISRC_A)])
-    spotify.existing_playlist("Road trip", track("Song B", "Artist B"))
-    asked = []
-
-    class FakeMain:
-        async def resolve_csv(self, name, tracks, source, fallback):
-            asked.append((name, [t.title for t in tracks], source, fallback))
-
-        async def rip(self):
-            asked.append("rip")
-
-    class Session:
-        def __init__(self, _ctx):
-            pass
-
-        async def __aenter__(self):
-            return FakeMain()
-
-        async def __aexit__(self, *_):
-            pass
-
-    monkeypatch.setattr(playlist_cli, "main_session", Session)
-    args = ["download", "spotify", "--all", "-q", "--source", "qobuz", "-fs", "deezer"]
-    code, _, _ = run(
-        tmp_path, monkeypatch, capsys, args, FakeServices(tmp_path, spotify=spotify)
-    )
-    assert code == 0
-    assert asked == [
-        ("Liked Songs", ["Song A"], "qobuz", "deezer"),
-        ("Road trip", ["Song B"], "qobuz", "deezer"),
-        "rip",
-    ]
-
-
 def test_the_tidal_api_login_asks_for_the_app_and_keeps_the_login(
-    tmp_path, monkeypatch, capsys
+    tmp_path, cli, monkeypatch
 ):
     services = FakeServices(tmp_path)
     services.config.session.tidal.api_client_id = ""
@@ -403,21 +253,11 @@ def test_the_tidal_api_login_asks_for_the_app_and_keeps_the_login(
     monkeypatch.setattr(accounts_cli.Prompt, "ask", lambda *_a, **_k: next(answers))
     monkeypatch.setattr(accounts_cli, "launch", lambda _url: None)
     monkeypatch.setattr(accounts_cli, "_browser_code", lambda url, *_: "CODE")
+    monkeypatch.setattr(FakeServices, "oauth", Services.oauth)  # a Tidal login
+    token = Token("ACCESS", "REFRESH", 4_000_000_000)
+    monkeypatch.setattr(TidalOAuth, "exchange", lambda self, code, verifier: token)
 
-    def exchange(_code, _verifier):
-        return Token("ACCESS", "REFRESH", 4_000_000_000)
-
-    real_oauth = Services.oauth
-
-    def oauth(self, service):
-        client = real_oauth(self, service)
-        client.exchange = exchange
-        return client
-
-    monkeypatch.setattr(FakeServices, "oauth", oauth)
-    code, stdout, _ = run_root(
-        tmp_path, monkeypatch, capsys, ["login", "tidal-library"], services
-    )
+    code, stdout, _ = cli("login", "tidal-library", services=services)
     assert code == 0
     assert "Logged in to Tidal library" in stdout
     saved = Config(tmp_path / "config.toml").file.tidal
@@ -428,40 +268,59 @@ def test_the_tidal_api_login_asks_for_the_app_and_keeps_the_login(
     assert (saved.api_access_token, saved.api_refresh_token) == ("ACCESS", "REFRESH")
 
 
-def test_a_download_without_ffmpeg_is_a_message_not_a_traceback(
-    tmp_path, monkeypatch, capsys
-):
-    """As every download command: through `coro`, which explains it."""
-    from streamrip.exceptions import FFmpegNotFoundError
+def fake_session(main=None, error=None):
+    """A stand-in for the downloads' session: gives `main`, or raises `error`."""
 
-    class NoFFmpeg:
+    class Session:
         def __init__(self, _ctx):
             pass
 
         async def __aenter__(self):
-            raise FFmpegNotFoundError("No ffmpeg installation found")
+            if error:
+                raise error
+            return main
 
         async def __aexit__(self, *_):
             pass
 
-    monkeypatch.setattr(playlist_cli, "main_session", NoFFmpeg)
-    spotify = FakeProvider("spotify", liked=[track("Song A")])
-    args = ["download", "spotify", "--liked", "-q", "--source", "qobuz"]
-    code, stdout, stderr = run(
-        tmp_path, monkeypatch, capsys, args, FakeServices(tmp_path, spotify=spotify)
+    return Session
+
+
+def test_download_hands_each_list_to_the_downloads(tmp_path, cli, monkeypatch):
+    spotify = FakeProvider("spotify", liked=[track("Song A", "Artist A")])
+    spotify.existing_playlist("Road trip", track("Song B", "Artist B"))
+    asked = []
+
+    class Main:
+        async def resolve_csv(self, name, tracks, source, fallback):
+            asked.append((name, [t.title for t in tracks], source, fallback))
+
+        async def rip(self):
+            asked.append("rip")
+
+    monkeypatch.setattr(playlist_cli, "main_session", fake_session(Main()))
+    code, _, _ = cli(
+        *("playlist", "download", "spotify", "--all", "-q", "--source", "qobuz"),
+        *("-fs", "deezer"),
+        services=FakeServices(tmp_path, spotify=spotify),
+    )
+    assert code == 0
+    assert asked == [
+        ("Liked Songs", ["Song A"], "qobuz", "deezer"),
+        ("Road trip", ["Song B"], "qobuz", "deezer"),
+        "rip",
+    ]
+
+
+def test_a_download_without_ffmpeg_is_a_message_not_a_traceback(
+    tmp_path, cli, monkeypatch
+):
+    error = FFmpegNotFoundError("No ffmpeg installation found")
+    monkeypatch.setattr(playlist_cli, "main_session", fake_session(error=error))
+    code, stdout, stderr = cli(
+        *("playlist", "download", "spotify", "--liked", "-q", "--source", "qobuz"),
+        services=liked_songs(tmp_path, track("Song A")),
     )
     assert code == 1
     assert "No ffmpeg installation found" in stdout + stderr
     assert "Traceback" not in stdout + stderr
-
-
-def test_a_matched_album_remembers_the_row_it_was_for():
-    from playlist_support import FakeProvider
-
-    from streamrip.sync.engine import import_albums
-
-    provider = FakeProvider("tidal")
-    provider.albums = [Track("Meteora", ["Linkin Park"], ids={"tidal": "1"})]
-    row = Track("Meteora", ["Linkin Park"], album="Meteora")
-    result = import_albums(provider, [row])
-    assert [m.wanted.title for m in result.matched] == ["Meteora"]

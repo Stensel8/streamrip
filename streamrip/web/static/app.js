@@ -253,6 +253,16 @@ function result(r, i) {
   return item;
 }
 
+// A source that cannot be searched for every kind only offers the ones it can.
+const searchForm = $('search-form');
+function offerKinds() {
+  const kinds = searchForm.source.selectedOptions[0].dataset.kinds.split(' ');
+  for (const option of searchForm.media_type.options) option.hidden = option.disabled = !kinds.includes(option.value);
+  if (searchForm.media_type.selectedOptions[0].disabled) searchForm.media_type.value = kinds.includes('album') ? 'album' : kinds[0];
+}
+searchForm?.source.addEventListener('change', offerKinds);
+if (searchForm) offerKinds();
+
 let found = [];
 onSubmit('search-form', async (form) => {
   const status = $('search-status');
@@ -329,7 +339,7 @@ onSubmit('pl-download-form', (form, who) => {
 
 $('verify')?.addEventListener('click', () => start('/accounts/verify'));
 $('tidal-login')?.addEventListener('click', () => start('/accounts/tidal/login'));
-$('spotify-pair')?.addEventListener('click', () => start('/accounts/spotify/pair'));
+onSubmit('soloist-form', (form) => start('/accounts/soloist/pair', postJson(fields(form))));
 for (const button of document.querySelectorAll('[data-browser-login]')) {
   button.addEventListener('click', () => start(`/accounts/${button.dataset.browserLogin}/login`));
 }

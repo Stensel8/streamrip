@@ -10,7 +10,6 @@ lazy from collections.abc import Callable
 
 import click
 
-from .. import spotify_auth
 from ..client.spotify import DEVELOPER_DASHBOARD
 from ..console import console
 from ..exceptions import AuthenticationError, MissingCredentialsError
@@ -410,74 +409,18 @@ class SoundcloudPrompter(CredentialPrompter):
         self.config.file.set_modified()
 
 
-def spotify_device_login(config: Config) -> None:
-    """A pair link, approved on any device: no app of one's own, no browser
-    to send back."""
-    pair = spotify_auth.request_device_code(config)
-    console.print(
-        "\nSpotify: approve the login on any device, in the Spotify app or a "
-        "browser.\n"
-        f"  Open [blue underline]{pair.verification_uri_complete}[/blue underline] "
-        "and sign in there.\n"
-        "The pair link is one-time; when it is refused or expires, start the "
-        "login again.\n"
-    )
-    _open_login_link(pair.verification_uri_complete)
-    token = spotify_auth.poll_for_token(
-        pair.device_code,
-        config,
-        expires_in=pair.expires_in,
-        interval=pair.interval,
-    )
-    spotify_auth.save(config, token, "device")
-
-
 class SpotifyPrompter(CredentialPrompter):
-    """Spotify: a pair link to approve on any device (no app of one's own), or
-    one's own app for the browser login."""
+    """Spotify: the user's own app, for the browser login."""
 
     client: SpotifyClient
 
     def has_creds(self) -> bool:
         c = self.config.session.spotify
-        # A login is a saved token: a device one has no client id of one's own.
         return bool(c.refresh_token or c.access_token)
 
-    async def prompt_and_login(self, method: str | None = None):
-        """One of two: the pair link, or one's own app. `method` skips the
-        choice when it is already made (the --configure login)."""
-        if method is None:
-            method = _choose_login(
-                "Spotify",
-                (
-                    (
-                        "device",
-                        "a pair link to approve on any device (no app of your own)",
-                    ),
-                    ("app", "your own app, with the browser login"),
-                ),
-                "device",
-            )
-        if method == "device":
-            self._log_in_device()
-        else:
-            await self._log_in_app()
+    async def prompt_and_login(self):
+        await self._log_in_app()
         await self._offer_spotify_backend()
-
-    def _log_in_device(self):
-        """The pair link, approved anywhere."""
-        while True:
-            try:
-                spotify_device_login(self.config)
-            except spotify_auth.SpotifyAuthError as e:
-                console.print(str(e), style="yellow", markup=False)
-                if not Confirm.ask("Try again?", default=True):
-                    raise AuthenticationError(
-                        f"our automated oAuth2 failed. Please run "
-                        f"`{spotify_auth.CONFIGURE}`."
-                    ) from e
-            else:
-                break
 
     async def _log_in_app(self):
         """The app of one's own: ask for it unless it is saved, then log in."""
@@ -575,7 +518,8 @@ class SpotifyPrompter(CredentialPrompter):
             "  5. Open the app's [italic]Settings[/italic] and copy its "
             "[bold]Client ID[/bold]. You do not need the client secret.\n\n"
             "streamrip uses Spotify for the track lists, tags and covers. The audio "
-            "itself is found on YouTube Music.\n"
+            "is Spotify's own once Soloist is set up, and a YouTube Music match "
+            "until then.\n"
         )
         _open_login_link(DEVELOPER_DASHBOARD)
 
@@ -621,7 +565,6 @@ class SpotifyPrompter(CredentialPrompter):
             "refresh_token",
             "token_expiry",
             "scope",
-            "auth_method",
             "backend",
             "device_name",
             "soloist_api_key",

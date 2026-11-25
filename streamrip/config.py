@@ -123,11 +123,6 @@ class SpotifyConfig(ServiceLimits):
     # What the login allows (Spotify says so); the playlist tools need more
     # than downloading does.
     scope: str = ""
-    # How the login was made: "device" is the pair link, which needs no app
-    # of one's own, and "app" is one's own app from the developer dashboard.
-    # A refresh must use the client id the login belongs to, and this says
-    # which.
-    auth_method: str = ""
     # Where the audio comes from: "spotify" plays the track with Spotify's
     # own headless client (Soloist), at the account's quality, and streamrip
     # records the local audio as lossless FLAC (real time); "youtube" is the

@@ -28,7 +28,7 @@
     <h2>Search</h2>
     <p class="muted small">Look something up, tick what you want.</p>
     <form id="search-form" class="fields">
-      {% call field("Source") %}<select name="source" required>{% for s in sources %}<option value="{{ s.name }}">{{ s.label }}</option>{% endfor %}</select>{% endcall %}
+      {% call field("Source") %}<select name="source" required>{% for s in sources %}<option value="{{ s.name }}" data-kinds="{{ s.kinds | join(' ') }}">{{ s.label }}</option>{% endfor %}</select>{% endcall %}
       {% call field("Kind") %}<select name="media_type">{% for t in media_types %}<option value="{{ t }}"{{ " selected" if t == "album" }}>{{ t.title() }}</option>{% endfor %}</select>{% endcall %}
       {% call field("Search for", "wide") %}<input name="query" required placeholder="linkin park meteora" autocomplete="off">{% endcall %}
       <div class="actions"><button class="btn" type="submit" id="search-button">Search</button></div>

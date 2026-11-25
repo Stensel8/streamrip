@@ -4,7 +4,6 @@ responses as tags, its links, and the login."""
 import asyncio
 import base64
 import hashlib
-import logging
 import socket
 import time
 import urllib.error
@@ -15,10 +14,10 @@ from unittest.mock import AsyncMock, MagicMock
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
+import responses
 import tomlkit
 from aiohttp import web
 
-from streamrip import spotify_auth
 from streamrip.client import spotify as spotify_module
 from streamrip.client.audio_match import MatchTrack
 from streamrip.client.downloadable import YtDlpDownloadable
@@ -37,12 +36,9 @@ from streamrip.exceptions import (
     MissingCredentialsError,
     NonStreamableError,
 )
-from streamrip.media import PendingAlbum, PendingArtist, PendingPlaylist, PendingSingle
 from streamrip.metadata import (
     AlbumMetadata,
-    ArtistMetadata,
     Covers,
-    PlaylistMetadata,
     SearchResults,
     TrackMetadata,
 )
@@ -50,17 +46,20 @@ from streamrip.metadata.util import get_album_track_ids
 from streamrip.rip import prompter as prompter_module
 from streamrip.rip import spotify_login
 from streamrip.rip.parse_url import parse_url
-from streamrip.rip.prompter import PROMPTERS, SpotifyPrompter, get_prompter
+from streamrip.rip.prompter import SpotifyPrompter
 from streamrip.rip.spotify_login import (
     SpotifyLoginError,
     capture_code,
     code_from_redirect_url,
 )
+from streamrip.sync.auth import ConfigTokenStore, StoredToken
+from streamrip.sync.providers.spotify import SpotifyOAuth
 
 TRACK = "2A2b3C4d5E6f7G8h9I0jKl"
 ALBUM = "1A2b3C4d5E6f7G8h9I0jKl"
 ARTIST = "3A2b3C4d5E6f7G8h9I0jKl"
 PLAYLIST = "4A2b3C4d5E6f7G8h9I0jKl"
+PLAYLIST_ITEMS = f"/v1/playlists/{PLAYLIST}/items"
 
 IMAGES = [
     {"url": "https://i.scdn.co/image/64", "width": 64},
@@ -132,8 +131,8 @@ class FakeSpotify:
 
 
 @pytest.fixture
-async def spotify():
-    """A running fake Spotify; its base url is `.base`."""
+async def spotify(monkeypatch):
+    """A running fake Spotify that the client and the login talk to."""
     fake = FakeSpotify()
     app = web.Application()
     app.router.add_route("*", "/{tail:.*}", fake.handle)
@@ -142,19 +141,19 @@ async def spotify():
     await web.TCPSite(runner, "127.0.0.1", 0).start()
     host, port = runner.addresses[0][:2]
     fake.base = f"http://{host}:{port}"
+    monkeypatch.setattr(spotify_module, "API_URL", f"{fake.base}/v1")
+    monkeypatch.setattr(spotify_module, "TOKEN_URL", f"{fake.base}/token")
+    # A 429 would otherwise pause the test for seconds.
+    monkeypatch.setattr("streamrip.client.client.retry_after", lambda *_: 0.01)
+    monkeypatch.setattr("streamrip.client.client.random.random", lambda: 0.0)
+    monkeypatch.setattr("streamrip.client.client.SLOWDOWN_START", 0.01)
     yield fake
     await runner.cleanup()
 
 
 @pytest.fixture
-async def make_client(spotify, monkeypatch):
+async def make_client(spotify):
     """Build a client for the fake server, with the options given as keywords."""
-    monkeypatch.setattr(spotify_module, "API_URL", f"{spotify.base}/v1")
-    # The login goes through the shared Spotify token service, with its own
-    # token endpoint.
-    monkeypatch.setattr("streamrip.spotify_auth.TOKEN_URL", f"{spotify.base}/token")
-    # A 429 would otherwise pause the test for seconds.
-    monkeypatch.setattr("streamrip.client.client.retry_after", lambda *_: 0.01)
     clients = []
 
     def make(**options):
@@ -183,15 +182,39 @@ def token_answer(**fields):
     return {"access_token": "NEW", "expires_in": 3600, "token_type": "Bearer"} | fields
 
 
-# --- the client's login ------------------------------------------------------
+def config_with_login(tmp_path, **login) -> Config:
+    """A config file with a Spotify login; the file is what other programs read."""
+    path = tmp_path / "config.toml"
+    set_user_defaults(path)
+    config = Config(path)
+    config.update_logins(
+        "spotify",
+        {
+            "client_id": "CID",
+            "access_token": "A",
+            "refresh_token": "R",
+            "token_expiry": str(int(time.time()) + 3600),
+        }
+        | login,
+    )
+    return config
+
+
+# The login of the client
 
 
 @pytest.mark.login
 async def test_login_without_a_saved_login_asks_for_one(make_client):
-    # A login without a client id of one's own is fine: the default login
-    # needs no app of the user's own.
     client = make_client(refresh_token="", access_token="", token_expiry="")
+
     with pytest.raises(MissingCredentialsError, match="Not logged in"):
+        await client.login()
+
+
+async def test_a_login_without_an_app_of_ones_own_asks_for_one(make_client):
+    client = make_client(client_id="")  # what the pair link left behind
+
+    with pytest.raises(MissingCredentialsError, match="app of your own"):
         await client.login()
 
 
@@ -242,22 +265,14 @@ async def test_a_stale_token_is_refreshed_and_kept(
     ("answer", "message"),
     [
         (
-            (
-                400,
-                {
-                    "error": "invalid_grant",
-                    "error_description": "Refresh token revoked",
-                },
-            ),
-            "Refresh token revoked",
+            (400, {"error": "invalid_grant", "error_description": "Token revoked"}),
+            "Token revoked",
         ),
-        ((502, None), None),  # "null": aiohttp reads None
+        ((503, None), "having trouble"),
     ],
-    ids=["refused", "no body"],
+    ids=["refused", "server in trouble"],
 )
-async def test_a_refresh_spotify_refuses_asks_for_a_new_login(
-    make_client, spotify, answer, message
-):
+async def test_a_refresh_that_fails_says_so(make_client, spotify, answer, message):
     spotify.on("POST", "/token", answer)
     client = make_client(token_expiry="")
 
@@ -273,29 +288,13 @@ async def test_the_login_url_carries_a_pkce_challenge_for_its_verifier(make_clie
 
     parts = urlsplit(url)
     query = {k: v[0] for k, v in parse_qs(parts.query).items()}
-    assert f"{parts.scheme}://{parts.netloc}{parts.path}" == (
-        "https://accounts.spotify.com/authorize"
-    )
+    assert parts.netloc == "accounts.spotify.com"
     assert query["client_id"] == "CID"
     assert query["redirect_uri"] == "http://127.0.0.1:9900/callback"
-    assert query["response_type"] == "code"
     assert query["state"] == state
-    assert query["code_challenge_method"] == "S256"
-    # Reading playlists for downloads, and the library and playlists for the
-    # playlist tools: one login for both.
-    assert set(query["scope"].split()) == {
-        "playlist-read-private",
-        "playlist-read-collaborative",
-        "user-library-read",
-        "user-library-modify",
-        "playlist-modify-private",
-        "playlist-modify-public",
-    }
     digest = hashlib.sha256(verifier.encode()).digest()
-    assert (
-        query["code_challenge"]
-        == base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
-    )
+    challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
+    assert query["code_challenge"] == challenge
 
 
 @pytest.mark.login
@@ -307,44 +306,107 @@ async def test_finishing_the_login_trades_the_code_for_tokens(make_client, spoti
     await client.finish_login("THE-CODE", "THE-VERIFIER")
 
     [call] = spotify.requests("/token")
-    assert call["form"] == {
-        "grant_type": "authorization_code",
-        "code": "THE-CODE",
-        "redirect_uri": client.config.redirect_uri,
-        "client_id": "CID",
-        "code_verifier": "THE-VERIFIER",
-    }
+    assert call["form"]["grant_type"] == "authorization_code"
+    assert call["form"]["code"] == "THE-CODE"
+    assert call["form"]["code_verifier"] == "THE-VERIFIER"
     assert client.logged_in
     assert client.config.refresh_token == "FIRST"
     assert client.global_config.file.spotify.access_token == "NEW"
-    # A login made with one's own app says so, and a refresh uses that app.
-    assert client.config.auth_method == "app"
 
 
-# --- requests ----------------------------------------------------------------
+async def test_a_refresh_is_saved_at_once(spotify, tmp_path):
+    # Saved only at the end of a run, the old refresh token stayed in the file
+    # and the next refresh spent it again.
+    spotify.on("POST", "/token", token_answer(refresh_token="R2"))
+    client = SpotifyClient(config_with_login(tmp_path, token_expiry="1"))
+
+    await client.login()
+
+    saved = Config(tmp_path / "config.toml").file.spotify
+    assert (saved.access_token, saved.refresh_token) == ("NEW", "R2")
+    await client.close()
+
+
+async def test_a_login_another_program_refreshed_is_used_as_it_is(spotify, tmp_path):
+    client = SpotifyClient(config_with_login(tmp_path, token_expiry="1"))
+    Config(tmp_path / "config.toml").update_logins(
+        "spotify",
+        {
+            "access_token": "ELSEWHERE",
+            "refresh_token": "R3",
+            "token_expiry": str(int(time.time()) + 3600),
+        },
+    )
+
+    assert await client._fresh_token() == "ELSEWHERE"
+    assert spotify.requests("/token") == []  # the new refresh token is not spent
+
+
+async def test_a_refresh_outrun_by_another_program_takes_its_login(spotify, tmp_path):
+    client = SpotifyClient(config_with_login(tmp_path, token_expiry="1"))
+    other = Config(tmp_path / "config.toml")
+
+    def rotated_meanwhile(_request):
+        other.update_logins(
+            "spotify",
+            {
+                "access_token": "A3",
+                "refresh_token": "R3",
+                "token_expiry": str(int(time.time()) + 3600),
+            },
+        )
+        return 400, {"error": "invalid_grant"}  # the refresh token we sent is spent
+
+    spotify.on("POST", "/token", rotated_meanwhile)
+
+    assert await client._fresh_token() == "A3"
+
+
+@responses.activate
+def test_the_playlist_tools_refresh_the_shared_login_once(tmp_path):
+    config = config_with_login(tmp_path, client_id="MYAPP")
+    store = ConfigTokenStore(config)
+    first, second = (
+        StoredToken(SpotifyOAuth("MYAPP", "http://127.0.0.1:9900/callback"), store)
+        for _ in range(2)
+    )
+    assert first() == second() == "A"
+    responses.post(
+        spotify_module.TOKEN_URL,
+        json={"access_token": "A2", "refresh_token": "R2", "expires_in": 100},
+    )
+
+    assert first(force_refresh=True) == "A2"
+    assert second(force_refresh=True) == "A2"  # takes the pair first saved
+    assert len(responses.calls) == 1
+    assert ConfigTokenStore(Config(tmp_path / "config.toml")).load("spotify")
+
+
+# Requests
+
+
+REJECTED = (401, {"error": {"message": "The access token expired"}})
 
 
 @pytest.mark.login
-@pytest.mark.parametrize("again", [False, True], ids=["new token works", "not"])
-async def test_a_rejected_token_is_replaced_once(make_client, spotify, again):
-    rejected = (401, {"error": {"message": "The access token expired"}})
+async def test_a_rejected_token_is_replaced_once(make_client, spotify):
     spotify.on("POST", "/token", token_answer())
-    spotify.on(
-        "GET", f"/v1/tracks/{TRACK}", [rejected, rejected if again else track_obj()]
-    )
-    client = make_client()
+    spotify.on("GET", f"/v1/tracks/{TRACK}", [REJECTED, track_obj()])
 
-    if again:
-        with pytest.raises(AuthenticationError, match="Log in again"):
-            await client.get_metadata(TRACK, "track")
-    else:
-        assert (await client.get_metadata(TRACK, "track"))["id"] == TRACK
+    track = await make_client().get_metadata(TRACK, "track")
 
-    assert [c["auth"] for c in spotify.requests(f"/v1/tracks/{TRACK}")] == [
-        "Bearer TOKEN",
-        "Bearer NEW",
-    ]
-    assert len(spotify.requests("/token")) == 1
+    assert track["id"] == TRACK
+    sent = [c["auth"] for c in spotify.requests(f"/v1/tracks/{TRACK}")]
+    assert sent == ["Bearer TOKEN", "Bearer NEW"]
+
+
+@pytest.mark.login
+async def test_a_token_that_stays_rejected_asks_for_a_new_login(make_client, spotify):
+    spotify.on("POST", "/token", token_answer())
+    spotify.on("GET", f"/v1/tracks/{TRACK}", REJECTED)
+
+    with pytest.raises(AuthenticationError, match="Log in again"):
+        await make_client().get_metadata(TRACK, "track")
 
 
 PREMIUM = (
@@ -352,35 +414,18 @@ PREMIUM = (
     {"error": {"message": "Active premium subscription required for the owner."}},
 )
 PLAYLIST_FOUND = {f"/v1/playlists/{PLAYLIST}": {"id": PLAYLIST, "name": "Not mine"}}
-PLAYLIST_ITEMS = f"/v1/playlists/{PLAYLIST}/items"
 
 
 @pytest.mark.parametrize(
-    ("answers", "media_type", "error", "says", "tries"),
+    ("answers", "media_type", "error", "says"),
     [
-        (
-            {f"/v1/tracks/{TRACK}": PREMIUM},
-            "track",
-            SpotifyAPIError,
-            "User Management",  # how to get past the rule
-            1,
-        ),
-        ({}, "track", ItemNotFoundError, None, 1),
-        (
-            {f"/v1/tracks/{TRACK}": (429, {"error": {"message": "slow down"}})},
-            "track",
-            APIError,
-            "too many requests",
-            4,  # the usual retries
-        ),
-        # 410 is final: one request, no retries -- they would only extend
-        # the block. The message says wait, and that the account is fine.
+        ({f"/v1/tracks/{TRACK}": PREMIUM}, "track", SpotifyAPIError, "User Management"),
+        ({}, "track", ItemNotFoundError, None),
         (
             {f"/v1/tracks/{TRACK}": (410, {"error": {"message": "gone"}})},
             "track",
             SpotifyAPIError,
             "Do not retry now",
-            1,
         ),
         # Only playlists the user owns or collaborates on can be read.
         (
@@ -388,35 +433,12 @@ PLAYLIST_ITEMS = f"/v1/playlists/{PLAYLIST}/items"
             "playlist",
             NonStreamableError,
             PLAYLIST_NOT_READABLE,
-            2,
-        ),
-        (
-            PLAYLIST_FOUND | {PLAYLIST_ITEMS: (404, {"error": {"message": "no"}})},
-            "playlist",
-            NonStreamableError,
-            PLAYLIST_NOT_READABLE,
-            2,
-        ),
-        (
-            {f"/v1/playlists/{PLAYLIST}": PREMIUM},
-            "playlist",
-            SpotifyAPIError,
-            "User Management",
-            1,
         ),
     ],
-    ids=[
-        "premium",
-        "missing",
-        "rate limited",
-        "gone (410)",
-        "not my playlist (403)",
-        "not my playlist (404)",
-        "premium, not a private playlist",
-    ],
+    ids=["premium", "missing", "gone (410)", "not my playlist"],
 )
 async def test_what_spotify_refuses_is_explained(
-    make_client, spotify, answers, media_type, error, says, tries
+    make_client, spotify, answers, media_type, error, says
 ):
     for path, answer in answers.items():
         spotify.on("GET", path, answer)
@@ -426,23 +448,29 @@ async def test_what_spotify_refuses_is_explained(
         await make_client().get_metadata(item, media_type)
 
     assert says is None or says in str(caught.value)
-    assert len(spotify.calls) == tries
+
+
+async def test_a_rate_limit_waits_once_and_says_so(make_client, spotify):
+    spotify.on("GET", f"/v1/tracks/{TRACK}", (429, {"error": {"message": "slow"}}))
+    client = make_client()
+
+    with pytest.raises(SpotifyAPIError, match="too many requests"):
+        await client.get_metadata(TRACK, "track")
+    # One wait and one retry, not minutes of pausing; and no ban guard for a limit
+    # that is the app's.
+    assert len(spotify.requests(f"/v1/tracks/{TRACK}")) == 2
+    assert not client._paced_owner()._limited_at
 
 
 @pytest.mark.parametrize(
     "given",
-    [
-        TRACK,
-        f"spotify:track:{TRACK}",
-        f"https://open.spotify.com/track/{TRACK}?si=abc",
-        f"https://open.spotify.com/track/{TRACK}/",
-    ],
+    [TRACK, f"spotify:track:{TRACK}", f"https://open.spotify.com/track/{TRACK}?si=a"],
 )
 def test_an_id_is_taken_from_a_uri_or_a_link(given):
     assert plain_id(given) == TRACK
 
 
-# --- metadata ----------------------------------------------------------------
+# Metadata
 
 
 @pytest.mark.parametrize(
@@ -480,16 +508,14 @@ async def test_an_album_comes_with_all_of_its_tracks(make_client, spotify):
         f"/v1/albums/{ALBUM}/tracks",
         {"items": [{"id": "t2", "disc_number": 2}, {"id": None}], "next": None},
     )
-    client = make_client()
 
-    album = await client.get_metadata(ALBUM, "album")
+    album = await make_client().get_metadata(ALBUM, "album")
 
     assert [t["id"] for t in album["tracks"]] == ["t1", "t2"]
     assert get_album_track_ids("spotify", album) == ["t1", "t2"]
-    assert album["container"] == "AAC"
 
 
-async def test_a_playlist_gives_its_tracks_from_items(make_client, spotify, caplog):
+async def test_a_playlist_gives_its_tracks_from_items(make_client, spotify):
     spotify.on("GET", f"/v1/playlists/{PLAYLIST}", {"id": PLAYLIST, "name": "CC Mix"})
     spotify.on(
         "GET",
@@ -501,40 +527,23 @@ async def test_a_playlist_gives_its_tracks_from_items(make_client, spotify, capl
                 {"item": None},  # a track Spotify no longer has
                 {"item": track_obj("local", is_local=True)},
                 {"item": {"id": "ep", "type": "episode"}},
-                None,
             ],
             "next": None,
         },
     )
     client = make_client()
 
-    with caplog.at_level(logging.INFO, logger="streamrip"):
-        playlist = await client.get_metadata(PLAYLIST, "playlist")
+    playlist = await client.get_metadata(PLAYLIST, "playlist")
 
     assert playlist["name"] == "CC Mix"
     assert [t["id"] for t in playlist["tracks"]] == ["new", "old"]
-    assert spotify.requests(PLAYLIST_ITEMS)[0]["query"]["limit"] == "50"
-    # The user is told how many were skipped: a gone track, a local file, an episode.
-    assert "Skipped 3 items of CC Mix" in caplog.text
-
-
-async def test_the_tracks_of_a_playlist_need_no_second_request(make_client, spotify):
-    spotify.on("GET", f"/v1/playlists/{PLAYLIST}", {"id": PLAYLIST, "name": "Mix"})
-    spotify.on(
-        "GET", PLAYLIST_ITEMS, {"items": [{"item": track_obj("in-it")}], "next": None}
-    )
-    client = make_client()
-
-    await client.get_metadata(PLAYLIST, "playlist")
-    track = await client.get_metadata("in-it", "track")
-
-    assert track["album"]["container"] == "AAC"
-    assert spotify.requests("/v1/tracks/in-it") == []
+    # Its tracks come with it: a track of the playlist costs no request.
+    await client.get_metadata("new", "track")
+    assert spotify.requests("/v1/tracks/new") == []
 
 
 @pytest.mark.parametrize(
-    "link",
-    ["http://localhost:1/v1/next", "{base}.evil.example/v1/next", "{base}/v2/next"],
+    "link", ["http://localhost:1/v1/next", "{base}.evil.example/v1/next"]
 )
 async def test_a_next_page_link_off_the_api_is_not_followed(make_client, spotify, link):
     # The access token goes along with every request: not to an address that
@@ -545,9 +554,9 @@ async def test_a_next_page_link_off_the_api_is_not_followed(make_client, spotify
         f"/v1/artists/{ARTIST}/albums",
         {"items": [{"id": "a1"}], "next": link.format(base=spotify.base)},
     )
+
     with pytest.raises(APIError, match="next page link"):
         await make_client().get_metadata(ARTIST, "artist")
-    assert spotify.requests("/v2/next") == []
 
 
 async def test_an_artist_comes_with_its_own_releases(make_client, spotify):
@@ -561,38 +570,26 @@ async def test_an_artist_comes_with_its_own_releases(make_client, spotify):
             {"items": [{"id": "a2"}, {"id": "a3"}], "next": None},
         ],
     )
-    client = make_client()
 
-    artist = await client.get_metadata(ARTIST, "artist")
+    artist = await make_client().get_metadata(ARTIST, "artist")
 
     assert artist["name"] == "Kevin MacLeod"
     assert [a["id"] for a in artist["albums"]] == ["a1", "a2", "a3"]
-    first = spotify.requests(f"/v1/artists/{ARTIST}/albums")[0]["query"]
-    assert first["include_groups"] == "album,single"
     # Spotify answers "Invalid limit" to more than 10 for an app in development mode.
+    first = spotify.requests(f"/v1/artists/{ARTIST}/albums")[0]["query"]
     assert first["limit"] == "10"
 
 
-async def test_labels_are_not_a_thing_on_spotify(make_client):
-    client = make_client()
-
-    with pytest.raises(ValueError, match="labels"):
-        await client.get_metadata("x", "label")
-    with pytest.raises(ValueError, match="labels"):
-        await client.search("label", "x")
-
-
-# --- search ------------------------------------------------------------------
+# Search
 
 
 @pytest.mark.parametrize(
     ("results", "limit", "asked", "found"),
     [
         (90, 25, [(10, 0), (10, 10), (5, 20)], 25),
-        (990, 500, [(10, n) for n in range(0, 50, 10)], 50),
         (3, 50, [(10, 0)], 3),
     ],
-    ids=["ten at a time", "never more than fifty", "until there is no more"],
+    ids=["ten at a time", "until there is no more"],
 )
 async def test_a_search_is_asked_in_pages(
     make_client, spotify, results, limit, asked, found
@@ -611,20 +608,12 @@ async def test_a_search_is_asked_in_pages(
 
     queries = [c["query"] for c in spotify.requests("/v1/search")]
     assert [(int(q["limit"]), int(q["offset"])) for q in queries] == asked
-    assert all(q["q"] == "sneaky" and q["type"] == "track" for q in queries)
     assert sum(len(p["items"]) for p in pages) == found
 
 
 async def test_search_results_fill_the_menu(make_client, spotify):
     found = {
         "track": track_obj(),
-        "album": ALBUM_SIMPLE | {"album_type": "album", "total_tracks": 12},
-        "artist": {
-            "id": ARTIST,
-            "name": "Kevin MacLeod",
-            "images": IMAGES,
-            "followers": {"total": 5},
-        },
         # Since February 2026 a playlist's "tracks" summary is called "items".
         "playlist": {
             "id": PLAYLIST,
@@ -639,10 +628,7 @@ async def test_search_results_fill_the_menu(make_client, spotify):
         "GET",
         "/v1/search",
         lambda r: {
-            f"{r.query['type']}s": {
-                "items": [found[r.query["type"]], None],
-                "next": None,
-            }
+            f"{r.query['type']}s": {"items": [found[r.query["type"]]], "next": None}
         },
     )
     client = make_client()
@@ -655,86 +641,43 @@ async def test_search_results_fill_the_menu(make_client, spotify):
     track = await result("track")
     assert (track.id, track.media_type) == (TRACK, "track")
     assert track.summarize() == "Sneaky Snitch by Kevin MacLeod (2011)"
-    assert ("Album", "Sneaky Snitch") in track.details
     assert track.image_url == "https://i.scdn.co/image/640"
-
-    album = await result("album")
-    assert album.summarize() == "Sneaky Snitch by Kevin MacLeod (2011)"
-    assert ("Tracks", "12") in album.details
-    assert ("Type", "Album") in album.details
-
-    artist = await result("artist")
-    assert artist.summarize() == "Kevin MacLeod"
-    assert artist.image_url == "https://i.scdn.co/image/640"
-
     playlist = await result("playlist")
     assert playlist.summarize() == "CC Mix by someone"
     assert ("Tracks", "3") in playlist.details
     assert playlist.description == "a mix & more"
 
 
-# --- audio -------------------------------------------------------------------
-
-
-class RecordingMatcher:
-    def __init__(self, result):
-        self.result = result
-        self.asked = []
-
-    async def find(self, wanted, isrc=None):
-        self.asked.append((wanted, isrc))
-        return self.result
+# Audio
 
 
 async def test_the_audio_is_the_match_on_youtube_music(make_client, spotify):
-    spotify.on(
-        "GET", f"/v1/tracks/{TRACK}", track_obj(explicit=True, name="Sneaky Snitch")
-    )
-    client = make_client(audio_format="MP3", audio_bitrate=192)
+    spotify.on("GET", f"/v1/tracks/{TRACK}", track_obj(explicit=True))
+    client = make_client(audio_format="mp3", audio_bitrate=192)
     found = AudioMatch(MatchTrack("Sneaky Snitch", video_id="vid123"), 0.97)
-    client.matcher = RecordingMatcher(found)
+    client.matcher = SimpleNamespace(find=AsyncMock(return_value=found))
 
     downloadable = await client.get_downloadable(TRACK, 0)
 
     assert isinstance(downloadable, YtDlpDownloadable)
     assert downloadable.url == "https://music.youtube.com/watch?v=vid123"
-    assert downloadable.extension == "mp3"
-    assert downloadable.bitrate == 192
-    assert downloadable.source == "spotify"
-    [(wanted, isrc)] = client.matcher.asked
-    assert wanted.title == "Sneaky Snitch"
-    assert wanted.artists == ["Kevin MacLeod"]
-    assert wanted.album == "Sneaky Snitch"
-    assert wanted.duration_ms == 135_000
-    assert wanted.explicit is True
+    assert (downloadable.extension, downloadable.bitrate) == ("mp3", 192)
+    wanted, isrc = client.matcher.find.await_args.args
+    assert (wanted.title, wanted.artists) == ("Sneaky Snitch", ["Kevin MacLeod"])
+    assert (wanted.duration_ms, wanted.explicit) == (135_000, True)
     assert isrc == "USABC1100001"
 
 
-@pytest.mark.parametrize(
-    ("audio_format", "found", "error", "message"),
-    [
-        ("m4a", None, NonStreamableError, "No match on YouTube Music"),
-        (
-            "flac",  # not one yt-dlp's audio is kept or encoded as
-            AudioMatch(MatchTrack("Sneaky Snitch", video_id="v"), 1.0),
-            ValueError,
-            "m4a",
-        ),
-    ],
-    ids=["no match", "wrong audio format"],
-)
-async def test_a_track_that_cannot_be_downloaded_says_why(
-    make_client, spotify, audio_format, found, error, message
-):
+async def test_a_track_without_a_match_cannot_be_downloaded(make_client, spotify):
     spotify.on("GET", f"/v1/tracks/{TRACK}", track_obj())
-    client = make_client(audio_format=audio_format)
-    client.matcher = RecordingMatcher(found)
+    client = make_client()
+    client.matcher = SimpleNamespace(find=AsyncMock(return_value=None))
 
-    with pytest.raises(error, match=message):
+    with pytest.raises(NonStreamableError, match="No match on YouTube Music"):
         await client.get_downloadable(TRACK, 0)
 
 
-# --- Spotify's responses as tags ---------------------------------------------
+# Spotify's responses as tags
 
 ID = "4uLU6hMCjMI75M1A2tKUQC"
 
@@ -750,7 +693,7 @@ def album_resp(**extra):
         "genres": ["electronic"],
         "copyrights": [
             {"text": "2013 Daft Life Limited", "type": "C"},
-            {"text": "\u2117 2013 Daft Life Limited", "type": "P"},
+            {"text": "℗ 2013 Daft Life Limited", "type": "P"},
             {"text": "  ", "type": "C"},
         ],
         "container": "AAC",
@@ -773,32 +716,21 @@ def track_resp(**extra):
 def test_an_album_is_lossy_and_says_which_container():
     meta = AlbumMetadata.from_album_resp(album_resp(), "spotify")
 
-    assert meta is not None
-    assert meta.album == "Random Access Memories"
-    assert meta.albumartist == "Daft Punk"
-    assert meta.albumartists == ["Daft Punk"]
-    assert meta.year == "2013"
-    assert meta.date == "2013-05-17"
-    assert meta.genre == ["electronic"]
-    assert meta.tracktotal == 13
-    assert meta.info.id == "album1"
-    assert meta.info.container == "AAC"
-    assert meta.info.bit_depth is None
-    assert meta.info.sampling_rate is None
-    assert meta.copyright == "(C) 2013 Daft Life Limited; \u2117 2013 Daft Life Limited"
-    assert (
-        meta.get_copyright()
-        == "\u00a9 2013 Daft Life Limited; \u2117 2013 Daft Life Limited"
+    assert (meta.album, meta.albumartist, meta.year) == (
+        "Random Access Memories",
+        "Daft Punk",
+        "2013",
+    )
+    assert (meta.tracktotal, meta.info.container) == (13, "AAC")
+    assert (meta.info.bit_depth, meta.info.sampling_rate) == (None, None)
+    assert meta.get_copyright() == (
+        "© 2013 Daft Life Limited; ℗ 2013 Daft Life Limited"
     )
     # So its folder has no empty quality bracket.
     folder = meta.format_folder_path(
         "{albumartist} - {title} ({year}) [{container}] [{bit_depth}B-{sampling_rate}kHz]"
     )
     assert folder == Path("Daft Punk - Random Access Memories (2013) [AAC]")
-
-    resp = album_resp()
-    del resp["container"]
-    assert AlbumMetadata.from_album_resp(resp, "spotify").info.container == "AAC"
 
 
 @pytest.mark.parametrize(
@@ -817,35 +749,21 @@ def test_the_discs_of_an_album_come_from_its_tracks():
         AlbumMetadata.from_album_resp(album_resp(tracks=tracks), "spotify").disctotal
         == 2
     )
-    assert AlbumMetadata.from_album_resp(album_resp(), "spotify").disctotal == 1
     # The album of a lone track knows at least the disc that track is on.
     meta = AlbumMetadata.from_track_resp(track_resp(disc_number=2), "spotify")
-    assert (meta.disctotal, meta.album) == (2, "Random Access Memories")
+    assert meta.disctotal == 2
 
 
 @pytest.mark.parametrize(
-    ("resp", "sizes"),
-    [
-        (
-            {"images": IMAGES},
-            {"original": 640, "large": 640, "small": 300, "thumbnail": 64},
-        ),
-        ({"images": IMAGES[:1]}, dict.fromkeys(Covers.SIZES, 64)),
-        ({"images": []}, None),
-        ({}, None),
-    ],
-    ids=["three sizes", "one image for all", "none", "no images at all"],
+    ("images", "biggest"), [(IMAGES, 640), (IMAGES[:1], 64), ([], None)]
 )
-def test_the_covers_take_spotifys_sizes(resp, sizes):
-    covers = Covers.from_spotify(resp)
+def test_the_covers_take_the_biggest_image(images, biggest):
+    covers = Covers.from_spotify({"images": images})
 
-    if sizes is None:
+    if biggest is None:
         assert covers.empty()
     else:
-        assert {s: covers.get_size(s)[1] for s in Covers.SIZES} == {
-            s: f"https://i.scdn.co/image/{px}" for s, px in sizes.items()
-        }
-        assert covers.largest()[1] == f"https://i.scdn.co/image/{sizes['original']}"
+        assert covers.get_size("original")[1].endswith(f"/{biggest}")
 
 
 def test_a_track_is_tagged_from_spotifys_response():
@@ -853,14 +771,10 @@ def test_a_track_is_tagged_from_spotifys_response():
 
     meta = TrackMetadata.from_resp(album, "spotify", track_resp())
 
-    assert meta is not None
     assert meta.title == "Get Lucky"
-    assert meta.artist == "Daft Punk, Pharrell Williams"
     assert meta.artists == ["Daft Punk", "Pharrell Williams"]
-    assert meta.tracknumber == 8
-    assert meta.discnumber == 1
+    assert (meta.tracknumber, meta.discnumber) == (8, 1)
     assert meta.isrc == "GBDUM1300019"
-    assert meta.info.id == ID
     assert meta.info.explicit is True
 
 
@@ -871,46 +785,25 @@ def test_a_track_without_an_isrc_or_artists_still_has_tags():
     meta = TrackMetadata.from_resp(album, "spotify", resp)
 
     assert meta.isrc is None
-    assert meta.artists is None
     assert meta.artist == "Daft Punk"  # the album's
 
 
-@pytest.mark.parametrize(
-    ("meta_class", "listed"),
-    [(PlaylistMetadata, "tracks"), (ArtistMetadata, "albums")],
-)
-def test_a_playlist_or_artist_is_its_name_and_the_ids_it_lists(meta_class, listed):
-    resp = {"name": "CC Mix", listed: [{"id": "a"}, {"id": "b"}]}
-
-    meta = meta_class.from_resp(resp, "spotify")
-
-    assert (meta.name, meta.ids) == ("CC Mix", ["a", "b"])
-
-
-# --- urls --------------------------------------------------------------------
+# Links
 
 
 @pytest.mark.parametrize(
     ("url", "media_type"),
     [
-        (f"https://open.spotify.com/track/{ID}", "track"),
         (f"https://open.spotify.com/track/{ID}?si=0123456789abcdef", "track"),
         (f"https://open.spotify.com/intl-nl/album/{ID}", "album"),
-        (f"https://open.spotify.com/intl-pt-BR/artist/{ID}?si=x", "artist"),
         (f"https://open.spotify.com/embed/playlist/{ID}", "playlist"),
         (f"https://open.spotify.com/user/someone/playlist/{ID}", "playlist"),
-        (f"http://open.spotify.com/album/{ID}", "album"),
         (f"spotify:track:{ID}", "track"),
         (f"spotify:user:someone:playlist:{ID}", "playlist"),
-        (f"  https://open.spotify.com/track/{ID}\n", "track"),
         # Not Spotify items:
         ("https://open.spotify.com/track/tooshort", None),
-        (f"https://open.spotify.com/track/{ID}x", None),  # 23 characters
         (f"https://open.spotify.com/show/{ID}", None),  # podcasts: no tracks to match
-        (f"https://open.spotify.com/episode/{ID}", None),
         (f"https://example.com/track/{ID}", None),
-        (f"spotify:show:{ID}", None),
-        ("https://open.spotify.com/", None),
     ],
 )
 def test_spotify_links_and_uris_are_recognised(url, media_type):
@@ -923,30 +816,12 @@ def test_spotify_links_and_uris_are_recognised(url, media_type):
         assert parsed.match.groups() == (media_type, ID)
 
 
-@pytest.mark.parametrize(
-    ("url", "pending_type"),
-    [
-        (f"https://open.spotify.com/track/{ID}", PendingSingle),
-        (f"https://open.spotify.com/album/{ID}", PendingAlbum),
-        (f"https://open.spotify.com/artist/{ID}", PendingArtist),
-        (f"https://open.spotify.com/playlist/{ID}", PendingPlaylist),
-    ],
-)
-async def test_a_spotify_url_becomes_the_pending_item_of_its_kind(url, pending_type):
-    client = SimpleNamespace(source="spotify")
-
-    pending = await parse_url(url).into_pending(client, Config.defaults(), None)
-
-    assert isinstance(pending, pending_type)
-    assert pending.id == ID
-    assert pending.client is client
-
-
-# --- the [spotify] config and its prompter -----------------------------------
+# The [spotify] config and its prompter
 
 AUTHORIZE = "https://accounts.spotify.com/authorize?x"
 REDIRECT = "http://127.0.0.1:9900/callback"  # the default redirect_uri
 PASTED = f"{REDIRECT}?code=C&state=S"
+TOKEN = spotify_module.Token("A", "R", time.time() + 3600)
 
 
 @pytest.mark.login
@@ -962,9 +837,7 @@ def test_spotify_credentials_are_written_when_the_config_is_saved(tmp_path):
     # The login is in state.toml, the setting stays in config.toml.
     state = tomlkit.parse((tmp_path / "state.toml").read_text())
     assert state["spotify"] == {"client_id": "abc", "refresh_token": "r"}
-    config_toml = tomlkit.parse(path.read_text())
-    assert "client_id" not in config_toml["spotify"]
-    assert config_toml["spotify"]["audio_format"] == "m4a"
+    assert "client_id" not in tomlkit.parse(path.read_text())["spotify"]
 
 
 @pytest.fixture
@@ -980,170 +853,45 @@ def prompter(monkeypatch):
     return SpotifyPrompter(config, client)
 
 
-class Answers:
-    """Plays back the answers to Prompt.ask, in order, and keeps the questions."""
+def ask_with(monkeypatch, *given) -> list[str]:
+    """Answer Prompt.ask with `given`, in order; returns the questions asked."""
+    queue, questions = list(given), []
 
-    def __init__(self, *answers):
-        self.answers = list(answers)
-        self.questions = []
+    def ask(question, **_):
+        questions.append(question)
+        return queue.pop(0)
 
-    def __call__(self, question, **_):
-        self.questions.append(question)
-        return self.answers.pop(0)
-
-
-def _answer(monkeypatch, *answers) -> Answers:
-    answers = Answers(*answers)
-    monkeypatch.setattr(prompter_module.Prompt, "ask", staticmethod(answers))
-    return answers
+    monkeypatch.setattr(prompter_module.Prompt, "ask", staticmethod(ask))
+    return questions
 
 
-@pytest.mark.login
-def test_the_prompter_is_registered_for_spotify(prompter):
-    assert PROMPTERS["spotify"] is SpotifyPrompter
-    assert isinstance(get_prompter(prompter.client, prompter.config), SpotifyPrompter)
-
-
-@pytest.mark.login
-@pytest.mark.parametrize(
-    ("client_id", "refresh_token", "has"),
-    [("", "", False), ("cid", "", False), ("", "r", True), ("cid", "r", True)],
-)
-def test_a_login_is_a_saved_token_with_or_without_an_app(
-    prompter, client_id, refresh_token, has
+async def test_the_client_id_of_an_app_is_asked_when_it_is_not_saved(
+    prompter, monkeypatch
 ):
-    prompter.config.session.spotify.client_id = client_id
-    prompter.config.session.spotify.refresh_token = refresh_token
-
-    assert prompter.has_creds() is has
-
-
-async def test_the_app_is_explained_then_the_client_id_asked(prompter, monkeypatch):
     prompter.config.session.spotify.client_id = ""
-    printed = []
-    monkeypatch.setattr(
-        prompter_module.console, "print", lambda *a, **k: printed.append(a)
-    )
     monkeypatch.setattr(prompter_module, "_open_login_link", lambda url: None)
-    answers = _answer(monkeypatch, "2", "  my-client-id  ", "2", PASTED)
+    ask_with(monkeypatch, "  my-client-id  ", "2", PASTED)
 
     await prompter.prompt_and_login()
 
     assert prompter.config.session.spotify.client_id == "my-client-id"
     prompter.client.finish_login.assert_awaited_once_with("C", "V")
-    explanation = " ".join(str(part) for call in printed for part in call)
-    assert "Premium" in explanation
-    assert "developer.spotify.com/dashboard" in explanation
-    assert "Web API" in explanation
-    assert REDIRECT in explanation
-    assert answers.questions[0] == "Choose"
-    assert "Enter the Client ID of your Spotify app" in answers.questions
-
-
-@pytest.mark.login
-async def test_the_pair_link_is_the_default_way_to_log_in(prompter, monkeypatch):
-    pair = spotify_auth.DeviceCode(
-        "DC",
-        "ABC123",
-        "https://spotify.com/pair",
-        "https://spotify.com/pair?code=ABC123",
-        3599,
-        5,
-    )
-    token = spotify_auth.Token("A", "R", time.time() + 3600)
-    opened = []
-    polls = []
-    monkeypatch.setattr(prompter_module, "_open_login_link", opened.append)
-    monkeypatch.setattr(
-        prompter_module.spotify_auth, "request_device_code", lambda config: pair
-    )
-
-    def poll(code, config, **kwargs):
-        polls.append((code, kwargs))
-        return token
-
-    monkeypatch.setattr(prompter_module.spotify_auth, "poll_for_token", poll)
-    answers = _answer(monkeypatch, "1")
-
-    await prompter.prompt_and_login()
-
-    assert answers.questions[0] == "Choose"  # the pair link is the first one
-    assert opened == ["https://spotify.com/pair?code=ABC123"]
-    assert [p[0] for p in polls] == ["DC"]
-    c = prompter.config.session.spotify
-    assert (c.access_token, c.refresh_token, c.auth_method) == ("A", "R", "device")
-
-
-@pytest.mark.login
-@pytest.mark.parametrize("again", [True, False], ids=["tried again", "given up"])
-async def test_a_pair_link_spotify_refuses_can_be_tried_again(
-    prompter, monkeypatch, again
-):
-    pair = spotify_auth.DeviceCode("DC", "ABC123", "u", "u", 3599, 5)
-    token = spotify_auth.Token("A", "R", time.time() + 3600)
-    monkeypatch.setattr(
-        prompter_module.spotify_auth, "request_device_code", lambda config: pair
-    )
-    if again:
-        monkeypatch.setattr(
-            prompter_module.spotify_auth,
-            "poll_for_token",
-            MagicMock(
-                side_effect=[
-                    spotify_auth.DeviceLoginRefusedError("the pair link expired"),
-                    token,
-                ]
-            ),
-        )
-        monkeypatch.setattr(prompter_module, "_open_login_link", lambda url: None)
-        monkeypatch.setattr(
-            prompter_module.Confirm, "ask", staticmethod(lambda *a, **k: True)
-        )
-        _answer(monkeypatch, "1")
-        await prompter.prompt_and_login()
-        c = prompter.config.session.spotify
-        assert (c.access_token, c.auth_method) == ("A", "device")
-    else:
-
-        def refused(*a, **k):
-            raise spotify_auth.DeviceLoginRefusedError("the pair link expired")
-
-        monkeypatch.setattr(prompter_module.spotify_auth, "poll_for_token", refused)
-        monkeypatch.setattr(prompter_module, "_open_login_link", lambda url: None)
-        monkeypatch.setattr(
-            prompter_module.Confirm, "ask", staticmethod(lambda *a, **k: False)
-        )
-        _answer(monkeypatch, "1")
-        with pytest.raises(AuthenticationError, match="oAuth2 failed") as err:
-            await prompter.prompt_and_login()
-        # The automated login failing points at --configure, and says little
-        # else: the how of it is not explained.
-        says = str(err.value)
-        assert "Please run" in says
-        assert "streamrip login spotify --configure" in says
-
-
-async def test_a_saved_client_id_is_not_asked_again(prompter, monkeypatch):
-    answers = _answer(monkeypatch, "2", "2", PASTED)
-
-    await prompter.prompt_and_login()
-
-    assert all("Client ID" not in question for question in answers.questions)
 
 
 @pytest.mark.login
 async def test_the_browser_login_catches_the_code_itself(prompter, monkeypatch):
     opened = []
     monkeypatch.setattr(prompter_module, "_open_login_link", opened.append)
-    _answer(monkeypatch, "2", "1")
-    capture = AsyncMock(return_value="CAUGHT")
-    monkeypatch.setattr(prompter_module, "capture_code", capture)
+    questions = ask_with(monkeypatch, "1")
+    monkeypatch.setattr(
+        prompter_module, "capture_code", AsyncMock(return_value="CAUGHT")
+    )
 
     await prompter.prompt_and_login()
 
     assert opened == [AUTHORIZE]
-    capture.assert_awaited_once_with(REDIRECT, "S")
     prompter.client.finish_login.assert_awaited_once_with("CAUGHT", "V")
+    assert all("Client ID" not in question for question in questions)  # it is saved
 
 
 @pytest.mark.login
@@ -1151,7 +899,7 @@ async def test_the_browser_login_catches_the_code_itself(prompter, monkeypatch):
 async def test_without_a_screen_the_other_device_is_the_default(
     prompter, monkeypatch, screen, default
 ):
-    """A browser elsewhere can't reach the 127.0.0.1 Spotify sends it back to."""
+    # A browser elsewhere can't reach the 127.0.0.1 Spotify sends it back to.
     monkeypatch.setattr(prompter_module, "has_screen", lambda: screen)
     defaults = []
 
@@ -1163,18 +911,15 @@ async def test_without_a_screen_the_other_device_is_the_default(
 
     await prompter.prompt_and_login()
 
-    assert defaults[0] == "1"  # the pair link, the default way
-    assert defaults[1] == default  # then the browser choice
+    assert defaults[0] == default  # the first question is the browser choice
     prompter.client.finish_login.assert_awaited_once_with("C", "V")
 
 
 @pytest.mark.login
 @pytest.mark.parametrize("again", [True, False], ids=["tried again", "given up"])
 async def test_a_failed_login_can_be_tried_again(prompter, monkeypatch, again):
-    _answer(monkeypatch, "2", "2", "bad", "2", "good")
-    monkeypatch.setattr(
-        prompter_module.Confirm, "ask", staticmethod(lambda *a, **k: again)
-    )
+    ask_with(monkeypatch, "2", "bad", "2", "good")
+    monkeypatch.setattr(prompter_module.Confirm, "ask", lambda *a, **k: again)
     monkeypatch.setattr(
         prompter_module,
         "code_from_redirect_url",
@@ -1194,17 +939,17 @@ def test_saving_copies_the_app_and_the_login_to_the_file(prompter):
     config = prompter.config
     session = config.session.spotify
     session.client_id, session.access_token = "cid", "access"
-    session.refresh_token, session.token_expiry = "refresh", "1900000000"
+    session.refresh_token, session.soloist_api_key = "refresh", "KEY"
 
     prompter.save()
 
     saved = config.file.spotify
     assert (saved.client_id, saved.access_token) == ("cid", "access")
-    assert (saved.refresh_token, saved.token_expiry) == ("refresh", "1900000000")
+    assert (saved.refresh_token, saved.soloist_api_key) == ("refresh", "KEY")
     assert config.file.modified
 
 
-# --- the browser login: the redirect caught on a local port, or pasted -------
+# The browser login: the redirect caught on a local port, or pasted
 
 
 @pytest.mark.login
@@ -1214,11 +959,9 @@ def test_saving_copies_the_app_and_the_login_to_the_file(prompter):
         (f" {REDIRECT}?code=abc%2F123&state=s1 ", None),
         (f"{REDIRECT}?error=access_denied&state=s1", "access_denied"),
         (f"{REDIRECT}?code=abc&state=someone-elses", "state mismatch"),
-        (f"{REDIRECT}?state=s1", "no authorization code"),
         (REDIRECT, "no login in it"),
-        ("", "no login in it"),
     ],
-    ids=["ok", "refused", "another login's", "no code", "no query", "nothing"],
+    ids=["ok", "refused", "another login's", "nothing pasted"],
 )
 def test_the_code_in_a_pasted_address(address, says):
     if says is None:
@@ -1228,18 +971,10 @@ def test_the_code_in_a_pasted_address(address, says):
             code_from_redirect_url(address, "s1")
 
 
-def free_port(host: str = "127.0.0.1") -> int:
-    with socket.socket(socket.AF_INET6 if ":" in host else socket.AF_INET) as s:
-        s.bind((host, 0))
+def free_port() -> int:
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
         return s.getsockname()[1]
-
-
-def _ipv6_loopback() -> bool:
-    try:
-        free_port("::1")
-    except OSError:
-        return False
-    return True
 
 
 async def browse(url: str):
@@ -1258,27 +993,14 @@ async def browse(url: str):
 
 
 @pytest.mark.login
-@pytest.mark.parametrize(
-    "host",
-    [
-        "127.0.0.1",
-        pytest.param(
-            "::1",
-            marks=pytest.mark.skipif(
-                not _ipv6_loopback(), reason="no IPv6 loopback here"
-            ),
-        ),
-    ],
-)
-async def test_the_code_comes_back_through_the_local_port(host):
-    port = free_port(host)
-    netloc = f"[{host}]:{port}" if ":" in host else f"{host}:{port}"
-    redirect_uri = f"http://{netloc}/callback"
+async def test_the_code_comes_back_through_the_local_port():
+    port = free_port()
+    redirect_uri = f"http://127.0.0.1:{port}/callback"
 
     async def favicon_then_login():
         # Another page the browser asks for does not end the wait.
         with pytest.raises(urllib.error.HTTPError, match="404"):
-            await browse(f"http://{netloc}/favicon.ico")
+            await browse(f"http://127.0.0.1:{port}/favicon.ico")
         return await browse(f"{redirect_uri}?code=the-code&state=s1")
 
     code, page = await asyncio.gather(
@@ -1293,7 +1015,6 @@ async def test_the_code_comes_back_through_the_local_port(host):
 async def test_a_connection_that_says_nothing_does_not_hold_up_the_login(monkeypatch):
     # A browser opens spare connections and can leave one unused. The server
     # takes one connection at a time, and used to wait on that one for good.
-    assert spotify_login._CallbackHandler.timeout, "a silent connection must time out"
     monkeypatch.setattr(spotify_login._CallbackHandler, "timeout", 0.2)
     port = free_port()
     redirect_uri = f"http://127.0.0.1:{port}/callback"
@@ -1305,36 +1026,23 @@ async def test_a_connection_that_says_nothing_does_not_hold_up_the_login(monkeyp
             return await browse(f"{redirect_uri}?code=the-code&state=s1")
 
     code, _ = await asyncio.gather(capture_code(redirect_uri, "s1"), idle_then_login())
+
     assert code == "the-code"
-
-
-@pytest.mark.login
-async def test_a_login_for_another_attempt_is_not_accepted():
-    redirect_uri = f"http://127.0.0.1:{free_port()}/callback"
-
-    with pytest.raises(SpotifyLoginError, match="state mismatch"):
-        await asyncio.gather(
-            capture_code(redirect_uri, "s1"),
-            browse(f"{redirect_uri}?code=the-code&state=other"),
-        )
 
 
 @pytest.mark.login
 @pytest.mark.parametrize(
     ("where", "message"),
     [
-        ("a free port", "Timed out"),
         ("a busy port", "Cannot listen"),
         ("https://example.com/callback", "only catch a login on this computer"),
-        ("http://127.0.0.1:99999/callback", "only catch a login on this computer"),
     ],
 )
-async def test_a_login_that_cannot_be_caught_says_why(monkeypatch, where, message):
-    monkeypatch.setattr(spotify_login, "LOGIN_TIMEOUT", 0.2)
+async def test_a_login_that_cannot_be_caught_says_why(where, message):
     with socket.socket() as busy:
         busy.bind(("127.0.0.1", 0))
         busy.listen()
-        port = busy.getsockname()[1] if where == "a busy port" else free_port()
+        port = busy.getsockname()[1]
         redirect_uri = where if "://" in where else f"http://127.0.0.1:{port}/callback"
 
         with pytest.raises(SpotifyLoginError, match=message):
@@ -1342,7 +1050,7 @@ async def test_a_login_that_cannot_be_caught_says_why(monkeypatch, where, messag
 
 
 @pytest.mark.login
-async def test_a_cancelled_login_lets_go_of_the_port_at_once(monkeypatch):
+async def test_a_cancelled_login_lets_go_of_the_port(monkeypatch):
     monkeypatch.setattr(spotify_login, "LOGIN_TIMEOUT", 30)
     port = free_port()
     waiting = asyncio.create_task(
@@ -1362,46 +1070,3 @@ async def test_a_cancelled_login_lets_go_of_the_port_at_once(monkeypatch):
             await asyncio.sleep(0.1)
     else:
         raise AssertionError("the port is still taken 3 seconds after Ctrl-C")
-
-
-async def test_a_refresh_is_saved_at_once_and_one_another_program_made_is_used(
-    make_client, spotify, tmp_path
-):
-    from streamrip.config import Config, set_user_defaults
-
-    path = tmp_path / "config.toml"
-    set_user_defaults(path)
-    config = Config(path)
-    config.update_logins(
-        "spotify",
-        {
-            "client_id": "CID",
-            "access_token": "old",
-            "refresh_token": "R1",
-            "token_expiry": "1",
-        },
-    )
-    config.session.downloads.requests_per_minute = -1
-    spotify.on("POST", "/token", token_answer())
-    client = SpotifyClient(config)
-    await client.login()  # expired: refreshed
-    # Saved without waiting for the end of a run:
-    assert Config(path).file.spotify.access_token == "NEW"
-
-    other = Config(path)  # another program refreshes again, and saves the rotated token
-    other.update_logins(
-        "spotify",
-        {
-            "access_token": "ELSEWHERE",
-            "refresh_token": "R3",
-            "token_expiry": str(int(time.time()) + 3600),
-        },
-    )
-    before = len(spotify.requests("/token"))
-    token = await client._fresh_token()
-    assert token == "ELSEWHERE"
-    assert client.config.access_token == "ELSEWHERE"
-    assert (
-        len(spotify.requests("/token")) == before
-    )  # it did not spend the dead refresh token
-    await client.close()

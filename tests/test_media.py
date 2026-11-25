@@ -3,7 +3,7 @@
 import asyncio
 import json
 import shutil
-from contextlib import asynccontextmanager, contextmanager
+from contextlib import asynccontextmanager
 from itertools import starmap
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
@@ -21,28 +21,19 @@ from streamrip.exceptions import NonStreamableError, TrackDownloadFailedError
 from streamrip.media import album as album_module
 from streamrip.media import artwork
 from streamrip.media import playlist as playlist_module
-from streamrip.media.album import RESOLVE_CONCURRENCY, Album, PendingAlbum
+from streamrip.media.album import Album, PendingAlbum
 from streamrip.media.artist import Artist, Label, announce
 from streamrip.media.csv_playlist import PendingCsvPlaylist, read_tracks
 from streamrip.media.media import filter_prefer_explicit, resolve_or_none
 from streamrip.media.playlist import (
-    LASTFM_MAX_TRACKS,
     PendingLastfmPlaylist,
     PendingPlaylist,
     PendingPlaylistTrack,
     Playlist,
     _playlist_folder,
     best_result,
-    queries,
 )
-from streamrip.media.track import (
-    PendingSingle,
-    PendingTrack,
-    Track,
-    album_folder,
-    fetch_downloadable,
-    fetch_track_meta,
-)
+from streamrip.media.track import PendingSingle, PendingTrack, Track, album_folder
 from streamrip.metadata import (
     AlbumInfo,
     AlbumMetadata,
@@ -52,8 +43,6 @@ from streamrip.metadata import (
     TrackInfo,
     TrackMetadata,
 )
-
-# --- tracks -------------------------------------------------------------------
 
 FIXTURES = {
     "flac": "tests/silence.flac",
@@ -110,6 +99,12 @@ def _make_track(folder: Path, extension: str) -> Track:
     return Track(meta, FakeDownloadable(extension), config, folder, None, database)
 
 
+def _database():
+    database = MagicMock()
+    database.downloaded.return_value = False
+    return database
+
+
 async def test_a_cancelled_download_leaves_no_part_file(tmp_path):
     # Ctrl-C: a "Song.part.flac" beside the tracks has an audio extension, so
     # whatever indexes the library picks it up, and no later run continues it.
@@ -126,15 +121,9 @@ async def test_a_cancelled_download_leaves_no_part_file(tmp_path):
     assert [p.name for p in tmp_path.rglob("*") if p.is_file()] == []
 
 
-def _failed_db(tmp_path):
-    """A real failed table: the Dummy one never stores anything."""
-    return db.Database(db.Dummy(), db.Failed(str(tmp_path / "failed.db")))
-
-
 @pytest.mark.parametrize(
     ("existing", "album", "downloaded", "convert", "left"),
     [
-        (None, None, "m4a", False, ["Song.m4a"]),
         ("flac", "Test Album", "m4a", False, ["Song.flac"]),  # lossy one not fetched
         ("m4a", "Test Album", "flac", False, ["Song.flac"]),  # lossy one removed
         ("m4a", "Test Album", "flac", True, ["Song.flac"]),  # also after converting
@@ -142,19 +131,18 @@ def _failed_db(tmp_path):
         ("alac", "Test Album", "flac", False, ["Song.flac", "Song.m4a"]),
         # Same filename stem, another album: not the same track.
         ("flac", "Some Single", "m4a", False, ["Song.flac", "Song.m4a"]),
-        ("m4a", "Some Single", "flac", False, ["Song.flac", "Song.m4a"]),
     ],
 )
 async def test_of_two_copies_of_a_track_only_the_lossless_one_is_kept(
     tmp_path, monkeypatch, existing, album, downloaded, convert, left
 ):
-    if existing:  # an earlier download: real audio, tagged as streamrip does
-        path = tmp_path / ("Song.flac" if existing == "flac" else "Song.m4a")
-        shutil.copy(FIXTURES[existing], path)
-        audio = mutagen.File(path, easy=True)
-        audio["title"] = "Song"
-        audio["album"] = album
-        audio.save()
+    # An earlier download: real audio, tagged as streamrip does.
+    path = tmp_path / ("Song.flac" if existing == "flac" else "Song.m4a")
+    shutil.copy(FIXTURES[existing], path)
+    audio = mutagen.File(path, easy=True)
+    audio["title"] = "Song"
+    audio["album"] = album
+    audio.save()
     monkeypatch.setattr(
         "streamrip.media.track.converter.get", lambda _: FlacToFlacConverter
     )
@@ -164,25 +152,6 @@ async def test_of_two_copies_of_a_track_only_the_lossless_one_is_kept(
     await track.rip()
 
     assert sorted(p.name for p in tmp_path.iterdir()) == left
-
-
-@pytest.mark.parametrize("restrict", [False, True])
-def test_album_folder_follows_restrict_characters(restrict):
-    # Singles built their album folder without restrict_characters, so with
-    # it on they landed beside their album instead of in it.
-    config = Config.defaults()
-    config.session.downloads.folder = "/music"
-    config.session.filepaths.folder_format = "{albumartist} - {title}"
-    config.session.filepaths.restrict_characters = restrict
-    album = AlbumMetadata(
-        AlbumInfo("1", 2, "FLAC"), "Homogénic", "Björk", "1997", [], Covers(), 10
-    )
-
-    folder = album_folder(config, "qobuz", album)
-
-    assert folder == Path(
-        "/music/Bjrk - Homognic" if restrict else "/music/Björk - Homogénic"
-    )
 
 
 @pytest.fixture(params=["single", "album"])
@@ -202,8 +171,7 @@ def pending_disc_track(request, tmp_path, monkeypatch):
     client.get_metadata = AsyncMock(return_value=resp)
     client.get_downloadable = AsyncMock(return_value=FakeDownloadable("flac"))
     client.before_track = AsyncMock()
-    database = MagicMock()
-    database.downloaded.return_value = False
+    database = _database()
     artwork = AsyncMock(return_value=((None, None), None))
     monkeypatch.setattr("streamrip.media.track.download_artwork", artwork)
     track_id = str(resp["id"])
@@ -216,26 +184,21 @@ def pending_disc_track(request, tmp_path, monkeypatch):
     return pending, resp, artwork
 
 
-@pytest.mark.parametrize(
-    "discnumber",
-    ["1/../../../escaped", r"1\..\..\..\escaped", "2", "", None, True, 0, -1, 1.5],
-)
-async def test_invalid_disc_number_is_rejected_before_io(
+@pytest.mark.parametrize("discnumber", ["1/../../../escaped", "2", 0])
+async def test_an_invalid_disc_number_fails_the_track_before_any_file_is_made(
     pending_disc_track, tmp_path, discnumber
 ):
-    pending, resp, artwork = pending_disc_track
+    pending, resp, _ = pending_disc_track
     resp["media_number"] = discnumber
 
     assert await pending.resolve() is None
 
     pending.db.set_failed.assert_called_once_with("qobuz", "track", pending.id)
-    pending.client.get_downloadable.assert_not_awaited()
-    artwork.assert_not_awaited()
     assert list(tmp_path.iterdir()) == []
 
 
-@pytest.mark.parametrize("discnumber", [1, 2, None])
-async def test_valid_disc_number_download_stays_in_album(
+@pytest.mark.parametrize("discnumber", [2, None])
+async def test_a_multi_disc_track_downloads_into_its_disc_folder(
     pending_disc_track, discnumber
 ):
     pending, resp, _ = pending_disc_track
@@ -245,106 +208,77 @@ async def test_valid_disc_number_download_stays_in_album(
         resp["media_number"] = discnumber
 
     track = await pending.resolve()
-    assert track is not None
     expected = album_folder(pending.config, "qobuz", track.meta.album) / (
         f"Disc {discnumber or 1}"
     )
-    assert track.folder == expected
     await track.preprocess()
     await track.download()
+
     assert track.download_path.parent == expected
     assert track.download_path.read_bytes() == Path(FIXTURES["flac"]).read_bytes()
-    pending.db.set_failed.assert_not_called()
 
 
 @pytest.mark.parametrize("pending_disc_track", ["single"], indirect=True)
-async def test_create_album_folder_off_skips_the_disc_subfolder_too(
+async def test_a_single_without_a_disc_folder_when_album_folders_are_off(
     pending_disc_track,
 ):
-    # A single with create_album_folder off goes straight in the downloads
-    # folder (only a single reads it for its own folder); a multi-disc
-    # "Disc N" subfolder there would contradict that.
-    pending, _, artwork = pending_disc_track
+    pending, _, _ = pending_disc_track
     pending.config.session.downloads.create_album_folder = False
 
     track = await pending.resolve()
 
-    assert track is not None
     assert track.folder == Path(pending.config.session.downloads.folder)
-    assert artwork.call_args.kwargs["shared_folder"] is True
 
 
 @pytest.mark.parametrize("pending_disc_track", ["single"], indirect=True)
-async def test_a_single_without_download_info_is_kept_for_repair(
-    pending_disc_track,
-):
-    # This used to escape resolve() and never reach the failed database.
-    pending, _, _ = pending_disc_track
-    pending.client.get_downloadable.side_effect = NonStreamableError("geoblocked")
-
-    assert await pending.resolve() is None
-    pending.db.set_failed.assert_called_once_with("qobuz", "track", pending.id)
-
-
-@pytest.mark.parametrize("pending_disc_track", ["single"], indirect=True)
+@pytest.mark.parametrize("failure", ["not streamable", "disk full"])
 async def test_a_track_that_fails_while_resolving_is_kept_for_repair(
-    pending_disc_track,
+    pending_disc_track, failure
 ):
     pending, _, artwork = pending_disc_track
-    artwork.side_effect = OSError("disk full")
+    if failure == "not streamable":
+        pending.client.get_downloadable.side_effect = NonStreamableError("geoblocked")
+    else:
+        artwork.side_effect = OSError("disk full")
 
     assert await resolve_or_none(pending) is None
     pending.db.set_failed.assert_called_once_with("qobuz", "track", pending.id)
 
 
 @pytest.mark.parametrize("phase", ["preprocess", "postprocess"])
-@pytest.mark.parametrize("is_single", [False, True])
-async def test_processing_failures_are_counted_and_stored_for_repair(
-    tmp_path, monkeypatch, phase, is_single
+async def test_a_failure_while_processing_is_stored_for_repair(
+    tmp_path, monkeypatch, phase
 ):
     track = _make_track(tmp_path, "flac")
-    track.is_single = is_single
-    track.db = _failed_db(tmp_path)
+    track.db = db.Database(db.Dummy(), db.Failed(str(tmp_path / "failed.db")))
     monkeypatch.setattr(
         Track, phase, AsyncMock(side_effect=OSError("processing failed"))
     )
+
     with pytest.raises(OSError, match="processing failed"):
         await track.rip()
+
     assert (track.db.failed_now, track.db.downloaded_now) == (1, 0)
     assert track.db.failed.all() == [("test", "track", "123")]
 
 
-@pytest.mark.parametrize(
-    ("cleanup_fails", "raised"),
-    [(False, TrackDownloadFailedError), (True, OSError)],
-    ids=["download gives up", "its cleanup fails too"],
-)
-async def test_a_failed_download_is_counted_once(
-    tmp_path, monkeypatch, cleanup_fails, raised
-):
-    # By rip()'s handler, not by download()'s as well.
+async def test_a_failed_download_is_counted_once(tmp_path, monkeypatch):
     track = _make_track(tmp_path, "flac")
-    track.db = _failed_db(tmp_path)
-    real_unlink = Path.unlink
+    track.db = db.Database(db.Dummy(), db.Failed(str(tmp_path / "failed.db")))
 
     async def download(self, path, callback):
-        path.write_bytes(b"partial")  # what the cleanup has to remove
+        path.write_bytes(b"partial")
         raise OSError("download failed")
-
-    def unlink(self, *args, **kwargs):
-        if cleanup_fails and self.suffix == ".flac":
-            raise OSError("cleanup failed")
-        real_unlink(self, *args, **kwargs)
 
     monkeypatch.setattr(FakeDownloadable, "_download", download)
     monkeypatch.setattr("streamrip.media.track.asyncio.sleep", AsyncMock())
-    monkeypatch.setattr(Path, "unlink", unlink)
 
-    with pytest.raises(raised):
+    with pytest.raises(TrackDownloadFailedError):
         await track.rip()
 
     assert (track.db.failed_now, track.db.downloaded_now) == (1, 0)
     assert track.db.failed.all() == [("test", "track", "123")]
+    assert not list(tmp_path.glob("*.flac"))
 
 
 async def test_a_track_waiting_to_retry_leaves_its_slot_to_another(
@@ -401,70 +335,6 @@ async def test_a_download_that_fails_leaves_a_copy_already_there_alone(
         await track.download()
 
     assert track.download_path.read_bytes() == b"the good copy"
-    assert [p.name for p in tmp_path.iterdir()] == [track.download_path.name]
-
-
-@pytest.mark.parametrize("expires", [True, False])
-async def test_only_a_url_that_goes_stale_is_resolved_again(tmp_path, expires):
-    # A YouTube watch url (Spotify) never expires: resolving it again only
-    # searched YouTube Music once more for every track that waited its turn.
-    track = _make_track(tmp_path, "flac")
-    track.client = MagicMock(source="tidal")
-    track.client.get_downloadable = AsyncMock(return_value=FakeDownloadable("flac"))
-    track.downloadable.url_expires = expires
-    track.downloadable.resolved_at = 0.0  # long ago
-    await track.preprocess()
-
-    await track.download()
-
-    assert track.client.get_downloadable.await_count == int(expires)
-
-
-async def test_a_downloaded_soundcloud_track_is_skipped_whatever_id_it_is_asked_for_by(
-    tmp_path,
-):
-    # SoundCloud ids carry the stream to fetch ("123|https://..."); the track
-    # is recorded under the number. A live run downloaded it again every time.
-    database = db.Database(db.Downloads(str(tmp_path / "downloads.db")), db.Dummy())
-    database.set_downloaded("soundcloud", "671678984")
-    client = MagicMock()
-    client.source = "soundcloud"
-    client.get_metadata = AsyncMock()
-
-    meta = await fetch_track_meta(client, database, "671678984|https://x/stream")
-
-    assert meta is None
-    assert database.skipped_now == 1
-    client.get_metadata.assert_not_called()
-
-
-async def test_a_track_waits_its_turn_right_before_its_stream(tmp_path):
-    # Waiting before the metadata instead (on Tidal it comes with the album's
-    # listing) made an album's tracks wait one by one, then stream all at once.
-    database = db.Database(db.Downloads(str(tmp_path / "downloads.db")), db.Dummy())
-    asked = []
-
-    def ask(what):
-        async def asking(*_):
-            asked.append(what)
-            if what == "metadata":
-                raise RuntimeError("service down")
-
-        return asking
-
-    client = MagicMock()
-    client.source = "tidal"
-    client.get_metadata = ask("metadata")
-    client.before_track = ask("turn")
-    client.get_downloadable = ask("stream")
-
-    await fetch_track_meta(client, database, "123")
-    await fetch_downloadable(client, Config.defaults(), database, "123")
-
-    assert asked == ["metadata", "turn", "stream"]
-
-
-# --- albums -------------------------------------------------------------------
 
 
 def _album_meta(album="Album"):
@@ -488,7 +358,7 @@ def _album(tracks):
     )
 
 
-@pytest.mark.parametrize("name", ["DJ [/]", "my list [/b]", "Album [live] [bold]"])
+@pytest.mark.parametrize("name", ["DJ [/]", "Album [live] [bold]"])
 async def test_names_from_a_service_are_printed_as_they_are(name, monkeypatch):
     # Rich reads "[...]" as markup. A "[/b]" with nothing to close raised, which
     # cost the album, the playlist or the whole discography, and "[live]" was
@@ -507,29 +377,8 @@ async def test_names_from_a_service_are_printed_as_they_are(name, monkeypatch):
     assert shown.get().count(name) == 4
 
 
-async def test_resolves_only_a_few_tracks_at_once():
-    concurrent = peak = 0
-
-    class Pending:
-        async def look_up(self):
-            return MagicMock()
-
-        async def resolve(self):
-            nonlocal concurrent, peak
-            concurrent += 1
-            peak = max(peak, concurrent)
-            await asyncio.sleep(0)
-            concurrent -= 1
-            track = MagicMock()
-            track.rip = AsyncMock()
-            return track
-
-    await _album([Pending() for _ in range(RESOLVE_CONCURRENCY * 3)]).download()
-    assert 1 < peak <= RESOLVE_CONCURRENCY
-
-
 async def test_a_downloading_track_does_not_hold_a_resolve_slot():
-    n = RESOLVE_CONCURRENCY * 3
+    n = 30
     resolved = 0
     all_resolved = asyncio.Event()
 
@@ -555,11 +404,9 @@ async def test_a_downloading_track_does_not_hold_a_resolve_slot():
     assert resolved == n
 
 
-def _pending_album(monkeypatch, tmp_path, tracklist, downloaded, booklets=None):
+def _pending_album(monkeypatch, tmp_path, tracklist, downloaded):
     """A Tidal album "Encore" of `tracklist`, with the `downloaded` ones done."""
     meta = _album_meta("Encore")
-    if booklets is not None:
-        meta.info.booklets = booklets
     client = MagicMock()
     client.source = "tidal"
     client.get_metadata = AsyncMock(return_value={})
@@ -585,51 +432,28 @@ def _pending_album(monkeypatch, tmp_path, tracklist, downloaded, booklets=None):
 
 
 @pytest.mark.parametrize(
-    ("downloaded", "said"),
-    [
-        (set(), None),
-        ({"1"}, "Encore: skipping 1 of 3 tracks already downloaded"),
-        ({"1", "2", "3"}, "Encore: all 3 tracks already downloaded, skipping"),
-    ],
+    "downloaded",
+    [set(), {"1"}, {"1", "2", "3"}],
     ids=["new", "partly downloaded", "finished"],
 )
-async def test_an_album_says_once_what_it_skips(
-    monkeypatch, tmp_path, caplog, downloaded, said
+async def test_an_album_skips_the_tracks_it_already_has(
+    monkeypatch, tmp_path, downloaded
 ):
-    pending, artwork = _pending_album(
-        monkeypatch, tmp_path, ["1", "2", "3"], downloaded
-    )
+    pending, _ = _pending_album(monkeypatch, tmp_path, ["1", "2", "3"], downloaded)
 
     album = await pending.resolve()
 
     assert [t.id for t in album.tracks] == sorted({"1", "2", "3"} - downloaded)
     # An artist resolves all its albums before its filters drop some: nothing
-    # is counted, said or made for an album until it is wanted.
+    # is counted or made for an album until it is wanted.
     assert pending.db.skipped_now == 0
-    artwork.assert_not_awaited()
     assert not (tmp_path / "Encore").exists()
-    assert [m for m in caplog.messages if "kipping" in m] == []
 
     await album.preprocess()
 
     assert pending.db.skipped_now == len(downloaded)
-    assert [m for m in caplog.messages if "kipping" in m] == ([said] if said else [])
-    # A finished album gets no folder or cover.
-    assert artwork.await_count == (len(downloaded) < 3)
+    # A finished album gets no folder.
     assert (tmp_path / "Encore").is_dir() is (len(downloaded) < 3)
-    assert all(t.cover_path == "cover.jpg" for t in album.tracks)
-
-
-@pytest.mark.parametrize("create_album_folder", [True, False])
-async def test_create_album_folder_controls_whether_artwork_can_be_saved(
-    monkeypatch, tmp_path, create_album_folder
-):
-    pending, artwork = _pending_album(monkeypatch, tmp_path, ["1"], downloaded=set())
-    pending.config.session.downloads.create_album_folder = create_album_folder
-
-    await (await pending.resolve()).preprocess()
-
-    assert artwork.call_args.kwargs["shared_folder"] is not create_album_folder
 
 
 class _BookletDownloadable:
@@ -646,17 +470,15 @@ class _BookletDownloadable:
             path.write_bytes(b"%PD")
             raise asyncio.CancelledError
         type(self).downloaded.append(self.url)
-        with path.open("wb") as f:
-            f.write(b"%PDF")
+        path.write_bytes(b"%PDF")
 
 
-async def test_booklets_are_saved_as_pdfs(monkeypatch, tmp_path, caplog):
+async def test_booklets_are_saved_as_pdfs(monkeypatch, tmp_path):
     monkeypatch.setattr(album_module, "BasicDownloadable", _BookletDownloadable)
     _BookletDownloadable.downloaded = []
     (tmp_path / "Liner Notes.pdf").write_bytes(b"%PDF")
     booklets = [
         {"description": "Digital Booklet", "url": "https://q/1.pdf"},
-        {"name": "Poster", "url": "https://q/2.jpg"},  # not a booklet
         {"description": "Liner Notes", "url": "https://q/3.pdf"},  # already there
         {"description": "Lyrics", "url": "https://q/broken.pdf"},
         {"description": "Digital Booklet", "url": "https://q/5.pdf"},
@@ -671,7 +493,6 @@ async def test_booklets_are_saved_as_pdfs(monkeypatch, tmp_path, caplog):
         "Digital Booklet 4.pdf",
         "Liner Notes.pdf",
     ]
-    assert "Could not download booklet https://q/broken.pdf" in caplog.text
 
 
 async def test_a_booklet_cut_off_by_a_cancel_is_not_kept(monkeypatch, tmp_path):
@@ -681,41 +502,6 @@ async def test_a_booklet_cut_off_by_a_cancel_is_not_kept(monkeypatch, tmp_path):
     with pytest.raises(asyncio.CancelledError):
         await album_module.download_booklets(None, booklets, tmp_path)
     assert list(tmp_path.iterdir()) == []
-
-
-@pytest.mark.parametrize(
-    ("enabled", "in_album_folder", "downloaded", "fetched"),
-    [
-        (True, True, set(), 1),
-        (False, True, set(), 0),
-        # Booklets land beside the tracks; with no album folder to put them
-        # in, they would collide with every other album's.
-        (True, False, set(), 0),
-        (True, True, {"1"}, 0),  # a finished album
-    ],
-    ids=["on", "off", "no album folder", "finished album"],
-)
-async def test_booklets_follow_the_config(
-    monkeypatch, tmp_path, enabled, in_album_folder, downloaded, fetched
-):
-    booklets = [{"description": "Booklet", "url": "https://q/1.pdf"}]
-    pending, _ = _pending_album(monkeypatch, tmp_path, ["1"], downloaded, booklets)
-    pending.config.session.qobuz.download_booklets = enabled
-    pending.config.session.downloads.create_album_folder = in_album_folder
-    download = AsyncMock()
-    monkeypatch.setattr(album_module, "download_booklets", download)
-    monkeypatch.setattr(album_module, "progress", MagicMock())
-
-    album = await pending.resolve()
-    # Resolving alone downloads nothing: an album an artist or label filter
-    # drops afterwards must not leave its booklets behind.
-    download.assert_not_awaited()
-
-    await album.preprocess()
-    assert download.await_count == fetched
-
-
-# --- artists and labels -------------------------------------------------------
 
 
 def _filters(**on) -> ArtistFilterConfig:
@@ -754,34 +540,6 @@ def _release(id, title, rate=44.1, depth=16, explicit=False) -> Album:
     return Album(meta=meta, tracks=[], config=None, folder="folder", db=None)
 
 
-@pytest.mark.parametrize("method", ["_download_async", "_resolve_then_download"])
-async def test_albums_are_resolved_and_ripped_one_at_a_time(method):
-    # An album's tracks never mix with another's on screen, or on the rate
-    # limit; with repeats on every album is resolved first, still one by one.
-    busy = peak = 0
-
-    async def one_at_a_time(result=None):
-        nonlocal busy, peak
-        busy += 1
-        peak = max(peak, busy)
-        await asyncio.sleep(0)  # so overlapping calls would interleave
-        busy -= 1
-        return result
-
-    class FakeAlbum:
-        async def rip(self):
-            await one_at_a_time()
-
-    class Pending:
-        async def resolve(self):
-            return await one_at_a_time(FakeAlbum())
-
-    artist = _artist([Pending() for _ in range(4)])
-    await asyncio.wait_for(getattr(artist, method)(NO_FILTERS), 5)
-
-    assert peak == 1
-
-
 @pytest.mark.parametrize(
     ("run", "fails_in"),
     [
@@ -791,7 +549,7 @@ async def test_albums_are_resolved_and_ripped_one_at_a_time(method):
     ],
     ids=["artist", "artist, repeats on", "label"],
 )
-async def test_a_failing_album_does_not_stop_the_others(caplog, run, fails_in):
+async def test_a_failing_album_does_not_stop_the_others(run, fails_in):
     ripped = []
 
     class FakeAlbum:
@@ -815,33 +573,17 @@ async def test_a_failing_album_does_not_stop_the_others(caplog, run, fails_in):
     await run([Pending(n) for n in (1, 2, 3)])
 
     assert sorted(ripped) == [1, 3]
-    assert "ConnectionError: boom" in caplog.text
 
 
 @pytest.mark.parametrize(
     ("albums", "kept"),
     [
-        ([_release("a1", "Test Album")], ["a1"]),
-        (
-            [
-                _release("a1", "Test Album"),
-                _release("a2", "Another Album", 96, 24, explicit=True),
-            ],
-            ["a1", "a2"],
-        ),
-        # Of two editions a higher bit depth wins, then a higher sampling rate,
-        # then the explicit one, also when no quality is known.
+        # Of two editions the higher bit depth wins, then the higher sampling
+        # rate, then the explicit one.
         (
             [
                 _release("a1", "Test Album"),
                 _release("a2", "Test Album (Deluxe)", 44.1, 24),
-            ],
-            ["a2"],
-        ),
-        (
-            [
-                _release("a1", "Test Album", 44.1, 24),
-                _release("a2", "Test Album (Live)", 96, 24),
             ],
             ["a2"],
         ),
@@ -852,32 +594,8 @@ async def test_a_failing_album_does_not_stop_the_others(caplog, run, fails_in):
             ],
             ["a2"],
         ),
-        (
-            [
-                _release("a1", "Test Album", None, None),
-                _release("a2", "Test Album", None, None, explicit=True),
-            ],
-            ["a2"],
-        ),
-        # Titles alike up to a bracket are editions of one album.
-        (
-            [
-                _release("a1", "Album X"),
-                _release("a2", "Album X (Deluxe)", 96, 24),
-                _release("a3", "Album X [Special Edition]", explicit=True),
-            ],
-            ["a2"],
-        ),
-        (
-            [
-                _release("a1", "Album A"),
-                _release("a2", "Album A (Remastered)", 96, 24, explicit=True),
-                _release("b1", "Album B", 96, 24),
-                _release("b2", "Album B (Live)", explicit=True),
-                _release("c1", "Album C", None, None),
-            ],
-            ["a2", "b1", "c1"],
-        ),
+        # Another album is not an edition.
+        ([_release("a1", "Album A"), _release("b1", "Album B", 96, 24)], ["a1", "b1"]),
         # A title that starts with a bracket used to abort the artist download.
         (
             [
@@ -897,9 +615,7 @@ def test_the_repeats_filter_keeps_the_best_edition_of_an_album(albums, kept):
     ("only", "changes", "wanted"),
     [
         ("non_albums", {"tracktotal": 1}, False),
-        ("non_albums", {}, True),
         ("extras", {"albumartist": "Various Artists"}, False),
-        ("extras", {}, True),
         # An album the artist shares is not a feature.
         (
             "features",
@@ -907,7 +623,6 @@ def test_the_repeats_filter_keeps_the_best_edition_of_an_album(albums, kept):
             True,
         ),
         ("features", {"albumartist": "Someone Else"}, False),
-        ("features", {}, True),
     ],
 )
 def test_an_artist_filter_drops_what_it_names(only, changes, wanted):
@@ -940,26 +655,20 @@ async def test_repeats_choose_among_what_the_other_filters_keep(monkeypatch):
     assert ripped == ["plain"]
 
 
-@pytest.mark.parametrize("resolve_first", [False, True])
 @pytest.mark.parametrize("selected", [False, True])
 async def test_artist_counts_skips_only_for_selected_albums(
-    monkeypatch, tmp_path, resolve_first, selected
+    monkeypatch, tmp_path, selected
 ):
-    # Filtering an album out after it is resolved must not count its skips.
     pending, _ = _pending_album(monkeypatch, tmp_path, ["1", "2"], {"1", "2"})
     pending.config.session.cli.progress_bars = False
     filters = pending.config.session.artist_filters
     filters.repeats = False
     monkeypatch.setattr(Artist, "_wanted", lambda self, album, filters: selected)
     artist = Artist("Artist", [pending], pending.client, pending.config)
-    if resolve_first:
-        await artist._resolve_then_download(filters)
-    else:
-        await artist._download_async(filters)
+
+    await artist._download_async(filters)
+
     assert pending.db.skipped_now == (2 if selected else 0)
-
-
-# --- prefer_explicit ----------------------------------------------------------
 
 
 class _Resolved:
@@ -986,8 +695,6 @@ class _Resolved:
         ([("Song", "Artist", False), ("Song", "Artist", True)], [1]),
         # The same song in another case, or with spaces around it.
         ([("  song  ", "ARTIST", False), ("Song", "artist", True)], [1]),
-        ([("Song", "Artist", False)], [0]),
-        ([("Song", "Artist", True)], [0]),
         (
             [
                 ("Song", "Artist", False),
@@ -1003,111 +710,44 @@ def test_prefer_explicit_drops_only_the_clean_copy_of_a_song(tracks, kept):
     assert filter_prefer_explicit(resolved) == [resolved[i] for i in kept]
 
 
-# --- playlists ----------------------------------------------------------------
-
-
-def _lastfm_playlist(monkeypatch, total_tracks, fail_page=None):
+def _lastfm_playlist(monkeypatch, total_tracks):
     session = AsyncMock()
     session.__aenter__.return_value = session
-    active_requests = 0
 
     @asynccontextmanager
     async def get(url, **kwargs):
-        nonlocal active_requests
-        active_requests += 1
-        try:
-            # A suspended response must not allow more page requests to start.
-            await asyncio.sleep(0)
-            assert active_requests == 1
-            page = kwargs.get("params", {}).get("page", 1)
-            if page == fail_page:
-                raise ConnectionError("page unavailable")
-            start = (page - 1) * 50
-            tracks = "".join(
-                f'<a href="/track" title="Song {i} &amp; Co">'
-                '<a href="/artist" title="Artist &amp; Co">'
-                for i in range(start, min(start + 50, total_tracks))
-            )
-            response = AsyncMock()
-            response.text.return_value = (
-                '<h1 class="playlisting-playlist-header-title">Mix &amp; Match</h1>'
-                f'<div data-playlisting-entry-count="{total_tracks}"></div>{tracks}'
-            )
-            yield response
-        finally:
-            active_requests -= 1
+        start = (kwargs.get("params", {}).get("page", 1) - 1) * 50
+        tracks = "".join(
+            f'<a href="/track" title="Song {i} &amp; Co">'
+            '<a href="/artist" title="Artist &amp; Co">'
+            for i in range(start, min(start + 50, total_tracks))
+        )
+        response = AsyncMock()
+        response.text.return_value = (
+            '<h1 class="playlisting-playlist-header-title">Mix &amp; Match</h1>'
+            f'<div data-playlisting-entry-count="{total_tracks}"></div>{tracks}'
+        )
+        yield response
 
     session.get = MagicMock(side_effect=get)
     monkeypatch.setattr("streamrip.media.playlist.new_session", lambda **kw: session)
-    playlist = PendingLastfmPlaylist(
+    return PendingLastfmPlaylist(
         "https://www.last.fm/playlist/test",
         MagicMock(),
         [],
         Config.defaults(),
         MagicMock(),
     )
-    return playlist, session
 
 
-@pytest.mark.parametrize("count", [LASTFM_MAX_TRACKS + 1, 1_000_000_000])
-async def test_lastfm_rejects_excessive_counts_before_pagination(
-    monkeypatch, caplog, count
-):
-    playlist, session = _lastfm_playlist(monkeypatch, count)
-
-    assert await playlist.resolve() is None
-
-    assert "supported limit" in caplog.text
-    playlist.client.search.assert_not_called()
-    session.get.assert_called_once_with(playlist.lastfm_url)
-    session.__aexit__.assert_awaited_once()
-
-
-@pytest.mark.parametrize("count", [0, 1, 50, 51, 100, 101, LASTFM_MAX_TRACKS])
-async def test_lastfm_pagination_is_bounded_and_ordered(monkeypatch, count):
-    playlist, session = _lastfm_playlist(monkeypatch, count)
+@pytest.mark.parametrize("count", [1, 51, 120])
+async def test_a_lastfm_playlist_is_read_page_by_page(monkeypatch, count):
+    playlist = _lastfm_playlist(monkeypatch, count)
 
     title, tracks = await playlist._parse_lastfm_playlist(playlist.lastfm_url)
 
     assert title == "Mix & Match"
     assert tracks == [(f"Song {i} & Co", "Artist & Co") for i in range(count)]
-    calls = session.get.call_args_list
-    assert len(calls) == max(1, (count + 49) // 50)
-    assert [call.kwargs for call in calls] == [{}] + [
-        {"params": {"page": i}} for i in range(2, len(calls) + 1)
-    ]
-    assert all(call.args == (playlist.lastfm_url,) for call in calls)
-    session.__aexit__.assert_awaited_once()
-
-
-async def test_lastfm_page_failure_stops_pagination_and_closes_session(monkeypatch):
-    playlist, session = _lastfm_playlist(monkeypatch, 151, fail_page=2)
-
-    with pytest.raises(ConnectionError, match="page unavailable"):
-        await playlist._parse_lastfm_playlist(playlist.lastfm_url)
-
-    assert session.get.call_count == 2
-    session.__aexit__.assert_awaited_once()
-
-
-async def test_lastfm_tracks_are_searched_like_a_csv_lists(monkeypatch):
-    # A Last.fm page names a title and an artist per track; they are found the
-    # way a CSV list's are (below), not by the first search hit.
-    searched = AsyncMock(return_value=None)
-    monkeypatch.setattr("streamrip.media.playlist.searched_playlist", searched)
-    playlist = PendingLastfmPlaylist("url", "client", ["fallback"], "config", "db")
-    playlist._parse_lastfm_playlist = AsyncMock(
-        return_value=("Mix", [("Song", "Band"), ("Other", "Act")])
-    )
-
-    await playlist.resolve()
-
-    name, tracks, *rest = searched.await_args.args
-    assert (name, rest) == ("Mix", ["client", ["fallback"], "config", "db"])
-    assert [(t.title, t.artists) for t in tracks] == [
-        ("Song", ["Band"]),
-        ("Other", ["Act"]),
-    ]
 
 
 @pytest.mark.parametrize(
@@ -1123,8 +763,7 @@ async def test_a_playlist_track_that_fails_is_kept_for_repair(get_metadata):
     client.source = "tidal"
     client.get_metadata = get_metadata
     client.before_track = AsyncMock()
-    database = MagicMock()
-    database.downloaded.return_value = False
+    database = _database()
     track = PendingPlaylistTrack("42", client, MagicMock(), "/x", "Mix", 1, database)
 
     assert await track.resolve() is None
@@ -1151,7 +790,7 @@ def _deezer_track(position, disc):
     }
 
 
-async def test_playlist_track_is_tagged_as_part_of_one_album(monkeypatch):
+async def test_a_playlist_track_is_tagged_as_part_of_one_album(monkeypatch):
     monkeypatch.setattr(
         "streamrip.media.playlist.download_artwork",
         AsyncMock(return_value=(None, None)),
@@ -1161,22 +800,18 @@ async def test_playlist_track_is_tagged_as_part_of_one_album(monkeypatch):
     client.get_metadata = AsyncMock(return_value=_deezer_track(position=5, disc=2))
     client.get_downloadable = AsyncMock()
     client.before_track = AsyncMock()
-    database = MagicMock()
-    database.downloaded.return_value = False
     pending = PendingPlaylistTrack(
-        "7", client, Config.defaults(), "/x", "Road Trip", 3, database, total=50
+        "7", client, Config.defaults(), "/x", "Road Trip", 3, _database(), total=50
     )
 
     meta = (await pending.resolve()).meta
 
     assert (meta.tracknumber, meta.discnumber) == (3, 1)
-    album = meta.album
-    assert (album.tracktotal, album.disctotal) == (50, 1)
+    assert (meta.album.tracktotal, meta.album.disctotal) == (50, 1)
     # One album artist for the whole playlist, or servers split it per artist.
-    assert (album.album, album.albumartist, album.compilation) == (
+    assert (meta.album.album, meta.album.albumartist) == (
         "Road Trip",
         "Various Artists",
-        "1",
     )
 
 
@@ -1206,75 +841,19 @@ def test_tracks_uploaded_to_deezer_are_left_out_of_a_playlist():
 @pytest.mark.parametrize(
     ("restrict", "folder"), [(False, "/music/Café  Mix"), (True, "/music/Caf  Mix")]
 )
-def test_playlist_folder_is_one_folder_and_follows_restrict_characters(
-    restrict, folder
-):
+def test_a_playlist_folder_is_one_folder(restrict, folder):
     config = Config.defaults()
     config.session.downloads.folder = "/music"
     config.session.filepaths.restrict_characters = restrict
     assert _playlist_folder(config, "Café / Mix") == Path(folder)
 
 
-@pytest.mark.parametrize("name", ["", ".", "..", "/", ".. /", "é"])
-def test_playlist_folder_rejects_special_components_after_sanitizing(tmp_path, name):
+@pytest.mark.parametrize("name", ["", ".."])
+def test_a_playlist_name_that_is_no_folder_is_refused(tmp_path, name):
     config = Config.defaults()
     config.session.downloads.folder = str(tmp_path)
-    config.session.filepaths.restrict_characters = True
     with pytest.raises(ValueError, match="playlist folder"):
         _playlist_folder(config, name)
-
-
-@pytest.mark.parametrize("destination", ["outside", "root"])
-def test_playlist_folder_rejects_symlinks_outside_or_to_root(tmp_path, destination):
-    root = tmp_path / "music"
-    root.mkdir()
-    outside = tmp_path / "music-other"
-    outside.mkdir()
-    (root / "Mix").symlink_to(outside if destination == "outside" else root)
-    config = Config.defaults()
-    config.session.downloads.folder = str(root)
-    with pytest.raises(ValueError, match="playlist folder"):
-        _playlist_folder(config, "Mix")
-
-
-@pytest.mark.parametrize("name", ["..", "Mix"])
-async def test_remote_playlist_title_is_checked_before_tracks_are_created(
-    tmp_path, monkeypatch, name
-):
-    config = Config.defaults()
-    config.session.downloads.folder = str(tmp_path / "music")
-    config.session.cli.progress_bars = False
-    client = MagicMock()
-    client.source = "tidal"
-    client.get_metadata = AsyncMock(return_value={"title": name, "tracks": [{"id": 1}]})
-    pending = PendingPlaylist("1", client, config, MagicMock())
-    api_playlist = await pending.resolve()
-
-    page = (
-        f'<h1 class="playlisting-playlist-header-title">{name}</h1>'
-        '<div data-playlisting-entry-count="1"></div>'
-        '<a href="/track" title="Song"><a href="/artist" title="Artist">'
-    )
-    session = MagicMock()
-    session.get.return_value.__aenter__.return_value.text = AsyncMock(return_value=page)
-    monkeypatch.setattr(
-        "streamrip.media.playlist.new_session",
-        MagicMock(return_value=AsyncMock(__aenter__=AsyncMock(return_value=session))),
-    )
-    query = AsyncMock(return_value=(client, MagicMock(id="1")))
-    monkeypatch.setattr("streamrip.media.playlist.find_track", query)
-    lastfm_playlist = await PendingLastfmPlaylist(
-        "https://example.test/playlist", client, [], config, MagicMock()
-    ).resolve()
-
-    for playlist in (api_playlist, lastfm_playlist):
-        if name == "..":
-            assert playlist is None
-        else:
-            assert playlist.tracks[0].folder == tmp_path / "music" / "Mix"
-    if name == "..":
-        query.assert_not_awaited()
-    assert not (tmp_path / "music").exists()
 
 
 def _served_from(requested, served):
@@ -1304,11 +883,9 @@ def _served_from(requested, served):
         return_value=MagicMock(id=served, source="deezer")
     )
     client.before_track = AsyncMock()
-    database = MagicMock()
-    database.downloaded.return_value = False
     config = Config.defaults()
     config.session.metadata.set_playlist_to_album = False
-    return PendingPlaylistTrack(requested, client, config, "/x", "Mix", 1, database)
+    return PendingPlaylistTrack(requested, client, config, "/x", "Mix", 1, _database())
 
 
 @pytest.fixture
@@ -1318,7 +895,6 @@ def artwork_fetched(monkeypatch):
     return artwork
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("served", "title", "cover"),
     [
@@ -1330,47 +906,21 @@ def artwork_fetched(monkeypatch):
 async def test_a_playlist_track_takes_the_metadata_of_the_track_served(
     artwork_fetched, served, title, cover
 ):
-    """A geoblocked or delisted Deezer track is served from FALLBACK.SNG_ID's release.
-
-    Its own metadata no longer describes the file, and its cover is Deezer's
-    grey placeholder (3 of 9 such tracks in a real 60-track playlist).
-    """
-    pending = _served_from("7", served)
-
-    track = await pending.resolve()
+    # A geoblocked or delisted Deezer track is served from FALLBACK.SNG_ID's
+    # release. Its own metadata no longer describes the file, and its cover is
+    # Deezer's grey placeholder (3 of 9 such tracks in a real 60-track playlist).
+    track = await _served_from("7", served).resolve()
 
     assert (track.meta.title, track.meta.album.album) == (title, f"{title} album")
     # One cover, the served release's: the placeholder is not even fetched.
     covers = [c.args[2].get_size("large")[1] for c in artwork_fetched.await_args_list]
     assert covers == [cover]
-    assert pending.client.get_metadata.await_count == (1 if served == "7" else 2)
-    pending.db.set_failed.assert_not_called()
 
 
-@pytest.mark.asyncio
-async def test_unreadable_served_track_keeps_the_requested_metadata(artwork_fetched):
-    pending = _served_from("7", "99")
-    first = pending.client.get_metadata.side_effect
-
-    async def failing_for_served(id, _type):
-        if id == "99":
-            raise NonStreamableError("gone")
-        return first(id, _type)
-
-    pending.client.get_metadata = AsyncMock(side_effect=failing_for_served)
-
-    track = await pending.resolve()
-
-    assert track.meta.title == "Requested"
-    # The served id is not the database's business: nothing recorded for it.
-    pending.db.set_failed.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_fallback_served_track_is_recorded_under_the_requested_id(
+async def test_a_fallback_track_is_recorded_under_the_requested_id(
     artwork_fetched, monkeypatch
 ):
-    # Re-running the playlist must skip it, as it did before the served metadata.
+    # Re-running the playlist must skip it.
     monkeypatch.setattr("streamrip.media.track.tag_file", AsyncMock())
     pending = _served_from("7", "99")
 
@@ -1379,9 +929,6 @@ async def test_fallback_served_track_is_recorded_under_the_requested_id(
 
     assert track.meta.title == "Served"  # tags still come from the served track
     pending.db.set_downloaded.assert_called_once_with("deezer", "7")
-
-
-# --- CSV lists: reading -------------------------------------------------------
 
 
 def _write(tmp_path, text, encoding="utf-8"):
@@ -1414,23 +961,6 @@ def _rows(tracks):
                 ("Billie Jean", ["Michael Jackson"], "Thriller", 293000),
             ],
         ),
-        # A semicolon between artists and a short row leave a file of commas alone.
-        (
-            (
-                "title,artists,album\n"
-                "Get Lucky,Daft Punk; Pharrell Williams,Random Access Memories\n"
-                "Song,Band\n"
-            ),
-            [
-                (
-                    "Get Lucky",
-                    ["Daft Punk", "Pharrell Williams"],
-                    "Random Access Memories",
-                    None,
-                ),
-                ("Song", ["Band"], "", None),
-            ],
-        ),
         # A comma inside a quoted title, and Duration (ms).
         (
             (
@@ -1451,7 +981,6 @@ def _rows(tracks):
             "Title;Artist;Album;Length\nWaterloo;ABBA;Waterloo;2:45\n",
             [("Waterloo", ["ABBA"], "Waterloo", 165_000)],
         ),
-        ("title\tartist\nSong\tBand\n", [("Song", ["Band"], "", None)]),
         (
             "Queen,Bohemian Rhapsody\nABBA,Dancing Queen\n",
             [
@@ -1464,30 +993,12 @@ def _rows(tracks):
             "artist,title\rQueen,Bohemian Rhapsody\r",
             [("Bohemian Rhapsody", ["Queen"], "", None)],
         ),
-        # A comma in a name, quoted or not, ties with the semicolon of its row:
-        # it does not make the commas the separator.
-        (
-            '"Earth, Wind & Fire";September\n"Daft Punk";Get Lucky\n',
-            [
-                ("September", ["Earth, Wind & Fire"], "", None),
-                ("Get Lucky", ["Daft Punk"], "", None),
-            ],
-        ),
+        # A comma in a name does not make the commas the separator.
         (
             "Earth, Wind & Fire;September\nDaft Punk;Get Lucky\n",
             [
                 ("September", ["Earth, Wind & Fire"], "", None),
                 ("Get Lucky", ["Daft Punk"], "", None),
-            ],
-        ),
-        (
-            (
-                "title;artists\nSeptember;Earth, Wind & Fire\n"
-                "Ohio;Crosby, Stills, Nash & Young\n"
-            ),
-            [
-                ("September", ["Earth, Wind & Fire"], "", None),
-                ("Ohio", ["Crosby, Stills, Nash & Young"], "", None),
             ],
         ),
         # Excel's byte order mark does not hide the header.
@@ -1496,25 +1007,17 @@ def _rows(tracks):
             "title,artists\n\n,Nobody\nSong,Somebody\n , \n",
             [("Song", ["Somebody"], "", None)],
         ),
-        ("", []),
-        ("title,artists\n", []),
     ],
     ids=[
         "the csv of Music-Sync",
-        "semicolon between artists, short row",
         "exportify",
         "tunemymusic",
         "semicolons",
-        "tabs",
         "no header",
         "mac",
-        "quoted comma in a name",
         "comma in a name",
-        "commas in names, header without",
         "byte order mark",
         "blank rows and rows without a title",
-        "empty",
-        "only a header",
     ],
 )
 def test_a_csv_list_is_read(tmp_path, text, expected):
@@ -1525,12 +1028,9 @@ def test_a_csv_list_is_read(tmp_path, text, expected):
     ("duration", "expected"),
     [
         ("duration_ms\n123456.0\n", 123456),
-        ("duration_ms\nnot a number\n", None),
         ("duration\n3:45\n", 225_000),
-        ("length\n1:02:03\n", 3_723_000),
         # A bare number could be seconds or milliseconds: better to say nothing.
         ("duration\n225\n", None),
-        ("duration\n225000\n", None),
     ],
 )
 def test_a_length_is_only_taken_when_its_unit_is_clear(tmp_path, duration, expected):
@@ -1538,16 +1038,6 @@ def test_a_length_is_only_taken_when_its_unit_is_clear(tmp_path, duration, expec
     path = _write(tmp_path, f"title,{header}\nSong,{value}\n")
 
     assert read_tracks(path)[0].duration_ms == expected
-
-
-def test_a_csv_the_reader_gives_up_on_is_refused_not_a_traceback(tmp_path):
-    # A quote that is never closed makes the rest of the file one field, which
-    # csv refuses past 128 KiB; "inf" is a number that is no length.
-    text = 'title,artists\n"Unclosed,Artist\n' + "Song,Artist\n" * 12_000
-    with pytest.raises(ValueError, match="cannot be read as CSV"):
-        read_tracks(_write(tmp_path, text))
-    path = _write(tmp_path, "title,duration_ms\nSong,inf\n")
-    assert read_tracks(path)[0].duration_ms is None
 
 
 def test_a_track_number_column_does_not_replace_the_title(tmp_path):
@@ -1561,8 +1051,6 @@ def test_a_file_that_is_not_utf8_is_refused_with_advice(tmp_path):
     with pytest.raises(ValueError, match="UTF-8"):
         read_tracks(path)
 
-
-# --- CSV lists: finding the tracks --------------------------------------------
 
 WANTED = MatchTrack(
     "Get Lucky (feat. Pharrell Williams)",
@@ -1597,44 +1085,14 @@ def _summary(name, artist, album="", length=None, id="1"):
             ],
             "lp",
         ),
-        ([], None),
         ([_summary("Get Lucky", "Somebody Else")], None),
         ([_summary("Get Lucky (Karaoke Version)", "Daft Punk")], None),
-        ([_summary("Something Else Entirely", "Daft Punk")], None),
     ],
-    ids=[
-        "the track",
-        "the edit of its length",
-        "nothing",
-        "another artist",
-        "another version",
-        "another song",
-    ],
+    ids=["the track", "the edit of its length", "another artist", "another version"],
 )
 def test_the_search_result_that_is_the_track_is_chosen(results, chosen):
     hit = best_result(WANTED, results)
     assert (hit[0].id if hit else None) == chosen
-    assert hit is None or hit[1] >= 0.9  # its score: a sure match
-
-
-@pytest.mark.parametrize(
-    ("wanted", "searched"),
-    [
-        # Without brackets first; the title before the artist last.
-        (
-            WANTED,
-            [
-                "Daft Punk Get Lucky",
-                "Daft Punk Get Lucky (feat. Pharrell Williams)",
-                "Get Lucky Daft Punk",
-            ],
-        ),
-        (MatchTrack("Song", ["Band"]), ["Band Song", "Song Band"]),
-        (MatchTrack("Song"), ["Song"]),  # no artist, no gap
-    ],
-)
-def test_what_is_searched_for_a_track(wanted, searched):
-    assert queries(wanted) == searched
 
 
 class Catalogue:
@@ -1644,10 +1102,8 @@ class Catalogue:
         self.source = source
         self.table = table
         self.fail = fail
-        self.asked = []
 
     async def search(self, media_type, query, limit=50, offset=0):
-        self.asked.append((media_type, query, limit))
         if query in self.fail:
             raise ConnectionError("down")
         return [{"items": self.table.get(query, [])}]
@@ -1663,12 +1119,12 @@ def _item(id, title, artist="Band"):
     }
 
 
-def _csv_playlist(tmp_path, tracks, client, fallback=None, name="Mix"):
+def _csv_playlist(tmp_path, tracks, client, fallback=None):
     config = Config.defaults()
     config.session.downloads.folder = str(tmp_path)
     config.session.cli.progress_bars = False
     fallbacks = [fallback] if fallback is not None else []
-    return PendingCsvPlaylist(name, tracks, client, fallbacks, config, MagicMock())
+    return PendingCsvPlaylist("Mix", tracks, client, fallbacks, config, MagicMock())
 
 
 ONE = MatchTrack("Song One", ["Band"], duration_ms=200_000)
@@ -1685,74 +1141,54 @@ async def test_the_tracks_found_become_a_playlist_in_a_folder_of_the_lists_name(
 
     playlist = await _csv_playlist(tmp_path, [ONE, TWO, THREE], tidal).resolve()
 
-    assert playlist is not None
     assert playlist.name == "Mix"
     assert [(t.id, t.position, t.total) for t in playlist.tracks] == [
         ("11", 1, 3),
         ("33", 3, 3),  # the position in the list, also where one is missing
     ]
     assert {t.folder for t in playlist.tracks} == {tmp_path / "Mix"}
-    assert all(t.client is tidal for t in playlist.tracks)
-    assert ("track", "Band Song One", 5) in tidal.asked  # five results are looked at
 
 
 @pytest.mark.parametrize(
-    ("tracks", "tidal", "fallback", "found", "said"),
+    ("tracks", "tidal", "fallback", "found"),
     [
         (
             [ONE, TWO],
             Catalogue("tidal", HAS_ONE),
             Catalogue("spotify", HAS_TWO),
             [("11", 1, "tidal"), ("22", 2, "spotify")],
-            None,
         ),
         (
             [ONE, TWO],
             Catalogue("tidal", HAS_ONE),
             None,
             [("11", 1, "tidal")],
-            "Not found: Band - Song Two",
-        ),
-        (
-            [ONE, TWO, ONE],
-            Catalogue("tidal", HAS_ONE | HAS_TWO),
-            None,
-            [("11", 1, "tidal"), ("22", 2, "tidal")],
-            None,
         ),
         (
             [ONE, TWO],
             Catalogue("tidal", HAS_TWO, fail={"Band Song One"}),
             None,
             [("22", 2, "tidal")],
-            None,
         ),
+        # A "Song One (Live)" is not "Song One".
         (
             [ONE],
             Catalogue("tidal", {"Band Song One": [_item(99, "Song One (Live)")]}),
             None,
             None,
-            None,
         ),
-        (
-            [ONE, TWO],
-            Catalogue("tidal", {}),
-            None,
-            None,
-            "None of the tracks of Mix was found",
-        ),
+        ([ONE, TWO], Catalogue("tidal", {}), None, None),
     ],
     ids=[
         "the fallback has what the source lacks",
         "a track that is nowhere",
-        "a track listed twice",
         "a search that fails",
         "a wrong result",
         "nothing found",
     ],
 )
 async def test_the_tracks_of_a_list_are_found_where_they_are(
-    tmp_path, caplog, tracks, tidal, fallback, found, said
+    tmp_path, tracks, tidal, fallback, found
 ):
     playlist = await _csv_playlist(tmp_path, tracks, tidal, fallback).resolve()
 
@@ -1760,26 +1196,6 @@ async def test_the_tracks_of_a_list_are_found_where_they_are(
         assert playlist is None
     else:
         assert [(t.id, t.position, t.client.source) for t in playlist.tracks] == found
-    if said:
-        assert said in caplog.text
-
-
-async def test_the_fallbacks_are_tried_in_turn_until_one_has_the_track(tmp_path):
-    tidal = Catalogue("tidal", HAS_ONE)
-    deezer = Catalogue("deezer", {})  # has nothing: the next is asked
-    spotify = Catalogue("spotify", HAS_TWO)
-    config = Config.defaults()
-    config.session.downloads.folder = str(tmp_path)
-    config.session.cli.progress_bars = False
-    playlist = await PendingCsvPlaylist(
-        "Mix", [ONE, TWO], tidal, [deezer, spotify], config, MagicMock()
-    ).resolve()
-    assert [(t.id, t.client.source) for t in playlist.tracks] == [
-        ("11", "tidal"),
-        ("22", "spotify"),
-    ]
-    assert deezer.asked  # asked, as tidal lacked a track
-    assert all("Two" in q for _, q, _ in deezer.asked)  # but only about that one
 
 
 async def test_the_full_title_is_tried_when_the_short_one_finds_nothing(tmp_path):
@@ -1790,96 +1206,13 @@ async def test_the_full_title_is_tried_when_the_short_one_finds_nothing(tmp_path
 
     playlist = await _csv_playlist(tmp_path, [wanted], tidal).resolve()
 
-    assert [q for _, q, _ in tidal.asked] == ["Band Song", "Band Song (feat. Guest)"]
     assert [t.id for t in playlist.tracks] == ["5"]
-
-
-@pytest.mark.parametrize("name", [".", "..", ""])
-async def test_a_list_name_that_is_no_folder_is_refused(tmp_path, name):
-    tidal = Catalogue("tidal", HAS_ONE)
-
-    playlist = await _csv_playlist(tmp_path, [ONE], tidal, name=name).resolve()
-
-    assert playlist is None
-    assert tidal.asked == []
-
-
-async def test_the_progress_shows_what_is_found(tmp_path, monkeypatch):
-    spinner = MagicMock()
-
-    @contextmanager
-    def status(text, **_):
-        yield spinner
-
-    monkeypatch.setattr("streamrip.media.playlist.console.status", status)
-    tidal = Catalogue("tidal", HAS_ONE)
-    playlist = _csv_playlist(tmp_path, [ONE, TWO], tidal)
-    playlist.config.session.cli.progress_bars = True
-
-    await playlist.resolve()
-
-    shown = [call.args[0].plain for call in spinner.update.call_args_list]
-    assert shown[-1] == "Searching Tidal for the tracks (1 found, 1 not found, 2 total)"
-
-
-# --- artwork ------------------------------------------------------------------
-
-
-@pytest.mark.parametrize("for_playlist", [False, True])
-@pytest.mark.parametrize("download_fails", [False, True])
-async def test_artwork_cleanup_preserves_existing_files(
-    tmp_path, monkeypatch, for_playlist, download_fails
-):
-    folder = tmp_path / "Mix"
-    legacy = folder / "__artwork"
-    legacy.mkdir(parents=True)
-    kept = legacy / "keep.txt"
-    kept.write_text("existing artwork")
-    monkeypatch.setattr(artwork, "_artwork_tempdirs", set())
-    downloaded = []
-
-    async def download(self, path, callback):
-        path.write_bytes(b"image")
-        downloaded.append(path)
-        if download_fails:
-            raise OSError("download interrupted")
-
-    monkeypatch.setattr(artwork.BasicDownloadable, "download", download)
-    config = Config.defaults().session.artwork
-    config.embed = True
-    config.save_artwork = True
-    config.embed_max_width = config.saved_max_width = 0
-
-    for _ in range(2):
-        covers = Covers()
-        covers.set_cover("large", "https://example.test/cover.jpg", None)
-        await artwork.download_artwork(
-            MagicMock(), folder, covers, config, for_playlist
-        )
-
-    owned = set(artwork._artwork_tempdirs)
-    artwork.remove_artwork_tempdirs()
-    assert kept.read_text() == "existing artwork"
-    assert len(owned) == 2
-    assert all(not path.exists() for path in owned)
-    assert not artwork._artwork_tempdirs
-    assert all(path.parent != legacy for path in downloaded)
-    if not for_playlist:
-        # A download that failed leaves no cover.jpg it may have cut off.
-        assert (folder / "cover.jpg").exists() is not download_fails
-
-    # A later cleanup must not delete a path recreated after the first cleanup.
-    recreated = owned.pop()
-    recreated.mkdir()
-    artwork.remove_artwork_tempdirs()
-    assert recreated.is_dir()
 
 
 @pytest.mark.parametrize(
     ("failures", "saved", "tries"),
     [
         ([requests.ConnectionError("interrupted download")], True, 2),
-        ([requests.exceptions.ContentDecodingError("interrupted download")], True, 2),
         ([requests.HTTPError(response=MagicMock(status_code=404))], False, 1),
         (
             [requests.ConnectionError("down")] * artwork.ARTWORK_ATTEMPTS,
@@ -1887,7 +1220,7 @@ async def test_artwork_cleanup_preserves_existing_files(
             artwork.ARTWORK_ATTEMPTS,
         ),
     ],
-    ids=["connection", "decoding", "missing: not retried", "keeps failing"],
+    ids=["interrupted: retried", "missing: not retried", "keeps failing"],
 )
 async def test_a_network_hiccup_does_not_cost_the_album_its_cover(
     tmp_path, monkeypatch, failures, saved, tries

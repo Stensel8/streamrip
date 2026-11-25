@@ -89,21 +89,35 @@
 <div class="cards">
   <section class="card" id="spotify">
     <div class="card-head"><h2>Spotify</h2>{{ badge('spotify') }}</div>
-    <p class="muted small">One login for downloads (the track lists and tags; the audio comes from YouTube Music) and for your liked songs and playlists. The pair link needs no app of your own; your own app is the other way.</p>
+    <p class="muted small">One login for downloads (the track lists and tags; the audio is set up in the next card) and for your liked songs and playlists. It needs an app of your own, and for the app's owner Spotify needs Premium. Create it in the <a class="link" href="{{ dashboards.spotify }}" target="_blank" rel="noopener noreferrer">Spotify developer dashboard</a>, tick <strong>Web API</strong> only, and add this redirect URI: {{ copy(redirect_uris.spotify) }}</p>
+    <form method="post" action="{{ url_for('accounts.set_app', login_id='spotify') }}" class="fields">
+      {% call field("Client ID", "wide") %}<input name="client_id" placeholder="{{ 'saved: paste another to change it' if not accounts.spotify.app_missing else 'the Client ID of your app' }}" autocomplete="off">{% endcall %}
+      <div class="actions"><button class="btn" type="submit">Save the app</button></div>
+    </form>
     <div class="actions">
       {{ logout('spotify') }}
-      <button class="btn primary" id="spotify-pair" data-job-button>{{ "Log in again" if accounts.spotify.logged_in else "Log in" }}</button>
       {% if not accounts.spotify.app_missing %}
-      <button class="btn" data-browser-login="spotify" data-job-button>Log in with your own app</button>
+      <button class="btn primary" data-browser-login="spotify" data-job-button>{{ "Log in again" if accounts.spotify.logged_in else "Log in" }}</button>
       {% endif %}
     </div>
-    <details class="help"><summary>The other way: an app of your own</summary>
-      <p class="small muted">For the app's owner, Spotify needs Premium. Create it in the <a class="link" href="{{ dashboards.spotify }}" target="_blank" rel="noopener noreferrer">Spotify developer dashboard</a>, tick <strong>Web API</strong> only, and add this redirect URI: {{ copy(redirect_uris.spotify) }}</p>
-      <form method="post" action="{{ url_for('accounts.set_app', login_id='spotify') }}" class="fields">
-        {% call field("Client ID", "wide") %}<input name="client_id" placeholder="{{ 'saved: paste another to change it' if not accounts.spotify.app_missing else 'the Client ID of your app' }}" autocomplete="off">{% endcall %}
-        <div class="actions"><button class="btn" type="submit">Save the app</button></div>
-      </form>
-    </details>
+  </section>
+
+  <section class="card" id="soloist">
+    <div class="card-head"><h2>Spotify's own audio</h2>
+      {% if soloist.key and soloist.paired %}<span class="badge ok">Paired</span>{% elif soloist.key %}<span class="badge warn">Not paired</span>{% else %}<span class="badge">Not set up</span>{% endif %}
+    </div>
+    <p class="muted small">Spotify's official client, Soloist, plays each track here and streamrip records it, at the account's own quality (lossless on Premium). Without it, the audio is a YouTube Music match. It needs Linux, Premium and a Soloist API key from the <a class="link" href="https://developer.spotify.com/dashboard/soloist" target="_blank" rel="noopener noreferrer">developer dashboard</a>, and one pairing.</p>
+    {% if not soloist.on %}
+    <p class="small muted">It is off: <code>backend</code> in the <code>[spotify]</code> section of the config is not <code>spotify</code>.</p>
+    {% elif not soloist.supported %}
+    <p class="small muted">This computer is not Linux, so the audio comes from YouTube Music.</p>
+    {% else %}
+    <form id="soloist-form" class="fields">
+      {% call field("Soloist API key", "wide") %}<input name="api_key" type="password" autocomplete="off" placeholder="{{ 'saved: paste another to change it' if soloist.key else 'the key from the dashboard' }}"{{ '' if soloist.key else ' required' }}>{% endcall %}
+      <div class="actions"><button class="btn primary" type="submit" data-job-button>{{ "Pair again" if soloist.key and soloist.paired else "Pair" }}</button></div>
+    </form>
+    <p class="small muted">Pairing waits for you: in the Spotify app on a device on this network, press play, tap <em>Connect to a device</em> and pick <strong>{{ soloist.device }}</strong>.</p>
+    {% endif %}
   </section>
 
   <section class="card" id="tidal-library">
