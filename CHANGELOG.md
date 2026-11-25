@@ -77,8 +77,10 @@ the same things, in the same sections.
   files are tagged, editions get their own folder, the track total is the disc's,
   names starting with dots make no hidden folders, and short share links work
 - chore: one matching module and CSV reader, AGPL-3.0, a browser version that
-  follows Chrome's release calendar, dependency updates, and an image build
-  that fails on a release tag without the `v`
+  follows Chrome's release calendar, dependency updates, an image build
+  that fails on a release tag without the `v`, the image tested on every push
+  on amd64 and arm64, and the real-account check reading its logins from the
+  `STREAMRIP_STATE` secret
 - docs: why streamrip exists
 
 ## 2.7.2
@@ -107,7 +109,7 @@ limits.
 - perf: Tidal hi-res needs about 65 fewer requests a track, and tagging no
   longer holds up other downloads
 - chore: dependencies updated, the tests in 20 files instead of 64, and CI
-  tests real accounts with a `STREAMRIP_CONFIG` secret
+  tests real accounts
 
 ## 2.7.0
 
