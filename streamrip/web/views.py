@@ -199,9 +199,9 @@ def job_cancel(job_id: str) -> Response:
 def job_paste(job_id: str) -> Response:
     """The address a browser login ended up on, pasted by hand."""
     find_job(job_id)
-    login: BrowserLogin | None = current_app.extensions["logins"].get(job_id)
-    if login is None:
-        abort(404, "This login is over.")
+    login = current_app.extensions["logins"].get(job_id)
+    if not isinstance(login, BrowserLogin):  # over, or one without an address (Qobuz)
+        abort(404, "No login here waits for an address.")
     login.paste(str(sent().get("address") or ""))
     return jsonify(status="ok")
 
@@ -428,10 +428,20 @@ def playlist_list(service: str) -> Response:
 
 
 def _folder(value, what: str, default: Path) -> Path:
-    """A folder the page named, inside the home folder (a page must not write anywhere)."""
-    path = Path(str(value or "").strip() or default).expanduser().resolve()
-    if not path.is_relative_to(Path.home().resolve()):
-        raise ProviderError(f"Choose a {what} inside your home folder.")
+    """A folder the page named, inside the home folder or the downloads folder,
+    which may be on another disk (a page must not write anywhere)."""
+    refused = ProviderError(
+        f"Choose a {what} inside your home folder or the downloads folder."
+    )
+    try:
+        path = Path(str(value or "").strip() or default).expanduser().resolve()
+    except (ValueError, RuntimeError) as e:  # a NUL, or "~name" of no user
+        raise refused from e
+    roots = [Path.home()]
+    if downloads := get_config().session.downloads.folder:
+        roots.append(Path(downloads).expanduser())
+    if not any(path.is_relative_to(root.resolve()) for root in roots):
+        raise refused
     return path
 
 
@@ -542,5 +552,6 @@ def playlist_download(service: str) -> tuple[Response, int]:
 
     title = f"from {LABELS[service]}, via {SOURCE_LABELS[source]}"
     if preview:
-        return start("plan", f"Preview: {title}", work)
+        # A kind of its own: the Download page's previews are "plan".
+        return start("playlist-plan", f"Preview: {title}", work)
     return start("playlist-download", f"Downloading {title}", work)

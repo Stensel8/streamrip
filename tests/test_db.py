@@ -17,8 +17,10 @@ def database(tmp_path) -> db.Database:
 
 
 def test_clear_empties_a_table_that_stays_usable(database):
-    for key in ("1", "2", "3"):
+    for key in ("2", "3", "1"):  # the last added, not the highest
         database.downloads.add((key,))
+    assert database.downloads.count() == 3
+    assert database.downloads.recent(2) == [("1",), ("3",)]
 
     assert database.downloads.clear() == 3
     assert database.downloads.all() == []

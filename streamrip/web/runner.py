@@ -165,9 +165,9 @@ class Runner:
         """Retry what failed before (see `streamrip repair`)."""
         with self._working(job):
             job.enter("find", "Retrying the failed downloads")
-            failed = len(
-                db.Failed(self.config.session.database.failed_downloads_path).all()
-            )
+            failed = db.Failed(
+                self.config.session.database.failed_downloads_path
+            ).count()
             repaired = self.call(repair_downloads(self.config, flat, interactive=False))
         left = failed - repaired
         return f"Repaired {repaired} of {plural(failed, 'download')}" + (

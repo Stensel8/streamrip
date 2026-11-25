@@ -22,14 +22,13 @@ def _tables() -> tuple[db.Downloads, db.Failed]:
 @library_pages.route("")
 def page() -> str:
     downloads, failed = _tables()
-    downloaded = list(starmap(db.split_download_key, downloads.all()))
-    failures = failed.all()
     return render_template(
         "library.html",
-        downloaded=len(downloaded),
-        recent=downloaded[-SHOWN:][::-1],
-        failed=len(failures),
-        failures=failures[:SHOWN],
+        # Counted and limited by sqlite: a library may have many thousands.
+        downloaded=downloads.count(),
+        recent=list(starmap(db.split_download_key, downloads.recent(SHOWN))),
+        failed=failed.count(),
+        failures=failed.recent(SHOWN),
         shown=SHOWN,
     )
 

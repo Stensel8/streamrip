@@ -148,6 +148,17 @@ class DatabaseBase:
         with self._connect() as conn:
             return conn.execute(f"SELECT * FROM {self.name}").fetchall()
 
+    def count(self) -> int:
+        """How many rows the table has."""
+        with self._connect() as conn:
+            return conn.execute(f"SELECT COUNT(*) FROM {self.name}").fetchone()[0]
+
+    def recent(self, n: int) -> list[tuple]:
+        """The last `n` rows added, newest first."""
+        with self._connect() as conn:
+            command = f"SELECT * FROM {self.name} ORDER BY rowid DESC LIMIT ?"
+            return conn.execute(command, (n,)).fetchall()
+
 
 class Downloads(DatabaseBase):
     """A table that stores the downloaded IDs, as `download_key`s."""

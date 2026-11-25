@@ -9,7 +9,7 @@ const el = (tag, props) => Object.assign(document.createElement(tag), props);
 async function api(url, init = {}) {
   const resp = await fetch(url, { ...init, headers: { Accept: 'application/json', ...init.headers } });
   const data = await resp.json();
-  if (!resp.ok) throw new Error(data.message);
+  if (!resp.ok) throw Object.assign(new Error(data.message), { status: resp.status });
   return data;
 }
 
@@ -33,9 +33,11 @@ function dismiss(id) {
   }
   $('job').hidden = true;
   document.title = pageTitle;
+  if (active === id) active = null;
   busy(false);
 }
 let shown = null; // the id of the job in the panel
+let active = null; // the job the buttons wait for: one dismissed leaves them to the next
 const count = (n) => n.toLocaleString();
 const percent = (done, total) => Math.floor((100 * done) / Math.max(total, 1));
 
@@ -159,7 +161,7 @@ function render(id, job) {
 
   $('job-log').hidden = !job.log.length;
   $('job-log-lines').replaceChildren(...job.log.map(({ level, text }) => el('li', { textContent: text, className: level })));
-  if ((failed || job.kind === 'verify' || job.kind === 'plan') && job.log.length) $('job-log').open = true;
+  if ((failed || ['verify', 'plan', 'playlist-plan'].includes(job.kind)) && job.log.length) $('job-log').open = true;
 
   // The browser tab says how far it is, so it can be followed from another tab.
   const phase = PHASES[job.phase] ?? 'Starting';
@@ -167,10 +169,21 @@ function render(id, job) {
   document.title = `${running ? progress : failed ? 'Failed' : 'Done'} · ${pageTitle}`;
 }
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 // Poll a background job until it ends. Returns what it ended as.
 async function follow(id, { opened = false } = {}) {
-  for (;;) {
-    const job = await api(`/jobs/${id}`);
+  for (let failures = 0; ; ) {
+    let job;
+    try {
+      job = await api(`/jobs/${id}`);
+      failures = 0;
+    } catch (err) {
+      // The job goes on when one poll fails: try again a few times. A job the server forgot does not come back.
+      if (err.status === 404 || ++failures > 5) throw err;
+      await sleep(2000);
+      continue;
+    }
     render(id, job);
     if (dismissed.has(id)) return job;
     // A login with a script is opened by the person, once the steps have been read.
@@ -179,23 +192,27 @@ async function follow(id, { opened = false } = {}) {
       window.open(job.link, '_blank', 'noopener');
     }
     if (job.status !== 'running') return job;
-    await new Promise((resolve) => setTimeout(resolve, job.kind === 'login' ? 1000 : 500));
+    await sleep(job.kind === 'login' ? 1000 : 500);
   }
 }
 
-// Follow a background job to the end, with the buttons off meanwhile.
+// Follow a background job to the end, with the buttons off meanwhile. A job dismissed on the way
+// leaves the panel and the buttons alone: another may have started since.
 async function track(id, options) {
+  active = id;
   busy(true);
   try {
     const job = await follow(id, options);
+    if (active !== id) return;
     if (job.download) window.location.href = `/jobs/${id}/download`; // saves the file; the page stays
     if (job.kind === 'login' && job.status === 'done') setTimeout(() => window.location.reload(), 1500);
     if (job.kind === 'verify' && job.status === 'done') showPlans();
   } catch (err) {
+    if (active !== id) return;
     show(err.message, { error: true });
     document.title = pageTitle;
   } finally {
-    busy(false);
+    if (active === id) busy(false);
   }
 }
 

@@ -29,7 +29,7 @@ from streamrip.sync.models import Track
 from streamrip.verify import Result as Verified
 from streamrip.web import _secret_key, create_app
 from streamrip.web import runner as runner_module
-from streamrip.web.jobs import Job
+from streamrip.web.jobs import Job, JobManager
 from streamrip.web.runner import Result, Runner
 
 CATALOG = [
@@ -346,6 +346,24 @@ def test_a_playlist_is_read_and_downloaded_from_another_source(client, runner):
     job = run(client, "/playlists/spotify/download", json={"source": "tidal"})
     assert job["status"] == "done"
     assert runner.added == [("csv", "Liked Songs", ["Song A", "Nope"], "tidal", None)]
+    # Its preview is not the Download page's, which a reload there picks up.
+    preview = run(
+        client, "/playlists/spotify/download", json={"source": "tidal", "plan": "1"}
+    )
+    assert (preview["kind"], preview["phases"]) == ("playlist-plan", ["read", "find"])
+
+
+def test_the_oldest_jobs_that_are_over_are_forgotten_never_one_that_runs():
+    jobs = JobManager(keep=2)
+    release = threading.Event()
+    long = jobs.start("download", "Long", lambda job: release.wait(5) and "ok")
+    quick = []
+    for _ in range(3):
+        quick.append(job := jobs.start("plan", "Quick", lambda job: "ok"))
+        while job.status == "running":
+            time.sleep(0.01)
+    assert [jobs.get(j.id) for j in (long, *quick)] == [long, None, None, quick[-1]]
+    release.set()
 
 
 def test_the_library_page_counts_and_forgets(client, services, tmp_path):
@@ -640,6 +658,12 @@ def test_qobuz_logs_in_with_a_script_run_on_its_web_player(client, runner):
     job_id = started(client.post("/accounts/qobuz/script", json={}, headers=JSON))
     script = wait_for(client, job_id, lambda job: job["script"])["script"]
     challenge = re.search(r'challenge: "([^"]+)"', script)[1]
+    # Saving another service's app, or pasting an address, leaves it waiting.
+    assert (
+        client.post("/accounts/spotify/app", data={"client_id": "x"}).status_code == 302
+    )
+    paste = client.post(f"/jobs/{job_id}/paste", json={"address": "x"}, headers=JSON)
+    assert paste.status_code == 404
     target = re.search(r'const target = "([^"]+)"', script)[1]
     assert target.endswith("/accounts/qobuz/receive")
     assert client.get(target).status_code == 200  # where the script moves the tab
@@ -840,7 +864,7 @@ def test_a_failing_service_is_reported_and_a_bug_does_not_leak(client, services)
     assert "secret internal detail" not in job["message"]
 
 
-def test_everything_can_be_exported_as_m3u8_to_a_folder(client):
+def test_everything_can_be_exported_as_m3u8_to_a_folder(client, services, tmp_path):
     folder = Path.home() / "exports"
     body = {
         "playlist": "*",
@@ -856,6 +880,24 @@ def test_everything_can_be_exported_as_m3u8_to_a_folder(client):
     )
     assert outside.status_code == 400
     assert "inside your home folder" in outside.get_json()["message"]
+    for odd in ("~/a\x00b", "~Music"):  # a NUL, a "~name" of no user
+        sent = {**body, "library": odd}
+        assert (
+            client.post(
+                "/playlists/spotify/export", json=sent, headers=JSON
+            ).status_code
+            == 400
+        )
+
+    # A downloads folder on another disk is the default, and allowed.
+    music = tmp_path / "music"
+    music.mkdir()
+    services.config.session.downloads.folder = str(music)
+    job = run(
+        client, "/playlists/spotify/export", json={"playlist": "*", "format": "m3u8"}
+    )
+    assert job["status"] == "done", job["message"]
+    assert list((music / "Playlists").glob("*.m3u8"))
 
 
 def test_a_job_that_is_gone_is_a_404(client):

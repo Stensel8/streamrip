@@ -6,7 +6,7 @@ import logging
 import secrets
 import threading
 import time
-from collections import OrderedDict, deque
+from collections import deque
 from dataclasses import dataclass, field
 from typing import Any
 lazy from collections.abc import Callable
@@ -31,6 +31,7 @@ PHASES = frozendict(
         "login": ("login",),
         "verify": ("login",),
         "plan": ("find",),
+        "playlist-plan": ("read", "find"),
         "repair": ("find", "download"),
     }
 )
@@ -103,13 +104,15 @@ class Job:
     def to_json(self) -> dict[str, Any]:
         """Everything the page shows about the job."""
         now = self.finished or time.monotonic()
+        # A copy: the download's thread adds and removes rows meanwhile.
+        rows = list(self.rows.values())
         eta = None
         if self.status == "running":
             done, least = self.done, 3
             if self.phase == "download":
                 # A long track is a long time on one: count the part of each
                 # track that is done, so there is an estimate from the first.
-                done += sum(r.done / r.total for r in self.rows.values() if r.total)
+                done += sum(r.done / r.total for r in rows if r.total)
                 least = 1
             eta = remaining(done, self.total, now - self.phase_started, least)
         return {
@@ -144,7 +147,7 @@ class Job:
                     "total": row.total,
                     "eta": _rounded(remaining(row.done, row.total, now - row.started)),
                 }
-                for row in list(self.rows.values())
+                for row in rows
             ],
             "titles": list(self.titles.values()),
             "log": [{"level": level, "text": text} for level, text in list(self.log)],
@@ -220,7 +223,7 @@ class JobManager:
     """Runs jobs on threads and remembers the most recent ones."""
 
     def __init__(self, explained: tuple[type[BaseException], ...] = (), keep: int = 30):
-        self._jobs: OrderedDict[str, Job] = OrderedDict()
+        self._jobs: dict[str, Job] = {}
         self._lock = threading.Lock()
         self._keep = keep
         # Failures whose message is for the user; anything else is a bug.
@@ -232,8 +235,11 @@ class JobManager:
         job = Job(id=secrets.token_urlsafe(8), kind=kind, title=title)
         with self._lock:
             self._jobs[job.id] = job
-            while len(self._jobs) > self._keep:
-                self._jobs.popitem(last=False)  # forget the oldest
+            # Forget the oldest that are over; never one still going, which a
+            # page may be following.
+            over = [i for i, j in self._jobs.items() if j.status != "running"]
+            for old in over[: max(len(self._jobs) - self._keep, 0)]:
+                del self._jobs[old]
         threading.Thread(target=self._run, args=(job, work), daemon=True).start()
         return job
 

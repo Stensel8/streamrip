@@ -219,9 +219,9 @@ def set_app(login_id: str) -> WerkzeugResponse:
             "api_client_secret": secret or config.session.tidal.api_client_secret,
         },
     )
-    # A login that is waiting was started with the old app.
+    # A login that is waiting was started with the old app (Qobuz has none).
     for login in list(current_app.extensions["logins"].values()):
-        if login.oauth.name == service:
+        if isinstance(login, BrowserLogin) and login.oauth.name == service:
             login.cancel()
     return _back(f"Saved the {LABELS[service]} app. Now log in.")
 
