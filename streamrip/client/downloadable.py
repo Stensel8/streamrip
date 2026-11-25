@@ -528,36 +528,31 @@ class SegmentedMP4Downloadable(Downloadable):
         self.extension = "flac" if codec.lower() in {"flac", "mqa"} else "m4a"
 
     async def size(self) -> int:
-        """Total size of the init segment plus every media segment.
+        """The init segment's size plus the first media segment's for each.
 
         HEAD-ing only self.url would report the size of the tiny init segment,
-        so the progress bar would jump past 100% immediately. Requests are
-        bounded: firing one per segment at once gets many of them refused.
+        so the progress bar would jump past 100% immediately. Media segments
+        are near-uniform, so one stands for all: a HEAD for each was hundreds
+        of requests before a long track began.
         """
         if self._size is not None:
             return self._size
 
-        sem = asyncio.Semaphore(8)
+        async def content_length(url: str) -> int:
+            try:
+                async with self.session.head(url) as resp:
+                    resp.raise_for_status()
+                    return int(resp.headers.get("Content-Length", 0))
+            except aiohttp.ClientError, TimeoutError, ValueError:
+                return 0
 
-        async def content_length(url: str) -> int | None:
-            async with sem:
-                try:
-                    async with self.session.head(url) as resp:
-                        resp.raise_for_status()
-                        return int(resp.headers.get("Content-Length", 0))
-                except aiohttp.ClientError, TimeoutError, ValueError:
-                    return None
-
-        sizes = await asyncio.gather(
-            *(content_length(u) for u in (self.init_url, *self.segment_urls))
+        first = await content_length(self.segment_urls[0]) if self.segment_urls else 0
+        # 0 is unknown: a bar that pulses, not one that runs past its end.
+        self._size = (
+            await content_length(self.init_url) + first * len(self.segment_urls)
+            if first
+            else 0
         )
-        known = [s for s in sizes if s]
-        if not known:
-            self._size = 0
-            return 0
-        # Segments are near-uniform; estimate the ones that did not answer.
-        average = sum(known) // len(known)
-        self._size = sum(known) + (len(sizes) - len(known)) * average
         return self._size
 
     async def _download(self, path: Path, callback):
@@ -599,6 +594,8 @@ class SegmentedMP4Downloadable(Downloadable):
 
 
 class SoundcloudDownloadable(Downloadable):
+    _segment_urls: list[str] | None = None
+
     def __init__(self, session, url: str, file_type: str, extension: str = "mp3"):
         """A SoundCloud file: MP3 segments ("hls"), one file ("progressive", an
         MP3 or AAC as extension says) or an original upload ("original"), made
@@ -628,10 +625,13 @@ class SoundcloudDownloadable(Downloadable):
             await converter.FLAC(path).convert()
 
     async def _segments(self) -> list[str]:
-        """The HLS playlist's segment URLs."""
-        async with self.session.get(self.url) as resp:
-            resp.raise_for_status()
-            return hls_playlist(await resp.text("utf-8"), self.url)[1]
+        """The HLS playlist's segment URLs, fetched once: size() asks first."""
+        if self._segment_urls is None:
+            async with self.session.get(self.url) as resp:
+                resp.raise_for_status()
+                text = await resp.text("utf-8")
+            self._segment_urls = hls_playlist(text, self.url)[1]
+        return self._segment_urls
 
     async def _download_hls(self, path: Path, callback):
         """Download every MP3 segment concurrently, then concatenate them."""
@@ -875,13 +875,37 @@ class SoloistDownloadable(Downloadable):
         (rich's display is not thread-safe). A NonStreamableError is the
         backend's refusal, and the cue for the youtube backend to take over.
         """
-        await asyncio.to_thread(self._download_blocking, path, _threadsafe(callback))
+        stop = threading.Event()
+        play = asyncio.ensure_future(
+            asyncio.to_thread(
+                self._download_blocking, path, _threadsafe(callback), stop
+            )
+        )
+        try:
+            await asyncio.shield(play)
+        except asyncio.CancelledError:
+            # The thread cannot be cancelled: tell it to stop the play, and
+            # wait until it has, or its encode writes the file after the track
+            # has given it up. A second cancel, which asyncio.run makes as it
+            # unwinds, does not shorten that.
+            stop.set()
+            while not play.done():
+                with contextlib.suppress(asyncio.CancelledError):
+                    await asyncio.wait({play})
+            if not play.cancelled():
+                play.exception()  # what the stop raised, not news
+            path.unlink(missing_ok=True)
+            raise
 
-    def _download_blocking(self, path: Path, report):
+    def _download_blocking(self, path: Path, report, stop: threading.Event):
         """The blocking part, in the worker thread: one track at a time, the
         way the device wants it."""
         self.backend.play_and_capture(
-            f"spotify:track:{self.track_id}", self.duration_ms / 1000, path, report
+            f"spotify:track:{self.track_id}",
+            self.duration_ms / 1000,
+            path,
+            report,
+            stop,
         )
 
 

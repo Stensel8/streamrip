@@ -134,8 +134,15 @@ class Converter:
 
         aformat = []
         if self.lossless and self.sampling_rate is not None:
-            rates = (str(r) for r in sorted(SAMPLING_RATES) if r <= self.sampling_rate)
-            aformat.append(f"sample_rates={'|'.join(rates)}")
+            rates = [r for r in sorted(SAMPLING_RATES) if r <= self.sampling_rate]
+            # ffmpeg takes the rate closest to the source's: 48 kHz for an
+            # 88.2 kHz master. One of its own family (44.1 or 48 kHz) divides
+            # it exactly.
+            source = _sample_rate(self.filename)
+            own = [
+                r for r in rates if source and (r % 44100 == 0) == (source % 11025 == 0)
+            ]
+            aformat.append(f"sample_rates={'|'.join(map(str, own or rates))}")
         if self.lossless and self.bit_depth is not None:
             if self.bit_depth not in {16, 24, 32}:
                 raise ValueError("Bit depth must be 16, 24, or 32")
@@ -296,6 +303,14 @@ def _bits_per_sample(path: Path) -> int:
         return mutagen.File(path).info.bits_per_sample
     except Exception:
         return 24
+
+
+def _sample_rate(path: Path) -> int | None:
+    """The sample rate of an audio file; None if unknown."""
+    try:
+        return mutagen.File(path).info.sample_rate or None
+    except Exception:
+        return None
 
 
 @functools.cache

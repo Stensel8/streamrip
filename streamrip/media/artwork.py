@@ -39,23 +39,30 @@ def _worth_retrying(e: Exception) -> bool:
 
 async def _download_cover(session: aiohttp.ClientSession, url: str, path: Path):
     """Download one cover image, retrying a network hiccup or two."""
-    for attempt in range(1, ARTWORK_ATTEMPTS + 1):
-        try:
-            await BasicDownloadable(session, url, "jpg").download(path, lambda _: None)
-        except Exception as e:
-            if attempt == ARTWORK_ATTEMPTS or not _worth_retrying(e):
-                # Not a cut-off image in its place, kept for good.
-                path.unlink(missing_ok=True)
-                raise
-            delay = 2**attempt
-            logger.warning(
-                "Error downloading artwork, retrying in %ss: %s",
-                delay,
-                type(e).__name__,
-            )
-            await asyncio.sleep(delay)
-        else:
-            return
+    # Beside its place first, as a booklet is: an image cut off by an error
+    # or by Ctrl-C never takes the place of one, nor is kept for good.
+    part = path.with_name(f"{path.name}.part")
+    try:
+        for attempt in range(1, ARTWORK_ATTEMPTS + 1):
+            try:
+                await BasicDownloadable(session, url, "jpg").download(
+                    part, lambda _: None
+                )
+            except Exception as e:
+                if attempt == ARTWORK_ATTEMPTS or not _worth_retrying(e):
+                    raise
+                delay = 2**attempt
+                logger.warning(
+                    "Error downloading artwork, retrying in %ss: %s",
+                    delay,
+                    type(e).__name__,
+                )
+                await asyncio.sleep(delay)
+            else:
+                part.replace(path)
+                return
+    finally:
+        part.unlink(missing_ok=True)
 
 
 async def _cover_or_none(session, url: str, path: Path) -> Path | None:
@@ -108,7 +115,10 @@ async def download_artwork(
     _, l_url, saved_cover_path = covers.largest()
     if saved_cover_path is None and save_artwork and l_url is not None:
         saved_cover_path = folder / "cover.jpg"
-        jobs["saved"] = _cover_or_none(session, l_url, saved_cover_path)
+        # One from an earlier run is kept, as a booklet is: fetched again on
+        # every run, it was lost whenever that failed.
+        if not saved_cover_path.is_file():
+            jobs["saved"] = _cover_or_none(session, l_url, saved_cover_path)
 
     _, embed_url, embed_cover_path = covers.get_size(config.embed_size)
     if embed_cover_path is None and embed and embed_url is not None:

@@ -454,7 +454,12 @@ class SoloistBackend:
         return int(duration_s * RATE * 2 * 3 * 0.6)
 
     def play_and_capture(
-        self, uri: str, duration_s: float, out_path: Path, report: Callable[[int], None]
+        self,
+        uri: str,
+        duration_s: float,
+        out_path: Path,
+        report: Callable[[int], None],
+        stop: threading.Event | None = None,
     ) -> None:
         """Play `uri` with Soloist and record it as FLAC at out_path.
 
@@ -463,10 +468,16 @@ class SoloistBackend:
         the FLAC's estimated size. A failure is a NonStreamableError (the
         youtube backend is the fallback), and the track is refused for the
         rest of the process; the one exception is an expired build (exit
-        code 10), which earns a fresh build and one more try.
+        code 10), which earns a fresh build and one more try. `stop`, once
+        set (a cancelled download), ends the play or the wait with a
+        CancelledError, and refuses nothing.
         """
         if not self.supported:
             raise NonStreamableError(UNSUPPORTED_PLATFORM)
+        if uri.rsplit(":", 1)[-1] in self.refused:
+            # Played again, it would fail the same way, in real time.
+            raise NonStreamableError("Spotify already refused to play this track")
+        stop = stop or threading.Event()
         with self._play_lock:
             binary = self.ensure_binary()
             self.ensure_sink()
@@ -474,11 +485,12 @@ class SoloistBackend:
             for _ in range(BUSY_TRIES):
                 try:
                     self._play_with_fresh_build(
-                        binary, uri, duration_s, out_path, report
+                        binary, uri, duration_s, out_path, report, stop
                     )
                 except _BusyError:
                     logger.info("Soloist is busy with another session: waiting")
-                    time.sleep(BUSY_WAIT)
+                    if stop.wait(BUSY_WAIT):
+                        raise asyncio.CancelledError from None
                 else:
                     return
         # Not the track's fault: it is not refused, but this one goes to the
@@ -486,16 +498,16 @@ class SoloistBackend:
         raise NonStreamableError("Soloist stayed busy with another session")
 
     def _play_with_fresh_build(
-        self, binary: Path, uri: str, duration_s: float, out_path: Path, report
+        self, binary: Path, uri: str, duration_s: float, out_path: Path, report, stop
     ) -> None:
         """One play, and one more with a fresh build when this one expired."""
         try:
-            self._play_once(binary, uri, duration_s, out_path, report)
+            self._play_once(binary, uri, duration_s, out_path, report, stop)
         except _ExpiredBuildError:
             logger.info("The Soloist build has expired: downloading a fresh one")
             binary = self.refresh_binary()
             try:
-                self._play_once(binary, uri, duration_s, out_path, report)
+                self._play_once(binary, uri, duration_s, out_path, report, stop)
             except _ExpiredBuildError as e:
                 # Even a fresh build is past its 90 days: the CDN is serving
                 # the wrong one, and the track goes to the youtube backend.
@@ -509,7 +521,7 @@ class SoloistBackend:
         return NonStreamableError(reason)
 
     def _play_once(
-        self, binary: Path, uri: str, duration_s: float, out_path: Path, report
+        self, binary: Path, uri: str, duration_s: float, out_path: Path, report, stop
     ) -> None:
         """One full play-and-record: the recorder, Soloist, the trim, the
         FLAC, the check that it is the track.
@@ -565,7 +577,7 @@ class SoloistBackend:
                     uri,
                 ]
             )
-            lines, t_playing = self._follow(player, uri, duration_s, report)
+            lines, t_playing = self._follow(player, uri, duration_s, report, stop)
             rc = player.wait()
             if rc == EXPIRED_BUILD:
                 # The thing that refused is the build, not the track.
@@ -648,7 +660,12 @@ class SoloistBackend:
         )
 
     def _follow(
-        self, player: subprocess.Popen, uri: str, duration_s: float, report
+        self,
+        player: subprocess.Popen,
+        uri: str,
+        duration_s: float,
+        report,
+        stop: threading.Event,
     ) -> tuple[list[str], float | None]:
         """Follow Soloist's lines until it finishes, or gives up.
 
@@ -657,7 +674,7 @@ class SoloistBackend:
         it reported (a first line that arrives late is already into the
         track). The position of a playing line is the progress. A run that
         never began within PLAYING_WAIT, or that stops well before the track
-        ends, is a refusal.
+        ends, is a refusal; one that `stop` ends is not.
         """
         estimate = self.estimate_size(duration_s)
         deadline = time.monotonic() + max(duration_s, 30.0) + PLAY_MARGIN
@@ -686,6 +703,9 @@ class SoloistBackend:
                     t_started = time.monotonic() - (line_position_s(line) or 0.0)
                 if (pos := line_position_s(line)) is not None:
                     position, seen_at = pos, time.monotonic()
+            if stop.is_set():  # the download was cancelled
+                player.kill()
+                raise asyncio.CancelledError
             now = time.monotonic()
             if seen_at is not None and estimate:
                 played = min(position + now - seen_at, duration_s)

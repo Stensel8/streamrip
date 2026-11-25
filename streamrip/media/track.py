@@ -220,7 +220,10 @@ class Track(Media):
         # (with --no-db), and a download that fails leaves that copy alone.
         part = self.download_path.with_stem(f"{self.download_path.stem}.part")
         slots = global_download_semaphore(self.config.session.downloads)
-        for attempt in range(1, MAX_DOWNLOAD_ATTEMPTS + 1):
+        # Ends only in a return or a raise: never as a success without a file.
+        attempt = 0
+        while True:
+            attempt += 1
             # The source's own line first (Spotify's audio plays one track at a
             # time): a track waiting in it holds no slot and shows no row.
             async with self.downloadable.queue, slots:
@@ -292,25 +295,33 @@ class Track(Media):
                         # Wait for the re-resolution: the next attempt must
                         # use the youtube backend's downloadable, not the one
                         # Spotify just refused.
+                        failed = self.downloadable
                         await self._fallback_task
-                        delay = 2**attempt
+                        part.unlink(missing_ok=True)
+                        if self.downloadable is failed:
+                            # No YouTube Music audio either: Spotify's again
+                            # would fail the same way, in real time.
+                            raise TrackDownloadFailedError(
+                                f"{self.meta.title} ({self.meta.info.id})"
+                            ) from e
                         logger.warning(
-                            "Error downloading track '%s' from Spotify's CDN, "
-                            "re-downloading it from YouTube Music in %ss: %s",
+                            "Error downloading track '%s' from Spotify, "
+                            "downloading it from YouTube Music instead: %s",
                             self.meta.title,
-                            delay,
                             error,
                         )
-                        part.unlink(missing_ok=True)
                         # The re-resolution may have renamed the file (the
                         # youtube backend's extension); the next attempt
                         # continues that file, not the one just refused.
                         part = self.download_path.with_stem(
                             f"{self.download_path.stem}.part"
                         )
+                        # YouTube Music gets attempts of its own: a switch on
+                        # the last one used to leave it none.
+                        attempt = 0
                         continue
                     # A missing ffmpeg does not fix itself in 2-8 seconds.
-                    if attempt == MAX_DOWNLOAD_ATTEMPTS or isinstance(
+                    if attempt >= MAX_DOWNLOAD_ATTEMPTS or isinstance(
                         e, FFmpegNotFoundError
                     ):
                         part.unlink(missing_ok=True)
@@ -360,8 +371,8 @@ class Track(Media):
             # refused the track, and a sink or a busy session fails just the same.
             fresh = await self.client.youtube_downloadable(self.meta.info.id)
         except Exception as e:
-            logger.debug(
-                "Could not re-resolve '%s' for the youtube backend: %s: %s",
+            logger.warning(
+                "Could not find '%s' on YouTube Music either: %s: %s",
                 self.meta.title,
                 type(e).__name__,
                 e,

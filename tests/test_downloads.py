@@ -16,7 +16,12 @@ from multidict import CIMultiDict
 
 from streamrip import converter
 from streamrip.client import new_session
-from streamrip.client.downloadable import BasicDownloadable, fast_async_download
+from streamrip.client.downloadable import (
+    BasicDownloadable,
+    SegmentedMP4Downloadable,
+    SoundcloudDownloadable,
+    fast_async_download,
+)
 from streamrip.config import set_user_defaults
 from streamrip.exceptions import (
     ConversionError,
@@ -340,6 +345,48 @@ async def test_a_16_bit_source_stays_16_bit_as_aiff(tmp_path):
     await engine.convert()
 
     assert mutagen.File(engine.final_fn).info.bits_per_sample == 16
+
+
+@pytest.mark.parametrize(
+    ("source", "rates"),
+    [(88200, "44100"), (176400, "44100"), (96000, "48000"), (None, "44100|48000")],
+)
+def test_a_capped_rate_keeps_to_the_family_of_the_source(monkeypatch, source, rates):
+    # ffmpeg takes the allowed rate closest to the source's: 48 kHz for 88.2.
+    monkeypatch.setattr(converter, "_sample_rate", lambda path: source)
+
+    args = converter.FLAC(Path("track.flac"), sampling_rate=48000)._ffmpeg_args()
+
+    assert f"aformat=sample_rates={rates}" in args
+
+
+async def test_segments_are_sized_with_two_requests_not_one_each():
+    session = MagicMock()
+    answer = MagicMock(headers={"Content-Length": "100"})
+    session.head.return_value.__aenter__.return_value = answer
+    segments = [f"https://cdn.test/{n}.mp4" for n in range(100)]
+    dl = SegmentedMP4Downloadable(
+        session, "https://cdn.test/init.mp4", segments, "flac", "tidal"
+    )
+
+    assert await dl.size() == 100 + 100 * 100
+    assert session.head.call_count == 2
+
+
+@needs_ffmpeg
+async def test_an_hls_playlist_is_fetched_once_for_its_size_and_its_audio(tmp_path):
+    session = MagicMock()
+    answer = MagicMock(text=AsyncMock(return_value="#EXTM3U\n#EXTINF:10,\nseg.mp3\n"))
+    session.get.return_value.__aenter__.return_value = answer
+    answer.content.read = AsyncMock(return_value=b"mp3")
+    playlist = "https://sc.test/playlist.m3u8"
+    dl = SoundcloudDownloadable(session, playlist, "hls")
+
+    await dl.size()
+    await dl.download(tmp_path / "track.mp3", _ignore)
+
+    assert [c.args[0] for c in session.get.call_args_list].count(playlist) == 1
+    assert (tmp_path / "track.mp3").read_bytes() == b"mp3"
 
 
 @needs_ffmpeg

@@ -1261,7 +1261,7 @@ async def test_a_network_hiccup_does_not_cost_the_album_its_cover(
 
 async def test_a_saved_cover_that_fails_leaves_the_embedded_one(tmp_path, monkeypatch):
     async def download(self, path, callback):
-        if path.name == "cover.jpg":  # Qobuz's derived original size, a 404
+        if path.name.startswith("cover.jpg"):  # Qobuz's derived original, a 404
             raise requests.HTTPError(response=MagicMock(status_code=404))
         path.write_bytes(b"image")
 
@@ -1281,6 +1281,31 @@ async def test_a_saved_cover_that_fails_leaves_the_embedded_one(tmp_path, monkey
     assert saved is None
     assert embedded.read_bytes() == b"image"
     artwork.remove_artwork_tempdirs()
+
+
+async def test_a_cover_jpg_is_kept_and_never_replaced_by_a_cut_off_one(
+    tmp_path, monkeypatch
+):
+    async def download(self, path, callback):
+        path.write_bytes(b"ima")
+        raise asyncio.CancelledError  # Ctrl-C mid-download
+
+    monkeypatch.setattr(artwork.BasicDownloadable, "download", download)
+    config = Config.defaults().session.artwork
+    config.embed, config.save_artwork, config.saved_max_width = False, True, 0
+    covers = Covers()
+    covers.set_cover("large", "https://example.test/cover.jpg", None)
+    kept, cut = tmp_path / "kept", tmp_path / "cut"
+    cut.mkdir()
+    kept.mkdir()
+    (kept / "cover.jpg").write_bytes(b"image")  # from an earlier run
+
+    await artwork.download_artwork(MagicMock(), kept, covers, config, False)
+    with pytest.raises(asyncio.CancelledError):
+        await artwork.download_artwork(MagicMock(), cut, covers, config, False)
+
+    assert (kept / "cover.jpg").read_bytes() == b"image"
+    assert list(cut.iterdir()) == []
 
 
 async def test_the_replaygain_of_a_track_is_measured_whatever_its_source_said(

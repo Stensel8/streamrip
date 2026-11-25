@@ -5,6 +5,7 @@ import asyncio
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from contextlib import contextmanager, nullcontext
 from pathlib import Path
@@ -102,7 +103,7 @@ class FakeBackend:
     def estimate_size(self, duration_s):
         return int(duration_s * 86_000)
 
-    def play_and_capture(self, uri, duration_s, out_path, report):
+    def play_and_capture(self, uri, duration_s, out_path, report, stop=None):
         Path(out_path).write_text(uri)
         report(86_000)
 
@@ -206,6 +207,35 @@ async def test_the_download_plays_the_track_into_the_file(tmp_path):
     await downloadable.download(tmp_path / "track.flac", lambda n: None)
 
     assert (tmp_path / "track.flac").read_text() == URI
+
+
+async def test_a_cancelled_download_waits_for_the_play_and_leaves_no_file(tmp_path):
+    started, ended = threading.Event(), threading.Event()
+
+    class Playing(FakeBackend):
+        def play_and_capture(self, uri, duration_s, out_path, report, stop=None):
+            started.set()
+            try:
+                for _ in range(100):  # a second of real time, unless stopped
+                    if stop is not None and stop.is_set():
+                        raise asyncio.CancelledError
+                    real_sleep(0.01)
+                super().play_and_capture(uri, duration_s, out_path, report)
+            finally:
+                ended.set()
+
+    path = tmp_path / "track.part.flac"
+    download = asyncio.ensure_future(
+        SoloistDownloadable(Playing(), TRACK, 135_000).download(path, lambda n: None)
+    )
+    await asyncio.to_thread(started.wait, 5)
+    download.cancel()  # Ctrl-C, or a SIGTERM to streamrip alone
+
+    with pytest.raises(asyncio.CancelledError):
+        await download
+
+    assert ended.is_set()  # stopped before the download gave the file up
+    assert not path.exists()
 
 
 async def test_pairing_stores_the_key_and_pairs_the_device(make_client, monkeypatch):
@@ -382,6 +412,7 @@ def backend(monkeypatch):
     monkeypatch.setattr(backend, "_check", lambda *a: backend.calls.append("check"))
     monkeypatch.setattr(soloist, "require_ffmpeg", lambda: "ffmpeg")
     monkeypatch.setattr(time, "sleep", lambda s: None)
+    monkeypatch.setattr(soloist, "BUSY_WAIT", 0)
     return backend
 
 
@@ -389,7 +420,7 @@ def backend(monkeypatch):
 def play(backend, monkeypatch, tmp_path):
     """Plays a track on the backend; the players are given in attempt order."""
 
-    def play(*players, report=lambda n: None):
+    def play(*players, report=lambda n: None, stop=None):
         players = iter(players)
 
         def start_cmd(cmd, quiet=False):
@@ -399,7 +430,7 @@ def play(backend, monkeypatch, tmp_path):
             return next(players)
 
         monkeypatch.setattr(soloist, "start_cmd", start_cmd)
-        backend.play_and_capture(URI, 135.0, tmp_path / "track.flac", report)
+        backend.play_and_capture(URI, 135.0, tmp_path / "track.flac", report, stop)
 
     return play
 
@@ -541,6 +572,31 @@ def test_a_play_that_fails_is_refused(play, backend, lines, rc, message):
     assert backend.calls == []
 
 
+def test_a_track_spotify_refused_is_not_played_again(play, backend):
+    backend.refused.add(TRACK)
+
+    with pytest.raises(NonStreamableError, match="already refused"):
+        play()  # no player: nothing may start
+
+    assert backend.calls == []
+
+
+@pytest.mark.parametrize("busy", [False, True], ids=["playing", "waiting its turn"])
+def test_a_cancelled_play_stops_and_refuses_nothing(play, backend, busy):
+    stop = threading.Event()
+    player = process(BUSY_LINES if busy else PLAYING_LINES, rc=1 if busy else 0)
+    if busy:  # cancelled while it waits for the other session
+        player.wait = lambda timeout=None: stop.set() or 1
+    else:
+        stop.set()
+
+    with pytest.raises(asyncio.CancelledError):
+        play(player, stop=stop)
+
+    assert not backend.refused
+    assert backend.calls == []
+
+
 def test_a_capture_that_fails_the_check_is_refused(play, backend):
     def silent(*_):
         raise NonStreamableError("the captured FLAC is silent: it is not the track")
@@ -592,7 +648,9 @@ def refused_track(monkeypatch, tmp_path):
         lambda *a, **k: nullcontext(lambda n: None),
     )
 
-    def make(source="spotify", backend="spotify", youtube_fails=False):
+    def make(
+        source="spotify", backend="spotify", youtube_fails=False, youtube_missing=False
+    ):
         config = Config.defaults()
         config.session.spotify.backend = backend
         config.session.cli.progress_bars = False
@@ -610,7 +668,12 @@ def refused_track(monkeypatch, tmp_path):
             else lambda path, callback: path.write_bytes(b"audio")
         )
         client = MagicMock(source=source)
-        client.youtube_downloadable = AsyncMock(return_value=youtube)
+        client.youtube_downloadable = AsyncMock(
+            return_value=youtube,
+            side_effect=NonStreamableError("No match on YouTube Music")
+            if youtube_missing
+            else None,
+        )
         track = Track(
             meta,
             refused,
@@ -645,6 +708,28 @@ async def test_the_fallback_happens_once(refused_track):
         await track.download()
 
     assert client.youtube_downloadable.await_count == 1
+
+
+@pytest.mark.parametrize(
+    ("errors", "youtube_missing", "plays"),
+    [
+        ([OSError("no capture")] * 3 + [NonStreamableError("refused")], False, 4),
+        ([NonStreamableError("refused")] * 4, True, 1),
+    ],
+    ids=["refused on the last attempt", "nothing on YouTube Music"],
+)
+async def test_a_fallback_never_ends_as_a_success_nor_plays_again(
+    refused_track, errors, youtube_missing, plays
+):
+    track, _, _ = refused_track(youtube_missing=youtube_missing)
+    track.downloadable.download = soloist_play = AsyncMock(side_effect=errors)
+
+    failed = pytest.raises(track_module.TrackDownloadFailedError)
+    with failed if youtube_missing else nullcontext():
+        await track.download()
+
+    assert soloist_play.await_count == plays
+    assert track.download_path.is_file() != youtube_missing
 
 
 @pytest.mark.parametrize(
