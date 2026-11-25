@@ -258,19 +258,19 @@ class Main:
 
         if not client.logged_in:
             raise AuthenticationError(f"Could not log in to {source}")
-        self._announce(source)
+        self._announce(source, client)
         return client
 
-    def _announce(self, source: str):
+    def _announce(self, source: str, client):
         """Tell the user what they should know about `source`, the first time."""
         if source in self._announced:
             return
         self._announced.add(source)
-        spotify = self.config.session.spotify
-        # Without a Soloist API key the audio is YouTube Music's, whatever `backend` says.
+        # Without a key, or on a machine that cannot record (a container), the
+        # audio is YouTube Music's, whatever `backend` says.
         backend = None
         if source == "spotify":
-            backend = spotify.backend if spotify.soloist_api_key else "youtube"
+            backend = "spotify" if client.soloist_backend else "youtube"
         if (notice := notice_for(source, backend)) is not None:
             console.print(notice)
 

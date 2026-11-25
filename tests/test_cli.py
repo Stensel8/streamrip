@@ -7,7 +7,7 @@ import re
 import signal
 import sys
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, PropertyMock, patch
 
 import pytest
 import tomlkit
@@ -831,6 +831,31 @@ async def test_a_source_is_announced_once_however_often_it_is_used():
             await main.get_logged_in_client(source)
 
     assert len(screen.print.call_args_list) == 1
+
+
+@pytest.mark.parametrize(
+    ("can_record", "says"), [(True, "Spotify itself"), (False, "from YouTube Music")]
+)
+async def test_the_spotify_notice_says_where_the_audio_really_comes_from(
+    can_record, says
+):
+    # A container has the key in its config, but nothing to record with.
+    main = _main()
+    main.config.session.spotify.backend = "spotify"
+    main.config.session.spotify.soloist_api_key = "key"
+    main.clients["spotify"].logged_in = True
+
+    with (
+        patch("streamrip.rip.main.console") as screen,
+        patch(
+            "streamrip.client.soloist.SoloistBackend.supported",
+            new_callable=PropertyMock,
+            return_value=can_record,
+        ),
+    ):
+        await main.get_logged_in_client("spotify")
+
+    assert says in screen.print.call_args.args[0]
 
 
 def test_pyproject_and_the_package_have_the_same_version():
