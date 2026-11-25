@@ -267,6 +267,7 @@ def test_the_prefs_ask_for_lossless_without_normalization(monkeypatch, tmp_path)
     assert prefs.read_text().splitlines() == [
         "audio.gapless_migrated_to_ps=true",
         "audio.play_bitrate_enumeration=5",
+        "audio.play_bitrate_non_metered_enumeration=5",
         "audio.normalize_v2=false",
     ]
 

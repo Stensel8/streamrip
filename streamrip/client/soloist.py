@@ -77,9 +77,16 @@ RATE = 44100
 SINK_SPEC = f"float32le 2ch {RATE}Hz"
 # Soloist's prefs (in <data dir>/settings/Users/<user>/prefs). Quality 5 is
 # the lossless FLAC (3 and 4 are Ogg Vorbis at 160 and 320 kbps, and without a
-# pref it plays 160), and the normalization would turn the level down by some
-# 6 dB. Both are written before every play.
-PREFS = {"audio.play_bitrate_enumeration": "5", "audio.normalize_v2": "false"}
+# pref it plays 160). It has one for a metered connection and one for an
+# unmetered one, and decides by itself which applies, differently from one run
+# to the next: with only one set, a track came as FLAC or as Vorbis at random.
+# Normalization would turn the level down by some 6 dB. All are written before
+# every play.
+PREFS = {
+    "audio.play_bitrate_enumeration": "5",
+    "audio.play_bitrate_non_metered_enumeration": "5",
+    "audio.normalize_v2": "false",
+}
 # Soloist's exit code for a build past its 90 days.
 EXPIRED_BUILD = 10
 # What Soloist says when another one has the data dir: it takes one session,
