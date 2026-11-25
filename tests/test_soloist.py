@@ -11,7 +11,7 @@ from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from time import sleep as real_sleep
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
 from mutagen.flac import FLAC
@@ -250,7 +250,7 @@ async def test_pairing_stores_the_key_and_pairs_the_device(make_client, monkeypa
 async def test_pairing_where_nothing_can_be_recorded_says_so(make_client, monkeypatch):
     monkeypatch.setattr(SoloistBackend, "supported", property(lambda self: False))
 
-    with pytest.raises(AuthenticationError, match="cannot record"):
+    with pytest.raises(AuthenticationError, match="cannot do"):
         await make_client(soloist_api_key="").pair_soloist("KEY")
 
 
@@ -447,7 +447,7 @@ def test_a_played_track_is_recorded_and_encoded(play, backend):
 def test_a_track_spotify_did_not_play_as_flac_is_said(play, caplog):
     play(process([*PLAYING_LINES, "08:40:36.225 I [f:347 ] codec: vorbis"]))
 
-    assert "played 'Sneaky Snitch' as vorbis" in caplog.text
+    assert "gave 'Sneaky Snitch' as vorbis" in caplog.text
 
 
 async def test_the_tracks_of_an_album_are_played_one_at_a_time(backend, tmp_path):
@@ -605,7 +605,7 @@ def test_a_cancelled_play_stops_and_refuses_nothing(play, backend, busy):
 
 def test_a_capture_that_fails_the_check_is_refused(play, backend):
     def silent(*_):
-        raise NonStreamableError("the captured FLAC is silent: it is not the track")
+        raise NonStreamableError("the file is silent: it is not the track")
 
     backend._check = silent
 
@@ -764,6 +764,7 @@ def prompter(monkeypatch):
     monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr(prompter_module.console, "print", lambda *a, **k: None)
     monkeypatch.setattr(prompter_module.Confirm, "ask", lambda *a, **k: True)
+    monkeypatch.setattr(SoloistBackend, "supported", property(lambda self: True))
     return SpotifyPrompter(config, client)
 
 
@@ -794,9 +795,15 @@ async def test_a_failed_pairing_does_not_fail_the_login(prompter):
     prompter.client.pair_soloist.assert_awaited_once()
 
 
-async def test_nothing_is_asked_without_a_terminal(prompter, monkeypatch):
-    # From cron or a script a hidden question would hang for ever.
-    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
+@pytest.mark.parametrize("why", ["no terminal", "a computer that cannot do it"])
+async def test_nothing_is_asked_where_it_cannot_be_used(prompter, monkeypatch, why):
+    # From cron or a script a hidden question would hang for ever; a key for a
+    # container or a Mac would be asked for nothing.
+    if why == "no terminal":
+        monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
+    else:
+        monkeypatch.setattr(SoloistBackend, "supported", property(lambda self: False))
+    monkeypatch.setattr(prompter_module.Prompt, "ask", Mock(side_effect=AssertionError))
 
     await prompter._offer_spotify_backend()
 

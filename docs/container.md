@@ -52,8 +52,8 @@ short script on the Accounts page of [the web interface](#the-web-interface) (it
 works through the published port) or by hand, Deezer by hand, and for Spotify and
 Tidal you paste the address. See [Logging in](logging-in.md).
 
-Spotify's own audio records from a sound server, which a container does not have,
-so there a Spotify track comes from YouTube Music ([Spotify](spotify.md)). Everything
+Spotify's own audio needs a sound server, which a container does not have, so
+there a Spotify track comes from YouTube Music ([Spotify](spotify.md)). Everything
 else works: downloads, tags, ReplayGain, `[conversion]` to every codec, YouTube Music,
 and the web interface.
 

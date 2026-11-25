@@ -115,11 +115,11 @@
     <div class="card-head"><h2>Spotify's own audio</h2>
       {% if soloist.key and soloist.paired %}<span class="badge ok">Paired</span>{% elif soloist.key %}<span class="badge warn">Not paired</span>{% else %}<span class="badge">Not set up</span>{% endif %}
     </div>
-    <p class="muted small">Spotify's official client, Soloist, plays each track here and streamrip records it, at the account's own quality (lossless on Premium). Without it, the audio is a YouTube Music match. It needs Linux, Premium and a Soloist API key from the <a class="link" href="https://developer.spotify.com/dashboard/soloist" target="_blank" rel="noopener noreferrer">developer dashboard</a>, and one pairing.</p>
+    <p class="muted small">Spotify's own audio, at the account's quality. Without it, the audio is a YouTube Music match. It needs Linux, Premium and a Soloist API key from the <a class="link" href="https://developer.spotify.com/dashboard/soloist" target="_blank" rel="noopener noreferrer">developer dashboard</a>, and one pairing.</p>
     {% if not soloist.on %}
     <p class="small muted">It is off: <code>backend</code> in the <code>[spotify]</code> section of the config is not <code>spotify</code>.</p>
     {% elif not soloist.supported %}
-    <p class="small muted">This computer cannot record it (that needs Linux with PipeWire or PulseAudio, so not a container either), so the audio comes from YouTube Music.</p>
+    <p class="small muted">This computer cannot do it (that needs Linux with PipeWire or PulseAudio, so not a container either), so the audio comes from YouTube Music.</p>
     {% else %}
     <form id="soloist-form" class="fields">
       {% call field("Soloist API key", "wide") %}<input name="api_key" type="password" autocomplete="off" placeholder="{{ 'saved: paste another to change it' if soloist.key else 'the key from the dashboard' }}"{{ '' if soloist.key else ' required' }}>{% endcall %}

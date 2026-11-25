@@ -48,9 +48,9 @@ streamrip verify                                          # tries every login on
 | `-s`, `-fs`         | The source to download from, and a fallback for what it lacks (download) |
 | `-q`                | No progress output                                                    |
 
-`streamrip playlist download` covers what a Spotify link can't. Spotify encrypts
-its audio, so a Spotify link is recorded in real time or matched on YouTube
-Music (see [Spotify](spotify.md)). This command reads the list from Spotify and finds each
+`streamrip playlist download` covers what a Spotify link can't: a Spotify link
+takes about as long as the track, or is matched on YouTube Music (see
+[Spotify](spotify.md)). This command reads the list from Spotify and finds each
 track on Qobuz, Tidal or Deezer instead, the same way
 [`streamrip csv`](csv-lists.md) does. Each list gets its own folder.
 

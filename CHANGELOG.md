@@ -30,9 +30,8 @@ the same things, in the same sections.
 - feat: the quality asked for stays within a Qobuz or Deezer plan
 - feat: `streamrip verify` says who the Spotify account is, and a rate limit is
   not shown as a broken login
-- feat: Spotify on Premium is downloaded from Spotify itself, as lossless FLAC
-  (24-bit, 44.1 kHz), with YouTube Music as the fallback, and one Spotify app
-  and login does downloads and playlists
+- feat: Spotify's own audio, at the account's quality, with YouTube Music as
+  the fallback; one Spotify app and login does downloads and playlists
 - change: every default is the highest quality there is; to go lower, use
   `[conversion]` (it no longer downsamples by default)
 - feat: every track gets the same ReplayGain (measured at -18 LUFS, as Qobuz gives it),
@@ -57,17 +56,12 @@ the same things, in the same sections.
   guard
 - fix: SoundCloud has no album or artist search: `streamrip search` and the
   web page say so, and the page only offers what a source can search for
-- feat: the Accounts page of `streamrip web` sets up Spotify's own audio too:
-  the Soloist API key and the pairing, as `streamrip login spotify` does
-- fix: the texts said the Spotify audio always comes from YouTube Music; it is
-  Spotify's own with a Soloist API key, and a YouTube Music match without one
-- fix: Spotify's own audio is set to its lossless FLAC and no volume
-  normalization (it played Ogg Vorbis at 160 kbps, some 6 dB quieter), recorded at
-  Spotify's 44.1 kHz in 24 bits, and cut at the first sound (it started 25 to
-  150 ms late and lost its end)
-- fix: the tracks of an album from Spotify's own audio play one at a time, with a
-  progress bar that follows the track and a time left (four of five used to go to
-  YouTube Music), and one that finds Soloist busy waits instead
+- feat: the Accounts page of `streamrip web` sets up Spotify's own audio too, as
+  `streamrip login spotify` does
+- fix: Spotify's own audio comes at the account's quality and its own volume,
+  and starts and ends where the track does
+- fix: an album's tracks from Spotify take turns, with a progress bar and a
+  time left, instead of most of them going to YouTube Music
 - fix: the same tags from every service: Qobuz's artist in capitals, one barcode
   format, the edition as VERSION for Tidal, Deezer and Spotify too, and Spotify's
   folder name says what the files are

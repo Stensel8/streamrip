@@ -861,7 +861,7 @@ async def test_a_source_is_announced_once_however_often_it_is_used():
 
 
 @pytest.mark.parametrize(
-    ("can_record", "says"), [(True, "Spotify itself"), (False, "from YouTube Music")]
+    ("can_record", "says"), [(True, "Spotify's own"), (False, "from YouTube Music")]
 )
 async def test_the_spotify_notice_says_where_the_audio_really_comes_from(
     can_record, says

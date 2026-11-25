@@ -34,6 +34,7 @@ lazy from ..client import (
     SpotifyClient,
     TidalClient,
 )
+lazy from ..client.soloist import SoloistBackend
 lazy from ..config import Config
 
 logger = logging.getLogger("streamrip")
@@ -455,10 +456,17 @@ class SpotifyPrompter(CredentialPrompter):
         # from cron and from scripts, where a hidden y/n means hanging forever.
         if not sys.stdin.isatty():
             return
+        if not SoloistBackend(c).supported:
+            # Not asked for a key that cannot be used here.
+            console.print(
+                "[yellow]Spotify's own audio needs Linux with PipeWire or "
+                "PulseAudio, which this computer does not have: the audio comes "
+                "from YouTube Music.[/yellow]"
+            )
+            return
         if not Confirm.ask(
-            "Also sign in to Spotify's own audio? Each track is then played "
-            "in real time by Spotify's official client, Soloist, and "
-            "streamrip records it here, as lossless FLAC on Premium.",
+            "Also set up Spotify's own audio, at the account's quality? It "
+            "goes through Spotify's official client, Soloist.",
             default=True,
         ):
             return
@@ -479,8 +487,7 @@ class SpotifyPrompter(CredentialPrompter):
         if backend is None:
             console.print(
                 "[yellow]The [spotify] backend is on, but no Soloist API key "
-                "is in the config; the audio will come from YouTube "
-                "Music.[/yellow]"
+                "is saved; the audio will come from YouTube Music.[/yellow]"
             )
             return
         if not backend.paired():

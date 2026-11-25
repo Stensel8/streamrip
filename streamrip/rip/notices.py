@@ -20,12 +20,11 @@ def notice_for(source: str, backend: str | None = None) -> str | None:
             "Spotify's own audio needs a Soloist API key: see docs/spotify.md."
         )
     return (
-        "[yellow]Spotify:[/yellow] the audio comes from Spotify itself: its "
-        "official headless client plays each track here in real time and "
-        "streamrip records it from the local audio, so it is the account's own "
-        "quality -- lossless FLAC on Premium. A track it cannot play is found "
-        "on YouTube Music instead, and is lossy. For lossless everywhere, move "
-        "your playlists to Tidal, or export them to a CSV, with Music-Sync, and "
-        "download them from there ([bold]streamrip csv list.csv[/bold]):\n  "
+        "[yellow]Spotify:[/yellow] the audio is Spotify's own, at the account's "
+        "quality, and a track takes about as long as it lasts. One that does not "
+        "work is found on YouTube Music instead, and is lossy. To have every "
+        "track from Qobuz, Tidal or Deezer, move your playlists to Tidal, or "
+        "export them to a CSV, with Music-Sync, and download them from there "
+        "([bold]streamrip csv list.csv[/bold]):\n  "
         f"[link={MUSIC_SYNC}]{MUSIC_SYNC}[/link]"
     )

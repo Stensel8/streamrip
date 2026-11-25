@@ -190,8 +190,8 @@ isn't available in it. `--quality` sets the highest it asks for:
 | 4       | 24 bit, ≤ 192 kHz                            | Qobuz                     |
 
 The defaults are the highest quality there is. To go lower, convert after
-downloading (`[conversion]` in the config). Spotify has no levels: it always
-comes in the best quality it has.
+downloading (`[conversion]` in the config). Spotify has no levels: it comes at
+the account's quality.
 
 ![searching Deezer and Qobuz, with the cover and details of each result](demo/search.avif)
 
@@ -212,7 +212,7 @@ the config. If a login stops working, it asks again.
 | Tidal | A subscription. You log in with a link on any device (twice for hi-res). |
 | Deezer | The `arl` cookie of a logged-in session, from an isolated browser window or by hand. |
 | SoundCloud | Nothing: it works as a guest. A login (the `oauth_token` cookie) gives better quality and higher limits. |
-| Spotify | A Spotify app of your own (`streamrip login spotify` explains how), and Premium on the account that owns it. With a Soloist API key the audio is Spotify's own, the account's quality (lossless up to 44.1 kHz on Premium): the track plays in full and is recorded, so it rips slower than the other sources. Without one, or where Spotify will not play a track, it is a match on YouTube Music (AAC, or MP3). The playlist tools use the same login. |
+| Spotify | A Spotify app of your own (`streamrip login spotify` explains how), and Premium on the account that owns it. With a Soloist API key the audio is Spotify's own, at the account's quality, and a track takes about as long as it lasts. Without one, or where that does not work, it is a match on YouTube Music (AAC, or MP3). The playlist tools use the same login. |
 
 For your Tidal playlists, the playlist tools also need a Tidal developer app
 ([how](docs/playlists.md#tidal)). More per source in [Logging in](docs/logging-in.md)
@@ -223,7 +223,7 @@ of `streamrip web`.
 
 - [Playlists](docs/playlists.md): transfer, export, import and download your playlists and liked songs
 - [Web interface](docs/web.md): what it does, and why it should only run on your own machine
-- [Spotify](docs/spotify.md): how to log in, what works, and the quality you get
+- [Spotify](docs/spotify.md): how to log in, what works, and where the audio comes from
 - [CSV lists](docs/csv-lists.md): download a list from streamrip, Exportify or a spreadsheet
 - [Lyrics](docs/lyrics.md): where they come from and how to turn the lookup off
 - [Podman and Docker](docs/container.md): the image, its volumes and building it yourself

@@ -495,11 +495,11 @@ class SpotifyClient(Client):
         if backend is None:
             if api_key and self.config.backend == "spotify":
                 raise AuthenticationError(
-                    "This computer cannot record Spotify's own audio: that needs "
+                    "This computer cannot do Spotify's own audio: that needs "
                     "Linux with PipeWire or PulseAudio (a container has neither)."
                 )
             raise AuthenticationError(
-                "Spotify's own audio needs the Soloist API key in the config."
+                "Spotify's own audio needs a Soloist API key (streamrip login spotify)."
             )
         return await asyncio.to_thread(backend.pair)
 

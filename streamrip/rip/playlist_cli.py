@@ -536,7 +536,8 @@ def download(
 
     Reads the list from Spotify or Tidal and finds each track on the source you
     pick, the way `streamrip csv` does: a Spotify playlist in lossless from
-    Qobuz, Tidal or Deezer, say, where a Spotify link is recorded in real time or matched on YouTube Music.
+    Qobuz, Tidal or Deezer, say, where a Spotify link takes about as long as
+    the track, or is matched on YouTube Music.
     Each list goes in a folder of its own.
     """
     _selection(liked, playlist, everything)

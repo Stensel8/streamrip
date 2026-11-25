@@ -158,17 +158,14 @@ lower_quality_if_not_available = true
 
 # -- Audio --
 
-#   "spotify"  Spotify's official headless client, Soloist, plays each track in
-#              real time and streamrip records it: lossless (Premium), 44.1 kHz,
-#              saved as 24-bit FLAC. Needs a Soloist API key and one pairing,
-#              and runs on Linux only for now.
-#   "youtube"  The same recording found on YouTube Music: AAC or MP3, never
-#              lossless.
-# A track that "spotify" can't play is taken from YouTube Music instead.
+#   "spotify"  Spotify's own audio, at the account's quality. Needs a Soloist
+#              API key and one pairing, and runs on Linux only for now.
+#   "youtube"  The same recording found on YouTube Music: AAC or MP3.
+# A track that "spotify" can't do is taken from YouTube Music instead.
 # Options: "spotify", "youtube"
 backend = "spotify"
 
-# The name of the device the Spotify app pairs with, and streamrip plays to.
+# The name of the device the Spotify app pairs with.
 # The Soloist API key (one per person, Premium, made at
 # developer.spotify.com/dashboard/soloist) is a secret: it is kept in
 # state.toml and never printed or sent anywhere but Spotify.

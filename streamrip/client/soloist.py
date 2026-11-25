@@ -375,12 +375,12 @@ class SoloistBackend:
                 "format=float32le",
                 "channels=2",
                 # Quoted twice: PulseAudio (not PipeWire) fails the module on a bare space.
-                "sink_properties=\"device.description='streamrip capture'\"",
+                "sink_properties=\"device.description='streamrip'\"",
             ]
         )
         if loaded.returncode != 0:
             said = loaded.stderr.strip()[:300]
-            raise NonStreamableError(f"Could not create the capture sink: {said}")
+            raise NonStreamableError(f"Could not set up Spotify's own audio: {said}")
 
     @staticmethod
     def _unload_sink() -> None:
@@ -656,7 +656,7 @@ class SoloistBackend:
         kbps = next((int(m[1]) // 1000 for x in lines if (m := _BITRATE.search(x))), 0)
         title = next((m[1] for line in lines if (m := _TITLE.search(line))), "a track")
         logger.warning(
-            "Spotify played '%s' as %s%s, not lossless: the FLAC holds that",
+            "Spotify gave '%s' as %s%s, not in its best quality",
             title,
             codec or "an unknown format",
             f" at {kbps} kbps" if kbps else "",
@@ -802,7 +802,7 @@ class SoloistBackend:
             out_path.unlink(missing_ok=True)
             said = result.stderr.strip()[-300:]
             raise NonStreamableError(
-                f"ffmpeg failed to encode the FLAC (exit {result.returncode}): {said}"
+                f"ffmpeg failed to save the track (exit {result.returncode}): {said}"
             )
 
     @staticmethod
@@ -811,7 +811,7 @@ class SoloistBackend:
         ffprobe = shutil.which("ffprobe")
         if ffprobe is None:
             raise NonStreamableError(
-                "ffprobe is missing, and the FLAC cannot be checked"
+                "ffprobe is missing, and the track cannot be checked"
             )
         probed = run_cmd(
             [
@@ -831,7 +831,7 @@ class SoloistBackend:
             got = -1.0
         if got <= 0 or abs(got - duration_s) > 1.5:
             raise NonStreamableError(
-                f"the captured FLAC is {got:.1f}s, the track is {duration_s:.1f}s: "
+                f"the file is {got:.1f}s, the track is {duration_s:.1f}s: "
                 "it is not the track"
             )
         volume = run_cmd(
@@ -849,7 +849,7 @@ class SoloistBackend:
         )
         m = re.search(r"mean_volume:\s*(-?[\d.]+)\s*dB", volume.stderr)
         if m is None or float(m.group(1)) <= -50.0:
-            raise NonStreamableError("the captured FLAC is silent: it is not the track")
+            raise NonStreamableError("the file is silent: it is not the track")
 
     # --- keeping the key out of what is said --------------------------------------
 

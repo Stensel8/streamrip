@@ -7,22 +7,17 @@ and which tracks belong to an album, artist or playlist. The audio comes from on
 of two backends, in the `[spotify]` section of the config, and streamrip picks a
 working one for every track:
 
-- `backend = "spotify"` (the default) plays each track in real time with
-  Spotify's own official client,
-  [Soloist](https://github.com/spotify/soloist), and records the local audio.
-  That is Spotify's lossless FLAC (Premium), recorded at 44.1 kHz and saved as a
-  24-bit FLAC. Because the track plays in full and is recorded as it goes, it
-  takes the track's own length, a minute and a half to four, so it rips slower
-  than the other sources. It runs on Linux only.
+- `backend = "spotify"` (the default) is Spotify's own audio, at the account's
+  quality, through Spotify's official client,
+  [Soloist](https://github.com/spotify/soloist). A track takes about as long as
+  it lasts, so this is slower than the other sources. It runs on Linux only.
 - `backend = "youtube"` finds the same recording on **YouTube Music** (by ISRC
   first, then by artist, title and length) and downloads it, the way
   [spotDL](https://github.com/spotDL/spotify-downloader) does. It is AAC at
-  about 128 kbps (`audio_format = "m4a"`, kept as is) or MP3 at `audio_bitrate`,
-  and it is not lossless.
+  about 128 kbps (`audio_format = "m4a"`, kept as is) or MP3 at `audio_bitrate`.
 
-A track the `spotify` backend cannot play, because it is not available to this
-account, has no matching recording, or is a podcast episode, goes to YouTube
-Music either way. So choosing it costs nothing, and a list is never half-empty.
+A track the `spotify` backend cannot do, because it is not available to this
+account or is a podcast episode, goes to YouTube Music either way. So choosing it costs nothing, and a list is never half-empty.
 
 Like every source it needs [ffmpeg](https://ffmpeg.org). The `youtube` backend
 also needs yt-dlp, which needs a JavaScript runtime to read YouTube. If a
@@ -66,8 +61,8 @@ This one is on by default. It needs three things, each once or automatic:
 **A Soloist API key.** One per person, free for a Premium account, made at
 [developer.spotify.com/dashboard/soloist](https://developer.spotify.com/dashboard/soloist).
 It is a secret, like a password. streamrip never prints it, logs it, or sends it
-anywhere but Spotify. When it asks, paste it in, and it is saved as
-`soloist_api_key`.
+anywhere but Spotify. When it asks, paste it in, and it is saved in
+`state.toml`, next to the config.
 
 **A pairing, once.** In the Spotify app on a device on this network, press play,
 tap *Connect to a device*, and pick the device named `device_name` (default
@@ -75,17 +70,15 @@ tap *Connect to a device*, and pick the device named `device_name` (default
 by every later run. The Accounts page of the [web interface](web.md) does this
 too: paste the key, press *Pair*, and pick the device in the app.
 
-**Linux, with PipeWire or PulseAudio.** The recording is a sink monitor, made
-with `pactl` and `parec` (PulseAudio's tools, which PipeWire has too), so the
-`spotify` backend runs on Linux for now. On macOS, Windows or in a
-container (which has no sound server), or if any of the above is missing, streamrip does not fail: it falls back to
-YouTube Music for that track, so you still get the file.
+**Linux, with PipeWire or PulseAudio** and their tools `pactl` and `parec`,
+and `ffprobe` (it comes with most ffmpeg packages, not with the one bundled in
+the wheel). On
+macOS, Windows or in a container (which has no sound server), or if any of the
+above is missing, streamrip does not fail: it falls back to YouTube Music for
+that track, so you still get the file.
 
-streamrip sets two prefs in Soloist's data folder before each play: the lossless
-quality (Soloist plays Ogg Vorbis at 160 kbps otherwise) and no volume
-normalization (which turns the level down by some 6 dB). If you use that Soloist
-as a player too, they apply there as well. If Spotify has no lossless file of a
-track, streamrip says what it played instead.
+streamrip changes a few of Soloist's own settings before each track; if you
+use that Soloist as a player too, they apply there as well.
 
 streamrip keeps its own copy of the Soloist binary. The official builds expire
 after 90 days, and when one does, streamrip downloads a fresh one and carries on.
@@ -97,9 +90,9 @@ streamrip url https://open.spotify.com/playlist/<id of a playlist of yours> spot
 streamrip search spotify track 'daft punk get lucky'
 ```
 
-Spotify's own audio always comes in the best quality there is. For a smaller file
-or another format, turn on `[conversion]` in the config (16-bit, MP3, AAC, ...).
-To go lossy on purpose, for a device that wants MP3, set `backend = "youtube"`.
+Spotify's own audio comes at the account's quality. For a smaller file or
+another format, turn on `[conversion]` in the config (MP3, AAC, ...), or set
+`backend = "youtube"` for YouTube Music's AAC or MP3.
 
 ## What works
 
@@ -115,7 +108,7 @@ Spotify limits what apps like this can do:
   That's Spotify's limit for apps in development mode.
 
 The options are in the `[spotify]` section of `streamrip config open`:
-`backend` (`spotify` or `youtube`), `soloist_api_key` and `device_name` for the
+`backend` (`spotify` or `youtube`) and `device_name` for the
 `spotify` backend, and `audio_format` (`m4a` or `mp3`), `audio_bitrate` (only
 used when audio has to be re-encoded) and `match_videos` (accept an official
 video when YouTube Music has no matching song; turn it off to be strict) for the
@@ -126,9 +119,8 @@ video when YouTube Music has no matching song; turn it off to be strict) for the
 The Spotify support borrows from a few projects. Thank you:
 
 - **[Spotify Soloist](https://github.com/spotify/soloist)** (MIT), Spotify's own
-  official client. A Connect device that plays a track and renders it to local
-  audio at the account's quality. streamrip drives it and records the result
-  (`streamrip/client/soloist.py`). It plays Spotify's own audio.
+  official client, which streamrip drives for Spotify's own audio
+  (`streamrip/client/soloist.py`).
 - **[Music-Sync](https://opencommit.eu/Stensel8/Music-Sync)** (AGPL-3.0, same
   author), now part of streamrip as `streamrip playlist`. The Spotify login and
   API handling follow it: OAuth with PKCE and a loopback redirect
