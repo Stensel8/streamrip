@@ -24,7 +24,7 @@ environment with uv.
 | image build and smoke test | yes | `container` |
 | `nix flake check` | yes | `nix` (it only sees files git tracks) |
 | tests marked `login`: prompters, token capture, device login, refresh (mocks and local pages) | no | `login` |
-| real accounts | on the pi, with the `STREAMRIP_CONFIG` secret | `live` |
+| real accounts | on the pi, with the `STREAMRIP_STATE` secret | `live` |
 
 ## Real accounts
 
@@ -51,5 +51,6 @@ abuse.
 ### In CI
 
 On a push to `dev`, the pi runs `live` for Qobuz, Tidal and Deezer with the
-`STREAMRIP_CONFIG` secret, which holds your whole `config.toml`. If the secret
-is missing or a login no longer works, that service is skipped.
+`STREAMRIP_STATE` secret: the `[qobuz]`, `[tidal]` and `[deezer]` sections of
+your `state.toml`, on the default config. Without the secret the job does
+nothing; with it, a login that no longer works fails the job (`--strict`).

@@ -2,7 +2,7 @@
 
     python checks/run.py offline    CI's job: lint, then the tests that need no login
     python checks/run.py login      the tests about logins, tokens and sessions (CI leaves these out)
-    python checks/run.py live [SOURCE ...] [--config FILE] [--query TEXT]
+    python checks/run.py live [SOURCE ...] [--config FILE] [--query TEXT] [--strict]
                                     real accounts: streamrip asks you to log in, then tests itself
     python checks/run.py install    CI's installer job, on a copy of this checkout
     python checks/run.py container  CI's image build and smoke test (podman or docker)
@@ -13,7 +13,8 @@ Any python and any folder will do: the script runs itself in the project's envir
 `live` logs in to a real account of each SOURCE (qobuz, tidal, deezer, spotify, soundcloud; default
 all) in a scratch config, so your own config and downloads are never touched. With `--config FILE`
 it starts from the logins in that file and the state.toml beside it instead of asking. `--query` is what is searched for (a
-track that exists on the service). See checks/README.md.
+track that exists on the service). `--strict` counts a check that was skipped (no login) as failed, as CI wants.
+See checks/README.md.
 """
 
 import json
@@ -53,7 +54,7 @@ async def check(path, source):
     config = Config(Path(path))
     async with Main(config) as main:
         if not get_prompter(main.clients[source], config).has_creds():
-            print("no login for it in the config")
+            print("no login for it in state.toml")
             return 2
         try:
             await main.get_logged_in_client(source)
@@ -298,12 +299,13 @@ def live(source: str, config: Path | None, query_override: str | None):
         if (
             source == "tidal"
         ):  # an expired access token is refreshed, not a reason to log in again
-            text = config_path.read_text(encoding="utf-8")
+            state = config_path.with_name("state.toml")  # the logins, since 2.8
+            text = state.read_text(encoding="utf-8")
             section = re.search(r"(?ms)^\[tidal\]\n.*?(?=^\[|\Z)", text)
             expired = re.sub(
                 r"(?m)^((?:hires_)?token_expiry) = .*$", r"\1 = 0", section[0]
             )
-            config_path.write_text(text.replace(section[0], expired), encoding="utf-8")
+            state.write_text(text.replace(section[0], expired), encoding="utf-8")
             out = streamrip(
                 "search",
                 "tidal",
@@ -313,7 +315,7 @@ def live(source: str, config: Path | None, query_override: str | None):
                 str(Path(tmp) / "results.txt"),
                 capture_output=True,
             )
-            expiry = tomllib.loads(config_path.read_text(encoding="utf-8"))["tidal"][
+            expiry = tomllib.loads(state.read_text(encoding="utf-8"))["tidal"][
                 "token_expiry"
             ]
             record(
@@ -341,6 +343,9 @@ def _flag_value(argv: list[str], flag: str) -> str | None:
 
 
 def main(argv: list[str]):
+    strict = "--strict" in argv
+    if strict:
+        argv.remove("--strict")
     config_arg = _flag_value(argv, "--config")
     config = Path(config_arg).expanduser() if config_arg else None
     query = _flag_value(argv, "--query")
@@ -375,7 +380,8 @@ def main(argv: list[str]):
     print("\n== Summary")
     for name, outcome in report:
         print(f"  {name:48} {outcome}")
-    sys.exit(any(outcome.startswith("FAILED") for _, outcome in report))
+    bad = ("FAILED", "skipped") if strict else ("FAILED",)
+    sys.exit(any(outcome.startswith(bad) for _, outcome in report))
 
 
 if __name__ == "__main__":

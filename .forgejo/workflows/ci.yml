@@ -78,7 +78,8 @@ jobs:
       - run: uv run --locked pytest -m "not login"
 
   # Real accounts, from home (services refuse data centres), with the
-  # STREAMRIP_CONFIG secret: a whole config.toml. Never for pull requests.
+  # STREAMRIP_STATE secret: the [qobuz], [tidal] and [deezer] sections of a
+  # state.toml. Never for pull requests.
   live:
     if: >-
       github.ref == 'refs/heads/dev'
@@ -97,14 +98,17 @@ jobs:
           cache-local-path: ${{ github.workspace }}/.uv-cache
       - name: One track from each service
         env:
-          STREAMRIP_CONFIG: ${{ secrets.STREAMRIP_CONFIG }}
+          STREAMRIP_STATE: ${{ secrets.STREAMRIP_STATE }}
         run: |
-          if [ -z "$STREAMRIP_CONFIG" ]; then
-            echo "No STREAMRIP_CONFIG secret: offline tests only."
+          if [ -z "$STREAMRIP_STATE" ]; then
+            echo "No STREAMRIP_STATE secret: offline tests only."
             exit 0
           fi
-          config="$(mktemp)"  # 0600: it holds the logins
-          trap 'rm -f "$config"' EXIT
-          printf '%s\n' "$STREAMRIP_CONFIG" > "$config"
+          dir="$(mktemp -d)"  # 0700: it holds the logins
+          trap 'rm -rf "$dir"' EXIT
+          printf '%s\n' "$STREAMRIP_STATE" > "$dir/state.toml"
+          # The default config: the logins are all in state.toml.
+          uv run --locked python -c 'import sys; from pathlib import Path; from streamrip.config import set_user_defaults; set_user_defaults(Path(sys.argv[1]))' "$dir/config.toml"
+          # --strict: a service skipped for want of a working login fails the job.
           uv run --locked python checks/run.py live qobuz tidal deezer \
-            --config "$config" < /dev/null
+            --config "$dir/config.toml" --strict < /dev/null
