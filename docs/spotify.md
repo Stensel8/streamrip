@@ -97,6 +97,8 @@ streamrip url https://open.spotify.com/playlist/<id of a playlist of yours> spot
 streamrip search spotify track 'daft punk get lucky'
 ```
 
+Spotify's own audio always comes in the best quality there is. For a smaller file
+or another format, turn on `[conversion]` in the config (16-bit, MP3, AAC, ...).
 To go lossy on purpose, for a device that wants MP3, set `backend = "youtube"`.
 
 ## What works

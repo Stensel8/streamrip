@@ -1,269 +1,409 @@
+# streamrip config
+#
+# Lines starting with # are comments. Every option is set to its default, and
+# the defaults give the highest quality there is. To lower it, use [conversion].
+# Logins are not kept here but in state.toml, next to this file.
+
+
+# -----------------------------------------------------------------------------
+# DOWNLOADS: where files go, and how fast
+# -----------------------------------------------------------------------------
 [downloads]
-# Folder where tracks are downloaded to
+
+# Where files are saved. Empty means your Music folder.
+# Options: a folder path
 folder = ""
 
-# Put each album in its own subfolder, instead of all tracks directly in the
-# downloads folder. Saved artwork and Qobuz booklets are skipped when this is
-# off, since several albums downloaded without one would overwrite each
-# other's cover.jpg.
+# -- Folders --
+
+# One subfolder per album. Off puts every track straight in the downloads
+# folder, and then saved artwork and Qobuz booklets are skipped (albums would
+# overwrite each other's cover.jpg).
+# Options: true, false
 create_album_folder = true
 
-# Put Qobuz albums in a 'Qobuz' folder, Tidal albums in 'Tidal' etc.
+# A folder per source inside the downloads folder: 'Qobuz', 'Tidal', and so on.
+# Options: true, false
 source_subdirectories = false
 
-# Put tracks in an album with 2 or more discs into a subfolder named `Disc N`
+# A `Disc N` subfolder for albums with two or more discs.
+# Options: true, false
 disc_subdirectories = true
 
-# How many tracks to download at once. 1 downloads them one after another,
-# -1 means no limit. More than your connection can carry only slows each
-# download down.
+# -- Speed --
+
+# How many tracks download at once. More than your connection can carry only
+# slows each download down.
+# Options: 1 (one after another) or more, -1 (no limit)
 max_connections = 5
 
-# Max number of API requests per source to handle per minute
-# Set to -1 for no limit. Downloading many albums at once (e.g. an artist's
-# full discography) can burst past a higher limit and get 429 "Too Many
-# Requests" errors from the streaming service; lower this further if that
-# still happens.
+# API requests per source per minute. A burst (an artist's whole discography)
+# can pass a higher limit and get "429 Too Many Requests"; lower it then.
+# Options: a number, -1 (no limit)
 requests_per_minute = 35
 
-# Verify SSL certificates for API connections
-# Set to false if you encounter SSL certificate verification errors (not recommended)
-verify_ssl = true
-
-# Download and embed lyrics. Tidal supplies them for most tracks. For a track
-# whose source has none (Qobuz, Deezer, SoundCloud and Spotify send none at all),
-# they are looked up on lrclib.net:
-# a free, open database of lyrics that its users add, found by the artist, title
-# and length of the track, so that site is told what you download. streamrip says
-# when it finds none. Time-synced (LRC) lyrics are used, plain ones for MP3. They
-# stay the property of their owners: this is for your own library. Set this to
-# false to download no lyrics and look none up.
-lyrics = true
-
-# Also save the looked-up lyrics as a .lrc file next to the track, for a
-# player that does not read the embedded tag. Time-synced where LRCLIB or the
-# source has them, plain text otherwise; never for MP3, whose plain lyrics are
-# already in the tag.
-save_lrc = false
-
-# How fast to rip. Services limit how much an account may download in an hour,
-# and going over that hour after hour gets an account suspended. "auto" rips a
-# small job (up to about 100 tracks in 6 hours) at full speed and anything
-# bigger at a steady pace of about 80 tracks an hour, the pace a real account
-# ran 18 hours on without a single rate limit. "fast" always goes at full
-# speed -- fine for one album, not for hours on end. "medium" always goes at
-# a faster ~150 tracks an hour, without slow's long-run track record: a
-# middle ground for a session, not a day-long run. "slow" always goes at the
-# proven ~80. --pace overrides this
-# for one run.
+# How fast to rip. Services limit what an account may download per hour, and
+# going over it hour after hour can get the account suspended.
+#   "auto"    small jobs (up to ~100 tracks in 6 hours) at full speed, bigger
+#             ones at a steady ~80 tracks an hour
+#   "fast"    always full speed: fine for an album, not for hours on end
+#   "medium"  always ~150 tracks an hour
+#   "slow"    always ~80 tracks an hour
+# `--pace` sets it for one run.
+# Options: "auto", "fast", "medium", "slow"
 # pacing = "auto"
 
-# A service's own section can set its own limits. Left out, they are the ones
-# measured on Tidal: requests_per_minute (the one above), slow_tracks_per_hour
-# = 80, medium_tracks_per_hour = 150, max_tracks_per_hour = 175 (where full
-# speed warns) and full_speed_tracks = 100 (in 6 hours, for pacing "auto").
+# A service's own section can also set its limits: requests_per_minute,
+# slow_tracks_per_hour (80), medium_tracks_per_hour (150), max_tracks_per_hour
+# (175, where full speed warns) and full_speed_tracks (100, for "auto").
 
+# -- Connection --
+
+# Check SSL certificates. Turn it off only for certificate errors you can't fix.
+# Options: true, false
+verify_ssl = true
+
+# -- Lyrics --
+
+# Download and embed lyrics. Tidal has them for most tracks; for other sources
+# they are looked up on lrclib.net, a free open database, which is told the
+# artist, title and length of what you download. Synced (LRC) lyrics where
+# there are any, plain text for MP3. Lyrics stay the property of their owners.
+# Options: true, false
+lyrics = true
+
+# Also save lyrics as a .lrc file next to the track, for players that don't
+# read the embedded tag. Never for MP3, which holds plain lyrics already.
+# Options: true, false
+save_lrc = false
+
+
+# -----------------------------------------------------------------------------
+# QOBUZ
+# -----------------------------------------------------------------------------
 [qobuz]
-# 1: 320kbps MP3, 2: 16/44.1, 3: 24/<=96, 4: 24/>=96
+
+# The highest quality to ask for. A track not available in it comes in the
+# next one down.
+# Options: 1 (320 kbps MP3), 2 (16-bit, 44.1 kHz), 3 (24-bit, up to 96 kHz),
+#          4 (24-bit, up to 192 kHz)
 quality = 4
-# This will download booklet pdfs that are included with some albums
+
+# Download the booklet PDFs that come with some albums.
+# Options: true, false
 download_booklets = true
 
-# Logins (and the apps they belong to) are not kept in this file but in
-# state.toml, next to it: streamrip asks you to log in on first use.
 
+# -----------------------------------------------------------------------------
+# TIDAL
+# -----------------------------------------------------------------------------
 [tidal]
-# 0: 256kbps AAC, 1: 320kbps AAC, 2: 16/44.1 FLAC, 3: best available
-# (24-bit FLAC where the client below is allowed to stream it).
-# Default is 3: hi-res wherever Tidal has a hi-res master. Set it to 2 for
-# 16/44.1 FLAC only.
+
+# The highest quality to ask for.
+# Options: 0 (256 kbps AAC), 1 (320 kbps AAC), 2 (16-bit, 44.1 kHz FLAC),
+#          3 (best: hi-res FLAC where Tidal has a hi-res master)
 quality = 3
-# Tidal serves each of its OAuth clients other formats. The default one gets
-# FLAC 16/44.1 for every lossless release but never hi-res; the hi-res one gets
-# 24-bit FLAC (up to 192 kHz) for hi-res releases but only AAC 320 for the rest.
-# With this on (and quality = 3) each track is asked of the hi-res client first
-# and of the default one when Tidal has no hi-res master, so you get the best
-# there is. It means a second login. Off: the default client only, FLAC 16/44.1.
+
+# Tidal gives each of its login clients other formats: the default one never
+# gets hi-res, the hi-res one gets AAC 320 for everything that isn't hi-res.
+# On (with quality 3), each track is asked of the hi-res client first and of the
+# default one when there is no hi-res master. Needs a second login.
+# Options: true, false
 hires_client = true
-# Override the OAuth client id and secret (leave empty for the built-in one)
+
+# Your own Tidal client id and secret. Empty means the built-in ones.
+# Options: text, or empty
 client_id = ""
 client_secret = ""
 
-
-# For the playlist tools and the playlist pages of `streamrip web` only:
-# reading and changing your Tidal playlists and favourites goes through Tidal's
-# official API, which needs a developer app of your own (downloading does not).
-# Create it at https://developer.tidal.com/dashboard with this redirect URI and
-# the scopes collection.read, collection.write, playlists.read, playlists.write
-# and user.read. docs/playlists.md has the details.
+# Only for the playlist tools and the playlist pages of `streamrip web`.
+# Reading and changing your playlists and favourites goes through Tidal's
+# official API, which needs a developer app of your own: make one at
+# https://developer.tidal.com/dashboard with this redirect URI and the scopes
+# collection.read, collection.write, playlists.read, playlists.write and
+# user.read. See docs/playlists.md.
+# Options: the redirect URI of that app
 api_redirect_uri = "http://127.0.0.1:9900/tidal/callback"
 
+
+# -----------------------------------------------------------------------------
+# DEEZER
+# -----------------------------------------------------------------------------
 [deezer]
-# 0: 128kbps MP3, 1: 320kbps MP3, 2: FLAC. Limited to what the account's
-# subscription allows.
+
+# The highest quality to ask for, within what your subscription allows.
+# Options: 0 (128 kbps MP3), 1 (320 kbps MP3), 2 (FLAC)
 quality = 2
-# If the target quality is not available, fallback to best quality available
+
+# Take the best quality there is when the one above isn't available.
+# Options: true, false
 lower_quality_if_not_available = true
 
+
+# -----------------------------------------------------------------------------
+# SOUNDCLOUD
+# -----------------------------------------------------------------------------
 [soundcloud]
-# Nothing to set: what streamrip finds out is kept in state.toml.
 
+# Nothing to set here. What streamrip finds out is kept in state.toml.
+
+
+# -----------------------------------------------------------------------------
+# SPOTIFY
+# -----------------------------------------------------------------------------
 [spotify]
-# Spotify gives streamrip the track list, tags and cover art.
-#
-# The audio comes from one of two backends. "spotify" plays each track in
-# real time with Spotify's official headless client, Soloist, and records the
-# local audio while it plays: lossless FLAC on Premium, at 44.1 kHz, saved as
-# 24-bit FLAC. streamrip sets Soloist to lossless and its volume normalization
-# off. It needs a Soloist API key (one per person, below), one pairing with a
-# Spotify app on the same network, and so far runs on Linux only. "youtube" finds the same recording on YouTube Music
-# (matched by ISRC, title, artist and length) and downloads it from there, so
-# it is AAC or MP3, never lossless. A track the spotify backend cannot serve
-# is routed to youtube either way, so nothing is lost by choosing it.
-#
-# You log in to Spotify with an app of your own: Spotify only lets an app whose
-# owner has Premium use its API. Create one at
-# https://developer.spotify.com/dashboard:
-#   - Redirect URI: exactly the redirect_uri below
-#   - "Which API/SDKs are you planning to use?": tick Web API only
-# Then `streamrip login spotify` (no client secret is needed).
-# docs/spotify.md has the details, with screenshots.
-# For your own app, added to it as a Redirect URI, character for character.
-# Use 127.0.0.1, not localhost: Spotify no longer accepts that.
-redirect_uri = "http://127.0.0.1:9900/callback"
-# What the downloaded files are: "m4a" (AAC, tagged with cover art) or "mp3".
-# YouTube Music's best AAC stream is used as it is; anything else is re-encoded.
-# (Ignored for the spotify backend, whose audio is FLAC.)
-audio_format = "m4a"
-# kbps, only for audio that has to be re-encoded to audio_format.
-audio_bitrate = 256
-# When YouTube Music has no "song" that matches a track (some regions and
-# connections only show videos), accept an official video whose title, artist
-# and length match. Turn it off to download only exact song matches.
-match_videos = true
-# Where the audio comes from: "spotify" (Soloist, played and recorded) or
-# "youtube".
-backend = "spotify"
-# The name of the device the Spotify app on this network picks to pair with,
-# and that streamrip plays to.
-device_name = "streamrip"
-# The Soloist API key (one per person, for a Premium account, made at
-# developer.spotify.com/dashboard/soloist) is a secret, like a password: it is
-# kept in state.toml, and streamrip never prints it, logs it, or sends it
-# anywhere but Spotify.
 
+# Spotify supplies the track list, tags and cover art. `backend` says where the
+# audio comes from.
+
+# -- Audio --
+
+#   "spotify"  Spotify's official headless client, Soloist, plays each track in
+#              real time and streamrip records it: lossless (Premium), 44.1 kHz,
+#              saved as 24-bit FLAC. Needs a Soloist API key and one pairing,
+#              and runs on Linux only for now.
+#   "youtube"  The same recording found on YouTube Music: AAC or MP3, never
+#              lossless.
+# A track that "spotify" can't play is taken from YouTube Music instead.
+# Options: "spotify", "youtube"
+backend = "spotify"
+
+# The name of the device the Spotify app pairs with, and streamrip plays to.
+# The Soloist API key (one per person, Premium, made at
+# developer.spotify.com/dashboard/soloist) is a secret: it is kept in
+# state.toml and never printed or sent anywhere but Spotify.
+# Options: any name
+device_name = "streamrip"
+
+# -- Login --
+
+# Logging in needs a Spotify app of your own, made by a Premium account at
+# https://developer.spotify.com/dashboard. Give it this redirect URI exactly (use
+# 127.0.0.1, not localhost), tick "Web API" only, then run `streamrip login
+# spotify`. No client secret is needed. See docs/spotify.md.
+# Options: the redirect URI of that app
+redirect_uri = "http://127.0.0.1:9900/callback"
+
+# -- YouTube Music (the "youtube" backend, and the fallback) --
+
+# The file type. YouTube Music's best AAC stream is kept as it is; anything else
+# is re-encoded.
+# Options: "m4a" (AAC, with cover art), "mp3"
+audio_format = "m4a"
+
+# Bitrate for audio that has to be re-encoded.
+# Options: kbps, for example 128, 192, 256, 320
+audio_bitrate = 320
+
+# Accept an official music video when YouTube Music has no matching "song"
+# (some regions and connections only show videos). Off downloads exact song
+# matches only.
+# Options: true, false
+match_videos = true
+
+
+# -----------------------------------------------------------------------------
+# DATABASES: what was downloaded, and what failed
+# -----------------------------------------------------------------------------
 [database]
-# Create a database that contains all the track IDs downloaded so far
-# Any time a track logged in the database is requested, it is skipped
-# This can be disabled temporarily with the --no-db flag
+
+# Keep the IDs of the tracks you downloaded. A track in it is skipped when
+# asked for again. `--no-db` turns it off for one run.
+# Options: true, false
 downloads_enabled = true
-# Path to the downloads database 
+
+# Where that database is. Empty means next to this file.
+# Options: a file path, or empty
 downloads_path = ""
-# If a download fails, the item ID is stored here. Then, `streamrip repair` can be
-# called to retry the downloads
+
+# Keep the IDs of downloads that failed, so `streamrip repair` can retry them.
+# Options: true, false
 failed_downloads_enabled = true
+
+# Where that database is. Empty means next to this file.
+# Options: a file path, or empty
 failed_downloads_path = ""
 
-# Convert tracks to a codec after downloading them.
+
+# -----------------------------------------------------------------------------
+# CONVERSION: convert tracks after downloading
+# -----------------------------------------------------------------------------
 [conversion]
+
+# Off keeps every file as downloaded, which is the highest quality. Turn it on
+# for a smaller file or a device that needs another format: the options below
+# say what to convert to.
+# Options: true, false
 enabled = false
-# FLAC, ALAC, AIFF, OPUS, MP3, VORBIS, or AAC
+
+# What to convert to.
+# Options: "FLAC", "ALAC", "AIFF", "OPUS", "MP3", "VORBIS", "AAC"
 codec = "ALAC"
-# In Hz. Tracks are downsampled if their sampling rate is greater than this. 
-# Value of 48000 is recommended to maximize quality and minimize space
-sampling_rate = 48000
-# Only 16 and 24 are available. It is only applied when the bit depth is higher
-# than this value.
+
+# Files above this sampling rate are downsampled to it. The default leaves
+# everything as it is.
+# Options: 44100, 48000, 88200, 96000, 176400, 192000 (Hz)
+sampling_rate = 192000
+
+# Files with a higher bit depth are reduced to it.
+# Options: 16, 24
 bit_depth = 24
-# Only applicable for lossy codecs
+
+# Bitrate for the lossy codecs (OPUS, MP3, VORBIS, AAC).
+# Options: kbps, for example 128, 192, 256, 320
 lossy_bitrate = 320
 
-# Filters for downloading an artist's discography, from any source.
-# Set one to true to turn it on.
+
+# -----------------------------------------------------------------------------
+# ARTIST FILTERS: for downloading an artist's discography, from any source
+# -----------------------------------------------------------------------------
 [artist_filters]
+
 # Skip special editions (deluxe, anniversary, collector's, expanded), live
-# albums, demos, remixes and various-artists compilations
+# albums, demos, remixes and various-artists compilations.
+# Options: true, false
 extras = false
-# Of albums with the same title (ignoring anything in brackets), only
-# download the best quality one
+
+# Of albums with the same title (ignoring anything in brackets), keep only the
+# best quality one.
+# Options: true, false
 repeats = false
-# Skip singles (releases with only one track)
+
+# Skip singles (releases with one track).
+# Options: true, false
 non_albums = false
-# Skip albums credited to someone else, such as ones the artist only
-# features on
+
+# Skip albums credited to someone else, such as ones the artist only features
+# on.
+# Options: true, false
 features = false
-# Only download remastered albums
+
+# Only download remastered albums.
+# Options: true, false
 non_remaster = false
 
+
+# -----------------------------------------------------------------------------
+# ARTWORK
+# -----------------------------------------------------------------------------
 [artwork]
-# Write the image to the audio file
+
+# Write the cover into the audio file.
+# Options: true, false
 embed = true
-# The size of the artwork to embed. Options: thumbnail, small, large, original.
-# "original" images can be up to 30MB, and may fail embedding. 
-# Using "large" is recommended.
+
+# The size of the embedded cover. "original" can be up to 30 MB and may fail to
+# embed; "large" is recommended.
+# Options: "thumbnail", "small", "large", "original"
 embed_size = "large"
-# If this is set to a value > 0, max(width, height) of the embedded art will be set to this value in pixels
-# Proportions of the image will remain the same
+
+# Scale the embedded cover down until its longer side is this many pixels
+# (same proportions).
+# Options: a number of pixels, -1 (don't scale)
 embed_max_width = -1
-# Save the cover image at the highest quality as a seperate jpg file
+
+# Also save the cover as a separate jpg, at the highest quality.
+# Options: true, false
 save_artwork = true
-# If this is set to a value > 0, max(width, height) of the saved art will be set to this value in pixels
-# Proportions of the image will remain the same
+
+# Scale the saved cover down until its longer side is this many pixels.
+# Options: a number of pixels, -1 (don't scale)
 saved_max_width = -1
 
 
+# -----------------------------------------------------------------------------
+# METADATA: tags written to the files
+# -----------------------------------------------------------------------------
 [metadata]
-# Sets the value of the 'ALBUM' field in the metadata to the playlist's name. 
-# This is useful if your music library software organizes tracks based on album name.
+
+# For tracks of a playlist, set the ALBUM tag to the playlist's name, which
+# helps library software that groups by album.
+# Options: true, false
 set_playlist_to_album = true
-# If part of a playlist, sets the `tracknumber` field in the metadata to the track's 
-# position in the playlist instead of its position in its album
+
+# For tracks of a playlist, set the track number to the position in the
+# playlist instead of in the album.
+# Options: true, false
 renumber_playlist_tracks = true
-# The following metadata tags won't be applied
-# See https://github.com/nathom/streamrip/wiki/Metadata-Tag-Names for more info
+
+# Tags that are not written. Names: https://github.com/nathom/streamrip/wiki/Metadata-Tag-Names
+# Options: a list of tag names, for example ["comment", "genre"]
 exclude = []
-# When an album or playlist has both a clean and an explicit copy of the same
-# track, skip the clean one and only download the explicit copy. On by
-# default; it costs no extra API calls. Every track is looked up before the
-# first one downloads: on Tidal that takes no time, on other sources it delays
-# the first download a little.
+
+# When an album or playlist has a clean and an explicit copy of a track, skip
+# the clean one. Every track is looked up before the first download starts,
+# which delays it a little on sources other than Tidal.
+# Options: true, false
 prefer_explicit = true
-# The playlist tools ask MusicBrainz (musicbrainz.org, open and free) about
-# tracks they cannot find: it knows the other ISRCs of a recording. It is sent
-# the title and artist, or the ISRC, of those tracks only, one request a second.
+
+# Let the playlist tools ask MusicBrainz (open and free) about tracks they can't
+# find: it knows the other ISRCs of a recording. It is sent the ISRC, or the
+# title and artist, of those tracks only, one request a second.
+# Options: true, false
 musicbrainz = true
 
-# Changes the folder and file names generated by streamrip.
+
+# -----------------------------------------------------------------------------
+# FILEPATHS: folder and file names
+# -----------------------------------------------------------------------------
 [filepaths]
-# Create folders for single tracks within the downloads directory using the folder_format
-# template
+
+# Make a folder for single tracks too, using folder_format.
+# Options: true, false
 add_singles_to_folder = false
-# Available keys: "albumartist", "title", "year", "bit_depth", "sampling_rate",
-# "container", "id", "albumcomposer", "tracktotal", and "version" (edition)
+
+# The name of an album's folder.
+# Keys: {albumartist} {title} {year} {bit_depth} {sampling_rate} {container}
+#       {id} {albumcomposer} {tracktotal} {version} (the edition)
+# Options: text with those keys
 folder_format = "{albumartist} - {title} ({year}) [{container}] [{bit_depth}B-{sampling_rate}kHz]"
-# Available keys: "id", "tracknumber", "discnumber", "artist", "album",
-# "albumartist", "composer", "title", "albumcomposer", "explicit"
+
+# The name of a track's file.
+# Keys: {id} {tracknumber} {discnumber} {artist} {album} {albumartist}
+#       {composer} {title} {albumcomposer} {explicit}
+# Options: text with those keys
 track_format = "{tracknumber:02}. {artist} - {title}{explicit}"
-# Only allow printable ASCII characters in filenames.
+
+# Only allow printable ASCII characters in file names.
+# Options: true, false
 restrict_characters = false
-# Shorten track file names to this many characters (0: no limit). Names are
-# always shortened as far as the file system needs, whatever this is set to.
+
+# Shorten file names to this many characters. They are always shortened as far
+# as the file system needs, whatever this says.
+# Options: a number, 0 (no limit)
 truncate_to = 120
 
-# Last.fm playlists are downloaded by searching for the titles of the tracks
+
+# -----------------------------------------------------------------------------
+# LAST.FM: playlists are downloaded by searching for their track titles
+# -----------------------------------------------------------------------------
 [lastfm]
-# The source on which to search for the tracks.
+
+# The source to search on.
+# Options: "qobuz", "tidal", "deezer", "soundcloud", "spotify"
 source = "qobuz"
-# If no results were found with the primary source, the item is searched for 
-# on this one. Several, comma separated, are tried in turn: "tidal,deezer".
+
+# Where to search for what the source above doesn't have. Several are tried in
+# turn, comma separated: "tidal,deezer".
+# Options: one or more of the sources above, or empty
 fallback_source = ""
 
+
+# -----------------------------------------------------------------------------
+# CLI: the command line
+# -----------------------------------------------------------------------------
 [cli]
-# Show resolve, download progress bars
+
+# Show progress bars while resolving and downloading.
+# Options: true, false
 progress_bars = true
-# The maximum number of search results to show in the interactive menu
+
+# How many search results the interactive menu shows.
+# Options: a number
 max_search_results = 100
-# streamrip asks GitHub for a newer release before every command. Uncomment this
-# to stop that, for a machine without internet access or a script that runs often.
-# Setting STREAMRIP_NO_UPDATE_CHECK=1 in the environment does the same.
+
+# streamrip asks GitHub for a newer release before every command. Remove the #
+# to stop that (no internet, or a script that runs often). Setting
+# STREAMRIP_NO_UPDATE_CHECK=1 in the environment does the same.
+# Options: true, false
 # no_update_check = true

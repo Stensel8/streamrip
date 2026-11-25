@@ -183,11 +183,15 @@ isn't available in it. `--quality` sets the highest it asks for:
 
 | Quality | Audio                                        | Sources                   |
 | ------- | -------------------------------------------- | ------------------------- |
-| 0       | 128 kbps MP3 (Deezer), 256 kbps AAC (Tidal)  | Deezer, Tidal, Spotify    |
-| 1       | 320 kbps MP3 or AAC                          | Deezer, Tidal, Qobuz, Spotify |
-| 2       | 16 bit, 44.1 kHz (CD)                        | Deezer, Tidal, Qobuz, Spotify |
+| 0       | 128 kbps MP3 (Deezer), 256 kbps AAC (Tidal)  | Deezer, Tidal             |
+| 1       | 320 kbps MP3 or AAC                          | Deezer, Tidal, Qobuz      |
+| 2       | 16 bit, 44.1 kHz (CD)                        | Deezer, Tidal, Qobuz      |
 | 3       | 24 bit, ≤ 96 kHz (Qobuz), ≤ 192 kHz (Tidal)  | Tidal, Qobuz              |
 | 4       | 24 bit, ≤ 192 kHz                            | Qobuz                     |
+
+The defaults are the highest quality there is. To go lower, convert after
+downloading (`[conversion]` in the config). Spotify has no levels: it always
+comes in the best quality it has.
 
 ![searching Deezer and Qobuz, with the cover and details of each result](demo/search.avif)
 

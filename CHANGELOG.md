@@ -33,6 +33,9 @@ the same things, in the same sections.
 - feat: Spotify on Premium is downloaded from Spotify itself, as lossless FLAC
   (24-bit, 44.1 kHz), with YouTube Music as the fallback, and one Spotify app
   and login does downloads and playlists
+- change: every default is the highest quality there is; to go lower, use
+  `[conversion]` (it no longer downsamples by default)
+- change: the config file is easier to read, with the choices of each option
 - change: one wheel, no extras: `web`, `browser` and `ffmpeg` are part of it
 - fix: a Qobuz hi-res download that breaks off is resumed, or goes one
   lossless step lower
