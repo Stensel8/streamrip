@@ -349,17 +349,16 @@ class Track(Media):
         ):
             return False
         self._fallback_used = True
-        tier = getattr(self.config.session, self.client.source).quality
-        self._fallback_task = asyncio.ensure_future(
-            self._re_download_from_youtube(tier)
-        )
+        self._fallback_task = asyncio.ensure_future(self._re_download_from_youtube())
         return True
 
-    async def _re_download_from_youtube(self, tier: int) -> None:
+    async def _re_download_from_youtube(self) -> None:
         """Swap this track's downloadable for the one the youtube backend
         resolves. The download loop continues with it on its next attempt."""
         try:
-            fresh = await self.client.get_downloadable(self.meta.info.id, tier)
+            # Not get_downloadable: that asks Soloist again unless Spotify
+            # refused the track, and a sink or a busy session fails just the same.
+            fresh = await self.client.youtube_downloadable(self.meta.info.id)
         except Exception as e:
             logger.debug(
                 "Could not re-resolve '%s' for the youtube backend: %s: %s",

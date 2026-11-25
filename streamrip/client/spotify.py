@@ -806,6 +806,16 @@ class SpotifyClient(Client):
             return SoloistDownloadable(
                 backend, plain_id(item_id), track.get("duration_ms") or 0, self.source
             )
+        return await self._youtube_downloadable(track)
+
+    async def youtube_downloadable(self, item_id: str):
+        """The track's best match on YouTube Music, whatever the backend: the
+        fallback when Spotify's own audio failed for any reason."""
+        return await self._youtube_downloadable(
+            await self._get_track(plain_id(item_id))
+        )
+
+    async def _youtube_downloadable(self, track: dict):
         album = track.get("album") or {}
         wanted = MatchTrack(
             title=track.get("name") or "",

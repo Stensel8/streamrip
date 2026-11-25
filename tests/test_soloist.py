@@ -188,6 +188,18 @@ async def test_a_track_spotify_refused_to_play_goes_to_youtube_music(make_client
     assert isinstance(downloadable, YtDlpDownloadable)
 
 
+async def test_the_fallback_is_youtube_music_for_a_track_spotify_did_not_refuse(
+    make_client,
+):
+    # The sink or a busy session failed, not the track: get_downloadable plays it again.
+    client = make_client()
+    client._soloist_backend = FakeBackend()
+    client._tracks[TRACK] = track_obj()
+    client.matcher = SimpleNamespace(find=AsyncMock(return_value=YOUTUBE))
+
+    assert isinstance(await client.youtube_downloadable(TRACK), YtDlpDownloadable)
+
+
 async def test_the_download_plays_the_track_into_the_file(tmp_path):
     downloadable = SoloistDownloadable(FakeBackend(), TRACK, 135_000)
 
@@ -598,7 +610,7 @@ def refused_track(monkeypatch, tmp_path):
             else lambda path, callback: path.write_bytes(b"audio")
         )
         client = MagicMock(source=source)
-        client.get_downloadable = AsyncMock(return_value=youtube)
+        client.youtube_downloadable = AsyncMock(return_value=youtube)
         track = Track(
             meta,
             refused,
@@ -614,12 +626,15 @@ def refused_track(monkeypatch, tmp_path):
     return make
 
 
-async def test_a_refused_track_is_downloaded_again_from_youtube_music(refused_track):
+async def test_a_track_soloist_fails_is_downloaded_again_from_youtube_music(
+    refused_track,
+):
+    # Whatever failed (a refusal, the sink, a busy session): not Soloist again.
     track, client, youtube = refused_track()
 
     await track.download()
 
-    client.get_downloadable.assert_awaited_once_with("1", 0)
+    client.youtube_downloadable.assert_awaited_once_with("1")
     assert track.downloadable is youtube
 
 
@@ -629,7 +644,7 @@ async def test_the_fallback_happens_once(refused_track):
     with pytest.raises(track_module.TrackDownloadFailedError):
         await track.download()
 
-    assert client.get_downloadable.await_count == 1
+    assert client.youtube_downloadable.await_count == 1
 
 
 @pytest.mark.parametrize(
@@ -643,7 +658,7 @@ async def test_the_fallback_is_for_the_spotify_backend_only(refused_track, optio
     with pytest.raises(track_module.TrackDownloadFailedError):
         await track.download()
 
-    client.get_downloadable.assert_not_awaited()
+    client.youtube_downloadable.assert_not_awaited()
 
 
 @pytest.fixture
