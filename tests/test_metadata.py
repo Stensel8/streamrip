@@ -21,7 +21,7 @@ from streamrip.metadata import (
     tag_file,
 )
 from streamrip.metadata.search_results import SearchResults
-from streamrip.metadata.util import qobuz_artists
+from streamrip.metadata.util import edition_of, gtin13, qobuz_artists
 from streamrip.rip import cover_preview
 
 TESTS = Path(__file__).parent
@@ -88,6 +88,41 @@ def test_a_qobuz_description_is_tagged_without_its_html():
     html = "<p>Gone are the times <em>Villains</em> &amp; more.</p>"
     album = AlbumMetadata.from_qobuz(QOBUZ_ALBUM | {"description": html})
     assert album.description == "Gone are the times Villains & more."
+
+
+@pytest.mark.parametrize(
+    "code",
+    ["0093624834892", "093624834892", "00093624834892", " 0936-2483-4892 "],
+    ids=["13 digits", "a UPC", "a GTIN-14", "with spaces and dashes"],
+)
+def test_one_product_has_one_barcode_whichever_way_a_service_writes_it(code):
+    assert gtin13(code) == "0093624834892"
+
+
+@pytest.mark.parametrize(
+    ("title", "edition"),
+    [
+        ("From Zero (Deluxe Edition)", "Deluxe Edition"),
+        ("Hybrid Theory (Bonus Edition)", "Bonus Edition"),
+        ("Abbey Road [2019 Remaster]", "2019 Remaster"),
+        ("From Zero", None),
+        ("Live (At The Edition Hall) EP", None),  # not at the end
+        ("Numb (Radio Edit)", None),
+    ],
+)
+def test_the_edition_is_read_from_the_end_of_a_title(title, edition):
+    assert edition_of(title) == edition
+
+
+def test_a_credit_in_capitals_is_spelt_as_the_services_artist_is():
+    # Qobuz credits "LINKIN PARK, MainArtist" for an artist it calls Linkin Park.
+    track = QOBUZ_TRACK | {
+        "performer": {"name": "Linkin Park"},
+        "performers": "LINKIN PARK, MainArtist, Writer - BRAD DELSON, Guitar",
+    }
+    album = AlbumMetadata.from_qobuz(QOBUZ_TRACK["album"])
+
+    assert TrackMetadata.from_qobuz(album, track).artist == "Linkin Park"
 
 
 def test_qobuz_track():
@@ -178,7 +213,7 @@ def test_tidal_album_and_track():
 )
 def test_tidal_bpm_replaygain_key_barcode_and_release_type(note, scale, key):
     album = AlbumMetadata.from_tidal(_tidal_album(upc="00602508053610", type="EP"))
-    assert (album.barcode, album.releasetype) == ("00602508053610", "ep")
+    assert (album.barcode, album.releasetype) == ("0602508053610", "ep")
     t = TrackMetadata.from_tidal(
         album,
         {
@@ -268,7 +303,7 @@ def test_deezer_bpm_barcode_and_release_type(bpm, expected):
             **DEEZER_COVERS,
         }
     )
-    assert (album.barcode, album.releasetype) == ("602445964840", "compilation")
+    assert (album.barcode, album.releasetype) == ("0602445964840", "compilation")
     resp = {"id": 8, "title": "Song", "track_position": 1, "disk_number": 1}
     assert TrackMetadata.from_deezer(album, resp | {"bpm": bpm}).bpm == expected
 

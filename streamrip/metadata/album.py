@@ -8,7 +8,9 @@ from .covers import Covers
 from .util import (
     SOURCES,
     deezer_artists,
+    edition_of,
     get_quality_id,
+    gtin13,
     plain_text,
     release_type,
     safe_get,
@@ -227,7 +229,7 @@ class AlbumMetadata:
             description=plain_text(resp.get("description")) or "",
             version=version,
             albumartists=artists or None,
-            barcode=resp.get("upc"),
+            barcode=gtin13(resp.get("upc")),
             releasetype=release_type(resp.get("release_type")),
         )
 
@@ -242,9 +244,10 @@ class AlbumMetadata:
             **_deezer_quality(resp.get("stream_quality", 2)),
         )
         artists = deezer_artists(resp)
+        title = resp.get("title") or "Unknown Album"
         return cls(
             info,
-            resp.get("title") or "Unknown Album",
+            title,
             ", ".join(artists),
             _year(date),
             genre=[
@@ -254,8 +257,9 @@ class AlbumMetadata:
             tracktotal=resp.get("track_total") or resp.get("nb_tracks") or 0,
             disctotal=resp["tracks"][-1]["disk_number"] if resp["tracks"] else 1,
             date=date,
+            version=edition_of(title),
             albumartists=artists,
-            barcode=resp.get("upc"),
+            barcode=gtin13(resp.get("upc")),
             releasetype=release_type(resp.get("record_type")),
         )
 
@@ -329,9 +333,10 @@ class AlbumMetadata:
             container=resp.get("container") or "AAC",
             label=resp.get("label"),
         )
+        title = (resp.get("name") or "Unknown Album").strip()
         return cls(
             info,
-            (resp.get("name") or "Unknown Album").strip(),
+            title,
             ", ".join(artists) or "Unknown Artist",
             _year(date),
             genre=list(resp.get("genres") or []),
@@ -342,8 +347,9 @@ class AlbumMetadata:
             disctotal=max([*discs, resp.get("_disc_number") or 1]),
             copyright=_spotify_copyright(resp.get("copyrights")),
             date=date,
+            version=edition_of(title),
             albumartists=artists or None,
-            barcode=(resp.get("external_ids") or {}).get("upc"),
+            barcode=gtin13((resp.get("external_ids") or {}).get("upc")),
             releasetype=release_type(resp.get("album_type")),
         )
 
@@ -376,9 +382,10 @@ class AlbumMetadata:
             sampling_rate=sampling_rate,
             bit_depth=bit_depth,
         )
+        title = resp.get("title") or "Unknown Album"
         return cls(
             info,
-            resp.get("title") or "Unknown Album",
+            title,
             ", ".join(artists)
             or safe_get(resp, "artist", "name", default="Unknown Artist"),
             _year(date),
@@ -388,8 +395,9 @@ class AlbumMetadata:
             disctotal=resp.get("numberOfVolumes", 1),
             copyright=resp.get("copyright") or "",
             date=date,
+            version=edition_of(title),
             albumartists=artists or None,
-            barcode=resp.get("upc"),
+            barcode=gtin13(resp.get("upc")),
             releasetype=release_type(resp.get("type")),
         )
 

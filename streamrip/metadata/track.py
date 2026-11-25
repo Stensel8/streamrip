@@ -1,7 +1,14 @@
 import logging
 from dataclasses import dataclass
 
-from .util import SOURCES, deezer_artists, qobuz_artists, qobuz_credited, safe_get
+from .util import (
+    SOURCES,
+    deezer_artists,
+    match_case,
+    qobuz_artists,
+    qobuz_credited,
+    safe_get,
+)
 lazy from .album import AlbumMetadata
 
 logger = logging.getLogger("streamrip")
@@ -66,7 +73,10 @@ class TrackMetadata:
             title = f"{title} ({version})"
         if work and work not in title:
             title = f"{work}: {title}"
-        artists = qobuz_artists(resp)
+        artists = match_case(
+            qobuz_artists(resp),
+            [safe_get(resp, "performer", "name"), *(album.albumartists or [])],
+        )
         composers = qobuz_credited(resp, "composer", "composerlyricist") or [
             name for name in [safe_get(resp, "composer", "name")] if name
         ]

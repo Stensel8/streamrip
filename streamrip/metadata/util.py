@@ -83,6 +83,34 @@ def qobuz_artists(resp: dict) -> list[str]:
     return list(dict.fromkeys(main + featured))
 
 
+def match_case(names: list[str], known: list[str | None]) -> list[str]:
+    """`names`, each spelt as `known` spells it where they differ only in case:
+    Qobuz's credits shout (LINKIN PARK) where its artist is Linkin Park."""
+    spelled = {k.casefold(): k for k in known if k}
+    return list(dict.fromkeys(spelled.get(n.casefold(), n) for n in names))
+
+
+_EDITION = re.compile(
+    r"[(\[]\s*([^()\[\]]*?(?:edition|version|remaster(?:ed)?|deluxe|expanded|anniversary)"
+    r"[^()\[\]]*?)\s*[)\]]\s*$",
+    re.IGNORECASE,
+)
+
+
+def edition_of(title: str | None) -> str | None:
+    """The edition a title names at its end ("From Zero (Deluxe Edition)" is a
+    Deluxe Edition), for the sources that do not list one apart as Qobuz does."""
+    found = _EDITION.search(title or "")
+    return found[1] if found else None
+
+
+def gtin13(code) -> str | None:
+    """A barcode as the 13 digits of an EAN: the services send the same product
+    as 13 digits (Qobuz), 12 (a UPC) or 14 (a GTIN-14, with zeros before it)."""
+    digits = re.sub(r"\D", "", str(code or "")).lstrip("0")
+    return digits.zfill(13) if digits else None
+
+
 def plain_text(text: str | None) -> str | None:
     """A description without Tidal's [wimpLink] or HTML markup."""
     text = re.sub(r"<br\s*/?>|</?p>", " ", text or "")  # line breaks
