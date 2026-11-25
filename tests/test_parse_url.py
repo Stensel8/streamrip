@@ -78,6 +78,7 @@ def test_soundcloud_urls_resolve_as_the_plain_host(url):
     [
         "https://dzr.page.link/qfomS8twgYA35mgQ7",  # the old Firebase links
         "https://link.deezer.com/s/30hqmqELWXacckhxPdGqX",
+        "http://link.deezer.com/s/30hqmqELWXacckhxPdGqX",  # as some apps share it
     ],
 )
 def test_deezer_share_links(url):
@@ -98,6 +99,38 @@ async def test_a_deezer_share_link_becomes_the_album_it_leads_to():
 
     assert pending.__class__.__name__ == "PendingAlbum"
     assert pending.id == "12345"
+
+
+@pytest.mark.parametrize(
+    ("short", "landed", "page", "item_id"),
+    [
+        (
+            "https://on.soundcloud.com/AbCd",
+            "https://soundcloud.com/a/song?si=1",
+            "",
+            "7",
+        ),
+        # Spotify's lands on a page of its own, which names the real link.
+        (
+            "https://spotify.link/AbCd",
+            "https://spotify.app.link/AbCd",
+            '<a href="https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT?si=x">',
+            "4cOdK2wGLETKBW3PvgPWqT",
+        ),
+    ],
+)
+async def test_a_short_link_is_followed_to_what_it_leads_to(
+    short, landed, page, item_id
+):
+    response = MagicMock(url=landed)
+    response.text = AsyncMock(return_value=page)
+    client = MagicMock(source=parse_url(short).source)
+    client.session.get.return_value.__aenter__.return_value = response
+    client.resolve_url = AsyncMock(return_value={"kind": "track", "id": 7})
+
+    pending = await parse_url(short).into_pending(client, MagicMock(), MagicMock())
+
+    assert pending.id == item_id
 
 
 @pytest.mark.parametrize(

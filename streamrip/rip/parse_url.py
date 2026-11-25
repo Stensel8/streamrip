@@ -148,7 +148,7 @@ class DeezerDynamicURL(URL):
     # Share links: the old Firebase ones (deezer.page.link / dzr.page.link)
     # and the current link.deezer.com/s/... ones (upstream #865, #818).
     dynamic_link_re = re.compile(
-        r"https://(?:(?:deezer|dzr)\.page\.link|link\.deezer\.com/s)/[\w-]+"
+        r"https?://(?:(?:deezer|dzr)\.page\.link|link\.deezer\.com/s)/[\w-]+"
     )
 
     regex = dynamic_link_re
@@ -265,6 +265,42 @@ class SpotifyURL(URL):
         return pending_item(media_type, item_id, client, config, db)
 
 
+class ShortURL(URL):
+    """A share link that only leads on (spotify.link, on.soundcloud.com): it
+    is followed, and what it leads to is read as the link it is."""
+
+    regex = re.compile(
+        r"https?://(?:(spotify)\.link|on\.(soundcloud)\.com|(soundcloud)\.app\.goo\.gl)/[\w-]+"
+    )
+    # Where it can lead: the page it lands on, or a link in that page (Spotify's
+    # lands on a page of its own that names the open.spotify.com one).
+    _leads_to = re.compile(
+        r"https://(?:open\.spotify|(?:www\.|m\.)?soundcloud)\.com/[^\s\"'<>]+"
+    )
+
+    @classmethod
+    def from_str(cls, url: str) -> URL | None:
+        match = cls.regex.match(url)
+        return None if match is None else cls(match, next(filter(None, match.groups())))
+
+    async def into_pending(
+        self, client: Client, config: Config, db: Database
+    ) -> Pending:
+        """Follow the link, and make pending what it leads to."""
+        async with client.session.get(self.match.group(0)) as resp:
+            places = [str(resp.url), await resp.text()]
+        for place in places:
+            for found in self._leads_to.findall(place):
+                url = parse_url(found)
+                if (
+                    url is not None
+                    and not isinstance(url, ShortURL)
+                    and url.source == self.source
+                ):
+                    return await url.into_pending(client, config, db)
+        raise ValueError(f"Unable to follow the share link {self.match.group(0)}.")
+
+
 def parse_url(url: str) -> URL | None:
     """The URL type that matches url, or None if none does."""
     url = url.strip()
@@ -276,5 +312,6 @@ def parse_url(url: str) -> URL | None:
         DeezerDynamicURL,
         DeezerFavoriteURL,
         TidalFavoriteURL,
+        ShortURL,
     )
     return next(filter(None, (kind.from_str(url) for kind in kinds)), None)
