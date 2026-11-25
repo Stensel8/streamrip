@@ -3,12 +3,14 @@
 import io
 import json
 import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
 from mutagen.flac import FLAC
 from mutagen.id3 import ID3
 from mutagen.mp4 import MP4
+from mutagen.oggopus import OggOpus
 from PIL import Image
 
 from streamrip.metadata import (
@@ -109,6 +111,7 @@ def test_one_product_has_one_barcode_whichever_way_a_service_writes_it(code):
         ("Live (At The Edition Hall) EP", None),  # not at the end
         ("Numb (Radio Edit)", None),
         ("Act (Expedition)", None),  # "edition" inside a word
+        ("Hits (Remix Versions)", "Remix Versions"),  # more than one
     ],
 )
 def test_the_edition_is_read_from_the_end_of_a_title(title, edition):
@@ -124,6 +127,21 @@ def test_a_credit_in_capitals_is_spelt_as_the_services_artist_is():
     album = AlbumMetadata.from_qobuz(QOBUZ_TRACK["album"])
 
     assert TrackMetadata.from_qobuz(album, track).artist == "Linkin Park"
+
+
+@pytest.mark.parametrize(
+    ("title", "version", "expected"),
+    [
+        ("Demons", "Demo", "Demons (Demo)"),  # not a word of the name
+        ("Live Wire", "Live", "Live Wire (Live)"),
+        ("Song (Live)", "live", "Song (Live)"),
+        ("Song - Live", "Live", "Song - Live"),
+    ],
+)
+def test_a_qobuz_version_is_added_unless_the_title_says_it(title, version, expected):
+    album = AlbumMetadata.from_qobuz(QOBUZ_TRACK["album"])
+    track = QOBUZ_TRACK | {"title": title, "version": version}
+    assert TrackMetadata.from_qobuz(album, track).title == expected
 
 
 def test_qobuz_track():
@@ -663,6 +681,25 @@ async def test_tag_m4a(sample_metadata, tmp_path):
     assert bytes(tags["----:com.apple.iTunes:ISRC"][0]) == b"USABC1234567"
     assert "\xa9lyr" not in tags
     assert len(tags["covr"]) == 1
+
+
+@pytest.fixture
+def opus_path(tmp_path) -> Path:
+    path = tmp_path / "track.opus"
+    args = ["-f", "lavfi", "-i", "anullsrc=d=0.2", "-c:a", "libopus", str(path)]
+    subprocess.run(["ffmpeg", "-v", "error", *args], check=True)
+    return path
+
+
+async def test_tag_opus(sample_metadata, opus_path):
+    # A file converted to OPUS used to keep ffmpeg's one "A;B" artist.
+    path = opus_path
+    sample_metadata.artists = ["A", "B"]
+    await tag_file(path, sample_metadata, TEST_COVER)
+    tags = OggOpus(path)
+    assert tags["artist"] == ["A", "B"]
+    assert "encoder" not in tags
+    assert len(tags["metadata_block_picture"]) == 1
 
 
 async def test_tag_mp3(sample_metadata, tmp_path):

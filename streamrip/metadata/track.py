@@ -1,4 +1,5 @@
 import logging
+import re
 from dataclasses import dataclass
 
 from .util import (
@@ -12,6 +13,9 @@ from .util import (
 lazy from .album import AlbumMetadata
 
 logger = logging.getLogger("streamrip")
+
+# What a title says beside the song's name: its brackets, and what follows " - ".
+_ASIDE = re.compile(r"[(\[]([^)\]]*)[)\]]|\s-\s(.+)$")
 
 
 def _key(note: str | None, scale: str | None) -> str | None:
@@ -69,7 +73,9 @@ class TrackMetadata:
             return None
         title = resp["title"].strip()
         version, work = resp.get("version"), resp.get("work")
-        if version and version not in title:
+        # Not just a word of the name: "Demo" is in "Demons", "Live" in "Live Wire".
+        aside = " ".join("".join(groups) for groups in _ASIDE.findall(title))
+        if version and version.casefold() not in aside.casefold():
             title = f"{title} ({version})"
         if work and work not in title:
             title = f"{work}: {title}"

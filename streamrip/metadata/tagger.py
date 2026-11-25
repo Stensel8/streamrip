@@ -14,6 +14,7 @@ from mutagen.id3 import (
     ID3NoHeaderError,
 )
 from mutagen.mp4 import MP4, MP4Cover
+from mutagen.oggopus import OggOpus
 from mutagen.oggvorbis import OggVorbis
 lazy from PIL import Image
 
@@ -183,6 +184,7 @@ class Container(Enum):
     MP3 = 3
     AIFF = 4
     OGG = 5
+    OPUS = 6
 
     def get_mutagen_class(self, path: Path):
         """Open the file with this container's mutagen class.
@@ -206,6 +208,8 @@ class Container(Enum):
                 return audio.tags
             case Container.OGG:
                 return OggVorbis(path)
+            case Container.OPUS:
+                return OggOpus(path)
 
     def get_tag_pairs(self, meta, exclude=()) -> list[tuple]:
         """Return this container's (key, value) tag pairs for meta."""
@@ -213,7 +217,7 @@ class Container(Enum):
         # "albumartist", ...); it used to be ignored entirely (upstream #850).
         values = {k: v for k, v in _tag_values(meta).items() if k not in exclude}
         match self:
-            case Container.FLAC | Container.OGG:
+            case Container.FLAC | Container.OGG | Container.OPUS:
                 return [(k.upper(), _flac_value(k, v)) for k, v in values.items()]
             case Container.MP3 | Container.AIFF:
                 return [
@@ -233,7 +237,7 @@ class Container(Enum):
         ffmpeg remux left behind) before this container's own set replaces them.
         """
         match self:
-            case Container.FLAC | Container.AAC | Container.OGG:
+            case Container.FLAC | Container.AAC | Container.OGG | Container.OPUS:
                 # A file with no tag block at all (the FLACs from Tidal and
                 # Qobuz in issue #91) has none to clear: tag_audio adds one.
                 if audio.tags is not None:
@@ -252,7 +256,7 @@ class Container(Enum):
             raise ValueError("Cover art too big for FLAC")
         data = cover_path.read_bytes()
         match self:
-            case Container.FLAC | Container.OGG:
+            case Container.FLAC | Container.OGG | Container.OPUS:
                 # Both store the same FLAC Picture blob; OGG keeps its base64
                 # in a METADATA_BLOCK_PICTURE Vorbis comment (what converter.py
                 # writes for the OGG files it re-encodes).
@@ -282,7 +286,7 @@ class Container(Enum):
     def save_audio(self, audio, path):
         """Write the tagged audio object back to path."""
         match self:
-            case Container.FLAC | Container.AAC | Container.OGG:
+            case Container.FLAC | Container.AAC | Container.OGG | Container.OPUS:
                 audio.save()
             case Container.MP3:
                 # ID3v2.3 for the widest player support. This used to pass the
@@ -290,6 +294,9 @@ class Container(Enum):
                 audio.update_to_v23()
                 audio.save(path, v2_version=3)
             case Container.AIFF:
+                # v2.4, as mutagen saves AIFF: the year's frame (TYER) goes with it,
+                # or TagLib reads no year.
+                audio.update_to_v24()
                 audio.save(path)
 
 
@@ -301,6 +308,7 @@ EXTENSION_CONTAINERS = frozendict(
         "aiff": Container.AIFF,
         "aif": Container.AIFF,
         "ogg": Container.OGG,
+        "opus": Container.OPUS,
     }
 )
 # Extensions tag_file() can write to (others keep what ffmpeg copied).

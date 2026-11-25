@@ -118,7 +118,7 @@ def test_album_folder(settings, artist, expected):
 
 @pytest.mark.parametrize(
     ("restrict", "folder"),
-    [(False, "/music/Björk - Homogénic"), (True, "/music/Bjrk - Homognic")],
+    [(False, "/music/Björk - Homogénic"), (True, "/music/Bjork - Homogenic")],
 )
 def test_album_folder_follows_restrict_characters(restrict, folder):
     # Singles built their album folder without it, so with it on they landed
@@ -147,6 +147,16 @@ def test_sanitize_filename(name, expected):
     # The same names the pathvalidate streamrip used before made: an existing
     # library must not change.
     assert sanitize_filename(name) == expected
+
+
+@pytest.mark.parametrize("name", ["...And Justice for All", ".5: The Gray Chapter"])
+def test_a_name_makes_no_hidden_folder(name):
+    assert not clean_filename(name).startswith(".")
+
+
+def test_a_long_song_and_its_lyrics_keep_one_stem():
+    stem = "a" * 300  # over the budget
+    assert fit_filename(stem, "flac")[:-5] == fit_filename(stem, "lrc")[:-4]
 
 
 @pytest.mark.parametrize(

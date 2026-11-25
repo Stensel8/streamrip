@@ -1,5 +1,6 @@
 import os
 import re
+import unicodedata
 from pathlib import Path
 from string import printable
 
@@ -59,8 +60,11 @@ def clean_filename(fn: str, restrict: bool = False) -> str:
     if restrict:
         # Before sanitizing, which then covers what is left: "CON★" would be
         # "CON", a device name on Windows, and "Love ♥" end in a space.
-        fn = "".join(c for c in fn if c in ALLOWED_CHARS)
-    return truncate_str(sanitize_filename(fn))
+        # Decomposed first, so "Björk" keeps its o.
+        fn = "".join(c for c in unicodedata.normalize("NFKD", fn) if c in ALLOWED_CHARS)
+    name = sanitize_filename(fn)
+    # "...And Justice for All" would be a hidden folder.
+    return truncate_str(name.lstrip(".") or name)
 
 
 def clean_filepath(fn: str, restrict: bool = False) -> Path:
@@ -107,7 +111,8 @@ def fit_filename(stem: str, extension: str) -> str:
     can't hold leaves it, or "." or "..") becomes "Unknown": ".flac" or
     "..flac" would be a hidden file without an extension.
     """
-    budget = MAX_COMPONENT_BYTES - len(extension.encode()) - 1
+    # One budget for every extension: a song's .lrc must keep the song's stem.
+    budget = MAX_COMPONENT_BYTES - max(len(extension.encode()) + 1, len(".flac"))
     stem = truncate_str(stem, budget)
     if stem in {"", ".", ".."}:
         stem = "Unknown"

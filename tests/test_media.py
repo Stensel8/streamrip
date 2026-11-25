@@ -841,7 +841,7 @@ def test_tracks_uploaded_to_deezer_are_left_out_of_a_playlist():
 
 
 @pytest.mark.parametrize(
-    ("restrict", "folder"), [(False, "/music/Café  Mix"), (True, "/music/Caf  Mix")]
+    ("restrict", "folder"), [(False, "/music/Café  Mix"), (True, "/music/Cafe  Mix")]
 )
 def test_a_playlist_folder_is_one_folder(restrict, folder):
     config = Config.defaults()
