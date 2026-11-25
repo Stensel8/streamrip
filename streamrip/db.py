@@ -4,6 +4,7 @@ import logging
 import sqlite3
 from contextlib import closing, contextmanager
 from dataclasses import dataclass
+from pathlib import Path
 lazy from collections.abc import Generator
 
 logger = logging.getLogger("streamrip")
@@ -64,8 +65,11 @@ class DatabaseBase:
     constraints: tuple[str, ...] = ()
 
     def __init__(self, path: str):
-        """The table in the database file at path, made if it isn't there."""
+        """The table in the database file at path; the file and its folder are
+        made if they aren't there (a config copied to another machine)."""
         self.path = path
+        if path != ":memory:":
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
         self.create()
 
     @contextmanager

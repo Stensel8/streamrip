@@ -80,3 +80,15 @@ def test_a_failure_is_one_row_per_source(database):
 
     database.forget_failed("tidal", "track", "42")
     assert database.failed.all() == [("qobuz", "track", "42")]
+
+
+def test_a_database_in_a_folder_that_is_not_there_makes_the_folder(tmp_path):
+    # A config copied to another machine, or into a container, points at the
+    # old one's folder.
+    path = tmp_path / "home" / "someone" / ".config" / "streamrip" / "downloads.db"
+
+    database = db.Downloads(str(path))
+    database.add(("an-id",))
+
+    assert path.is_file()
+    assert database.contains(id="an-id")
