@@ -68,7 +68,7 @@ dev = [
   "pytest-mock==3.17.0",
   "pytest-asyncio==1.5.0",
   # Fakes the Spotify and Tidal APIs of the playlist tools.
-  "responses>=0.26",
+  "responses==0.26.3",
 ]
 
 [tool.pytest.ini_options]
