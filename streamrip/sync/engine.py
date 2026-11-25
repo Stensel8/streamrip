@@ -55,9 +55,12 @@ class Step:
 type Progress = Callable[[Step], None]
 
 
-def remaining(done: int, total: int | None, elapsed: float) -> float | None:
-    """Seconds still to go at the pace so far, once there is a pace to go by."""
-    if total is None or done < 3 or elapsed < 2 or done >= total:
+def remaining(
+    done: float, total: float | None, elapsed: float, least: float = 3
+) -> float | None:
+    """Seconds still to go at the pace so far, once there is a pace to go by
+    (`least` done)."""
+    if total is None or done < least or elapsed < 2 or done >= total:
         return None
     return elapsed / done * (total - done)
 

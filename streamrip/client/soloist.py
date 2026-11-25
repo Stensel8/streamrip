@@ -31,6 +31,7 @@ youtube backend instead (a NonStreamableError, which the track's fallback
 turns into a YouTube Music download).
 """
 
+import asyncio
 import contextlib
 import logging
 import os
@@ -65,6 +66,9 @@ BUILDS = "https://soloist-builds.spotifycdn.com/"
 PLAYING_WAIT = 90.0
 # Past the track's own length: startup and the sink's last frames on top.
 PLAY_MARGIN = 60.0
+# The share of the progress bar that playing fills: the rest is the encode and
+# the check at the end, which take a while for a long track.
+PLAY_SHARE = 0.95
 # The sink Soloist renders into and streamrip records, one per machine. It runs
 # at the rate Spotify streams at (its lossless is up to 24-bit/44.1 kHz), as
 # does Soloist's stream and the recording, so nothing is resampled on the way.
@@ -95,6 +99,7 @@ _LOGGED_IN = re.compile(r"logged in as (\S+)")
 # What it plays, said by its verbose log ("codec: flac", "bitrate: 700000 bits/s").
 _CODEC = re.compile(r"\bcodec: (\w+)")
 _BITRATE = re.compile(r"\bbitrate: (\d+) bits/s")
+_TITLE = re.compile(r'\bplaying \S+ "(.*)" by ')
 # A line of that verbose log ("08:40:36.225 I [f:347 ] ..."), but not a warning
 # or an error: only those are worth saying when a run fails.
 _VERBOSE = re.compile(r"^\d\d:\d\d:\d\d\.\d+ [IDT] \[")
@@ -235,6 +240,9 @@ class SoloistBackend:
         # device at a time, Soloist takes one session, and the recordings
         # share one sink. The tracks of an album wait here for their turn.
         self._play_lock = threading.Lock()
+        # The same line, for the downloads on the event loop: a track waiting
+        # here has no progress row and takes none of the download slots.
+        self.turn = asyncio.Lock()
 
     @property
     def supported(self) -> bool:
@@ -581,8 +589,10 @@ class SoloistBackend:
         if codec == "flac":
             return
         kbps = next((int(m[1]) // 1000 for x in lines if (m := _BITRATE.search(x))), 0)
+        title = next((m[1] for line in lines if (m := _TITLE.search(line))), "a track")
         logger.warning(
-            "Spotify played this track as %s%s, not lossless: the FLAC holds that",
+            "Spotify played '%s' as %s%s, not lossless: the FLAC holds that",
+            title,
             codec or "an unknown format",
             f" at {kbps} kbps" if kbps else "",
         )
@@ -611,6 +621,10 @@ class SoloistBackend:
         threading.Thread(target=read, daemon=True).start()
         lines: list[str] = []
         t_started = None
+        # The position it said last, and when: it says one every 10 s, and the
+        # progress moves on with the clock in between (the play is real time).
+        position, seen_at = 0.0, None
+        reported = 0
         while True:
             line = None
             with contextlib.suppress(queue.Empty):
@@ -620,9 +634,15 @@ class SoloistBackend:
                 lines.append(line)
                 if t_started is None and is_playing_line(line, uri):
                     t_started = time.monotonic() - (line_position_s(line) or 0.0)
-                elif (pos := line_position_s(line)) is not None and estimate:
-                    report(int(min(1.0, pos / max(duration_s, 1.0)) * estimate))
+                if (pos := line_position_s(line)) is not None:
+                    position, seen_at = pos, time.monotonic()
             now = time.monotonic()
+            if seen_at is not None and estimate:
+                played = min(position + now - seen_at, duration_s)
+                done = int(played / max(duration_s, 1.0) * estimate * PLAY_SHARE)
+                if done > reported:  # a progress bar advances by what is new
+                    report(done - reported)
+                    reported = done
             if player.poll() is not None and pending.empty():
                 break
             if t_started is None and now >= not_started_until:

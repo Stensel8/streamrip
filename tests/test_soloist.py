@@ -6,7 +6,7 @@ import shutil
 import subprocess
 import sys
 import time
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from time import sleep as real_sleep
 from types import SimpleNamespace
@@ -92,6 +92,8 @@ async def make_client():
 
 class FakeBackend:
     """A SoloistBackend that plays at once, and writes the uri as the audio."""
+
+    turn = nullcontext()
 
     def __init__(self, refused=()):
         self.refused = set(refused)
@@ -310,7 +312,7 @@ def backend(monkeypatch):
 def play(backend, monkeypatch, tmp_path):
     """Plays a track on the backend; the players are given in attempt order."""
 
-    def play(*players):
+    def play(*players, report=lambda n: None):
         players = iter(players)
 
         def start_cmd(cmd, quiet=False):
@@ -320,7 +322,7 @@ def play(backend, monkeypatch, tmp_path):
             return next(players)
 
         monkeypatch.setattr(soloist, "start_cmd", start_cmd)
-        backend.play_and_capture(URI, 135.0, tmp_path / "track.flac", lambda n: None)
+        backend.play_and_capture(URI, 135.0, tmp_path / "track.flac", report)
 
     return play
 
@@ -335,7 +337,7 @@ def test_a_played_track_is_recorded_and_encoded(play, backend):
 def test_a_track_spotify_did_not_play_as_flac_is_said(play, caplog):
     play(process([*PLAYING_LINES, "08:40:36.225 I [f:347 ] codec: vorbis"]))
 
-    assert "played this track as vorbis" in caplog.text
+    assert "played 'Sneaky Snitch' as vorbis" in caplog.text
 
 
 async def test_the_tracks_of_an_album_are_played_one_at_a_time(backend, tmp_path):
@@ -382,6 +384,61 @@ def test_a_soloist_that_stays_busy_gives_the_track_to_youtube_not_a_refusal(
         play(process(BUSY_LINES, rc=1), process(BUSY_LINES, rc=1))
 
     assert not backend.refused
+
+
+def test_the_progress_advances_by_what_is_new_and_leaves_room_for_the_encode(
+    play, backend
+):
+    # A progress bar adds what it is given: the whole position so far, each
+    # time, ran it to 100% a minute into the track.
+    reports = []
+    lines = [
+        f'playing {URI} "Song" by "Band" [{m}:{s:02d} / 2:15]'
+        for m, s in [(0, 0), (0, 10), (0, 20), (1, 10), (2, 10)]
+    ]
+
+    play(process(lines), report=reports.append)
+
+    expected = backend.estimate_size(135.0) * soloist.PLAY_SHARE * 130 / 135
+    assert all(n > 0 for n in reports)
+    assert sum(reports) == pytest.approx(expected, rel=0.03)
+
+
+async def test_the_tracks_of_an_album_wait_in_line_with_no_row_and_no_slot(
+    refused_track, monkeypatch
+):
+    rows = most = 0
+
+    @contextmanager
+    def row(*_, **__):
+        nonlocal rows, most
+        rows += 1
+        most = max(most, rows)
+        try:
+            yield lambda n: None
+        finally:
+            rows -= 1
+
+    monkeypatch.setattr("streamrip.media.track.get_progress_callback", row)
+    line = asyncio.Lock()
+
+    def waiting_track():
+        track, *_ = refused_track()
+        audio = MagicMock(url_expires=False, source="spotify", extension="flac")
+        audio.queue = line
+        audio.size = AsyncMock(return_value=0)
+
+        async def download(path, callback):
+            await asyncio.get_running_loop().run_in_executor(None, real_sleep, 0.02)
+            path.write_bytes(b"audio")
+
+        audio.download = download
+        track.downloadable = audio
+        return track
+
+    await asyncio.gather(*(waiting_track().download() for _ in range(4)))
+
+    assert most == 1
 
 
 def test_an_expired_build_is_refreshed_and_retried_once(play, backend):

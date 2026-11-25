@@ -366,6 +366,24 @@ def test_failed_downloads_are_retried_as_a_job(client, runner):
     assert runner.added == [("repair", True)]
 
 
+def test_a_download_says_how_long_it_has_to_go_from_the_first_track():
+    # Three tracks had to be done before there was any estimate, and an album
+    # of long tracks takes ten minutes for them.
+    from streamrip.web.jobs import Job, Row
+
+    job = Job("id", "download", "Downloading an album")
+    job.phase, job.total, job.done = "download", 14, 2
+    job.phase_started = time.monotonic() - 300
+    job.rows[0] = Row("Band - Track 3", 100, done=50, started=time.monotonic() - 30)
+
+    shown = job.to_json()
+
+    assert shown["rows"][0]["eta"] == pytest.approx(30, abs=1)  # half done in 30 s
+    assert shown["eta"] == pytest.approx(
+        300 / 2.5 * 11.5, rel=0.01
+    )  # 2 and a half done
+
+
 def test_a_download_shows_its_tracks_and_log(services, monkeypatch):
     qobuz = services.config.session.qobuz
     qobuz.quality = 4
@@ -389,7 +407,11 @@ def test_a_download_shows_its_tracks_and_log(services, monkeypatch):
     summary = Runner(services.config).download(job, nothing)
     assert summary.startswith("2 tracks downloaded, 1 already downloaded, in ")
     (during,) = seen
-    assert during["rows"] == [{"desc": "Artist - Track 1", "done": 40, "total": 100}]
+    assert [during["rows"][0][k] for k in ("desc", "done", "total")] == [
+        "Artist - Track 1",
+        40,
+        100,
+    ]
     assert (during["phase"], during["done"], during["total"]) == ("download", 0, 3)
     assert job.to_json()["log"] == [
         {"level": "warning", "text": "Track 2 is not streamable"}

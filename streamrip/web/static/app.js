@@ -75,14 +75,14 @@ function miss({ track, why }) {
 }
 
 // One track downloading: its name and a bar.
-function row({ desc, done, total }) {
+function row({ desc, done, total, eta }) {
   const bar = el('progress');
   if (total) {
     bar.max = total;
     bar.value = Math.min(done, total);
   }
   const item = el('li');
-  item.append(el('span', { textContent: desc }), bar);
+  item.append(el('span', { textContent: eta === null ? desc : `${desc} · about ${roughly(eta)} left` }), bar);
   return item;
 }
 

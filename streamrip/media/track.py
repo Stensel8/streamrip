@@ -220,7 +220,9 @@ class Track(Media):
         part = self.download_path.with_stem(f"{self.download_path.stem}.part")
         slots = global_download_semaphore(self.config.session.downloads)
         for attempt in range(1, MAX_DOWNLOAD_ATTEMPTS + 1):
-            async with slots:
+            # The source's own line first (Spotify's audio plays one track at a
+            # time): a track waiting in it holds no slot and shows no row.
+            async with self.downloadable.queue, slots:
                 # A url resolved well before its turn here (queued behind
                 # max_connections) or reused across a retry can have gone
                 # stale; get a fresh one rather than fail on a dead token.

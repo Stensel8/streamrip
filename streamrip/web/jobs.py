@@ -38,6 +38,10 @@ SHOWN_MISSES = 50  # tracks not found that the page lists; the CSV has them all
 LOG_LINES = 200  # of a download's log, the last this many
 
 
+def _rounded(seconds: float | None) -> int | None:
+    return None if seconds is None else round(seconds)
+
+
 @dataclass(slots=True)
 class Row:
     """One track downloading, or the tracks being looked up."""
@@ -45,6 +49,7 @@ class Row:
     desc: str
     total: int | None
     done: int = 0
+    started: float = field(default_factory=time.monotonic)
 
 
 @dataclass(slots=True)
@@ -96,11 +101,15 @@ class Job:
     def to_json(self) -> dict[str, Any]:
         """Everything the page shows about the job."""
         now = self.finished or time.monotonic()
-        eta = (
-            remaining(self.done, self.total, now - self.phase_started)
-            if self.status == "running"
-            else None
-        )
+        eta = None
+        if self.status == "running":
+            done, least = self.done, 3
+            if self.phase == "download":
+                # A long track is a long time on one: count the part of each
+                # track that is done, so there is an estimate from the first.
+                done += sum(r.done / r.total for r in self.rows.values() if r.total)
+                least = 1
+            eta = remaining(done, self.total, now - self.phase_started, least)
         return {
             "kind": self.kind,
             "title": self.title,
@@ -114,7 +123,7 @@ class Job:
             "found": self.found,
             "not_found": len(self.misses),
             "elapsed": round(now - self.started, 1),
-            "eta": None if eta is None else round(eta),
+            "eta": _rounded(eta),
             "message": self.message,
             "unmatched": [
                 {"track": str(miss.track), "why": miss.why}
@@ -123,7 +132,12 @@ class Job:
             "download": self.download is not None,
             "report": self.status != "running" and bool(self.matched or self.misses),
             "rows": [
-                {"desc": row.desc, "done": row.done, "total": row.total}
+                {
+                    "desc": row.desc,
+                    "done": row.done,
+                    "total": row.total,
+                    "eta": _rounded(remaining(row.done, row.total, now - row.started)),
+                }
                 for row in list(self.rows.values())
             ],
             "titles": list(self.titles.values()),

@@ -276,6 +276,9 @@ class Downloadable(ABC):
     # The quality tier the file is served at, where the source says so: a
     # track that keeps failing steps down from this one (see Track).
     quality: int | None = None
+    # What a download waits in before it takes a slot and shows a progress row:
+    # nothing, unless the source plays its tracks one at a time.
+    queue: Any = contextlib.nullcontext()
 
     async def download(self, path: Path, callback: Callable[[int], Any]):
         await self._download(path, callback)
@@ -854,6 +857,11 @@ class SoloistDownloadable(Downloadable):
         self.duration_ms = duration_ms
         # A rough size of the FLAC to come: it sizes the progress bar.
         self._size = backend.estimate_size(duration_ms / 1000)
+
+    @property
+    def queue(self):
+        """The line of the tracks to play: one at a time, in the order asked."""
+        return self.backend.turn
 
     async def size(self) -> int:
         """The estimate: the FLAC only knows its length once encoded."""
