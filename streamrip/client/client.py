@@ -421,9 +421,14 @@ class RequestClient:
         value = getattr(getattr(self, "config", None), name, None)
         return default if value is None else value
 
+    # The track limits of a service's section are one at least: 0 held back
+    # every track for good, or failed outright.
+
     def _cap(self, tier: str) -> int:
         """Tracks an hour at a pace tier, medium or slow."""
-        return self._limit(f"{tier}_tracks_per_hour", PACE_TRACKS_PER_HOUR[tier])
+        return max(
+            self._limit(f"{tier}_tracks_per_hour", PACE_TRACKS_PER_HOUR[tier]), 1
+        )
 
     def _gap_mean(self, tier: str) -> float:
         """Seconds between track starts at a tier, in step with its cap."""
@@ -431,7 +436,11 @@ class RequestClient:
 
     def _line(self) -> int:
         """The tracks an hour where full speed is warned of."""
-        return self._limit("max_tracks_per_hour", HOURLY_DANGER)
+        return max(self._limit("max_tracks_per_hour", HOURLY_DANGER), 1)
+
+    def _fast_budget(self) -> int:
+        """The tracks in FAST_WINDOW that auto takes at full speed."""
+        return max(self._limit("full_speed_tracks", FAST_BUDGET), 1)
 
     async def _renew_login(self, resp=None) -> bool:
         """Renew a login that lapsed mid-run, as the 401 `resp` may say; True if
@@ -469,8 +478,12 @@ class RequestClient:
         now = time.time()
         try:
             state = json.loads(path.read_text())
-            self._track_starts = _within(state["track_starts"], now, FAST_WINDOW)
-            self._limited_at = _within(state["limited_at"], now)
+            # A clock set back since (a dual boot, a restored VM) leaves times
+            # ahead of now: they count as now, not as a wait until then.
+            starts = [min(t, now) for t in state["track_starts"]]
+            limited = [min(t, now) for t in state["limited_at"]]
+            self._track_starts = _within(starts, now, FAST_WINDOW)
+            self._limited_at = _within(limited, now)
             if _within(self._track_starts, now) or self._limited_at:
                 self._track_gap_scale = state["track_gap_scale"]
         except OSError, TypeError, ValueError, KeyError:
@@ -519,7 +532,7 @@ class RequestClient:
         owner = self._paced_owner()
         name = self.source.capitalize()
         recent = len(_within(owner._track_starts, time.time(), FAST_WINDOW))
-        big = planned + recent > owner._limit("full_speed_tracks", FAST_BUDGET)
+        big = planned + recent > owner._fast_budget()
         owner._pace, owner._big = pace, big
         # auto never resolves to medium: only slow has run clean for 18
         # hours straight, so a job big enough for auto to pace at all gets
@@ -639,8 +652,7 @@ class RequestClient:
             recent=len(recent),
             limited=len(_within(owner._limited_at, now)),
             next_in=min(waiting) - now if waiting else 0.0,
-            big=owner._big
-            or len(recent) > owner._limit("full_speed_tracks", FAST_BUDGET),
+            big=owner._big or len(recent) > owner._fast_budget(),
             hours_over=_hours_over(recent, owner._line()),
             line=owner._line(),
             tier_cap=owner._cap(owner._tier) if owner._tier != "fast" else 0,
@@ -769,7 +781,7 @@ class RequestClient:
         if (
             owner._pace == "auto"
             and owner._tier == "fast"
-            and len(starts) >= owner._limit("full_speed_tracks", FAST_BUDGET)
+            and len(starts) >= owner._fast_budget()
         ):
             owner._turn_slow(
                 f"{len(starts)} tracks in the last {FAST_WINDOW // 3600} hours"

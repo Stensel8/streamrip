@@ -22,6 +22,7 @@ lazy from rich.markdown import Markdown
 lazy from rich.markup import escape
 lazy from rich.table import Table
 lazy from rich.traceback import install
+lazy from tomlkit.exceptions import ParseError
 
 from .. import __version__
 from ..config import DEFAULT_CONFIG_PATH, PACES
@@ -45,7 +46,7 @@ lazy from ..media.csv_playlist import read_tracks
 lazy from ..utils.ssl_utils import print_ssl_error_help
 lazy from ..web import create_app
 lazy from .interactive import Confirm, Prompt
-lazy from .main import Main
+lazy from .main import Main, open_table
 lazy from .prompter import has_screen, launch
 lazy from .repair import repair_downloads
 
@@ -147,7 +148,10 @@ def coro(f):
         result = None
         try:
             result = asyncio.run(run())
-        except asyncio.CancelledError, KeyboardInterrupt:
+        except KeyboardInterrupt:  # Ctrl-C where there is no handler (Windows)
+            console.print("[yellow]Stopped.")
+            stopped_by.append(signal.SIGINT)
+        except asyncio.CancelledError:
             console.print("[yellow]Stopped.")
         except aiohttp.ClientConnectorCertificateError as e:
             console.print(
@@ -163,10 +167,11 @@ def coro(f):
             console.print(escape(str(e)), style="red")
             sys.exit(1)
 
-        if signal.SIGTERM in stopped_by:
-            # What a process ended by SIGTERM reports, whether the command gave
-            # up or a screen swallowed the cancellation; now after cleaning up.
-            sys.exit(128 + signal.SIGTERM)
+        if stopped_by:
+            # What a process ended by the signal reports (130 for Ctrl-C, 143 for
+            # SIGTERM), whether the command gave up or a screen swallowed the
+            # cancellation; now after cleaning up. A script sees it did not finish.
+            sys.exit(128 + stopped_by[0])
         return result
 
     return wrapper
@@ -551,10 +556,21 @@ def rip(
     try:
         c = Config(config_path)
     except Exception as e:
+        if isinstance(e, ParseError):
+            # Mostly a Windows path in double quotes: TOML reads its
+            # backslashes as escapes. A reset would throw every setting away.
+            fix = (
+                f"Fix line {e.line} of the file. A Windows path goes in single "
+                "quotes, 'C:\\Users\\me\\Music', or takes forward slashes."
+            )
+        else:
+            fix = (
+                "Try running [bold]streamrip config reset[/bold] (it keeps the "
+                "old file as config.toml.bak)"
+            )
         console.print(
             f"Error loading config from [bold cyan]{escape(str(config_path))}"
-            f"[/bold cyan]: {escape(str(e))}\n"
-            "Try running [bold]streamrip config reset[/bold]",
+            f"[/bold cyan]: {escape(str(e))}\n{fix}",
         )
         ctx.obj["config"] = None
         return
@@ -695,8 +711,18 @@ def config_reset(ctx, yes):
         console.print("[green]Reset aborted")
         return
 
+    # A copy first: the old file has the settings, and a config from before 2.8
+    # its logins too.
+    backup = config_path.with_name(f"{config_path.name}.bak")
+    kept = config_path.is_file()
+    if kept:
+        shutil.copy2(config_path, backup)
+        if os.name == "posix":
+            backup.chmod(0o600)
     set_user_defaults(config_path)
     console.print(f"Reset the config file at [bold cyan]{config_path}!")
+    if kept:
+        console.print(f"The old one is at {escape(str(backup))}.", highlight=False)
 
 
 @config.command("path")
@@ -732,16 +758,13 @@ def database_browse(ctx, table):
     if table == "downloads":
         t = Table("Row", "Source", "ID", title="Downloads database")
         rows = list(
-            starmap(
-                db.split_download_key,
-                db.Downloads(cfg.session.database.downloads_path).all(),
-            )
+            starmap(db.split_download_key, open_table(cfg, "downloads_path").all())
         )
     else:
         t = Table(
             "Row", "Source", "Media Type", "ID", title="Failed downloads database"
         )
-        rows = db.Failed(cfg.session.database.failed_downloads_path).all()
+        rows = open_table(cfg, "failed_downloads_path").all()
     for i, row in enumerate(rows):
         t.add_row(f"{i:02}", *row)
     console.print(t)
@@ -772,18 +795,11 @@ def database_clear(ctx, table, yes):
 
     tables = []
     if table in {"downloads", "all"}:
-        tables.append(
-            ("downloaded track", db.Downloads(cfg.session.database.downloads_path))
-        )
+        tables.append(("downloaded track", open_table(cfg, "downloads_path")))
     if table in {"failed", "all"}:
-        tables.append(
-            (
-                "failed download",
-                db.Failed(cfg.session.database.failed_downloads_path),
-            )
-        )
+        tables.append(("failed download", open_table(cfg, "failed_downloads_path")))
 
-    counts = [len(t.all()) for _, t in tables]
+    counts = [t.count() for _, t in tables]
     if sum(counts) == 0:
         console.print("[green]Nothing to clear.")
         return
@@ -825,8 +841,7 @@ async def repair(ctx, yes, flat):
     with _require_config(ctx) as cfg:
         cfg: Config
         database = db.Database(
-            db.Downloads(cfg.session.database.downloads_path),
-            db.Failed(cfg.session.database.failed_downloads_path),
+            open_table(cfg, "downloads_path"), open_table(cfg, "failed_downloads_path")
         )
         failed_items = database.failed.all()
 

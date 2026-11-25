@@ -2,10 +2,12 @@ import asyncio
 import json
 import logging
 import re
+import sqlite3
 import sys
 from itertools import starmap
 lazy from pathlib import Path
 
+import click
 lazy from rich.markup import escape
 lazy from rich.progress_bar import ProgressBar
 lazy from rich.table import Table
@@ -59,6 +61,25 @@ def fallback_chain(sources: str | None, primary: str) -> list[str]:
         if name and name != primary and name not in chain:
             chain.append(name)
     return chain
+
+
+def open_table(config: Config, key: str) -> db.Downloads | db.Failed:
+    """The table at [database] `key`, downloads_path or failed_downloads_path.
+
+    A config copied from another machine can name a folder that cannot be made
+    here (another user's home, in a container): one clear error, not a traceback.
+    """
+    path = getattr(config.session.database, key)
+    table = db.Downloads if key == "downloads_path" else db.Failed
+    try:
+        return table(path)
+    except (OSError, sqlite3.Error) as e:
+        why = getattr(e, "strerror", None) or e
+        raise click.ClickException(
+            f"Cannot use {key} = {path!r} of the config at {config.path}: {why}. "
+            'Set it to a place this machine can write to, or empty ("") for the '
+            "default place, next to the config."
+        ) from e
 
 
 def planned_tracks(media: list[Media]) -> dict[Client, int]:
@@ -175,14 +196,15 @@ class Main:
         self.config = config
         # Sources the user has been told about (see rip/notices.py).
         self._announced: set[str] = set()
-        self.clients: dict[str, Client] = {s: c(config) for s, c in CLIENTS.items()}
+        # Before the clients, which would be left open if this fails.
         c = self.config.session.database
         self.database = db.Database(
-            db.Downloads(c.downloads_path) if c.downloads_enabled else db.Dummy(),
-            db.Failed(c.failed_downloads_path)
+            open_table(config, "downloads_path") if c.downloads_enabled else db.Dummy(),
+            open_table(config, "failed_downloads_path")
             if c.failed_downloads_enabled
             else db.Dummy(),
         )
+        self.clients: dict[str, Client] = {s: c(config) for s, c in CLIENTS.items()}
 
     async def add_by_id(self, source: str, media_type: str, item_id: str):
         """Queue one item by its id."""

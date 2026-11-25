@@ -94,9 +94,11 @@ def fake_main(monkeypatch) -> type[_FakeMain]:
 
 
 def _break(cfg) -> str:
-    """Make the config one this version cannot load: an option it has no field for."""
+    """Make the config one that does not load: a Windows path in double quotes,
+    whose backslashes TOML reads as escapes."""
     path = Path(cfg)
-    path.write_text(path.read_text().replace("[cli]", "[cli]\nbogus = 1", 1))
+    windows = 'folder = "C:\\Users\\me\\Music"'
+    path.write_text(re.sub(r"(?m)^folder = .*$", lambda _: windows, path.read_text()))
     return cfg
 
 
@@ -120,13 +122,38 @@ def test_a_config_that_does_not_load_fails_the_command(cfg, tmp_path, capsys, co
     assert "Errorloadingconfig" in _printed(result, capsys)
 
 
-def test_a_config_that_does_not_load_can_still_be_reset(cfg):
-    _break(cfg)
+def test_a_config_that_does_not_load_can_still_be_reset(cfg, capsys):
+    broken = Path(_break(cfg)).read_text()
     for command in (["config", "path"], ["config", "reset", "-y"]):
         result = _rip(cfg, *command)
         assert result.exit_code == 0, result.output
 
+    # The line to fix, not a reset that throws every setting away; and a reset
+    # keeps the old file.
+    said = _printed(result, capsys)
+    assert "Fixline15" in said
+    assert "singlequotes" in said
+    assert "configreset" not in said
+    assert Path(f"{cfg}.bak").read_text() == broken
     Config(Path(cfg))  # loads now
+
+
+def test_a_database_that_cannot_be_made_here_is_one_clear_error(cfg, tmp_path, capsys):
+    # A config copied from another machine: its folder can't be made here.
+    in_a_file = tmp_path / "a-file" / "downloads.db"
+    in_a_file.parent.write_text("")
+    path = Path(cfg)
+    line = f'downloads_path = "{in_a_file}"'
+    path.write_text(
+        re.sub(r"(?m)^downloads_path = .*$", lambda _: line, path.read_text())
+    )
+
+    result = _rip(cfg, "database", "browse", "downloads")
+
+    assert result.exit_code == 1
+    said = _printed(result, capsys)
+    assert "downloads_path" in said
+    assert "Traceback" not in said
 
 
 def test_config_path_prints_only_the_path_even_for_a_new_config(tmp_path):
@@ -684,9 +711,9 @@ def _waiting_command(signum, seen, swallow=False):
     [
         (signal.SIGTERM, False, 128 + signal.SIGTERM),
         (signal.SIGTERM, True, 128 + signal.SIGTERM),
-        (signal.SIGINT, False, None),
+        (signal.SIGINT, False, 128 + signal.SIGINT),
     ],
-    ids=["SIGTERM exits 143", "even when the command swallows it", "Ctrl-C ends"],
+    ids=["SIGTERM exits 143", "even when the command swallows it", "Ctrl-C exits 130"],
 )
 def test_a_signal_cancels_the_command_after_its_cleanup(signum, swallow, code):
     seen = {}

@@ -11,6 +11,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from streamrip import config as config_module
+from streamrip.accounts import Accounts
 from streamrip.config import (
     BLANK_CONFIG_PATH,
     Config,
@@ -56,14 +57,13 @@ def test_a_config_saved_with_a_byte_order_mark_loads(tmp_path):
 
 
 def test_the_template_and_the_config_classes_agree():
-    """A key the classes lack, or a field the template lacks, fails loading."""
+    """A field the template lacks fails loading; a key the classes lack (one an
+    earlier version wrote, like 2.8.0-rc1's credentials) is left out, and named."""
     template = BLANK_CONFIG_PATH.read_text()
-    ConfigData.from_toml(template)
+    assert ConfigData.from_toml(template).unused == ()
 
-    with pytest.raises(TypeError, match="bogus_option"):
-        ConfigData.from_toml(
-            template.replace("[cli]\n", "[cli]\nbogus_option = 1\n", 1)
-        )
+    old = template.replace("[spotify]\n", '[spotify]\ncredentials = ""\n', 1)
+    assert ConfigData.from_toml(old).unused == ("[spotify] credentials",)
     with pytest.raises(TypeError, match="max_search_results"):
         ConfigData.from_toml(
             re.sub(r"^max_search_results = .*\n", "", template, flags=re.MULTILINE)
@@ -78,6 +78,13 @@ def test_user_defaults_download_to_the_music_folder(tmp_path, monkeypatch):
     set_user_defaults(path)
 
     assert Config(path).session.downloads.folder == str(fake_music)
+
+    # Empty, as in the template, is the same place: not the folder streamrip
+    # is run in, nor a database gone after the run.
+    path.write_text(BLANK_CONFIG_PATH.read_text())
+    session = Config(path).session
+    assert session.downloads.folder == str(fake_music)
+    assert session.database.downloads_path == str(tmp_path / "downloads.db")
 
 
 def test_the_music_folder_follows_the_users_language_on_linux(monkeypatch):
@@ -227,14 +234,17 @@ class TestPrivateFiles:
         assert Config(path).file.deezer.arl == ""
 
     @pytest.mark.login
-    def test_loading_existing_credentials_repairs_permissions(self, tmp_path):
+    @pytest.mark.parametrize("name", ["config.toml", "state.toml"])
+    def test_loading_existing_credentials_repairs_permissions(self, tmp_path, name):
+        # A folder copied with `cp -r`: state.toml has the logins themselves.
         path = tmp_path / "config.toml"
         path.write_text(BLANK_CONFIG_PATH.read_text())
-        path.chmod(0o644)
+        (tmp_path / "state.toml").write_text('[deezer]\narl = "cookie"\n')
+        (tmp_path / name).chmod(0o644)
 
         Config(path).save_file()  # Nothing was marked modified.
 
-        assert mode(path) == 0o600
+        assert mode(tmp_path / name) == 0o600
 
     @pytest.mark.login
     @pytest.mark.parametrize("remove_file", [False, True])
@@ -303,6 +313,26 @@ def test_logins_are_saved_in_state_toml_and_leave_config_toml(config_path):
     assert "arl" not in saved["deezer"]
     assert saved["deezer"]["quality"] == 1
     assert Config(config_path).session.deezer.arl == "cookie"
+
+
+def test_a_config_from_before_state_toml_moves_its_logins_there(config_path):
+    # Until 2.8 the logins were in config.toml. Left there, a logout (saved in
+    # state.toml) brought them back; a key state.toml has empty must not wipe them.
+    config_path.write_text(
+        config_path.read_text()
+        .replace("[deezer]\n", '[deezer]\narl = "old-cookie"\n', 1)
+        .replace("[qobuz]\n", '[qobuz]\nuser_id = "42"\nauth_token = "old"\n', 1)
+    )
+    (config_path.parent / "state.toml").write_text('[deezer]\narl = ""\n')
+
+    assert Accounts(Config(config_path)).logged_in("deezer")
+    saved = tomllib.loads(config_path.read_text())
+    assert "arl" not in saved["deezer"]
+    assert "auth_token" not in saved["qobuz"]
+
+    Accounts(Config(config_path)).logout("deezer")
+    accounts = Accounts(Config(config_path))
+    assert (accounts.logged_in("deezer"), accounts.logged_in("qobuz")) == (False, True)
 
 
 def test_two_programs_saving_their_own_logins_keep_each_others(config_path):

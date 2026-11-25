@@ -12,7 +12,7 @@
 Any python and any folder will do: the script runs itself in the project's environment with uv.
 `live` logs in to a real account of each SOURCE (qobuz, tidal, deezer, spotify, soundcloud; default
 all) in a scratch config, so your own config and downloads are never touched. With `--config FILE`
-it starts from the logins in that file instead of asking. `--query` is what is searched for (a
+it starts from the logins in that file and the state.toml beside it instead of asking. `--query` is what is searched for (a
 track that exists on the service). See checks/README.md.
 """
 
@@ -59,7 +59,7 @@ async def check(path, source):
             await main.get_logged_in_client(source)
         except (AuthenticationError, MissingCredentialsError) as e:
             reason = e.__cause__ or e
-            print(f"its login no longer works ({reason}); log in again, paste the new config")
+            print(f"its login no longer works ({reason}); log in again, pass the new config and its state.toml")
             return 3
     config.save_file()
     return 0
@@ -204,6 +204,10 @@ def live(source: str, config: Path | None, query_override: str | None):
             doc["database"]["downloads_path"] = str(Path(tmp) / "downloads.db")
             doc["database"]["failed_downloads_path"] = str(Path(tmp) / "failed.db")
             config_path.write_text(tomlkit.dumps(doc))
+            # The logins are in state.toml beside it, since 2.8.
+            state = Path(config).with_name("state.toml")
+            if state.is_file():
+                shutil.copy2(state, config_path.with_name("state.toml"))
 
         if unattended:
             checked = subprocess.run(

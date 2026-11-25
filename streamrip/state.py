@@ -61,6 +61,21 @@ def blank(field: str):
     return [] if field == "secrets" else ""
 
 
+def make_private(path: Path, fd: int):
+    """Let only the user read the open file `fd`, if others can (a folder
+    copied with `cp -r`, say).
+
+    Said, not raised, where that can't be done (a file of another user, a FAT
+    stick): reading it must not fail over it.
+    """
+    if os.name != "posix" or not os.fstat(fd).st_mode & 0o077:
+        return
+    try:
+        os.fchmod(fd, 0o600)
+    except OSError as e:
+        logger.warning("Others can read %s, with your logins in it: %s", path, e)
+
+
 def write_private(path: Path, contents: str):
     """Write contents to path in one step, private from its first byte.
 
@@ -97,6 +112,7 @@ class State:
 
     def __init__(self, path: Path | None):
         self.path = path
+        self._private = False  # whether read() has seen to the permissions
 
     def read(self) -> dict[str, dict[str, Any]]:
         """{section: {field: value}}; empty when there is no file, or none that
@@ -105,6 +121,9 @@ class State:
             return {}
         try:
             with self.path.open("rb") as f:
+                if not self._private:
+                    self._private = True
+                    make_private(self.path, f.fileno())
                 return tomllib.load(f)
         except FileNotFoundError:
             return {}

@@ -14,7 +14,7 @@ import click
 from tomlkit.api import dumps, parse
 lazy from tomlkit.toml_document import TOMLDocument
 
-from .state import CREDENTIALS, STATE_NAME, State, blank, write_private
+from .state import CREDENTIALS, STATE_NAME, State, blank, make_private, write_private
 
 logger = logging.getLogger("streamrip")
 
@@ -325,16 +325,23 @@ class ConfigData:
     conversion: ConversionConfig
 
     _modified: bool = False
+    # The options of the file this version does not have, as "[section] name".
+    unused: tuple[str, ...] = ()
 
     @classmethod
     def from_toml(cls, toml_str: str):
-        """Parse a config file. Raises if its schema doesn't match this version."""
+        """Parse a config file. Raises if a section or an option it needs is
+        missing; an option this version does not have (one an earlier version
+        wrote) is left out, and named in `unused`."""
         toml = parse(toml_str)
-        sections = {
-            f.name: f.type(**_blank_logins(f.name) | dict(toml[f.name]))  # type: ignore
-            for f in _section_fields()
-        }
-        return cls(toml=toml, **sections)
+        sections, unused = {}, []
+        for f in _section_fields():
+            names = {field.name for field in fields(f.type)}  # type: ignore
+            given = dict(toml[f.name])
+            unused += (f"[{f.name}] {name}" for name in given if name not in names)
+            known = {name: value for name, value in given.items() if name in names}
+            sections[f.name] = f.type(**_blank_logins(f.name) | known)  # type: ignore
+        return cls(toml=toml, unused=tuple(unused), **sections)
 
     def set_modified(self):
         self._modified = True
@@ -396,8 +403,14 @@ class Config:
         with path.open(encoding="utf-8-sig") as toml_file:
             # The packaged template is shared, but user configs contain secrets.
             if os.name == "posix" and not path.samefile(BLANK_CONFIG_PATH):
-                _make_private(path, toml_file.fileno())
+                make_private(path, toml_file.fileno())
             self.file: ConfigData = ConfigData.from_toml(toml_file.read())
+        if self.file.unused:
+            logger.warning(
+                "Ignoring %s in %s: streamrip no longer has it.",
+                ", ".join(self.file.unused),
+                path,
+            )
 
         # The logins are in state.toml, next to the config.
         self._template = path.samefile(BLANK_CONFIG_PATH)
@@ -411,10 +424,43 @@ class Config:
         downloads.folder = expand_home(downloads.folder)
         database.downloads_path = expand_home(database.downloads_path)
         database.failed_downloads_path = expand_home(database.failed_downloads_path)
+        if not self._template:
+            # Empty is the default place, as the template says: not the folder
+            # streamrip happens to be run in, nor a database gone after the run.
+            downloads.folder = downloads.folder or str(DEFAULT_DOWNLOADS_FOLDER)
+            database.downloads_path = database.downloads_path or str(
+                path.with_name("downloads.db")
+            )
+            database.failed_downloads_path = database.failed_downloads_path or str(
+                path.with_name("failed_downloads.db")
+            )
         # What the file said when it was read, to tell at saving what this run
         # changed in self.file (a new token, a fetched app id).
         self._loaded: ConfigData = copy.deepcopy(self.file)
         self._saving = threading.Lock()
+        if not self._template and self._holds_logins():
+            self._move_logins_out()
+
+    def _holds_logins(self) -> bool:
+        """Whether config.toml itself has logins in it, as before 2.8."""
+        return any(
+            name in self.file.toml[section]
+            for section, names in CREDENTIALS.items()
+            for name in names
+        )
+
+    def _move_logins_out(self):
+        """Move the logins of config.toml to state.toml, at the first run of a
+        config from before 2.8. Left in config.toml, they came back after a
+        logout, which is saved in state.toml."""
+        self.file.set_modified()
+        try:
+            self.save_file()
+        except OSError as e:
+            self.file._modified = False  # not tried again at the end of the run
+            logger.warning(
+                "Could not move the logins in %s to %s: %s", self.path, STATE_NAME, e
+            )
 
     def update_logins(self, section: str, values: dict):
         """Set logins of [section] (a login, a logout) here and in what is
@@ -522,20 +568,6 @@ class Config:
 
     def __exit__(self, *_):
         self.save_file()
-
-
-def _make_private(path: Path, fd: int):
-    """Let only the user read the open config `fd`, if others can.
-
-    Said, not raised, where that can't be done (a file of another user, a FAT
-    stick): reading the config must not fail over it.
-    """
-    if not os.fstat(fd).st_mode & 0o077:
-        return
-    try:
-        os.fchmod(fd, 0o600)
-    except OSError as e:
-        logger.warning("Others can read %s, with your logins in it: %s", path, e)
 
 
 def _write_config(path: Path, toml: TOMLDocument):

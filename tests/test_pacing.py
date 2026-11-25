@@ -155,6 +155,15 @@ def test_an_hour_of_quiet_is_a_fresh_start_widened_gaps_and_all(runs):
     assert _elapse(later, clock) == pytest.approx(30.0)
 
 
+def test_a_clock_set_back_since_the_last_run_is_no_wait(runs):
+    # The last run went while the clock was two hours ahead (a dual boot).
+    run, clock = runs
+    clock.now += 7200
+    _elapse(run(), clock)
+    clock.now -= 7200
+    assert _elapse(run(), clock) == pytest.approx(30.0)  # not two hours and more
+
+
 async def test_a_run_started_while_the_budget_is_spent_stops_at_its_first_request(
     runs, monkeypatch
 ):
@@ -355,3 +364,8 @@ def test_a_service_can_have_limits_of_its_own(monkeypatch):
     assert (qobuz.load().tier, qobuz.load().cap) == ("slow", 40)
     assert qobuz.load().hourly_line == 300
     assert tidal.load().hourly_line == client_module.HOURLY_DANGER
+
+    # 0 held every track back for good, or failed: one at least.
+    q.slow_tracks_per_hour = q.max_tracks_per_hour = q.full_speed_tracks = 0
+    assert (qobuz._cap("slow"), qobuz._line(), qobuz._fast_budget()) == (1, 1, 1)
+    qobuz._reserve_track_start()
