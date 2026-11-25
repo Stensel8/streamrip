@@ -14,7 +14,7 @@ import time
 import requests
 
 from .. import __version__
-from ..client.audio_match import score
+from ..client.audio_match import score, version_tags
 from .models import Track
 
 logger = logging.getLogger("streamrip")
@@ -133,7 +133,7 @@ class MusicBrainz:
                 f" AND dur:[{track.duration_ms - GAP} TO {track.duration_ms + GAP}]"
             )
         hits = self._get("recording", query=query, limit=10).get("recordings", [])
-        wanted_live = "live" in track.title.lower()
+        wanted_live = "live" in version_tags(track.title)  # not "Alive"
 
         def worth(recording: dict) -> bool:
             live = "live" in str(recording.get("disambiguation", "")).lower()

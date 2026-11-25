@@ -19,6 +19,7 @@ from streamrip.rip import playlist_cli
 from streamrip.rip.cli import rip
 from streamrip.sync.csvio import read_tracks
 from streamrip.sync.m3u import Library, read_file, write_m3u8
+from streamrip.sync.models import Track
 
 HERE = Path(__file__).parent
 
@@ -63,7 +64,7 @@ def test_a_playlist_points_at_the_files_of_the_library(tmp_path, library):
     assert music.size == 3  # the cover is not music
     wanted = [
         track("Song A", "Artist A", isrc=ISRC_A),
-        track("Song B", "Artist B"),
+        track("Song B", "Artist B", duration_ms=None),  # the test files are silent
         track("Not here", "Nobody"),
     ]
     playlist = tmp_path / "Music" / "Playlists" / "Mix.m3u8"
@@ -78,8 +79,27 @@ def test_a_playlist_points_at_the_files_of_the_library(tmp_path, library):
 
     write_m3u8(playlist, wanted[:1], music, absolute=True)
     assert playlist.read_text(encoding="utf-8").splitlines()[2] == str(
-        (library / "Artist A/Album/01. sng a (Explicit).flac").resolve()
+        library / "Artist A/Album/01. sng a (Explicit).flac"
     )
+
+
+def test_a_file_is_found_however_its_tag_joins_the_artists(tmp_path):
+    # Picard writes "A feat. B" where the service lists A and B.
+    artist = "Calvin Harris feat. Rihanna"
+    tagged(tmp_path, "a.flac", "silence.flac", title="Song", artist=artist)
+    wanted = Track("Song", ["Calvin Harris", "Rihanna"])
+    assert Library.scan(tmp_path).find(wanted) is not None
+
+
+def test_a_linked_file_keeps_its_path_in_the_library(tmp_path):
+    # A player may see only the library, not the disk a link in it leads to.
+    real = tagged(tmp_path / "disk", "a.flac", "silence.flac", title="A", isrc=ISRC_A)
+    music = tmp_path / "Music"
+    music.mkdir()
+    (music / "a.flac").symlink_to(real)
+    playlist = music / "Playlists" / "x.m3u8"
+    write_m3u8(playlist, [track("A", isrc=ISRC_A)], Library.scan(music))
+    assert playlist.read_text(encoding="utf-8").splitlines()[2] == "../a.flac"
 
 
 def test_without_a_library_the_playlist_only_describes_the_tracks(tmp_path):
@@ -99,7 +119,9 @@ def test_export_writes_m3u8_playlists_and_what_the_library_lacks(
         "spotify",
         liked=[track("Song A", "Artist A", isrc=ISRC_A), track("Gone", "Nobody")],
     )
-    spotify.existing_playlist("Road trip", track("Song B", "Artist B"))
+    spotify.existing_playlist(
+        "Road trip", track("Song B", "Artist B", duration_ms=None)
+    )
     monkeypatch.setattr(
         playlist_cli, "_services", lambda _ctx: FakeServices(tmp_path, spotify=spotify)
     )

@@ -16,7 +16,7 @@ lazy from pathlib import Path
 import mutagen
 from mutagen.easymp4 import EasyMP4Tags
 
-from ..client.audio_match import MatchTrack, best_match, normalize_isrc, song_key
+from ..client.audio_match import MatchTrack, best_match, normalize, normalize_isrc
 
 logger = logging.getLogger("streamrip")
 
@@ -56,11 +56,12 @@ def read_file(path: Path) -> MatchTrack | None:
 
 @dataclass(slots=True)
 class Library:
-    """The audio files under a folder, by ISRC and by song."""
+    """The audio files under a folder, by ISRC and by title. Not by artist: a tag
+    can hold "A feat. B" or "A/B" where the service lists A and B."""
 
     root: Path
     by_isrc: dict[str, list[MatchTrack]] = field(default_factory=dict)
-    by_song: dict[tuple[str, str], list[MatchTrack]] = field(default_factory=dict)
+    by_title: dict[str, list[MatchTrack]] = field(default_factory=dict)
     size: int = 0
 
     @classmethod
@@ -75,7 +76,7 @@ class Library:
             library.size += 1
             if track.isrc:
                 library.by_isrc.setdefault(track.isrc, []).append(track)
-            library.by_song.setdefault(song_key(track), []).append(track)
+            library.by_title.setdefault(normalize(track.title), []).append(track)
             if on_file:
                 on_file(library.size)
         return library
@@ -94,7 +95,9 @@ class Library:
                     chosen.ids["file"],
                 )
             return chosen
-        hit = best_match(track, self.by_song.get(song_key(track), []), min_score)
+        hit = best_match(
+            track, self.by_title.get(normalize(track.title), []), min_score
+        )
         return hit[0] if hit else None
 
 
@@ -129,13 +132,11 @@ def write_m3u8(
         if (file := library.find(track, min_score)) is None:
             missing.append(track)
             continue
-        target = Path(file.ids["file"]).resolve()
+        # Not resolve(): the path in the library, not where a link in it leads, as
+        # a player may see only the library.
+        target = os.path.abspath(file.ids["file"])  # noqa: PTH100
         try:
-            entry = (
-                str(target)
-                if absolute
-                else os.path.relpath(target, path.parent.resolve())
-            )
+            entry = target if absolute else os.path.relpath(target, path.parent)
         except ValueError:  # another drive than the playlist's, on Windows
             entry = str(target)
         lines += [_extinf(file), entry.replace(os.sep, "/")]

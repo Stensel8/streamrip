@@ -30,7 +30,7 @@ lazy from ..sync.engine import (
     select_tracks,
 )
 lazy from ..sync.errors import SyncError
-lazy from ..sync.export import export_lists
+lazy from ..sync.export import export_lists, free_name
 lazy from ..sync.models import Track
 lazy from ..sync.providers.base import Provider
 lazy from ..sync.report import write_report
@@ -479,6 +479,9 @@ def transfer(
     misses: list[Miss] = []
     matched: list = []
     selected = _select(source_provider, liked or sync_favorites, playlist, progress)
+    # The target's playlists, listed once for all the lists that go there.
+    known = None if sync_favorites else target_provider.playlists()
+    taken: set[str] = set()
     for name, tracks in selected:
         # None: the favourites (liked songs) of the target.
         if sync_favorites:
@@ -486,7 +489,10 @@ def transfer(
         elif to_playlist:
             destination = to_playlist
         else:
-            destination = f"{LIKED} (from {LABELS[source]})" if name == LIKED else name
+            # Two source playlists can share a name: the second fills "Mix (2)".
+            destination = free_name(
+                f"{LIKED} (from {LABELS[source]})" if name == LIKED else name, taken
+            )
         result = import_tracks(
             target_provider,
             tracks,
@@ -495,6 +501,7 @@ def transfer(
             dry_run=dry_run,
             progress=progress,
             musicbrainz=musicbrainz,
+            playlists=known,
         )
         console.print(result.summary(), markup=False, highlight=False)
         misses.extend(result.misses)

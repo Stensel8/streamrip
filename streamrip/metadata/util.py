@@ -91,7 +91,7 @@ def match_case(names: list[str], known: list[str | None]) -> list[str]:
 
 
 _EDITION = re.compile(
-    r"[(\[]\s*([^()\[\]]*?(?:edition|version|remaster(?:ed)?|deluxe|expanded|anniversary)"
+    r"[(\[]\s*([^()\[\]]*?\b(?:edition|version|remaster(?:ed)?|deluxe|expanded|anniversary)\b"
     r"[^()\[\]]*?)\s*[)\]]\s*$",
     re.IGNORECASE,
 )

@@ -6,7 +6,13 @@ from functools import partial
 from itertools import batched
 from typing import Literal
 
-from ..client.audio_match import best_match, rank, rejection, song_key
+from ..client.audio_match import (
+    best_match,
+    normalize,
+    other_version,
+    rank,
+    rejection,
+)
 from .errors import ApiError, ProviderError
 from .models import Match, PlaylistInfo, Track
 from .providers.base import UNLOOKUPABLE, Provider
@@ -198,27 +204,30 @@ def _miss(
 
 
 class _Playlist:
-    """The tracks already in the target playlist, by id, ISRC and song, so that a source track that is
+    """The tracks already in the target playlist, by id, ISRC and title, so that a source track that is
     there needs no lookup. On a second run that is nearly every track (an idea from spotify_to_tidal)."""
 
     def __init__(self, provider: Provider, tracks: Iterable[Track]):
         self.provider = provider
         self.by_id: dict[str, Track] = {}
         self.by_isrc: dict[str, Track] = {}
-        self.by_song: dict[tuple[str, str], list[Track]] = {}
+        # By title alone: services credit the artists differently ("A & B", or A and B).
+        self.by_title: dict[str, list[Track]] = {}
         for track in tracks:
             if native := provider.native_id(track):
                 self.by_id.setdefault(native, track)
             if track.isrc:
                 self.by_isrc.setdefault(track.isrc.upper(), track)
-            self.by_song.setdefault(song_key(track), []).append(track)
+            self.by_title.setdefault(normalize(track.title), []).append(track)
 
     def find(self, track: Track, min_score: float) -> Match | None:
         if (native := self.provider.native_id(track)) and native in self.by_id:
             return Match(self.by_id[native], 1.0, "playlist")
         if track.isrc and (there := self.by_isrc.get(track.isrc.upper())):
             return Match(there, 1.0, "playlist")
-        hit = best_match(track, self.by_song.get(song_key(track), []), min_score)
+        hit = best_match(
+            track, self.by_title.get(normalize(track.title), []), min_score
+        )
         return Match(hit[0], hit[1], "playlist") if hit else None
 
 
@@ -285,7 +294,8 @@ def _second_opinion(
         return None
     known = provider.lookup_isrcs(isrcs) if isrcs else {}
     for isrc in isrcs:
-        if found := known.get(isrc):
+        # Not a live version or an edit the service lists under that ISRC.
+        if found := [t for t in known.get(isrc, []) if not other_version(track, t)]:
             return Match(max(found, key=partial(rank, track)), sure, "musicbrainz")
     return None
 
@@ -328,9 +338,11 @@ def import_tracks(
     description: str = DESCRIPTION,
     progress: Progress | None = None,
     musicbrainz: MusicBrainz | None = None,
+    playlists: list[PlaylistInfo] | None = None,
 ) -> ImportResult:
     """Add ``tracks`` to the playlist called ``playlist`` (created if missing), or with None to the liked
-    songs, skipping what is already there."""
+    songs, skipping what is already there. ``playlists`` are the service's, listed once by a caller that
+    imports several lists; a playlist made here is added to them."""
     existing = None
     if (
         playlist is None
@@ -340,7 +352,7 @@ def import_tracks(
             provider.liked_count() if progress else None,
         )
         already = _read(provider.liked_tracks(), text, total, progress, "check")
-    elif existing := provider.find_playlist(playlist):
+    elif existing := provider.find_playlist(playlist, playlists):
         if not existing.readable:
             raise ProviderError(
                 f'"{existing.name}" is not yours to change (you neither own nor collaborate on it).'
@@ -378,9 +390,10 @@ def import_tracks(
         if playlist is None:
             add, size = provider.add_favorite_tracks, provider.favorite_batch
         else:
-            result.playlist_id = result.playlist_id or provider.create_playlist(
-                playlist, description
-            )
+            if not result.playlist_id:
+                result.playlist_id = provider.create_playlist(playlist, description)
+                if playlists is not None:
+                    playlists.append(PlaylistInfo(result.playlist_id, playlist, 0))
             add, size = (
                 partial(provider.add_to_playlist, result.playlist_id),
                 provider.add_batch,

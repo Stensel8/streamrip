@@ -59,18 +59,21 @@ class MatchTrack:
 # version: when the two titles do not carry the same ones, the title score is halved.
 VERSION_TAGS = frozendict(
     {
-        "live": r"live",
-        "remix": r"remix|rmx",
-        "acoustic": r"acoustic|unplugged",
+        "live": r"live|ao vivo|en vivo|en directo",  # also in Portuguese and Spanish
+        "remix": r"remix(?:ed)?|rmx",
+        "acoustic": r"acoustic|unplugged|stripped",
         "instrumental": r"instrumental",
         "a cappella": r"a ?cappella|acapella",
         "demo": r"demo",
         "karaoke": r"karaoke",
         "cover": r"cover",
         "radio edit": r"radio edit",
+        "club mix": r"club (?:mix|edit)",
         "extended": r"extended",
-        "sped up": r"sped up",
+        "sped up": r"sped[- ]?up|speed[- ]?up|nightcore",
         "slowed": r"slowed",
+        "8d": r"8d(?: audio)?",
+        "reprise": r"reprise",
         "re-recorded": r"re-?recorded|\w+'s version",  # "Love Story (Taylor's Version)" is not the 2008 recording
     }
 )
@@ -95,9 +98,8 @@ _NOISE = re.compile(
     r"|\b(?:single|album|original|lp) version\b|\boriginal mix\b",
     re.IGNORECASE,
 )
-_APOSTROPHES = str.maketrans(
-    dict.fromkeys("\u2019\u2018`\u00b4", "'")
-)  # curly quotes, grave, acute
+# Curly quotes, grave and acute are apostrophes; an underscore is a space ("Live_Remastered").
+_FOLDS = str.maketrans(dict.fromkeys("\u2019\u2018`\u00b4", "'") | {"_": " "})
 # Words that services abbreviate differently: "Pt. 2" is "Part 2", "Rock 'n' Roll" is "Rock and Roll".
 # Numbers become digits, so that "Part One", "Part I" and "Part 1" are one part and "Part Two" another:
 # the words up to ten, and Roman numerals, except "i", "v" and "x", which are also words and letters.
@@ -145,7 +147,7 @@ _MOVEMENT = re.compile(r"(?<![\w.])([IVX])\.(?=\s)")
 # What joins several artists in one name: "Macklemore & Ryan Lewis", "Nicky Jam x J Balvin",
 # "Tom Petty and the Heartbreakers" (where the other service may have just "Tom Petty").
 _ARTIST_JOINS = re.compile(
-    r"\s*(?:[,;&+]|\bx\b|\band\b|\bvs\b\.?|\bfeat\b\.?|\bft\b\.?|\bfeaturing\b|\bwith\b)\s*"
+    r"\s*(?:[,;&+/]|\bx\b|\band\b|\bvs\b\.?|\bfeat\b\.?|\bft\b\.?|\bfeaturing\b|\bwith\b)\s*"
 )
 
 # Weights of the three signals; they add up to 1.
@@ -165,7 +167,7 @@ _cached = lru_cache(maxsize=4096)
 @_cached
 def _fold(text: str) -> str:
     """Lowercase and strip accents, so "Björk" equals "bjork". Curly apostrophes become straight ones."""
-    decomposed = unicodedata.normalize("NFKD", text.translate(_APOSTROPHES))
+    decomposed = unicodedata.normalize("NFKD", text.translate(_FOLDS))
     return "".join(c for c in decomposed if not unicodedata.combining(c)).casefold()
 
 
@@ -239,7 +241,8 @@ def _version(title: str) -> str:
 
 
 @_cached
-def _tags(title: str) -> frozenset[str]:
+def version_tags(title: str) -> frozenset[str]:
+    """The versions a title names: {"live"} for "Song (Live)"."""
     version = _fold(_version(title))
     return frozenset(tag for tag, pattern in _TAGS.items() if pattern.search(version))
 
@@ -302,13 +305,26 @@ def _duration_score(a: int | None, b: int | None) -> float:
     return 1.0 if difference <= 3000 else 0.5 if difference <= 10_000 else 0.0
 
 
+def _apart(a: int | None, b: int | None) -> bool:
+    """Whether two lengths are too far apart for one recording: two services list it
+    seconds apart, a long one a little more."""
+    return bool(a and b) and abs(a - b) > max(15_000, 0.1 * max(a, b))
+
+
+def other_version(wanted: MatchTrack, candidate: MatchTrack) -> bool:
+    """Whether ``candidate`` is another version than ``wanted``: live, a remix, an edit of another length."""
+    return version_tags(wanted.title) != version_tags(candidate.title) or _apart(
+        wanted.duration_ms, candidate.duration_ms
+    )
+
+
 def score(wanted: MatchTrack, candidate: MatchTrack) -> float:
     """How well ``candidate`` matches ``wanted``, from 0 to 1."""
+    if _apart(wanted.duration_ms, candidate.duration_ms):
+        return 0.0  # an edit or a mix of another length, whatever its title says
     title = _title_similarity(wanted.title, candidate.title)
-    if _tags(wanted.title) != _tags(
-        candidate.title
-    ):  # another version: live, remix, ...
-        title *= 0.5
+    if version_tags(wanted.title) != version_tags(candidate.title):
+        title *= 0.5  # another version: live, remix, ...
     duration = _duration_score(wanted.duration_ms, candidate.duration_ms)
     if not candidate.artists and wanted.artists:
         # Nobody to check the artist against (a video whose channel says nothing). The title and the
@@ -344,19 +360,13 @@ def rank(wanted: MatchTrack, candidate: MatchTrack) -> tuple[float, float, float
     )
 
 
-def song_key(track: MatchTrack) -> tuple[str, str]:
-    """The main title and the first artist in comparable form: a quick way to
-    find the same song among many."""
-    return normalize(track.title), _artist_key(_fold(track.artist))
-
-
 def rejection(wanted: MatchTrack, candidate: MatchTrack) -> str:
     """Why `candidate`, which scored too low, is not `wanted`: "other song"
     (only the artist is the same), "other version" (live, remix and the like)
     or "low score" (close, but not close enough)."""
     if _title_similarity(wanted.title, candidate.title) < SAME_SONG:
         return "other song"
-    if _tags(wanted.title) != _tags(candidate.title):
+    if version_tags(wanted.title) != version_tags(candidate.title):
         return "other version"
     return "low score"
 

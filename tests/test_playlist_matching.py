@@ -42,6 +42,13 @@ def t(title: str, *artists: str, duration_ms: int | None = 200_000, album: str =
             t("Refugee", "Tom Petty"),
         ),
         (t("Live Forever", "Oasis"), t("Live Forever - Remastered", "Oasis")),
+        # ID3v2.3 joins a file's artists with "/".
+        (
+            t("Can't Hold Us", "Macklemore/Ryan Lewis"),
+            t("Can't Hold Us", "Macklemore", "Ryan Lewis"),
+        ),
+        # A long track differs a little more between services.
+        (t("Echoes", duration_ms=1_412_000), t("Echoes", duration_ms=1_380_000)),
     ],
 )
 def test_the_same_recording_written_differently_matches(wanted, found):
@@ -57,6 +64,14 @@ def test_the_same_recording_written_differently_matches(wanted, found):
         (t("Song"), t("Song - Live at Wembley")),
         (t("Live Wire"), t("Live Wire (Live)")),
         (t("(Untitled)"), t("[Intro]")),  # both used to shrink to ""
+        *[
+            (t("Song"), t(f"Song ({version})"))
+            for version in (
+                *("Ao Vivo", "En Vivo", "Remixed", "Sped-Up", "Speed Up", "Nightcore"),
+                *("Stripped", "Club Mix", "Reprise", "8D Audio", "Live_Remastered"),
+            )
+        ],
+        (t("Strobe", duration_ms=634_000), t("Strobe", duration_ms=213_000)),  # an edit
     ],
 )
 def test_another_recording_does_not_match(wanted, found):

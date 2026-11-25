@@ -108,6 +108,7 @@ def test_one_product_has_one_barcode_whichever_way_a_service_writes_it(code):
         ("From Zero", None),
         ("Live (At The Edition Hall) EP", None),  # not at the end
         ("Numb (Radio Edit)", None),
+        ("Act (Expedition)", None),  # "edition" inside a word
     ],
 )
 def test_the_edition_is_read_from_the_end_of_a_title(title, edition):
@@ -161,6 +162,19 @@ def test_qobuz_track():
 )
 def test_qobuz_artists_come_from_the_performers_credits(performers, artists):
     assert qobuz_artists({"performers": performers}) == artists
+
+
+@pytest.mark.parametrize(
+    ("title", "version", "album"),
+    [
+        ("Seasons", "Remix", "Seasons (Remix)"),
+        # Tidal puts some editions in the title as well: once is enough.
+        ("Seasons (Deluxe Edition)", "Deluxe Edition", "Seasons (Deluxe Edition)"),
+    ],
+)
+def test_a_tidal_edition_is_in_the_title_as_qobuz_has_it(title, version, album):
+    m = AlbumMetadata.from_tidal(_tidal_album(title=title, version=version))
+    assert (m.album, m.version) == (album, version)
 
 
 def test_tidal_album_with_null_copyright_and_no_date():

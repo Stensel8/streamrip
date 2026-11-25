@@ -57,13 +57,14 @@ def test_a_recording_that_does_not_match_well_enough_gives_nothing():
     assert MusicBrainz(interval=0).isrcs_for(wanted) == ([], 0.0)
 
 
+@pytest.mark.parametrize("title", [TITLE, "Alive"])  # no live version, just the word
 @responses.activate
-def test_a_live_recording_is_not_taken_for_the_studio_one():
-    live = recording(id="live", disambiguation="live, 2006-04-29: Coachella")
-    responses.get(f"{API}/recording", json={"recordings": [live, recording()]})
+def test_a_live_recording_is_not_taken_for_the_studio_one(title):
+    live = recording(title, id="live", disambiguation="live, 2006-04-29: Coachella")
+    responses.get(f"{API}/recording", json={"recordings": [live, recording(title)]})
     responses.get(f"{API}/recording/live", json={**live, "isrcs": ["GBXXX0000001"]})
-    responses.get(f"{API}/recording/rec-1", json=recording())
-    wanted = Track(TITLE, ["Daft Punk"], duration_ms=224000)
+    responses.get(f"{API}/recording/rec-1", json=recording(title))
+    wanted = Track(title, ["Daft Punk"], duration_ms=224000)
     isrcs, _ = MusicBrainz(interval=0).isrcs_for(wanted)
     assert isrcs == [ISRC, SIBLING]
 
@@ -125,4 +126,10 @@ def test_a_track_the_service_lacks_is_found_under_another_isrc_of_its_recording(
 def test_when_musicbrainz_knows_nothing_the_track_stays_missing(service):
     wanted = Track(TITLE, ["Daft Punk"], isrc=ISRC)
     _, misses = resolve_tracks(service, [wanted], musicbrainz=knows())
+    assert len(misses) == 1
+    # Nor when the service has only a live version under the other ISRC.
+    live = Track(f"{TITLE} (Live)", ["Daft Punk"], isrc=SIBLING)
+    _, misses = resolve_tracks(
+        FakeProvider("tidal", [live]), [wanted], musicbrainz=knows(SIBLING)
+    )
     assert len(misses) == 1

@@ -385,6 +385,11 @@ class AlbumMetadata:
             bit_depth=bit_depth,
         )
         title = resp.get("title") or "Unknown Album"
+        # Tidal keeps the edition apart, and at times in the title as well. Into
+        # the title it goes, once, as for Qobuz: editions get folders of their own.
+        version = (resp.get("version") or "").strip() or None
+        if version and version.lower() not in title.lower():
+            title = f"{title} ({version})"
         return cls(
             info,
             title,
@@ -397,7 +402,7 @@ class AlbumMetadata:
             disctotal=resp.get("numberOfVolumes", 1),
             copyright=resp.get("copyright") or "",
             date=date,
-            version=edition_of(title),
+            version=version or edition_of(title),
             albumartists=artists or None,
             barcode=gtin13(resp.get("upc")),
             releasetype=release_type(resp.get("type")),

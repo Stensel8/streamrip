@@ -112,13 +112,16 @@ class Provider(ABC):
         """This service's id for ``track``, if it has one."""
         return track.ids.get(self.name)
 
-    def find_playlist(self, name_or_id: str) -> PlaylistInfo | None:
-        """One of the user's playlists, by id or by name (ignoring case)."""
-        playlists = self.playlists()
-        by_id = next((p for p in playlists if p.id == name_or_id), None)
-        return by_id or next(
-            (p for p in playlists if p.name.casefold() == name_or_id.casefold()), None
-        )
+    def find_playlist(
+        self, name_or_id: str, playlists: list[PlaylistInfo] | None = None
+    ) -> PlaylistInfo | None:
+        """One of the user's playlists (``playlists``, if they were listed already), by id or by
+        name (ignoring case): one of their own before one they only follow."""
+        playlists = self.playlists() if playlists is None else playlists
+        if by_id := next((p for p in playlists if p.id == name_or_id), None):
+            return by_id
+        named = [p for p in playlists if p.name.casefold() == name_or_id.casefold()]
+        return next((p for p in named if p.readable), next(iter(named), None))
 
     def find(
         self, track: Track, known_isrcs: Mapping[str, list[Track]] | None = None

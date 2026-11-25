@@ -195,6 +195,24 @@ def test_a_transfer_to_the_same_service_is_refused(tmp_path, cli):
     assert "the same service" in stderr
 
 
+def test_a_transfer_keeps_playlists_that_share_a_name_apart(tmp_path, cli):
+    spotify = FakeProvider("spotify")
+    spotify.existing_playlist("Chill", track("Song A", "Artist A", isrc=ISRC_A))
+    spotify.existing_playlist("chill", track("Song B", "Artist B"))
+    tidal = FakeProvider("tidal", CATALOG)
+    code, _, _ = cli(
+        *("playlist", "transfer", "spotify", "tidal", "--all", "-q"),
+        services=FakeServices(tmp_path, spotify=spotify, tidal=tidal),
+    )
+    assert code == 0
+    assert {
+        name: [t.title for t in ts] for name, ts in tidal.playlists_by_id.values()
+    } == {
+        "Chill": ["Song A"],
+        "chill (2)": ["Song B"],
+    }
+
+
 def test_liked_songs_go_to_the_favourites(tmp_path, cli):
     tidal = FakeProvider("tidal", CATALOG)
     spotify = FakeProvider(

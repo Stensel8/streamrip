@@ -10,7 +10,7 @@ from streamrip.sync.engine import (
     select_tracks,
 )
 from streamrip.sync.errors import ApiError, ProviderError, QuotaExceededError
-from streamrip.sync.models import Track
+from streamrip.sync.models import PlaylistInfo, Track
 from streamrip.sync.providers.base import search_queries
 
 CATALOG = [
@@ -106,6 +106,34 @@ def test_a_playlist_that_is_not_yours_is_refused():
         import_tracks(service, source_tracks(), "Mix")
 
 
+def test_your_own_playlist_goes_before_one_you_follow_by_that_name():
+    class Following(FakeProvider):
+        def playlists(self):
+            return [
+                PlaylistInfo("theirs", "Mix", 1, readable=False),
+                *super().playlists(),
+            ]
+
+    service = Following(catalog=CATALOG)
+    own = service.existing_playlist("Mix")
+    assert import_tracks(service, source_tracks(), "mix").playlist_id == own
+
+
+def test_imports_into_several_playlists_list_them_once():
+    class Counting(FakeProvider):
+        listed = 0
+
+        def playlists(self):
+            self.listed += 1
+            return super().playlists()
+
+    service = Counting(catalog=CATALOG)
+    known = service.playlists()
+    import_tracks(service, source_tracks(), "Mix", playlists=known)
+    again = import_tracks(service, source_tracks(), "Mix", playlists=known)
+    assert (service.listed, again.added, len(service.playlists_by_id)) == (1, 0, 1)
+
+
 def test_one_track_that_cannot_be_looked_up_does_not_stop_the_run():
     class Flaky(FakeProvider):
         def search(self, query):
@@ -149,9 +177,9 @@ def test_quota_and_server_errors_stop_the_run(error):
             "only another version",
             "Song B",
         ),
-        # The same song, but half a minute longer: not sure enough.
+        # The same song, but twelve seconds longer: not sure enough.
         (
-            Track("Song B", ["Artist B"], duration_ms=210_000),
+            Track("Song B", ["Artist B"], duration_ms=192_000),
             "score too low for a match (0.90, needs 0.95)",
             "Song B",
         ),
