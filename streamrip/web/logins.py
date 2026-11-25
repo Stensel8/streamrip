@@ -11,6 +11,8 @@ import secrets
 import threading
 import time
 
+from ..exceptions import AuthenticationError
+from ..rip.qobuz_token_capture import qobuz_navigate_snippet
 from ..rip.spotify_login import (
     LOGIN_TIMEOUT,
     SpotifyLoginError,
@@ -80,3 +82,50 @@ class BrowserLogin:
 
     def cancel(self):
         self._stop.set()
+
+
+QOBUZ_LOGIN_URL = "https://play.qobuz.com/login"
+
+
+class QobuzScriptLogin:
+    """Qobuz by a short script, run on play.qobuz.com once you are logged in
+    there: it reads the user id and token the web player keeps, and posts them
+    back. Only a post with this login's challenge is taken, once."""
+
+    def __init__(self, callback_url: str):
+        self.challenge = secrets.token_urlsafe(16)
+        self.script = qobuz_navigate_snippet(callback_url, self.challenge)
+        self._arrived = threading.Event()
+        self._credentials: tuple[str, str] | None = None
+        self._cancelled = False
+
+    def receive(self, challenge: str, user_id: str, token: str) -> bool:
+        """The script's post. True when it is this login's, and the first."""
+        if not (user_id and token) or self._credentials is not None:
+            return False
+        if not secrets.compare_digest(challenge.encode(), self.challenge.encode()):
+            return False
+        self._credentials = (user_id, token)
+        self._arrived.set()
+        return True
+
+    def run(self, job: Job, finish) -> str:
+        """Wait for the script's post, then log in with it (`finish`)."""
+        job.enter(
+            "login",
+            "Log in at Qobuz in the tab that opened. Then run the script below on that page.",
+        )
+        job.link, job.script = QOBUZ_LOGIN_URL, self.script
+        self._arrived.wait(LOGIN_TIMEOUT)
+        job.script = ""
+        if self._cancelled:
+            raise AuthenticationError("The Qobuz login was cancelled.")
+        if self._credentials is None:
+            raise AuthenticationError("No Qobuz token came back within 5 minutes.")
+        job.text = "Checking the Qobuz login"
+        finish(*self._credentials)
+        return "Logged in to Qobuz."
+
+    def cancel(self):
+        self._cancelled = True
+        self._arrived.set()

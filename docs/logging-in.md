@@ -42,7 +42,10 @@ streamrip offers three ways to get it:
    (F12). Qobuz reloads the page when you log in, which would stop a script you
    pasted earlier. The script reads the token Qobuz's web player already keeps
    in `localStorage`. It's just a few lines of JavaScript in the browser you
-   already have open.
+   already have open. The Accounts page of [the web interface](web.md) does this
+   too: press *Log in with a script*, log in on the tab that opens, and run the
+   script it shows. The tab then moves to a page of streamrip, which takes the
+   token and has nothing left of it in the address bar.
 3. **By hand.** Copy `user.id` and `user_auth_token` from DevTools → Network
    yourself.
 

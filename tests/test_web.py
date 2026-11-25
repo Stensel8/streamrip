@@ -584,6 +584,58 @@ def test_a_pairing_that_fails_keeps_no_key(client, services, monkeypatch):
     assert not Config(services.config.path).file.spotify.soloist_api_key
 
 
+def test_qobuz_logs_in_with_a_script_run_on_its_web_player(client, runner):
+    job_id = started(client.post("/accounts/qobuz/script", json={}, headers=JSON))
+    script = wait_for(client, job_id, lambda job: job["script"])["script"]
+    challenge = re.search(r'challenge: "([^"]+)"', script)[1]
+    target = re.search(r'const target = "([^"]+)"', script)[1]
+    assert target.endswith("/accounts/qobuz/receive")
+    assert client.get(target).status_code == 200  # where the script moves the tab
+    post = {"user_id": "42", "token": "TOKEN", "challenge": challenge}
+
+    # Only the script this login showed has its challenge.
+    guess = client.post(
+        "/accounts/qobuz/capture", json={**post, "challenge": "guess"}, headers=JSON
+    )
+    assert guess.status_code == 400
+    assert (
+        client.post("/accounts/qobuz/capture", json=post, headers=JSON).status_code
+        == 200
+    )
+    assert (
+        client.post("/accounts/qobuz/capture", json=post, headers=JSON).status_code
+        == 400
+    )  # once
+
+    done = wait_for(client, job_id)
+    assert (done["status"], done["message"]) == ("done", "Logged in to Qobuz.")
+    assert runner.logins == [("qobuz", "42", "TOKEN")]
+
+
+def test_nothing_is_taken_when_no_qobuz_login_waits(client, runner):
+    post = {"user_id": "42", "token": "TOKEN", "challenge": "anything"}
+
+    assert (
+        client.post("/accounts/qobuz/capture", json=post, headers=JSON).status_code
+        == 400
+    )
+    assert runner.logins == []
+
+
+def test_a_qobuz_login_given_up_on_ends(client):
+    job_id = started(client.post("/accounts/qobuz/script", json={}, headers=JSON))
+    wait_for(client, job_id, lambda job: job["script"])
+
+    client.post(f"/jobs/{job_id}/cancel", headers=JSON)
+
+    ended = wait_for(client, job_id)
+    assert (ended["status"], ended["message"]) == (
+        "error",
+        "The Qobuz login was cancelled.",
+    )
+    assert ended["script"] == ""
+
+
 @pytest.mark.parametrize("how", ["cancel", "app changed"])
 def test_a_waiting_login_ends_when_cancelled_or_when_its_app_changes(
     client, monkeypatch, how

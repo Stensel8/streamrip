@@ -56,8 +56,9 @@ _SNIPPET_TEMPLATE = """\
     fetch(target, {{
       method: "POST",
       headers: {{"Content-Type": "application/json"}},
-      body: JSON.stringify({{user_id: data.id, token: data.token}}),
-    }}).then(() => console.log("streamrip: token sent ✅"))
+      body: JSON.stringify({{user_id: data.id, token: data.token, challenge: "{challenge}"}}),
+    }}).then((r) => r.ok ? console.log("streamrip: token sent ✅")
+                         : console.error("streamrip: refused it -- use the script from the login you just started"))
       .catch((e) => console.error("streamrip: could not reach streamrip", e));
     return true;
   }};
@@ -69,16 +70,54 @@ _SNIPPET_TEMPLATE = """\
 """
 
 
+# The same script for a page on this machine, and without fetch(): a public site
+# may not call an address on this computer without the browser asking the user
+# (Chrome's Local Network Access), and a navigation is not such a call. The tab
+# moves to `callback_url` with the token after the "#", which stays in the
+# browser: that page reads it and hands it over itself.
+_NAVIGATE_TEMPLATE = """\
+(() => {{
+  const target = "{callback_url}";
+  const tryRead = () => {{
+    let data;
+    try {{ data = JSON.parse(localStorage.getItem("localuser")); }} catch (e) {{ return false; }}
+    if (!data || !data.id || !data.token) return false;
+    const hand = {{user_id: String(data.id), token: data.token, challenge: "{challenge}"}};
+    location.href = target + "#" + encodeURIComponent(JSON.stringify(hand));
+    return true;
+  }};
+  if (tryRead()) return;
+  console.log("streamrip: not logged in yet. Log in, then run this again --");
+  console.log("streamrip: Qobuz reloads the page on login, which stops this script.");
+  const id = setInterval(() => {{ if (tryRead()) clearInterval(id); }}, 1000);
+}})();\
+"""
+
+
+def qobuz_navigate_snippet(callback_url: str, challenge: str) -> str:
+    """The script that hands the id and token over by moving the tab to
+    `callback_url`, with the `challenge` that says it is ours."""
+    return _NAVIGATE_TEMPLATE.format(callback_url=callback_url, challenge=challenge)
+
+
+def qobuz_snippet(callback_url: str, challenge: str = "") -> str:
+    """The script to run on play.qobuz.com once logged in: it posts the id and
+    token to `callback_url`, with the `challenge` that says it is ours."""
+    return _SNIPPET_TEMPLATE.format(callback_url=callback_url, challenge=challenge)
+
+
 class QobuzTokenCaptureError(BrowserLoginError):
     """Raised when automatic Qobuz token capture fails or times out."""
 
 
-def _cors_headers() -> dict[str, str]:
-    """Headers letting only a page on play.qobuz.com POST to this server."""
+def cors_headers() -> dict[str, str]:
+    """Headers letting only a page on play.qobuz.com POST to this server (and
+    the opt-in Chrome asks of a public page that talks to a private address)."""
     return {
         "Access-Control-Allow-Origin": QOBUZ_ORIGIN,
         "Access-Control-Allow-Methods": "POST, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type",
+        "Access-Control-Allow-Private-Network": "true",
     }
 
 
@@ -103,7 +142,7 @@ async def capture_qobuz_auth_token(timeout_s: int = 300) -> tuple[str, str]:
 
     async def handle_preflight(request: web.Request) -> web.Response:
         """Answer the browser's CORS preflight OPTIONS request."""
-        return web.Response(status=204, headers=_cors_headers())
+        return web.Response(status=204, headers=cors_headers())
 
     async def handle_callback(request: web.Request) -> web.Response:
         """Accept the id/token the pasted snippet posts, once."""
@@ -112,10 +151,10 @@ async def capture_qobuz_auth_token(timeout_s: int = 300) -> tuple[str, str]:
             user_id = str(payload["user_id"])
             token = str(payload["token"])
         except ValueError, KeyError, TypeError:
-            return web.Response(status=400, headers=_cors_headers())
+            return web.Response(status=400, headers=cors_headers())
         if not result.done():
             result.set_result((user_id, token))
-        return web.Response(status=204, headers=_cors_headers())
+        return web.Response(status=204, headers=cors_headers())
 
     app = web.Application()
     path = f"/callback/{nonce}"
@@ -136,7 +175,7 @@ async def capture_qobuz_auth_token(timeout_s: int = 300) -> tuple[str, str]:
             "before it could catch anything. Once you're logged in, open the\n"
             "console (F12) and paste this:\n"
         )
-        console.print(_SNIPPET_TEMPLATE.format(callback_url=callback_url))
+        console.print(qobuz_snippet(callback_url))
 
         try:
             async with asyncio.timeout(timeout_s):

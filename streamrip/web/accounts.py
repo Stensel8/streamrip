@@ -5,8 +5,10 @@ from flask import (
     Response,
     current_app,
     flash,
+    jsonify,
     redirect,
     render_template,
+    request,
     url_for,
 )
 lazy from werkzeug.wrappers import Response as WerkzeugResponse
@@ -16,7 +18,7 @@ from ..client.soloist import SoloistBackend
 from ..sync.errors import ProviderError
 from ..sync.services import DEVELOPER_DASHBOARDS, LABELS
 from .common import form, get_config, get_runner, get_services, sent, start
-from .logins import BrowserLogin
+from .logins import BrowserLogin, QobuzScriptLogin
 lazy from .jobs import Job
 
 accounts_pages = Blueprint("accounts", __name__, url_prefix="/accounts")
@@ -82,6 +84,52 @@ def login_qobuz() -> WerkzeugResponse:
         return _back("Fill in both the user id and the token.", "error")
     get_runner().login_qobuz(user_id, token)
     return _back("Logged in to Qobuz.")
+
+
+@accounts_pages.post("/qobuz/script")
+def qobuz_script() -> tuple[Response, int]:
+    """Qobuz by a script: the page shows it, and run on the web player it posts
+    the token back to qobuz_capture."""
+    login = QobuzScriptLogin(f"{request.host_url}accounts/qobuz/receive")
+    logins = current_app.extensions["logins"]
+    for earlier in list(logins.values()):
+        earlier.cancel()
+    runner = get_runner()
+
+    def work(job: Job) -> str:
+        logins[job.id] = login
+        try:
+            return login.run(job, runner.login_qobuz)
+        finally:
+            logins.pop(job.id, None)
+
+    return start("login", "Log in to Qobuz with a script", work)
+
+
+@accounts_pages.get("/qobuz/receive")
+def qobuz_receive() -> str:
+    """Where the script moves the tab to: a page that reads the token after the
+    "#" (it never reaches the server there) and hands it to qobuz_capture."""
+    return render_template("qobuz_receive.html")
+
+
+@accounts_pages.post("/qobuz/capture")
+def qobuz_capture() -> tuple[Response, int]:
+    """The token, from the receiving page. What lets it in is the challenge of a
+    login that is waiting: only the script that login showed has it."""
+    data = sent()
+    taken = any(
+        isinstance(login, QobuzScriptLogin)
+        and login.receive(
+            str(data.get("challenge") or ""),
+            str(data.get("user_id") or ""),
+            str(data.get("token") or ""),
+        )
+        for login in list(current_app.extensions["logins"].values())
+    )
+    if not taken:
+        raise ProviderError("That was not the script of a login waiting here.")
+    return jsonify(status="ok"), 200
 
 
 @accounts_pages.post("/deezer/login")

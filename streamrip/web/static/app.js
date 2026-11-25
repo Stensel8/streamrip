@@ -112,7 +112,10 @@ function render(id, job) {
   if ($('job-login')) {
     $('job-login').hidden = !(running && job.link);
     $('job-link').href = job.link || '#';
-    $('job-paste-box').hidden = $('job-cancel').hidden = !(running && job.pasteable);
+    $('job-paste-box').hidden = !(running && job.pasteable);
+    $('job-cancel').hidden = !(running && (job.pasteable || job.script));
+    $('job-script').hidden = !(running && job.script);
+    if (job.script && $('job-script-text').value !== job.script) $('job-script-text').value = job.script;
     $('job-paste').dataset.job = id;
     $('job-cancel').dataset.job = id;
   }
@@ -339,6 +342,32 @@ onSubmit('pl-download-form', (form, who) => {
 
 $('verify')?.addEventListener('click', () => start('/accounts/verify'));
 $('tidal-login')?.addEventListener('click', () => start('/accounts/tidal/login'));
+$('qobuz-script')?.addEventListener('click', () => start('/accounts/qobuz/script'));
+
+// The page the Qobuz script moves its tab to: the token comes after the "#", which never
+// leaves the browser. It is taken out of the address (and the history) and handed over.
+async function receiveQobuz() {
+  const text = $('qobuz-receive-text');
+  try {
+    const given = JSON.parse(decodeURIComponent(location.hash.slice(1)));
+    history.replaceState(null, '', location.pathname);
+    await api('/accounts/qobuz/capture', postJson(given));
+    text.textContent = 'Got it. You can close this tab and go back to streamrip.';
+  } catch (err) {
+    text.textContent = err instanceof SyntaxError ? 'Run the script from the Qobuz tab: this page gets the token from it.' : err.message;
+  }
+}
+if ($('qobuz-receive')) receiveQobuz();
+$('job-script-copy')?.addEventListener('click', async (e) => {
+  const box = $('job-script-text');
+  box.select();
+  try {
+    await navigator.clipboard.writeText(box.value);
+    e.target.textContent = 'Copied';
+  } catch {
+    e.target.textContent = 'Press Ctrl+C to copy';
+  }
+});
 onSubmit('soloist-form', (form) => start('/accounts/soloist/pair', postJson(fields(form))));
 for (const button of document.querySelectorAll('[data-browser-login]')) {
   button.addEventListener('click', () => start(`/accounts/${button.dataset.browserLogin}/login`));

@@ -38,15 +38,19 @@
   <section class="card" id="qobuz">
     <div class="card-head"><h2>Qobuz</h2>{{ badge('qobuz') }}</div>
     <p class="muted small">A subscription, or the albums you bought.</p>
-    <details class="help"><summary>Where do I find these?</summary>
-      <p class="small muted">Log in at <a class="link" href="https://play.qobuz.com/login" target="_blank" rel="noopener noreferrer">play.qobuz.com</a> with DevTools → Network open, find the <strong>user/login</strong> request and copy <strong>user.id</strong> and <strong>user_auth_token</strong> from its response. <code>streamrip login qobuz</code> can also catch them for you.</p>
+    <div class="actions">
+      {{ logout('qobuz') }}
+      <button class="btn primary" id="qobuz-script" data-job-button>{{ "Log in again" if accounts.qobuz.logged_in else "Log in with a script" }}</button>
+    </div>
+    <p class="tiny muted">You log in at Qobuz in your own browser, and a short script gives the token back here. streamrip never sees your password.</p>
+    <details class="help"><summary>Or enter it by hand</summary>
+      <p class="small muted">Log in at <a class="link" href="https://play.qobuz.com/login" target="_blank" rel="noopener noreferrer">play.qobuz.com</a> with DevTools → Network open, find the <strong>user/login</strong> request and copy <strong>user.id</strong> and <strong>user_auth_token</strong> from its response.</p>
+      <form method="post" action="{{ url_for('accounts.login_qobuz') }}" class="fields">
+        {% call field("User id") %}<input name="user_id" required autocomplete="off">{% endcall %}
+        {% call field("Token") %}<input name="auth_token" type="password" required autocomplete="off">{% endcall %}
+        <div class="actions"><button class="btn primary" type="submit">Log in</button></div>
+      </form>
     </details>
-    <form method="post" action="{{ url_for('accounts.login_qobuz') }}" class="fields">
-      {% call field("User id") %}<input name="user_id" required autocomplete="off">{% endcall %}
-      {% call field("Token") %}<input name="auth_token" type="password" required autocomplete="off">{% endcall %}
-      <div class="actions"><button class="btn primary" type="submit">Log in</button></div>
-    </form>
-    <div class="actions">{{ logout('qobuz') }}</div>
   </section>
 
   <section class="card" id="tidal">

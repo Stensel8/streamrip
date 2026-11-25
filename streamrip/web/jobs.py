@@ -77,6 +77,8 @@ class Job:
     # can be pasted (a browser login, not Tidal's device login).
     link: str = ""
     pasteable: bool = False
+    # A login's script, to run on the page the link opens (Qobuz).
+    script: str = ""
     started: float = field(default_factory=time.monotonic)
     phase_started: float = field(default_factory=time.monotonic)
     finished: float | None = None
@@ -144,6 +146,7 @@ class Job:
             "log": [{"level": level, "text": text} for level, text in list(self.log)],
             "link": self.link,
             "pasteable": self.pasteable,
+            "script": self.script,
         }
 
 
