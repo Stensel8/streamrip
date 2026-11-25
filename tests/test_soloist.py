@@ -139,6 +139,18 @@ async def test_an_album_from_spotifys_own_audio_says_what_its_files_are(make_cli
     assert folder.name == "Album [FLAC] [24B-44.1kHz]"
 
 
+async def test_a_computer_that_cannot_record_goes_to_youtube_music_without_trying(
+    make_client, monkeypatch
+):
+    # A container: Soloist would be fetched, fail, and the album would be named FLAC.
+    monkeypatch.setattr(SoloistBackend, "supported", property(lambda self: False))
+    client = make_client()
+
+    assert client.soloist_backend is None
+    assert client.container != "FLAC"
+    assert client._audio() == {"container": client.container}
+
+
 async def test_an_album_is_named_flac_when_spotifys_own_audio_is_on(make_client):
     # The folder and the progress label are made before the audio is asked for.
     client = make_client()
@@ -186,10 +198,18 @@ async def test_the_download_plays_the_track_into_the_file(tmp_path):
 
 async def test_pairing_stores_the_key_and_pairs_the_device(make_client, monkeypatch):
     client = make_client(soloist_api_key="")
+    monkeypatch.setattr(SoloistBackend, "supported", property(lambda self: True))
     monkeypatch.setattr(SoloistBackend, "pair", lambda self: f"user of {self.api_key}")
 
     assert await client.pair_soloist("NEW") == "user of NEW"
     assert client.config.soloist_api_key == "NEW"
+
+
+async def test_pairing_where_nothing_can_be_recorded_says_so(make_client, monkeypatch):
+    monkeypatch.setattr(SoloistBackend, "supported", property(lambda self: False))
+
+    with pytest.raises(AuthenticationError, match="cannot record"):
+        await make_client(soloist_api_key="").pair_soloist("KEY")
 
 
 async def test_pairing_without_a_key_is_a_login_error(make_client):

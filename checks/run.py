@@ -130,6 +130,19 @@ def container():
     ):
         command(
             "container runs", [engine, "run", "--rm", "streamrip:check", "--version"]
+        ) and command(
+            "container's ffmpeg",
+            [
+                engine,
+                "run",
+                "--rm",
+                "-v",
+                f"{ROOT / 'checks'}:/checks:ro,z",
+                "--entrypoint",
+                "/opt/streamrip/bin/python",
+                "streamrip:check",
+                "/checks/container_smoke.py",
+            ],
         )
 
 

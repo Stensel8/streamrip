@@ -16,6 +16,7 @@ on:
       - Containerfile
       - .dockerignore
       - .forgejo/workflows/container.yml
+      - checks/container_smoke.py
       - pyproject.toml
       - uv.lock
       - README.md
@@ -46,6 +47,7 @@ jobs:
       - run: |
           docker buildx build --load --file Containerfile --tag streamrip:ci .
           docker run --rm streamrip:ci --version
+          docker run --rm -i --entrypoint /opt/streamrip/bin/python streamrip:ci - < checks/container_smoke.py
           docker image rm streamrip:ci
 
   smoke-arm64:
@@ -61,6 +63,7 @@ jobs:
       - run: |
           docker buildx build --load --file Containerfile --tag streamrip:ci .
           docker run --rm streamrip:ci --version
+          docker run --rm -i --entrypoint /opt/streamrip/bin/python streamrip:ci - < checks/container_smoke.py
           docker image rm streamrip:ci
 
   build:
@@ -110,6 +113,7 @@ jobs:
           }
           build --load --tag "$image"
           docker run --rm "$image" --version
+          docker run --rm -i --entrypoint /opt/streamrip/bin/python "$image" - < checks/container_smoke.py
           [[ -n "$version" ]] || exit 0   # without a tag: built and tested, nothing to publish
           test "$(docker run --rm "$image" --version)" = "streamrip, version $version"
 

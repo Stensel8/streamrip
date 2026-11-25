@@ -12,6 +12,7 @@ on:
       - Containerfile
       - .dockerignore
       - .github/workflows/container.yml
+      - checks/container_smoke.py
       - pyproject.toml
       - uv.lock
       - README.md
@@ -64,6 +65,7 @@ jobs:
             --label "org.opencontainers.image.version=${version:-dev}" \
             --label "org.opencontainers.image.revision=$(git rev-parse HEAD)" .
           podman run --rm "$image" --version
+          podman run --rm -i --entrypoint /opt/streamrip/bin/python "$image" - < checks/container_smoke.py
           [[ -n "$version" ]] || exit 0   # without a tag: built and tested, nothing to publish
           test "$(podman run --rm "$image" --version)" = "streamrip, version $version"
 

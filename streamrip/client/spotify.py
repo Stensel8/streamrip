@@ -467,14 +467,18 @@ class SpotifyClient(Client):
 
     @property
     def soloist_backend(self):
-        """This client's Soloist backend, or None: the backend off, or the
-        Soloist API key not in the config, and then the audio goes to
+        """This client's Soloist backend, or None: the backend off, the
+        Soloist API key not in the config, or a computer that cannot record
+        (a container has no sound server), and then the audio goes to
         YouTube Music instead."""
         c = self.config
         if c.backend != "spotify" or not c.soloist_api_key:
             return None
         if self._soloist_backend is None:
-            self._soloist_backend = soloist.SoloistBackend(c)
+            backend = soloist.SoloistBackend(c)
+            if not backend.supported:
+                return None
+            self._soloist_backend = backend
         return self._soloist_backend
 
     async def pair_soloist(self, api_key: str) -> str:
@@ -489,6 +493,11 @@ class SpotifyClient(Client):
         self._soloist_backend = None
         backend = self.soloist_backend
         if backend is None:
+            if api_key and self.config.backend == "spotify":
+                raise AuthenticationError(
+                    "This computer cannot record Spotify's own audio: that needs "
+                    "Linux with PipeWire or PulseAudio (a container has neither)."
+                )
             raise AuthenticationError(
                 "Spotify's own audio needs the Soloist API key in the config."
             )
