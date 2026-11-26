@@ -72,6 +72,14 @@ def test_qobuz_album():
     assert (m.barcode, m.releasetype) == ("0603497941032", "album")
 
 
+def test_an_album_folder_can_sort_by_label_genre_and_type():
+    m = AlbumMetadata.from_qobuz(QOBUZ_ALBUM)
+    fmt = "{label}/{genre}/{releasetype}/{date} {title}"
+    assert m.format_folder_path(fmt) == Path(
+        f"Rhino - Warner Records/Pop/{m.releasetype}/1977-02-04 Rumours (2001 Remaster)"
+    )
+
+
 @pytest.mark.parametrize(
     ("source", "tier", "folder"),
     [
@@ -173,6 +181,7 @@ def test_qobuz_track():
     assert (t.title, t.artist) == ("Water Tower", "The Mountain Goats")
     assert (t.tracknumber, t.discnumber, t.composer) == (9, 1, "John Darnielle")
     assert (t.composers, t.lyricists) == (["John Darnielle"], ["John Darnielle"])
+    assert t.credits == {"producer": ["Trina Shoemaker"]}
     assert (t.replaygain_gain, t.replaygain_peak) == (-7.08, 0.936676)
     # Qobuz sent its (C) and (P) lines without their symbols: one line twice.
     assert album.get_copyright() == "2023 Merge Records"

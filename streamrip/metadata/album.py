@@ -127,7 +127,8 @@ class AlbumMetadata:
     def format_folder_path(self, formatter: str, restrict: bool = False) -> Path:
         """Render `formatter` into this album's folder name."""
         # Available keys: "albumartist", "title", "year", "bit_depth", "sampling_rate",
-        # "id", "albumcomposer", "container", "tracktotal", and "version".
+        # "id", "albumcomposer", "container", "tracktotal", "version", "label",
+        # "genre", "releasetype", "barcode" and "date".
         #
         # Two different editions of the same album can otherwise render to the
         # same folder and get merged together -- "tracktotal" and "version"
@@ -156,6 +157,11 @@ class AlbumMetadata:
             "container": self.info.container,
             "tracktotal": self.tracktotal,
             "version": name(self.version or "") or none_str,
+            "label": name(self.info.label or "") or none_str,
+            "genre": name(next(iter(self.genre), "")) or none_str,
+            "releasetype": self.releasetype or none_str,
+            "barcode": self.barcode or none_str,
+            "date": self.date or self.year,
         }
 
         return clean_filepath(formatter.format(**info))

@@ -15,6 +15,15 @@ lazy from .album import AlbumMetadata
 
 logger = logging.getLogger("streamrip")
 
+# The studio credits tagged, by tag, and the Qobuz roles that are each.
+CREDITS = frozendict(
+    {
+        "producer": ("producer",),
+        "engineer": ("engineer", "recordingengineer"),
+        "mixer": ("mixer", "mixingengineer"),
+    }
+)
+
 # What a title says beside the song's name: its brackets, and what follows " - ".
 _ASIDE = re.compile(r"[(\[]([^)\]]*)[)\]]|\s-\s(.+)$")
 
@@ -66,6 +75,8 @@ class TrackMetadata:
     replaygain_peak: float | None = None
     # The musical key as DJ software writes it: "Bb", "F#m".
     key: str | None = None
+    # Who produced, engineered and mixed it, by CREDITS' tags.
+    credits: frozendict[str, list[str]] = frozendict()
 
     @classmethod
     def from_qobuz(cls, album: AlbumMetadata, resp: dict) -> TrackMetadata | None:
@@ -107,6 +118,11 @@ class TrackMetadata:
             lyricists=qobuz_credited(resp, "lyricist", "composerlyricist") or None,
             replaygain_gain=gain.get("replaygain_track_gain"),
             replaygain_peak=gain.get("replaygain_track_peak"),
+            credits=frozendict(
+                (tag, names)
+                for tag, roles in CREDITS.items()
+                if (names := qobuz_credited(resp, *roles))
+            ),
         )
 
     @classmethod
