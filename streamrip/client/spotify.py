@@ -583,6 +583,7 @@ class SpotifyClient(Client):
 
     async def finish_login(self, code: str, verifier: str):
         """Trade the code from the login redirect for tokens, and log in."""
+        self._ensure_session()  # as login() does: the first request follows at once
         c = self.config
         try:
             token = await asyncio.to_thread(

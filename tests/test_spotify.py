@@ -301,9 +301,12 @@ async def test_the_login_url_carries_a_pkce_challenge_for_its_verifier(make_clie
 async def test_finishing_the_login_trades_the_code_for_tokens(make_client, spotify):
     spotify.on("POST", "/token", token_answer(refresh_token="FIRST"))
     client = make_client(access_token="", refresh_token="", token_expiry="")
-    client.logged_in = False
+    await client.session.close()
+    client.logged_in, client.session = False, None  # as the prompter has it
 
     await client.finish_login("THE-CODE", "THE-VERIFIER")
+
+    assert not client.session.closed  # the first request follows at once
 
     [call] = spotify.requests("/token")
     assert call["form"]["grant_type"] == "authorization_code"
