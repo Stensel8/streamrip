@@ -3,6 +3,16 @@
 All notable changes in this fork of [nathom/streamrip](https://github.com/nathom/streamrip). Numbers can refer to
 upstream issues and pull requests.
 
+## Unreleased
+
+- feat: a track of a list (CSV, `playlist download`) is found by its ISRC too,
+  on the release it came from
+- feat: FLAC downloads are checked against their MD5, and fetched again when
+  they don't match
+- feat: folder keys {label} {genre} {releasetype} {barcode} {date}; producer,
+  engineer and mixer tags from Qobuz; Deezer searches without a login
+- fix: a run with failed tracks exits with 1
+
 ## 2.8.2
 
 - fix: the first search after a new Spotify login no longer fails
