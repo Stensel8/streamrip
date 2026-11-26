@@ -1,4 +1,4 @@
-"""Deciding whether a search result is the track wanted (from Music-Sync's tests)."""
+"""Deciding whether a search result is the track wanted."""
 
 import pytest
 

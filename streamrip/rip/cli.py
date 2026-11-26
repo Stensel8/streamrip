@@ -1003,8 +1003,8 @@ async def csv_list(ctx, source, fallback_source, path, preview):
     """Download the tracks of a CSV list, found by searching a source.
 
     One track per row: its title and artist, and its album and length if you
-    have them. The columns of `streamrip playlist export` (Music-Sync)
-    and of other exporters are understood; a file without a header row is read
+    have them. The columns of `streamrip playlist export` and of other
+    exporters are understood; a file without a header row is read
     as "artist,title". The tracks go in a folder named after the file.
 
     Example usage:

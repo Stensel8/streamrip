@@ -1,7 +1,5 @@
 """What to tell the user, once per run, the first time they use a source."""
 
-MUSIC_SYNC = "https://github.com/Stensel8/Music-Sync"
-
 
 def notice_for(source: str, backend: str | None = None) -> str | None:
     """Rich markup for what the user should know about `source`, or None.
@@ -22,9 +20,7 @@ def notice_for(source: str, backend: str | None = None) -> str | None:
     return (
         "[yellow]Spotify:[/yellow] the audio is Spotify's own, at the account's "
         "quality, and a track takes about as long as it lasts. One that does not "
-        "work is found on YouTube Music instead, and is lossy. To have every "
-        "track from Qobuz, Tidal or Deezer, move your playlists to Tidal, or "
-        "export them to a CSV, with Music-Sync, and download them from there "
-        "([bold]streamrip csv list.csv[/bold]):\n  "
-        f"[link={MUSIC_SYNC}]{MUSIC_SYNC}[/link]"
+        "work is found on YouTube Music instead, and is lossy. To have a "
+        "playlist from Qobuz, Tidal or Deezer instead: [bold]streamrip playlist "
+        "download spotify --playlist NAME --source qobuz[/bold]."
     )

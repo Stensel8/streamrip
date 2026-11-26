@@ -12,15 +12,16 @@ upstream issues and pull requests.
   from a service's servers, and a Spotify track takes as long as it lasts
 - fix: a copyright and a phonographic line for the same year and holder are
   tagged once, as `℗ & © 2025 Label`
+- fix: the Spotify note points at `streamrip playlist download`, not at a tool of
+  its own
 
 ## 2.8.0
 
-Music-Sync is part of streamrip, and the web interface and the command line do
-the same things, in the same sections.
+The playlist tools are part of streamrip, and the web interface and the command
+line do the same things, in the same sections.
 
 - feat: `streamrip playlist` moves liked songs and playlists between Spotify,
-  Tidal and CSV, writes M3U8 for Navidrome and Jellyfin
-  ([Music-Sync#11](https://github.com/Stensel8/Music-Sync/issues/11)) and
+  Tidal and CSV, writes M3U8 for Navidrome and Jellyfin and
   downloads a list from Qobuz, Tidal or Deezer; MusicBrainz finds a track under
   another ISRC, and `--report` saves how every track was matched
   ([docs/playlists.md](docs/playlists.md))
@@ -463,9 +464,7 @@ flake below.
 - New dependencies: `ytmusicapi` and `yt-dlp[default]`. yt-dlp wants a
   JavaScript runtime (Deno or Node.js) for YouTube; a download that fails saying
   so is explained as such.
-- Credits are at the bottom of the README: the login and API handling and the
-  matching are those of [Music-Sync](https://github.com/Stensel8/Music-Sync), the
-  idea of metadata from Spotify and audio from YouTube Music is spotDL's, and
+- Credits are at the bottom of the README: the idea of metadata from Spotify and audio from YouTube Music is spotDL's, and
   [MediaHarbor](https://github.com/MediaHarbor/mediaharbor) was read as a
   reference. Its decryption of Spotify's Widevine-protected audio is not used.
 
@@ -475,11 +474,10 @@ flake below.
   searching a source, which it asks for ("Where should I search and download them
   from?", with what each source gives) unless `--source` says. `--fallback-source`
   gives a second source for the tracks the first does not have. The columns of
-  [Music-Sync](https://github.com/Stensel8/Music-Sync) and of Exportify,
-  TuneMyMusic and the like are understood, a file without a header row is read
+  Exportify, TuneMyMusic and the like are understood, a file without a header row is read
   as `artist,title`, and commas, semicolons and tabs work as separators. The first
-  five results of each search are scored on title, artist and length, as
-  Music-Sync does, so a live version, a remix or another artist's cover is not
+  five results of each search are scored on title, artist and length, so a
+  live version, a remix or another artist's cover is not
   taken for the track. The tracks go in a folder named after the file, as a
   playlist.
 
@@ -501,9 +499,8 @@ flake below.
 ### Notices
 
 - The first time Spotify is used in a run, streamrip says its audio comes from
-  YouTube Music and is lossy, and recommends moving the playlist first with
-  [Music-Sync](https://github.com/Stensel8/Music-Sync) (to Tidal, or to a CSV for
-  `streamrip csv`), with a link.
+  YouTube Music and is lossy, and recommends moving the playlist to Tidal, or to
+  a CSV for `streamrip csv`, first.
 - The first time Deezer is used with `lyrics` on, streamrip says that Deezer does
   not have lyrics for every track, so the others are looked up on LRCLIB, and how
   to turn that off. The README and the comment in the config say so too. Deezer's

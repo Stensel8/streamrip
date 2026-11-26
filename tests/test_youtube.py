@@ -1,8 +1,5 @@
 """The audio of a Spotify track from YouTube (Music): scoring a result against
 the track, picking the result, and yt-dlp fetching it from a local server.
-
-The score cases are those of Music-Sync's tests/test_matching.py
-(https://github.com/Stensel8/Music-Sync), whose matching this is.
 """
 
 import asyncio

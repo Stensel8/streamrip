@@ -50,8 +50,7 @@ browser.
   whatever failed.
 - Move your liked songs and playlists between Spotify and Tidal, export them to
   CSV and back, or download them from another source, like a Spotify playlist
-  in lossless from Qobuz ([details](docs/playlists.md)). This used to be
-  [Music-Sync](https://github.com/Stensel8/Music-Sync).
+  in lossless from Qobuz ([details](docs/playlists.md)).
 - `streamrip web` does all of this in your browser, logins included
   ([details](docs/web.md)).
 
@@ -254,9 +253,8 @@ streamrip was inspired by [rip](https://github.com/nathom/streamrip),
 [Tidal-Media-Downloader](https://github.com/yaronzz/Tidal-Media-Downloader)
 and [scdl](https://github.com/flyingrub/scdl). Lyrics come from
 [LRCLIB](https://lrclib.net). The Spotify support borrows from three projects
-([credits](docs/spotify.md#credits)). The playlist tools and the web interface
-come from Music-Sync, which grew out of csv2tidal by Nugman and borrows
-from spotify_to_tidal ([credits](docs/playlists.md#credits)).
+([credits](docs/spotify.md#credits)). The playlist tools grew out of csv2tidal
+by Nugman and borrow from spotify_to_tidal ([credits](docs/playlists.md#credits)).
 
 ## License
 
@@ -267,11 +265,9 @@ version 3 only](LICENSE) (AGPL-3.0-only). It grew out of two projects:
   contributors, under the [GNU General Public License, version 3
   only](LICENSE). The code that comes from there
   stays available under that licence as well.
-- **[Music-Sync](https://github.com/Stensel8/Music-Sync)** by Stensel8,
-  under the AGPL-3.0-only. It began as
-  [csv2tidal](https://github.com/Nugman/csv2tidal) by Nugman, under the
-  AGPL-3.0. The playlist tools (`streamrip/sync`, `streamrip playlist`) and the
-  web interface come from it.
+- **[csv2tidal](https://github.com/Nugman/csv2tidal)** by Nugman, under the
+  AGPL-3.0. The playlist tools (`streamrip/sync`, `streamrip playlist`) grew
+  out of it, and the web interface with them.
 
 Section 13 of both licences allows combining a work under one with a work under
 the other and conveying the result as one. streamrip is conveyed under the
@@ -281,7 +277,8 @@ keeps the licence it came with. [LICENSE](LICENSE) holds both texts, unchanged c
 those of the Free Software Foundation, as their own terms require.
 
 Copyright © nathom and the contributors of streamrip; Stensel8 and the
-contributors of this fork; Nugman, Stensel8 and the contributors of Music-Sync.
+contributors of this fork, its playlist tools included; Nugman and the
+contributors of csv2tidal.
 
 ## Disclaimer
 

@@ -1,4 +1,4 @@
-"""Playlists as M3U8 files that point at the music of a library (Music-Sync #11)."""
+"""Playlists as M3U8 files that point at the music of a library."""
 
 import shutil
 from pathlib import Path

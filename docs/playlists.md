@@ -3,9 +3,8 @@
 # Playlists
 
 `streamrip playlist` moves your liked songs and playlists between Spotify, Tidal
-and CSV files, and can download them from a source of your choice. It used to be
-[Music-Sync](https://github.com/Stensel8/Music-Sync). Everything here is also on
-the *Playlists* page of [`streamrip web`](web.md).
+and CSV files, and can download them from a source of your choice. Everything
+here is also on the *Playlists* page of [`streamrip web`](web.md).
 
 | From \ to   | CSV      | Spotify    | Tidal      | Your music folder |
 | ----------- | -------- | ---------- | ---------- | ----------------- |
@@ -100,13 +99,6 @@ login, or of your system if you don't have one. All logins are stored in
 `state.toml`, next to `config.toml`, so keep that folder private. streamrip
 makes the file readable only by you.
 
-### Coming from Music-Sync
-
-The `music-sync` commands are now `streamrip playlist` commands (`playlists`
-became `list`), and `music-sync web` is now [`streamrip web`](web.md). Log in
-again: the apps need streamrip's redirect URIs (`streamrip accounts` shows
-them), Music-Sync used port 8888 and streamrip uses 9900.
-
 ## How tracks are matched
 
 Tracks that are already in the target playlist are recognised without a lookup,
@@ -167,7 +159,7 @@ semicolons or tabs. A file without a header row is read as `artist,title`. With
 
 ## Credits
 
-The playlist tools come from Music-Sync, which started as
+The playlist tools started as
 [csv2tidal](https://github.com/Nugman/csv2tidal), a small script by
 [Nugman](https://github.com/Nugman) that added a list of albums to your Tidal
 favourites. He got the idea from
@@ -180,7 +172,6 @@ We still borrow ideas from it. All three were built on
 [tamland](https://github.com/tamland) and kept alive by
 [morguldir](https://github.com/morguldir) and
 [tehkillerbee](https://github.com/tehkillerbee). [Stensel8](https://github.com/Stensel8) combined csv2tidal
-with his own prototype into Music-Sync, and later merged Music-Sync into
-streamrip. The colours of the web interface come from
+with his own prototype, which is now part of streamrip. The colours of the web interface come from
 [daisyUI](https://daisyui.com). For the licence, see
 [License](../README.md#license).

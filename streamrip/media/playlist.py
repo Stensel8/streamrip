@@ -39,7 +39,7 @@ RESOLVE_CONCURRENCY = 20
 LASTFM_MAX_TRACKS = 10_000
 
 # A list's track is searched for: from this score on a search result is the
-# track (the threshold of Music-Sync), and this many results are looked at.
+# track (the playlist tools' threshold), and this many results are looked at.
 MIN_SCORE = 0.8
 SEARCH_LIMIT = 5
 

@@ -121,15 +121,6 @@ The Spotify support borrows from a few projects. Thank you:
 - **[Spotify Soloist](https://github.com/spotify/soloist)** (MIT), Spotify's own
   official client, which streamrip drives for Spotify's own audio
   (`streamrip/client/soloist.py`).
-- **[Music-Sync](https://opencommit.eu/Stensel8/Music-Sync)** (AGPL-3.0, same
-  author), now part of streamrip as `streamrip playlist`. The Spotify login and
-  API handling follow it: OAuth with PKCE and a loopback redirect
-  (`streamrip/rip/spotify_login.py`, `streamrip/client/spotify.py`), token
-  refresh, and Spotify's rules for development-mode apps since February 2026
-  (Premium for the app's owner, ten search results per request, playlist tracks
-  under `item`, only your own playlists). Matching a Spotify track to a YouTube
-  Music result (`streamrip/client/audio_match.py`) is adapted from its
-  `matching.py`, and the screenshots above come from its README.
 - **[spotDL](https://github.com/spotDL/spotify-downloader)** (MIT), for the idea
   of taking the metadata from Spotify and the audio from YouTube Music, and of
   looking a track up by ISRC first and then scoring candidates by name, artist,

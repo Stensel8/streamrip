@@ -1,9 +1,9 @@
 """`streamrip web`: downloads, search, the playlist tools and every login, in
 a browser on this computer.
 
-The security of Music-Sync's web interface, which this grew out of: only
-loopback names are answered (no DNS rebinding), changes from another website
-are refused (no CSRF), and the pages run only their own scripts.
+Its security: only loopback names are answered (no DNS rebinding), changes
+from another website are refused (no CSRF), and the pages run only their own
+scripts.
 """
 
 import contextlib

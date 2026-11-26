@@ -4,9 +4,8 @@ on a local port.
 The login is OAuth with PKCE. After the user has allowed streamrip in their
 browser, Spotify sends the browser to the redirect URI, which is a port on this
 computer; this catches that one request. The playlist tools log in to Tidal's
-official API the same way, at another path on the same port. The server and its checks follow the
-CLI login of Music-Sync (https://github.com/Stensel8/Music-Sync,
-musicsync/oauth.py), and the loopback redirect is what spotDL does as well.
+official API the same way, at another path on the same port. The loopback
+redirect is what spotDL does as well.
 
 Where the browser is on another machine than streamrip (over SSH, say), the
 redirect cannot arrive, and the user pastes the address they ended up on.

@@ -3,8 +3,6 @@
 One module for every place streamrip compares tracks: a Spotify track with
 YouTube Music's results, a row of a CSV list with a source's search results,
 and a track of one service's playlist with another's (`streamrip playlist`).
-It comes from Music-Sync (https://github.com/Stensel8/Music-Sync,
-musicsync/matching.py), by the same author, which became part of streamrip.
 The idea of looking a track up by its ISRC first and then scoring the
 candidates on name, artist, album and length comes from spotDL
 (https://github.com/spotDL/spotify-downloader).

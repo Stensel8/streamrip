@@ -1,4 +1,4 @@
-"""`streamrip playlist`: Music-Sync's commands, as part of streamrip."""
+"""`streamrip playlist`: the playlist commands."""
 
 import csv
 

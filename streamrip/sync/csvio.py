@@ -1,9 +1,9 @@
 """Track lists as CSV files: read for `streamrip csv` and `streamrip playlist
 import`, written by `streamrip playlist export`.
 
-Reading takes what Music-Sync, Exportify, TuneMyMusic, Soundiiz or a
-spreadsheet make; writing makes the columns Music-Sync always made, so a list
-exported from it before still reads the same.
+Reading takes what streamrip itself, Exportify, TuneMyMusic, Soundiiz or a
+spreadsheet make; writing keeps the columns it always had, so an older export
+still reads the same.
 """
 
 import csv

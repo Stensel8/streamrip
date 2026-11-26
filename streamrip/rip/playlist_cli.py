@@ -1,8 +1,7 @@
 """`streamrip playlist`: move liked songs and playlists between Spotify, Tidal and
 CSV files, or download them from a lossless source.
 
-What Music-Sync's `music-sync` command did, as part of streamrip. The work
-itself is in streamrip/sync; this is the command line around it.
+The work itself is in streamrip/sync; this is the command line around it.
 """
 
 import logging

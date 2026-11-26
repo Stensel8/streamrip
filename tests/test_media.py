@@ -1011,7 +1011,7 @@ def _rows(tracks):
         ),
     ],
     ids=[
-        "the csv of Music-Sync",
+        "the csv of streamrip playlist export",
         "exportify",
         "tunemymusic",
         "semicolons",
