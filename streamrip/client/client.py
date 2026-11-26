@@ -973,6 +973,8 @@ class Client(RequestClient, ABC):
     max_quality: int
     # What the source can be searched for: the kinds `search` takes.
     search_types: tuple[str, ...] = ("track", "album", "artist", "playlist")
+    # Whether a search needs the login (Deezer's is open to anyone).
+    search_needs_login = True
 
     def check_search_type(self, media_type: str):
         """Refuse a search for a kind this source has none for, in words."""

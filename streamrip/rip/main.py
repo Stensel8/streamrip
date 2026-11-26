@@ -391,11 +391,20 @@ class Main:
             console.print(load_table(clients))
         return not (failed_items or d.failed_now)
 
+    async def search_client(self, source: str):
+        """`source`'s client to search with: logged in, unless its search is
+        open to anyone (the login is asked for when a result is downloaded)."""
+        client = self.clients.get(source)
+        if client is None or client.search_needs_login:
+            return await self.get_logged_in_client(source)
+        client._ensure_session()
+        return client
+
     async def _search(
         self, source: str, media_type: str, query: str, limit: int
     ) -> SearchResults | None:
         """Search results, or None (with a message) if there are none."""
-        client = await self.get_logged_in_client(source)
+        client = await self.search_client(source)
         with console.status(f"[bold]Searching {source}", spinner="dots"):
             try:
                 pages = await client.search(media_type, query, limit=limit)

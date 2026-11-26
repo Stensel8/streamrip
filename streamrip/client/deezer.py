@@ -257,6 +257,7 @@ class DeezerClient(Client):
 
     source = "deezer"
     max_quality = 2
+    search_needs_login = False
     # upper bound for favorites pagination
     max_favorites = 10_000
 

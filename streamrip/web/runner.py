@@ -206,7 +206,7 @@ class Runner:
     async def _search(self, source: str, media_type: str, query: str) -> list[Result]:
         main = Main(self.config, interactive=False)
         try:
-            client = await main.get_logged_in_client(source)
+            client = await main.search_client(source)
             pages = await client.search(media_type, query, limit=SEARCH_RESULTS)
         finally:
             for client in main.clients.values():
