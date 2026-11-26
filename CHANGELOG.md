@@ -21,6 +21,9 @@ A new web interface, and more from each service.
 - feat: folder keys {label} {genre} {releasetype} {barcode} {date}; the Library
   page and `database browse` show each download's file
 - fix: a run with failed tracks exits with 1
+- fix: a preview says what it would download, from where; Transfer and Import
+  have one too
+- fix: the folders and file names the page sends are checked tighter
 - chore: the installers check uv's installer against a pinned checksum, and
   every dependency is pinned and kept current
 
