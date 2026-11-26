@@ -931,6 +931,11 @@ def test_settings_change_the_config_and_a_broken_file_is_not_saved(client, servi
     wrong = {"changes": {"conversion": {"codec": "WMA"}}}  # not one of its values
     assert client.post("/settings/api", json=wrong).status_code == 400
 
+    reset = client.post("/settings/reset").get_json()
+    assert "back to its default" in reset["message"]
+    assert config.session.downloads.max_connections == 5
+    assert "max_connections = 3" in config.path.with_name("config.toml.bak").read_text()
+
     before = config.path.read_text()
     broken = {"text": "[downloads\n"}
     assert (

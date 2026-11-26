@@ -3,6 +3,7 @@
   import { api, post, type Changes, type Section, type Settings, type Value } from "../lib/api";
   import Icon from "../lib/Icon.svelte";
   import { say } from "../lib/notice.svelte";
+  import { leaving } from "../lib/router.svelte";
   import OptionRow from "../lib/OptionRow.svelte";
   import PageHead from "../lib/ui/PageHead.svelte";
 
@@ -70,13 +71,31 @@
     for (const k of changed) values[k] = structuredClone(saved[k]);
   }
 
-  // Leaving with changes that are not saved asks first.
+  // Leaving with changes that are not saved asks first: the tab, and a link
+  // to another page of the app.
   $effect(() => {
     if (!changed.length) return;
     const ask = (e: BeforeUnloadEvent) => e.preventDefault();
     addEventListener("beforeunload", ask);
-    return () => removeEventListener("beforeunload", ask);
+    leaving.question = `Leave without saving ${changed.length === 1 ? "the change" : `${changed.length} changes`}?`;
+    return () => {
+      removeEventListener("beforeunload", ask);
+      leaving.question = "";
+    };
   });
+
+  async function reset() {
+    const question =
+      "Put every setting back to its default? Your logins stay, and the old file is kept as config.toml.bak.";
+    if (!confirm(question)) return;
+    try {
+      const answer = await post<Settings & { message: string }>("/settings/reset");
+      take(answer);
+      say(answer.message);
+    } catch (e) {
+      say((e as Error).message, true);
+    }
+  }
 
   // The section in view is the one the menu marks.
   function spy(node: HTMLElement, name: string) {
@@ -106,6 +125,9 @@
 
     <div class="min-w-0">
       <PageHead title="Settings">
+        {#snippet actions()}
+          <button type="button" class="btn" onclick={reset}>Reset to defaults</button>
+        {/snippet}
         Every option of your config file. A change counts from the next download; the command line reads it at its
         next run.
       </PageHead>

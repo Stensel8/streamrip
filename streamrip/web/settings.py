@@ -11,7 +11,7 @@ from flask import (
     jsonify,
 )
 
-from ..config import BLANK_CONFIG_PATH, ConfigData, write_private
+from ..config import BLANK_CONFIG_PATH, ConfigData, reset_file, write_private
 from ..sync.errors import ProviderError
 from .common import get_config, sent, spa
 
@@ -161,10 +161,11 @@ def _checked(option: Option, value, current):
     return value.strip() if isinstance(value, str) else value
 
 
-def _settings() -> Response:
+def _settings(**extra) -> Response:
     """Every option with its words and its value, for the page."""
     config = get_config()
     return jsonify(
+        **extra,
         path=str(config.path),
         sections=[
             {
@@ -221,6 +222,18 @@ def save() -> Response:
     if changes:
         config.update_options(changes)
     return _settings()
+
+
+@settings_pages.post("/reset")
+def reset() -> Response:
+    """Every option back to its default. The logins stay (they are not in the
+    file), and the old file is kept beside it."""
+    config = get_config()
+    config.save_file()  # what this run changed (a token) first
+    backup = reset_file(config.path)
+    config.reload()
+    kept = f" The old file is {backup.name}, next to it." if backup else ""
+    return _settings(message=f"Every setting is back to its default.{kept}")
 
 
 @settings_pages.get("/file/api")

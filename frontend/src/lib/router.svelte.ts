@@ -5,13 +5,24 @@ export const PAGES = ["/", "/playlists", "/accounts", "/library", "/settings", "
 
 export const route = $state({ path: location.pathname });
 
+// What a page with changes not saved yet asks before it is left (Settings).
+export const leaving = $state({ question: "" });
+
+const mayLeave = () => !leaving.question || confirm(leaving.question);
+
 export function go(path: string) {
+  if (!mayLeave()) return;
   history.pushState(null, "", path);
   route.path = location.pathname;
   scrollTo(0, 0);
 }
 
-addEventListener("popstate", () => (route.path = location.pathname));
+addEventListener("popstate", () => {
+  if (location.pathname === route.path) return; // a section of the same page
+  // The browser has gone back already: staying is going forward again.
+  if (mayLeave()) route.path = location.pathname;
+  else history.pushState(null, "", route.path);
+});
 
 addEventListener("click", (e) => {
   const link = (e.target as Element | null)?.closest?.("a");

@@ -3,6 +3,7 @@
 import copy
 import logging
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -569,6 +570,21 @@ class Config:
 
     def __exit__(self, *_):
         self.save_file()
+
+
+def reset_file(path: Path) -> Path | None:
+    """Put the defaults in the config at path, and keep the old one beside it
+    (config.toml.bak), which has the settings (and from before 2.8 the logins
+    too). Where it was kept, if there was one."""
+    if not path.is_file():
+        set_user_defaults(path)
+        return None
+    backup = path.with_name(f"{path.name}.bak")
+    shutil.copy2(path, backup)
+    if os.name == "posix":
+        backup.chmod(0o600)
+    set_user_defaults(path)
+    return backup
 
 
 def set_user_defaults(path: Path, /):

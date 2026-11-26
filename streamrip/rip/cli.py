@@ -35,7 +35,7 @@ from .stopping import terminate
 # Only the commands that run need these: --help and --version do not.
 lazy from .. import db
 lazy from ..client import new_session
-lazy from ..config import Config, expand_home, set_user_defaults
+lazy from ..config import Config, expand_home, reset_file, set_user_defaults
 lazy from ..console import console, err_console, plural
 lazy from ..exceptions import (
     AccountHalt,
@@ -706,17 +706,9 @@ def config_reset(ctx, yes):
         console.print("[green]Reset aborted")
         return
 
-    # A copy first: the old file has the settings, and a config from before 2.8
-    # its logins too.
-    backup = config_path.with_name(f"{config_path.name}.bak")
-    kept = config_path.is_file()
-    if kept:
-        shutil.copy2(config_path, backup)
-        if os.name == "posix":
-            backup.chmod(0o600)
-    set_user_defaults(config_path)
+    backup = reset_file(config_path)
     console.print(f"Reset the config file at [bold cyan]{config_path}!")
-    if kept:
+    if backup:
         console.print(f"The old one is at {escape(str(backup))}.", highlight=False)
 
 
