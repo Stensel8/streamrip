@@ -134,10 +134,11 @@ async def flac_intact(path: Path) -> bool:
     except mutagen.MutagenError:
         return True
     codec = {16: "pcm_s16le", 24: "pcm_s24le"}.get(info.bits_per_sample)
-    if not info.md5_signature or codec is None:
+    # No ffmpeg is no reason to fail a FLAC download, which needs none.
+    if not info.md5_signature or codec is None or (ffmpeg := find_ffmpeg()) is None:
         return True
     proc = await asyncio.create_subprocess_exec(
-        require_ffmpeg(),
+        ffmpeg,
         *("-nostdin", "-v", "quiet", "-i", str(path), "-map", "0:a:0"),
         *("-c:a", codec, "-f", "md5", "-"),
         stdin=asyncio.subprocess.DEVNULL,
