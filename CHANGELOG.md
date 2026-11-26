@@ -3,6 +3,11 @@
 All notable changes in this fork of [nathom/streamrip](https://github.com/nathom/streamrip). Numbers can refer to
 upstream issues and pull requests.
 
+## Unreleased
+
+- feat: `uninstall.sh` and `uninstall.ps1` remove streamrip and what it keeps
+  on the computer; your music stays
+
 ## 2.8.1
 
 A release of fixes, mostly for Spotify.

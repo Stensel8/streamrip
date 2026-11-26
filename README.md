@@ -144,6 +144,11 @@ nix run . -- url <link>      # x86_64 Linux, from this checkout
 
 More in [docs/nix.md](docs/nix.md).
 
+### Uninstall
+
+`./uninstall.sh` (or `.\uninstall.ps1` on Windows) removes streamrip and what it
+keeps: its config, logins, databases and Spotify's client. Your music stays.
+
 ## Use
 
 ```bash
