@@ -228,6 +228,8 @@ class TidalClient(Client):
         item_id = str(item_id)
         if item_id.startswith("favorites:"):
             return await self._favorites(item_id.removeprefix("favorites:"))
+        if item_id.startswith("mix:"):
+            return await self._mix(item_id.removeprefix("mix:"))
         if media_type not in {"track", "album", "playlist", "video", "artist"}:
             raise ValueError(f"Tidal has no {media_type}s")
 
@@ -370,6 +372,18 @@ class TidalClient(Client):
         self._note_hires_tags(liked)
         self._listed.update((str(t["id"]), t) for t in liked)
         return {"title": "Tidal favorites", "tracks": liked}
+
+    async def _mix(self, mix_id: str) -> dict:
+        """A mix (a track's or an artist's radio, My Mix) as a playlist."""
+        page, tracks = await asyncio.gather(
+            self._api_request("pages/mix", {"mixId": mix_id, "deviceType": "BROWSER"}),
+            self._get_tracks(f"mixes/{mix_id}"),
+        )
+        title = page.get("title") or "Tidal"
+        return {
+            "title": title if "mix" in title.lower() else f"{title} Mix",
+            "tracks": tracks,
+        }
 
     async def _add_hires_format(self, album: dict, tracks: list[dict]):
         """Say what a hi-res album really is, for its folder name.

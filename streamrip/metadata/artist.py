@@ -51,8 +51,8 @@ def _qobuz_albums(resp: dict, prefer_explicit: bool) -> list[dict]:
     # role -- other artists' covers and remixes included (18 of 30 Seconds To
     # Mars' 56). Keep the ones the artist is one of the album artists of,
     # which still keeps collaborations.
-    me = resp.get("id")
-    own = [a for a in albums if me in _artist_ids(a) or not _artist_ids(a)]
+    me = resp.get("id")  # none for favorites, which are all one's own
+    own = [a for a in albums if not me or me in _artist_ids(a) or not _artist_ids(a)]
     logger.debug(
         "%s: left out %s by other artists",
         resp["name"],

@@ -179,8 +179,9 @@ streamrip playlist import tidal list.csv --playlist "From CSV"  # a CSV into a p
 
 Links from Qobuz, Deezer, SoundCloud and Spotify work the same way. So do links
 to your likes, like `https://listen.tidal.com/my-collection/tracks` (or
-`/albums`) and a Deezer profile's `/loved` or `/albums`. Every command has
-`--help`.
+`/albums`), `https://play.qobuz.com/user/library/favorites/tracks` (or
+`/albums`) and a Deezer profile's `/loved` or `/albums`, and Tidal mixes
+(`https://tidal.com/mix/…`). Every command has `--help`.
 
 streamrip asks each source for its best quality and steps down when a track
 isn't available in it. `--quality` sets the highest it asks for:

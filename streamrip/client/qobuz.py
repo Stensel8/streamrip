@@ -246,6 +246,8 @@ class QobuzClient(Client):
         return f"{label}, {kind}" if label else kind, best
 
     async def get_metadata(self, item_id: str, media_type: str) -> dict:
+        if str(item_id).startswith("favorites:"):
+            return await self._favorites(item_id.removeprefix("favorites:"))
         if media_type in {"artist", "label"}:
             return await self._with_all_albums(media_type, item_id)
 
@@ -311,6 +313,22 @@ class QobuzClient(Client):
         for page in pages:
             items.extend((page.get("tracks") or {}).get("items") or [])
         logger.debug("Fetched %d/%d playlist tracks", len(items), total)
+
+    async def _favorites(self, kind: str) -> dict:
+        """The account's favorite tracks as a playlist, or its favorite albums
+        as a label."""
+        epoint, params = "favorite/getUserFavorites", {"type": kind, "limit": 500}
+        first = await self._request_ok(epoint, params)
+        pages = await asyncio.gather(
+            *(
+                self._request_ok(epoint, {**params, "offset": offset})
+                for offset in range(500, first[kind]["total"], 500)
+            )
+        )
+        items = [item for page in (first, *pages) for item in page[kind]["items"]]
+        if kind == "albums":
+            return {"name": "Qobuz favorite albums", "albums": {"items": items}}
+        return {"name": "Qobuz favorites", "tracks": {"items": items}}
 
     async def _with_all_albums(self, media_type: str, item_id: str) -> dict:
         """An artist or label with its whole catalog, fetched 500 albums at a time."""

@@ -221,6 +221,30 @@ class TidalFavoriteURL(URL):
         return pending_item(media_type, f"favorites:{kind}", client, config, db)
 
 
+class QobuzFavoriteURL(TidalFavoriteURL):
+    """The Qobuz account's favorite tracks, as a playlist, or albums."""
+
+    source = "qobuz"
+    regex = re.compile(
+        r"https://play\.qobuz\.com/user/library/favorites/(tracks|albums)"
+    )
+
+
+class TidalMixURL(URL):
+    """A Tidal mix (a track's or an artist's radio, My Mix), as a playlist."""
+
+    source = "tidal"
+    regex = re.compile(r"https://(?:listen\.)?tidal\.com/(?:browse/)?mix/(\w+)")
+
+    async def into_pending(
+        self,
+        client: Client,
+        config: Config,
+        db: Database,
+    ) -> Pending:
+        return pending_item("playlist", f"mix:{self.match[1]}", client, config, db)
+
+
 class SoundcloudURL(URL):
     source = "soundcloud"
 
@@ -312,6 +336,8 @@ def parse_url(url: str) -> URL | None:
         DeezerDynamicURL,
         DeezerFavoriteURL,
         TidalFavoriteURL,
+        QobuzFavoriteURL,
+        TidalMixURL,
         ShortURL,
     )
     return next(filter(None, (kind.from_str(url) for kind in kinds)), None)
