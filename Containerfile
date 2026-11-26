@@ -27,9 +27,9 @@ RUN set -eux; \
         --enable-libmp3lame --enable-libopus --enable-libvorbis \
         --enable-protocol=file,pipe,concat \
         --enable-demuxer=flac,mp3,mov,matroska,ogg,aac,aiff,wav \
-        --enable-muxer=flac,mp3,ipod,mp4,mov,ogg,opus,aiff,wav,null \
+        --enable-muxer=flac,mp3,ipod,mp4,mov,ogg,opus,aiff,wav,null,md5 \
         --enable-decoder=flac,alac,aac,mp3float,mp3,opus,vorbis,mjpeg,png,pcm_s16le,pcm_s24le,pcm_s32le,pcm_f32le,pcm_s16be,pcm_s24be,pcm_s32be \
-        --enable-encoder=flac,alac,aac,libmp3lame,libopus,libvorbis,pcm_s16be,pcm_s24be,pcm_s32be \
+        --enable-encoder=flac,alac,aac,libmp3lame,libopus,libvorbis,pcm_s16be,pcm_s24be,pcm_s32be,pcm_s16le,pcm_s24le \
         --enable-parser=flac,aac,mpegaudio,opus,vorbis,mjpeg,png \
         --enable-bsf=aac_adtstoasc \
         --enable-filter=aformat,aresample,anull,null,format,ebur128; \

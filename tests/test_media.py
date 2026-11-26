@@ -44,7 +44,7 @@ from streamrip.metadata import (
     TrackInfo,
     TrackMetadata,
 )
-from streamrip.utils.ffmpeg_utils import measure_replaygain
+from streamrip.utils.ffmpeg_utils import find_ffmpeg, flac_intact, measure_replaygain
 
 FIXTURES = {
     "flac": "tests/silence.flac",
@@ -1382,3 +1382,16 @@ async def test_replaygain_brings_a_track_to_minus_18_lufs(tmp_path):
     # Ten times the amplitude is 20 dB: the gain falls by as much, the peak is ten times as high.
     assert gains["quiet"][0] - gains["loud"][0] == pytest.approx(20.0, abs=0.5)
     assert gains["loud"][1] / gains["quiet"][1] == pytest.approx(10.0, rel=0.05)
+
+
+def test_a_flac_whose_audio_is_broken_is_not_intact(tmp_path):
+    if (ffmpeg := find_ffmpeg()) is None:
+        pytest.skip("needs ffmpeg")
+    path = tmp_path / "t.flac"
+    args = ["-f", "lavfi", "-i", "sine=d=5", "-sample_fmt", "s16", str(path)]
+    subprocess.run([ffmpeg, "-v", "error", *args], check=True)
+    assert asyncio.run(flac_intact(path))
+    with path.open("r+b") as f:
+        f.seek(path.stat().st_size // 2)
+        f.write(bytes(64))
+    assert not asyncio.run(flac_intact(path))

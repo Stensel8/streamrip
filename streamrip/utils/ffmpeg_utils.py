@@ -7,6 +7,8 @@ import shutil
 lazy from pathlib import Path
 
 lazy import imageio_ffmpeg
+lazy import mutagen
+lazy from mutagen.flac import FLAC
 
 from ..exceptions import FFmpegNotFoundError, NonStreamableError
 
@@ -121,3 +123,29 @@ async def measure_replaygain(path: Path) -> tuple[float, float] | None:
     if proc.returncode or not (loudness and peak):
         return None
     return -18.0 - float(loudness[1]), 10 ** (float(peak[1]) / 20)
+
+
+async def flac_intact(path: Path) -> bool:
+    """Whether a FLAC file's samples are the ones it was made from: their MD5
+    is the one in its header. True when there is nothing to compare with (the
+    tagging says so of a file that is no FLAC)."""
+    try:
+        info = FLAC(path).info
+    except mutagen.MutagenError:
+        return True
+    codec = {16: "pcm_s16le", 24: "pcm_s24le"}.get(info.bits_per_sample)
+    if not info.md5_signature or codec is None:
+        return True
+    proc = await asyncio.create_subprocess_exec(
+        require_ffmpeg(),
+        *("-nostdin", "-v", "quiet", "-i", str(path), "-map", "0:a:0"),
+        *("-c:a", codec, "-f", "md5", "-"),
+        stdin=asyncio.subprocess.DEVNULL,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    out, _ = await proc.communicate()
+    # An ffmpeg without the md5 muxer cannot tell: not a reason to throw it away.
+    return (
+        proc.returncode != 0 or out.strip() == f"MD5={info.md5_signature:032x}".encode()
+    )

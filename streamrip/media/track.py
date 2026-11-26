@@ -25,7 +25,7 @@ from ..metadata import AlbumMetadata, TrackMetadata, tag_file
 from ..metadata.tagger import TAGGABLE_EXTENSIONS
 from ..metadata.util import format_quality
 from ..progress import add_title, get_progress_callback, remove_title
-from ..utils.ffmpeg_utils import measure_replaygain
+from ..utils.ffmpeg_utils import flac_intact, measure_replaygain
 from .artwork import download_artwork
 from .media import Media, Pending, PendingItem
 from .semaphore import global_download_semaphore
@@ -273,6 +273,14 @@ class Track(Media):
                         label,
                     ) as callback:
                         await self.downloadable.download(part, callback)
+                    if part.suffix == ".flac" and not await flac_intact(part):
+                        if attempt < MAX_DOWNLOAD_ATTEMPTS:
+                            part.unlink()  # a retry starts over, not resumes this
+                            raise ValueError("its audio does not match its MD5")
+                        logger.warning(
+                            "'%s' kept, though its audio does not match its MD5",
+                            self.meta.title,
+                        )
                 except asyncio.CancelledError:
                     # Ctrl-C. No later attempt continues this file (a new run
                     # starts over), and a "Song.part.flac" left beside the
