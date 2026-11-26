@@ -15,7 +15,7 @@ def planned(monkeypatch, media, seconds=600.0):
         source = "qobuz"
         paced = True
 
-        def pace(self, *_):
+        def pace(self, *_, **__):
             pass
 
         def load(self):
@@ -40,8 +40,12 @@ def test_plan_says_quality_new_tracks_and_time(monkeypatch):
     text = planned(monkeypatch, [album])
 
     assert "Blue Lines [FLAC 24B-96kHz]: 9 tracks, 3 already downloaded" in text
-    assert "Qobuz: 9 tracks, about 10 min at its slow pace" in text
-    assert text.rstrip().endswith("Nothing was downloaded.")
+    assert (
+        "Qobuz: 9 tracks, about 10 min at its slow pace (3 already this hour)" in text
+    )
+    assert text.rstrip().endswith(
+        "9 tracks would be downloaded from Qobuz. Nothing was downloaded."
+    )
 
 
 def test_plan_without_anything_new_says_so(monkeypatch):

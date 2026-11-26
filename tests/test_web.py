@@ -467,10 +467,11 @@ def test_nothing_new_to_download_is_no_failure(services, monkeypatch):
 
 def test_a_download_preview_says_what_it_would_do(services, monkeypatch):
     monkeypatch.setattr(runner_module, "Main", FakeMain)
-    lines = (["Album: 9 tracks"], ["Qobuz: 9 tracks, at full speed"])
+    summary = "9 tracks would be downloaded from Qobuz."
+    lines = (["Album: 9 tracks"], ["Qobuz: 9 tracks, at full speed"], summary)
     monkeypatch.setattr(runner_module, "plan_lines", lambda _main: lines)
     job = Job("p", "plan", "Preview")
-    assert Runner(services.config).plan(job, nothing) == "Nothing was downloaded."
+    assert Runner(services.config).plan(job, nothing) == summary
     assert [text for _, text in job.log] == [*lines[0], *lines[1]]
 
 

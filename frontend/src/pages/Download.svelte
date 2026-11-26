@@ -115,8 +115,17 @@
 
 {#snippet fallbacks(chain: { source: string; fallback: string; then: string })}
   <Field label="Download from"><SourceSelect sources={data!.sources} bind:value={chain.source} /></Field>
-  <Field label="Else from"><SourceSelect sources={data!.sources} bind:value={chain.fallback} optional /></Field>
-  <Field label="Then from"><SourceSelect sources={data!.sources} bind:value={chain.then} optional /></Field>
+  <Field label="Else from"
+    ><SourceSelect sources={data!.sources} bind:value={chain.fallback} optional exclude={[chain.source]} /></Field
+  >
+  <Field label="Then from"
+    ><SourceSelect
+      sources={data!.sources}
+      bind:value={chain.then}
+      optional
+      exclude={[chain.source, chain.fallback]}
+    /></Field
+  >
 {/snippet}
 
 <PageHead title="Download">

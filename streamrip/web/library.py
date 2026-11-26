@@ -65,5 +65,7 @@ def clear(table: str) -> Response:
     forgotten = (downloads if table == "downloads" else failed).clear()
     what = "downloaded track" if table == "downloads" else "failed download"
     return jsonify(
-        message=f"Forgot {plural(forgotten, what)}." if forgotten else "Nothing to forget."
+        message=f"Forgot {plural(forgotten, what)}."
+        if forgotten
+        else "Nothing to forget."
     )

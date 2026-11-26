@@ -35,9 +35,9 @@
   }
 
   let download = $state({ service: "", playlist: "", source: "", fallback: "", then: "" });
-  let transfer = $state({ source: "", playlist: "", target: "", into: "playlist", name: "", min_score: 0.8, dry_run: false });
+  let transfer = $state({ source: "", playlist: "", target: "", into: "playlist", name: "", min_score: 0.8 });
   let exporting = $state({ service: "", playlist: "", format: "csv", library: "", folder: "" });
-  let importing = $state({ service: "", contains: "tracks", into: "playlist", playlist: "streamrip import", min_score: 0.8, dry_run: false });
+  let importing = $state({ service: "", contains: "tracks", into: "playlist", playlist: "streamrip import", min_score: 0.8 });
   let importFile = $state<FileList | undefined>();
 
   $effect(() => listOf(download.service));
@@ -53,14 +53,16 @@
         return slot.start(`/playlists/${service}/download`, { ...rest, plan });
       }
       case "transfer":
-        return slot.start("/playlists/transfer", transfer);
+        // A preview only looks: it changes nothing.
+        return slot.start("/playlists/transfer", { ...transfer, dry_run: plan });
       case "export": {
         const { service, ...rest } = exporting;
         return slot.start(`/playlists/${service}/export`, rest);
       }
       case "import": {
         const form = new FormData();
-        for (const [k, v] of Object.entries(importing)) if (k !== "dry_run" || v) form.set(k, String(v));
+        for (const [k, v] of Object.entries(importing)) form.set(k, String(v));
+        if (plan) form.set("dry_run", "1");
         if (importFile?.[0]) form.set("file", importFile[0]);
         return slot.start(`/playlists/${importing.service}/import`, form);
       }
@@ -99,13 +101,17 @@
   </div>
 {/snippet}
 
-{#snippet matching(value: { min_score: number; dry_run: boolean })}
+{#snippet matching(value: { min_score: number })}
   <Field label="A match needs a score of">
     <input type="number" min="0" max="1" step="0.05" bind:value={value.min_score} />
   </Field>
-  <label class="flex items-center gap-2 self-end pb-2 text-sm text-muted">
-    <input type="checkbox" bind:checked={value.dry_run} /> Only look: change nothing
-  </label>
+{/snippet}
+
+{#snippet buttons(action: string)}
+  <div class="flex flex-wrap items-end justify-end gap-2 sm:col-span-full">
+    <button class="btn" type="submit" value="plan" disabled={slot.busy}>Preview</button>
+    <button class="btn btn-primary" type="submit" disabled={slot.busy}>{action}</button>
+  </div>
 {/snippet}
 
 <PageHead title="Playlists">
@@ -144,12 +150,18 @@
         <Field label="From">{@render services(download, "service")}</Field>
         <Field label="What">{@render which(download.service, download)}</Field>
         <Field label="Download from"><SourceSelect sources={data.sources} bind:value={download.source} /></Field>
-        <Field label="Else from"><SourceSelect sources={data.sources} bind:value={download.fallback} optional /></Field>
-        <Field label="Then from"><SourceSelect sources={data.sources} bind:value={download.then} optional /></Field>
-        <div class="flex flex-wrap items-end justify-end gap-2 sm:col-span-full">
-          <button class="btn" type="submit" value="plan" disabled={slot.busy}>Preview</button>
-          <button class="btn btn-primary" type="submit" disabled={slot.busy}>Download</button>
-        </div>
+        <Field label="Else from"
+          ><SourceSelect sources={data.sources} bind:value={download.fallback} optional exclude={[download.source]} /></Field
+        >
+        <Field label="Then from"
+          ><SourceSelect
+            sources={data.sources}
+            bind:value={download.then}
+            optional
+            exclude={[download.source, download.fallback]}
+          /></Field
+        >
+        {@render buttons("Download")}
       </form>
     {:else if tab === "transfer"}
       <p class="mb-4 text-sm text-muted">Copy your liked songs or a playlist straight to the other service.</p>
@@ -165,9 +177,7 @@
           <Field label="Playlist name"><input bind:value={transfer.name} placeholder="Same as the source" /></Field>
         {/if}
         {@render matching(transfer)}
-        <div class="flex justify-end sm:col-span-full">
-          <button class="btn btn-primary" type="submit" disabled={slot.busy}>Transfer</button>
-        </div>
+        {@render buttons("Transfer")}
       </form>
     {:else if tab === "export"}
       <p class="mb-4 text-sm text-muted">
@@ -214,9 +224,7 @@
           {/if}
         {/if}
         {@render matching(importing)}
-        <div class="flex justify-end sm:col-span-full">
-          <button class="btn btn-primary" type="submit" disabled={slot.busy}>Import</button>
-        </div>
+        {@render buttons("Import")}
       </form>
     {/if}
   </section>

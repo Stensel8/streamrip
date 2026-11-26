@@ -401,8 +401,11 @@ def transfer() -> tuple[Response, int]:
         job.matched = result.matched
         return result.summary()
 
+    title = f"Transfer from {LABELS[source]} to {LABELS[target]}"
     return start(
-        "transfer", f"Transfer from {LABELS[source]} to {LABELS[target]}", work
+        "transfer",
+        f"Preview: {title[0].lower()}{title[1:]}" if dry_run else title,
+        work,
     )
 
 
@@ -512,7 +515,10 @@ def import_csv(service: str) -> tuple[Response, int]:
         job.matched = result.matched
         return result.summary()
 
-    return start("import", f"Import into {LABELS[service]}", work)
+    title = f"Import into {LABELS[service]}"
+    return start(
+        "import", f"Preview: {title[0].lower()}{title[1:]}" if dry_run else title, work
+    )
 
 
 @playlist_pages.post("/download")

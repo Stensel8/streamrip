@@ -143,14 +143,14 @@ class Runner:
         """Look up what `add` brings, as a download does, and say what it would
         do (see `--preview`) without downloading anything."""
         with self._working(job):
-            items, accounts = self.call(self._plan(job, add))
+            items, accounts, summary = self.call(self._plan(job, add))
         for line in [*items, *accounts]:
             job.log.append(("info", line))
-        return "Nothing was downloaded." if items else "Nothing new to download."
+        return summary if items else "Nothing new to download."
 
     async def _plan(
         self, job: Job, add: Callable[[Main], Awaitable[None]]
-    ) -> tuple[list[str], list[str]]:
+    ) -> tuple[list[str], list[str], str]:
         self.config.session.cli.progress_bars = False
         try:
             async with Main(self.config, interactive=False) as main:

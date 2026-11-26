@@ -530,9 +530,10 @@ class RequestClient:
             owner._load_pacing_state()
         return owner
 
-    def pace(self, pace: str, planned: int):
+    def pace(self, pace: str, planned: int, say: bool = True):
         """Set the account's pace (config.PACES) for a run that brings
-        `planned` tracks, and say what it is and why."""
+        `planned` tracks, and say what it is and why (a preview says it its
+        own way)."""
         if not self.paced:
             return
         owner = self._paced_owner()
@@ -548,6 +549,8 @@ class RequestClient:
         def steady(tier: str) -> str:
             return f"a steady pace of about {owner._cap(tier)} tracks an hour"
 
+        if not say:
+            return
         if pace == "fast":
             # Asked for, so said either way, and loudly when it is a lot.
             (logger.warning if big else logger.info)(

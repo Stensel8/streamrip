@@ -227,4 +227,6 @@ def set_app(login_id: str) -> Response:
 def logout(login_id: str) -> Response:
     forgotten = Accounts(get_config()).logout(login_id)
     label = BY_ID[login_id].label
-    return _done(f"Logged out of {label}." if forgotten else f"Not logged in to {label}.")
+    return _done(
+        f"Logged out of {label}." if forgotten else f"Not logged in to {label}."
+    )
