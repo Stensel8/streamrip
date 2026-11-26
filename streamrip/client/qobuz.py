@@ -382,12 +382,19 @@ class QobuzClient(Client):
                 raise NonStreamableError(restriction_message(code) + ".")
             raise NonStreamableError
 
-        downloadable = BasicDownloadable(
-            self.session, stream_url, "flac" if quality > 1 else "mp3", source="qobuz"
-        )
+        if resp_json.get("sample"):  # 30 seconds, for an account without the rights
+            raise NonStreamableError(
+                "Qobuz only gives a 30-second preview of this track."
+            )
         # Qobuz serves the best it has up to the asked format: 24/96 for a
-        # quality 4 request of an album without 24/192.
+        # quality 4 request of an album without 24/192, an MP3 (5) for no FLAC.
         served = resp_json.get("format_id")
+        downloadable = BasicDownloadable(
+            self.session,
+            stream_url,
+            "mp3" if served == 5 or (served is None and quality == 1) else "flac",
+            source="qobuz",
+        )
         downloadable.quality = (
             FORMAT_IDS.index(served) + 1 if served in FORMAT_IDS else quality
         )

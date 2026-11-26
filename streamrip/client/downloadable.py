@@ -734,6 +734,9 @@ def _fetch_audio(url: str, directory: Path, verify_ssl: bool, report, stop) -> P
         "fragment_retries": 5,
         "nocheckcertificate": not verify_ssl,
         "progress_hooks": [hook],
+        # streamrip's own ffmpeg (the bundled one, when none is on PATH): without
+        # one yt-dlp leaves YouTube's DASH m4a as it is, a file of length 0.
+        "ffmpeg_location": require_ffmpeg(),
         # YouTube hides its streams behind a script that needs a JavaScript
         # runtime; yt-dlp only looks for Deno unless it is told about the others.
         # Not Bun: yt-dlp can run Deno and Node without access to the computer

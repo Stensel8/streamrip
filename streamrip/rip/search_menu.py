@@ -128,8 +128,6 @@ class SearchMenu(App[tuple[int, ...] | None]):
     OptionList > .option-list--option-highlighted { background: ansi_blue; color: ansi_white; }
     """
     BINDINGS: ClassVar = [
-        Binding("space", "toggle", "Select", priority=True),
-        Binding("enter", "accept", "Download", priority=True),
         Binding("escape", "cancel", "Exit", priority=True),
         Binding("ctrl+c", "quit_search", "Exit", priority=True),
         Binding("slash", "filter", "Search"),
@@ -179,7 +177,7 @@ class SearchMenu(App[tuple[int, ...] | None]):
             "SPACE - select, ENTER - download, / - search, ESC - exit", id="help"
         )
         yield Input(placeholder="Search results…", id="filter")
-        yield OptionList(*(self._option(i) for i in self.visible_indices), id="results")
+        yield _Results(*(self._option(i) for i in self.visible_indices), id="results")
         with Horizontal(id="preview"):
             yield CoverPane(self.pixel_widget)
             with VerticalScroll(id="details-scroll"):
@@ -278,14 +276,7 @@ class SearchMenu(App[tuple[int, ...] | None]):
         if urls == self._cover_urls:
             await self.query_one(CoverPane).show_image(image)
 
-    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool:
-        # A space typed in the search query is not a toggle.
-        return not (action == "toggle" and self.query_one(Input).has_focus)
-
-    def action_toggle(self):
-        if self.current is None:
-            return
-        index = self.current
+    def toggle_result(self, index: int):
         if index in self.selected:
             self.selected.remove(index)
         else:
@@ -294,13 +285,20 @@ class SearchMenu(App[tuple[int, ...] | None]):
             str(index), self._option(index).prompt
         )
 
-    def action_accept(self):
+    @on(OptionList.OptionSelected)
+    def chosen(self, event: OptionList.OptionSelected):
+        self._accept(int(event.option.id))
+
+    @on(Input.Submitted)
+    def submitted(self):
+        self._accept(self.current)
+
+    def _accept(self, index: int | None):
         # The previous Linux menu also selected the highlighted result on
         # Enter, even when other results had already been marked with Space.
-        choices = set(self.selected)
-        if self.current is not None:
-            choices.add(self.current)
-        choices = tuple(sorted(choices))
+        choices = tuple(
+            sorted(self.selected | ({index} if index is not None else set()))
+        )
         if choices:
             self.exit(choices)
 
@@ -344,6 +342,18 @@ class SearchMenu(App[tuple[int, ...] | None]):
 
     def action_quit_search(self):
         self.exit(None)
+
+
+class _Results(OptionList):
+    """The results. Space and Enter (OptionList's own) are read here, in the
+    list's turn: as the app's keys they ran before arrow keys typed just ahead
+    of them had moved the highlight, and took the row before."""
+
+    BINDINGS: ClassVar = [Binding("space", "toggle_highlighted", "Select")]
+
+    def action_toggle_highlighted(self):
+        if (option := self.highlighted_option) is not None:
+            self.app.toggle_result(int(option.id))
 
 
 async def choose_results(

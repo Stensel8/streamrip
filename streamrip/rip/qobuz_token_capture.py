@@ -175,7 +175,11 @@ async def capture_qobuz_auth_token(timeout_s: int = 300) -> tuple[str, str]:
             "before it could catch anything. Once you're logged in, open the\n"
             "console (F12) and paste this:\n"
         )
-        console.print(qobuz_snippet(callback_url))
+        # Not wrapped at the terminal's width: a line break inside a string
+        # would make the pasted script a syntax error.
+        console.print(
+            qobuz_snippet(callback_url), soft_wrap=True, markup=False, highlight=False
+        )
 
         try:
             async with asyncio.timeout(timeout_s):

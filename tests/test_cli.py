@@ -362,6 +362,7 @@ class _RepairMain:
 
     downloaded: list[tuple[str, str]] = []
     downloads_at_rip: list = []
+    media: list = []
 
     def __init__(self, config, interactive=True):
         c = config.session.database

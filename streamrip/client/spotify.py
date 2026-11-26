@@ -769,10 +769,11 @@ class SpotifyClient(Client):
     async def _get_artist(self, item_id: str) -> dict:
         artist = await self._api(f"artists/{item_id}")
         albums: dict[str, dict] = {}
-        # The artist's own releases: not the ones they only appear on.
+        # The artist's own releases, compilations included: not the ones they
+        # only appear on.
         async for page in self._pages(
             f"artists/{item_id}/albums",
-            {"include_groups": "album,single", "limit": SEARCH_PAGE_SIZE},
+            {"include_groups": "album,single,compilation", "limit": SEARCH_PAGE_SIZE},
         ):
             for album in filter(None, page.get("items") or []):
                 if album.get("id"):

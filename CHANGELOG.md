@@ -14,6 +14,13 @@ upstream issues and pull requests.
   tagged once, as `℗ & © 2025 Label`
 - fix: the Spotify note points at `streamrip playlist download`, not at a tool of
   its own
+- fix: the search menu downloads the row you end on, also when Enter follows the
+  arrow keys at once; `repair` retries only the tracks that failed, not their
+  whole albums
+- fix: the Qobuz script in the terminal is not broken across lines, a 30-second
+  preview is not taken for the track, a YouTube Music file is whole without an
+  ffmpeg of the system's own, an artist's compilations are part of it, and a
+  wrong address at `login tidal-library` is one plain message
 
 ## 2.8.0
 

@@ -21,7 +21,7 @@ lazy from ..verify import verify as run_verify
 lazy from .cli import _require_config, coro
 lazy from .interactive import Prompt
 lazy from .prompter import get_prompter, has_screen, launch
-lazy from .spotify_login import capture_code, code_from_redirect_url
+lazy from .spotify_login import SpotifyLoginError, capture_code, code_from_redirect_url
 
 LOGIN = click.Choice(LOGIN_IDS, case_sensitive=False)
 
@@ -71,7 +71,7 @@ def _log_in_again(config: Config, service: str):
             _log_in_to_tidal_library(Services(config))
         else:
             coro(_log_in)(config, service)
-    except SyncError as e:
+    except (SyncError, SpotifyLoginError) as e:  # a refused login, or a wrong address
         accounts.restore(service, held)
         raise click.ClickException(str(e)) from e
     except KeyboardInterrupt:
