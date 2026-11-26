@@ -316,6 +316,7 @@ def test_download_hands_each_list_to_the_downloads(tmp_path, cli, monkeypatch):
 
         async def rip(self):
             asked.append("rip")
+            return True
 
     monkeypatch.setattr(playlist_cli, "main_session", fake_session(Main()))
     code, _, _ = cli(

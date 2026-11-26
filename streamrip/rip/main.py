@@ -330,8 +330,9 @@ class Main:
         self.media.extend(new_media)
         self.pending.clear()
 
-    async def rip(self):
-        """Download all resolved items, one at a time, top to bottom.
+    async def rip(self) -> bool:
+        """Download all resolved items, one at a time, top to bottom; whether
+        every one of them came through.
 
         An Artist or Label is its entire discography -- running several of
         those at once means every one of them has an album's worth of tracks
@@ -342,7 +343,7 @@ class Main:
         overlapping items that could otherwise run independently.
         """
         if not self.media:
-            return  # nothing resolved, such as a search written to a file
+            return True  # nothing resolved, such as a search written to a file
         planned = planned_tracks(self.media)
         for client, count in planned.items():
             client.pace(self.config.session.downloads.pacing, count)
@@ -388,6 +389,7 @@ class Main:
             logger.info("Run `streamrip repair` to retry the failed tracks.")
         if clients:
             console.print(load_table(clients))
+        return not (failed_items or d.failed_now)
 
     async def _search(
         self, source: str, media_type: str, query: str, limit: int

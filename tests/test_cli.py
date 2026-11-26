@@ -81,6 +81,7 @@ class _FakeMain:
     async def rip(self):
         if self.to_raise is not None:
             raise self.to_raise
+        return True
 
 
 @pytest.fixture
@@ -120,6 +121,11 @@ def test_a_config_that_does_not_load_fails_the_command(cfg, tmp_path, capsys, co
 
     assert result.exit_code == 1, result.output
     assert "Errorloadingconfig" in _printed(result, capsys)
+
+
+def test_failed_tracks_fail_the_command(cfg, fake_main, monkeypatch):
+    monkeypatch.setattr(fake_main, "rip", AsyncMock(return_value=False))
+    assert _rip(cfg, "url", "https://example").exit_code == 1
 
 
 def test_a_config_that_does_not_load_can_still_be_reset(cfg, capsys):

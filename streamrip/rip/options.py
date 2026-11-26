@@ -33,8 +33,8 @@ async def finish(main, preview: bool):
     """Download what was resolved, or only say what that would be."""
     if preview:
         show_plan(main)
-    else:
-        await main.rip()
+    elif not await main.rip():
+        raise SystemExit(1)  # so a script or cron job sees that tracks failed
 
 
 def sources_callback(ctx, param, value: str | None) -> str | None:
