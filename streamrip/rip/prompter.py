@@ -502,19 +502,19 @@ class SpotifyPrompter(CredentialPrompter):
         ):
             console.print("Spotify's own audio is set up.")
             return
-        with console.status("Getting Spotify's official client ready"):
-            await asyncio.to_thread(backend.ensure_binary)  # downloaded once
-        console.print(
-            "\nPair this computer, in the Spotify app on a device on this network:\n"
-            "  1. Open the app and press play\n"
-            "  2. Tap [italic]Connect to a device[/italic]\n"
-            f"  3. Pick [bold]{backend.device_name}[/bold]\n"
-            "streamrip waits for that, up to 10 minutes (Ctrl-C stops; your login "
-            "is kept)."
-        )
         try:
+            with console.status("Getting Spotify's official client ready"):
+                await asyncio.to_thread(backend.ensure_binary)  # downloaded once
+            console.print(
+                "\nPair this computer, in the Spotify app on a device on this network:\n"
+                "  1. Open the app and press play\n"
+                "  2. Tap [italic]Connect to a device[/italic]\n"
+                f"  3. Pick [bold]{backend.device_name}[/bold]\n"
+                "streamrip waits for that, up to 10 minutes (Ctrl-C stops; your login "
+                "is kept)."
+            )
             username = await self.client.pair_soloist(key)
-        except Exception as e:
+        except Exception as e:  # a failed download or pairing: the login stands
             console.print(str(e), style="yellow", markup=False)
             return
         console.print(f"Signed in to Spotify's own audio as {username}.")

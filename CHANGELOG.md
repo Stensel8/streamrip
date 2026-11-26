@@ -8,8 +8,8 @@ upstream issues and pull requests.
 - fix: `streamrip login spotify` no longer waits unseen for the Spotify app on a
   computer that was set up before, says what it waits for, keeps the login when
   stopped with Ctrl-C, and stops at once
-- fix: Spotify keeps no pace and no hourly count: those are for files straight
-  from a service's servers, and a Spotify track takes as long as it lasts
+- fix: Spotify's own audio keeps no pace and no hourly count: those are for files
+  that come fast (YouTube Music's still do), and its tracks take as long as they last
 - fix: a copyright and a phonographic line for the same year and holder are
   tagged once, as `℗ & © 2025 Label`
 - fix: the Spotify note points at `streamrip playlist download`, not at a tool of

@@ -54,6 +54,13 @@ def accounts(ctx):
     console.print(f"Kept in {config.state.path}", highlight=False, soft_wrap=True)
 
 
+def _restore_unless_new(accounts: Accounts, config: Config, service: str, held):
+    """Put the old login back, unless a new one was saved before the stop (the
+    Spotify login is kept before its pairing)."""
+    if not Accounts(Config(config.path)).logged_in(service):
+        accounts.restore(service, held)
+
+
 def _log_in_again(config: Config, service: str):
     """Log in to `service` from nothing, and put the old login back if that does
     not work out: a login that works is not asked for twice."""
@@ -68,10 +75,10 @@ def _log_in_again(config: Config, service: str):
         accounts.restore(service, held)
         raise click.ClickException(str(e)) from e
     except KeyboardInterrupt:
-        accounts.restore(service, held)
+        _restore_unless_new(accounts, config, service, held)
         raise click.ClickException("Login cancelled.") from None
     except BaseException:
-        accounts.restore(service, held)
+        _restore_unless_new(accounts, config, service, held)
         raise
     # `coro` ends a Ctrl-C quietly, so the end of the call says nothing yet:
     # what was saved does.
