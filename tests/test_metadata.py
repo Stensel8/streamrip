@@ -264,11 +264,17 @@ def test_tidal_album_and_track():
             "artists": [{"name": "A"}, {"name": "B"}],
             "trackNumber": 3,
             "volumeNumber": 2,
+            "credits": [
+                {"type": "Composer", "contributors": [{"name": "C"}, {"name": "D"}]},
+                {"type": "Lyricist", "contributors": [{"name": "C"}]},
+                {"type": "Mixing Engineer", "contributors": [{"name": "M"}]},
+            ],
         },
     )
     assert (t.info.id, t.info.explicit, t.title) == ("7", True, "Song (Live)")
     assert (t.artist, t.artists) == ("A, B", ["A", "B"])
     assert (t.tracknumber, t.discnumber) == (3, 2)
+    assert (t.composer, t.lyricists, t.credits) == ("C, D", ["C"], {"mixer": ["M"]})
 
 
 @pytest.mark.parametrize(

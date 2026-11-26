@@ -526,3 +526,17 @@ async def test_declining_the_browser_download_allows_entering_it_by_hand(monkeyp
     monkeypatch.setattr(browser_login.Confirm, "ask", MagicMock(return_value=False))
     with pytest.raises(DeezerArlCaptureError, match="Skipped downloading"):
         await capture_deezer_arl_via_browser()
+
+
+@pytest.mark.parametrize(
+    ("plain", "expected"),
+    [(False, "[00:01.00]La\n[00:02.50]Da"), (True, "La\nDa")],
+)
+async def test_lyrics_are_synced_where_deezer_has_them(plain, expected):
+    c = _client()
+    lines = [
+        {"lrc_timestamp": "[00:01.00]", "line": "La"},
+        {"lrc_timestamp": "[00:02.50]", "line": "Da"},
+    ]
+    c.client.gw.call.return_value = {"LYRICS_SYNC_JSON": lines, "LYRICS_TEXT": "La\nDa"}
+    assert await c.get_lyrics("1", plain) == expected

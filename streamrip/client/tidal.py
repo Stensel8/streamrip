@@ -18,6 +18,7 @@ from ..exceptions import (
     NonStreamableError,
 )
 from ..metadata.util import TIDAL_QUALITY_IDS
+from .audio_match import normalize_isrc
 from .client import Client, api_headers
 from .downloadable import SegmentedMP4Downloadable, TidalDownloadable
 lazy from ..config import Config
@@ -236,6 +237,12 @@ class TidalClient(Client):
         listed = self._listed.pop(str(item_id), None) if media_type == "track" else None
         item = listed or await self._api_request(url)
         if media_type == "track":
+            if listed is None:
+                # No credits are no reason to fail the track.
+                with contextlib.suppress(
+                    ItemNotFoundError, aiohttp.ClientResponseError
+                ):
+                    item["credits"] = await self._api_request(f"{url}/credits")
             self._note_hires_tags([item])
             item["album"] = await self._album_of(item)
             # A single in its album's folder is named by its own format, on a
@@ -316,10 +323,18 @@ class TidalClient(Client):
 
         Its items can include music videos, which can't be downloaded as
         tracks; they're left out rather than failing (and being retried by
-        `streamrip repair`) one by one.
+        `streamrip repair`) one by one. An album's come with their credits.
         """
-        items = await self._paged(f"{url}/items")
-        tracks = [i["item"] for i in items if i.get("type", "track") == "track"]
+        if url.startswith("albums/"):
+            with_credits = {"replace": "true", "includeContributors": "true"}
+            items = await self._paged(f"{url}/items/credits", with_credits)
+        else:
+            items = await self._paged(f"{url}/items")
+        tracks = [
+            i["item"] | {"credits": i.get("credits") or []}
+            for i in items
+            if i.get("type", "track") == "track"
+        ]
         if len(tracks) < len(items):
             logger.info(
                 "Skipping %s in %s", plural(len(items) - len(tracks), "video"), url
@@ -391,6 +406,10 @@ class TidalClient(Client):
     async def search(self, media_type: str, query: str, limit: int = 100) -> list[dict]:
         """One page of search results (Tidal returns at most 100)."""
         self.check_search_type(media_type)
+        if media_type == "track" and normalize_isrc(query) == query:
+            # The search knows no ISRCs; the catalogue lists every release by one.
+            resp = await self._api_request("tracks", {"isrc": query, "limit": limit})
+            return [resp] if resp.get("items") else []
         params = {"query": query, "limit": limit}
         resp = await self._api_request(f"search/{media_type}s", params=params)
         # A single hit is still a result: last.fm playlists search with limit=1.

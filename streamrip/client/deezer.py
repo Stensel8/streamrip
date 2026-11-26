@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import re
+import time
 
 lazy import aiohttp
 lazy from yarl import URL
@@ -20,6 +21,10 @@ logger = logging.getLogger("streamrip")
 
 # Deezer's formats by quality tier.
 FORMATS = ("MP3_128", "MP3_320", "FLAC")
+
+
+# How long a track's lookup serves its download (its stream token lasts longer).
+SONG_FRESH = 600
 
 
 class DeezerError(Exception):
@@ -268,6 +273,9 @@ class DeezerClient(Client):
         register_header_dict(self.client.http_headers)
         self._album_cache: dict[str, asyncio.Task[dict]] = {}
         self._quality_warned = False
+        # The website's own data of a track (its credits, its stream), from its
+        # lookup, for its download: when it was fetched, and the data.
+        self._songs: dict[str, tuple[float, dict]] = {}
 
     async def login(self):
         self._ensure_session()
@@ -305,11 +313,15 @@ class DeezerClient(Client):
         raise ValueError(f"Deezer has no {media_type}s")
 
     async def _get_track(self, item_id: str) -> dict:
-        """A track's metadata, with its album."""
+        """A track's metadata, with its album and its credits."""
         try:
-            item = await self.client.api.get_track(item_id)
+            item, song = await asyncio.gather(
+                self.client.api.get_track(item_id), self.client.gw.get_track(item_id)
+            )
         except Exception as e:
             raise NonStreamableError(e) from e
+        item["SNG_CONTRIBUTORS"] = song.get("SNG_CONTRIBUTORS") or {}
+        self._songs[str(item_id)] = time.monotonic(), song
 
         album_id = str(item["album"]["id"])
         try:
@@ -442,6 +454,19 @@ class DeezerClient(Client):
         artist["albums"] = albums["data"]
         return artist
 
+    async def get_lyrics(self, track_id: str, plain: bool) -> str:
+        """The track's lyrics: synced (LRC) where Deezer has them, unless plain."""
+        try:
+            resp = await self.client.gw.call("song.getLyrics", {"SNG_ID": track_id})
+        except DeezerError:
+            return ""  # most tracks have none
+        synced = "\n".join(
+            f"{line['lrc_timestamp']}{line.get('line', '')}"
+            for line in resp.get("LYRICS_SYNC_JSON") or []
+            if line.get("lrc_timestamp")
+        )
+        return (resp.get("LYRICS_TEXT") or "") if plain or not synced else synced
+
     async def search(self, media_type: str, query: str, limit: int = 200) -> list[dict]:
         self.check_search_type(media_type)
         if media_type == "track" and normalize_isrc(query) == query:
@@ -465,7 +490,10 @@ class DeezerClient(Client):
         # Deezer only has qualities 0-2; `streamrip --quality 3/4` used to IndexError.
         quality = max(0, min(quality, self.max_quality))
 
-        track_info = await self.client.gw.get_track(item_id)
+        # The lookup's, if fresh: its stream token lasts a while.
+        fetched, track_info = self._songs.pop(str(item_id), (0.0, None))
+        if track_info is None or time.monotonic() - fetched > SONG_FRESH:
+            track_info = await self.client.gw.get_track(item_id)
 
         fallback_id = track_info.get("FALLBACK", {}).get("SNG_ID")
 

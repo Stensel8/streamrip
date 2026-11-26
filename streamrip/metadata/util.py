@@ -91,6 +91,28 @@ def _qobuz_credits(resp: dict) -> list[tuple[str, set[str]]]:
     return found
 
 
+def role(name: str) -> str:
+    """A credit's role as one lower-case word, the way Qobuz's read: Tidal's
+    "Mixing Engineer" is "mixingengineer"."""
+    return re.sub(r"[^a-z]", "", name.lower())
+
+
+def tidal_credits(resp: dict) -> dict[str, list[str]]:
+    """The people credited on a Tidal track, by role."""
+    people: dict[str, list[str]] = {}
+    for credit in resp.get("credits") or []:
+        people.setdefault(role(credit.get("type") or ""), []).extend(
+            c["name"] for c in credit.get("contributors") or [] if c.get("name")
+        )
+    return people
+
+
+def deezer_credits(resp: dict) -> dict[str, list[str]]:
+    """The people credited on a Deezer track (the website's data), by role."""
+    people = resp.get("SNG_CONTRIBUTORS") or {}
+    return {role(k): v for k, v in people.items() if isinstance(v, list)}
+
+
 def qobuz_credited(resp: dict, *roles: str) -> list[str]:
     """The names credited with any of `roles` (lower case), once each."""
     return list(dict.fromkeys(n for n, r in _qobuz_credits(resp) if r & set(roles)))

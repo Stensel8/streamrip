@@ -1,21 +1,24 @@
 import logging
 import re
 from dataclasses import dataclass
+from functools import partial
 
 from ..filepath_utils import restricted
 from .util import (
     SOURCES,
     deezer_artists,
+    deezer_credits,
     match_case,
     qobuz_artists,
     qobuz_credited,
     safe_get,
+    tidal_credits,
 )
 lazy from .album import AlbumMetadata
 
 logger = logging.getLogger("streamrip")
 
-# The studio credits tagged, by tag, and the Qobuz roles that are each.
+# The studio credits tagged, by tag, and the roles that are each (see util.role).
 CREDITS = frozendict(
     {
         "producer": ("producer",),
@@ -23,6 +26,19 @@ CREDITS = frozendict(
         "mixer": ("mixer", "mixingengineer"),
     }
 )
+
+
+def _credited(people: dict[str, list[str]], *roles: str) -> list[str]:
+    """The people credited with any of `roles`, once each."""
+    return list(dict.fromkeys(name for r in roles for name in people.get(r, [])))
+
+
+def _studio(credited) -> frozendict[str, list[str]]:
+    """The CREDITS of a track whose credited(*roles) names the people."""
+    return frozendict(
+        (tag, names) for tag, roles in CREDITS.items() if (names := credited(*roles))
+    )
+
 
 # What a title says beside the song's name: its brackets, and what follows " - ".
 _ASIDE = re.compile(r"[(\[]([^)\]]*)[)\]]|\s-\s(.+)$")
@@ -118,17 +134,15 @@ class TrackMetadata:
             lyricists=qobuz_credited(resp, "lyricist", "composerlyricist") or None,
             replaygain_gain=gain.get("replaygain_track_gain"),
             replaygain_peak=gain.get("replaygain_track_peak"),
-            credits=frozendict(
-                (tag, names)
-                for tag, roles in CREDITS.items()
-                if (names := qobuz_credited(resp, *roles))
-            ),
+            credits=_studio(partial(qobuz_credited, resp)),
         )
 
     @classmethod
     def from_deezer(cls, album: AlbumMetadata, resp: dict) -> TrackMetadata:
         """Build track metadata from a Deezer API track response."""
         artists = deezer_artists(resp)
+        credited = partial(_credited, deezer_credits(resp))
+        composers = credited("composer")
         return cls(
             TrackInfo(str(resp["id"]), bool(resp.get("explicit_lyrics"))),
             resp["title"],
@@ -136,10 +150,13 @@ class TrackMetadata:
             ", ".join(artists),
             resp["track_position"],
             resp["disk_number"],
-            None,
+            ", ".join(composers) or None,
             isrc=resp.get("isrc"),
             artists=artists,
+            composers=composers or None,
+            lyricists=credited("author", "lyricist") or None,
             bpm=round(resp["bpm"]) if resp.get("bpm") else None,
+            credits=_studio(credited),
         )
 
     @classmethod
@@ -183,6 +200,8 @@ class TrackMetadata:
         artists = [a["name"] for a in resp.get("artists") or []] or [
             resp["artist"]["name"]
         ]
+        credited = partial(_credited, tidal_credits(resp))
+        composers = credited("composer")
         return cls(
             TrackInfo(str(resp["id"]), bool(resp.get("explicit"))),
             title,
@@ -190,9 +209,12 @@ class TrackMetadata:
             ", ".join(artists),
             resp.get("trackNumber", 1),
             resp.get("volumeNumber", 1),
-            None,
+            ", ".join(composers) or None,
             isrc=resp.get("isrc"),
             artists=artists,
+            composers=composers or None,
+            lyricists=credited("lyricist") or None,
+            credits=_studio(credited),
             bpm=resp.get("bpm") or None,
             replaygain_gain=resp.get("replayGain"),
             replaygain_peak=resp.get("peak"),

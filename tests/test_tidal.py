@@ -277,7 +277,7 @@ def _album_replies(tags: list[str]):
     }
 
     async def reply(path, *_, **__):
-        return items if path.endswith("/items") else dict(album)
+        return items if "/items" in path else dict(album)
 
     return reply
 
@@ -450,8 +450,8 @@ async def test_a_single_is_tagged_with_its_albums_own_artists():
     async def reply(path, params=None, base=None):
         if path.startswith("albums/"):
             return dict(album)
-        if path.endswith("/lyrics"):
-            raise ItemNotFoundError("no lyrics")
+        if path.endswith(("/lyrics", "/credits")):
+            raise ItemNotFoundError("none")
         return dict(track)
 
     c = _client()
