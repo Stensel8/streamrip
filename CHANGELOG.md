@@ -8,8 +8,11 @@ upstream issues and pull requests.
 A new web interface, and more from each service.
 
 - feat: `streamrip web` is rebuilt: tabs and menus instead of rows of forms, a
-  tab bar on phones, a Settings page with every option (and the file itself),
-  and Tidal's two logins as steps
+  tab bar on phones, a Settings page with every option (and the file itself,
+  and a reset), and Tidal's two logins as steps
+- feat: `streamrip web` says in the terminal what it does, runs in the
+  background with `--background` (`--log` follows it, `--stop` stops it), and
+  takes on what the command line changes in the config and the logins
 - feat: a track of a list (CSV, `playlist download`) is found by its ISRC too,
   on the release it came from
 - feat: composer, lyricist, producer, engineer and mixer tags from Qobuz, Tidal
@@ -24,6 +27,7 @@ A new web interface, and more from each service.
 - fix: a preview says what it would download, from where; Transfer and Import
   have one too
 - fix: the folders and file names the page sends are checked tighter
+- fix: a FLAC download no longer needs ffmpeg for its check
 - chore: the installers check uv's installer against a pinned checksum, and
   every dependency is pinned and kept current
 
