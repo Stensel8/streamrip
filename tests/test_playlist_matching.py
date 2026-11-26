@@ -142,3 +142,15 @@ def test_ties_go_to_the_closest_version_and_then_to_the_same_album():
     hits = t("Wonderwall", "Oasis", album="Time Flies")
     original = t("Wonderwall", "Oasis", album=wanted.album)
     assert best_match(wanted, [hits, original]) == (original, 1.0)
+
+
+def test_the_same_isrc_is_the_recording_unless_it_is_another_version():
+    wanted = t("Plastic Love", "Mariya Takeuchi")
+    wanted.isrc = "JPB600760301"
+    other = t("Plastic Love", "Mariya Takeuchi")
+    other.isrc = "JPB601800301"  # a remaster under its own ISRC
+    japanese = t("プラスティック・ラヴ", "竹内まりや")
+    japanese.isrc = "JPB600760301"
+    assert best_match(wanted, [other, japanese]) == (japanese, 1.0)
+    japanese.duration_ms = 400_000  # an extended mix listed under it
+    assert score(wanted, japanese) == 0

@@ -32,6 +32,8 @@ class Summary:
     description: str | None = None
     # Preview covers: the preferred one first, then smaller alternatives.
     image_urls: tuple[str, ...] = ()
+    # A track's recording, to find it again on another service.
+    isrc: str | None = None
 
     @property
     def image_url(self) -> str | None:
@@ -286,6 +288,7 @@ def track_summary(item: dict) -> Summary:
         ),
         description=plain_text(item.get("description")),
         image_urls=_image_urls(item),
+        isrc=item.get("isrc") or (item.get("external_ids") or {}).get("isrc"),
     )
 
 

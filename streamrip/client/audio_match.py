@@ -316,8 +316,17 @@ def other_version(wanted: MatchTrack, candidate: MatchTrack) -> bool:
     )
 
 
+def same_recording(wanted: MatchTrack, candidate: MatchTrack) -> bool:
+    """Whether both carry one ISRC, the code of one recording: the clean and the
+    explicit one, or a re-recording, have their own."""
+    isrc = normalize_isrc(wanted.isrc)
+    return isrc is not None and isrc == normalize_isrc(candidate.isrc)
+
+
 def score(wanted: MatchTrack, candidate: MatchTrack) -> float:
     """How well ``candidate`` matches ``wanted``, from 0 to 1."""
+    if same_recording(wanted, candidate) and not other_version(wanted, candidate):
+        return 1.0  # whatever language or spelling its title and artist are in
     if _apart(wanted.duration_ms, candidate.duration_ms):
         return 0.0  # an edit or a mix of another length, whatever its title says
     title = _title_similarity(wanted.title, candidate.title)
@@ -344,8 +353,9 @@ def score(wanted: MatchTrack, candidate: MatchTrack) -> float:
 
 
 def rank(wanted: MatchTrack, candidate: MatchTrack) -> tuple[float, float, float]:
-    """Orders candidates: by score, then, among equals, by the closest full title ("Song (A Remix)" over
-    "Song (B Remix)"), then by the same album (the original release over a compilation)."""
+    """Orders candidates: by score, then, among equals, by the same ISRC, by the closest full title
+    ("Song (A Remix)" over "Song (B Remix)"), then by the same album (the original release over a
+    compilation)."""
     album = (
         similarity(normalize(wanted.album), normalize(candidate.album))
         if wanted.album and candidate.album
@@ -353,6 +363,7 @@ def rank(wanted: MatchTrack, candidate: MatchTrack) -> tuple[float, float, float
     )
     return (
         score(wanted, candidate),
+        same_recording(wanted, candidate),
         similarity(_full(wanted.title), _full(candidate.title)),
         album,
     )

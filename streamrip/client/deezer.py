@@ -11,6 +11,7 @@ from ..exceptions import (
     MissingCredentialsError,
     NonStreamableError,
 )
+from .audio_match import normalize_isrc
 from .client import Client, register_header_dict
 from .downloadable import DeezerDownloadable
 lazy from ..config import Config
@@ -442,6 +443,12 @@ class DeezerClient(Client):
 
     async def search(self, media_type: str, query: str, limit: int = 200) -> list[dict]:
         self.check_search_type(media_type)
+        if media_type == "track" and normalize_isrc(query) == query:
+            # The search knows no ISRCs; the API looks one up (on some release).
+            try:
+                return [{"data": [await self.client.api.call(f"track/isrc:{query}")]}]
+            except DeezerError:
+                return []
         response = await self.client.api.search(media_type, query, limit)
         if response.get("total", 0) > 0:
             return [response]

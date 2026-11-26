@@ -11,7 +11,12 @@ lazy import aiohttp
 
 from .. import progress
 from ..client import Client, new_session
-from ..client.audio_match import MatchTrack, rank, score, simplify_title
+from ..client.audio_match import (
+    MatchTrack,
+    best_match,
+    normalize_isrc,
+    simplify_title,
+)
 from ..console import console
 from ..filepath_utils import clean_filename, restricted
 from ..metadata import (
@@ -73,6 +78,7 @@ def _as_track(result: Summary) -> MatchTrack:
         [result.artist] if result.artist else [],
         details.get("Album", ""),
         clock_ms(details.get("Length")),
+        isrc=result.isrc,
     )
 
 
@@ -80,11 +86,10 @@ def best_result(
     wanted: MatchTrack, results: list[Summary]
 ) -> tuple[Summary, float] | None:
     """The search result that is `wanted` and its score, if one is good enough."""
-    candidates = [(result, _as_track(result)) for result in results]
-    best = max(candidates, key=lambda c: rank(wanted, c[1]), default=None)
-    if best is None or (found := score(wanted, best[1])) < MIN_SCORE:
-        return None
-    return best[0], found
+    candidates = [_as_track(result) for result in results]
+    if hit := best_match(wanted, candidates, MIN_SCORE):
+        return results[candidates.index(hit[0])], hit[1]
+    return None
 
 
 def queries(wanted: MatchTrack) -> list[str]:
@@ -92,17 +97,19 @@ def queries(wanted: MatchTrack) -> list[str]:
     how a catalogue most often has it, then the title as the list has it, then
     the title before the artist: some catalogues rank that better (Qobuz has the
     original of "Get Lucky" in the first results of "Get Lucky Daft Punk" only).
+    Last the ISRC, for a title the catalogue spells too differently.
     """
     title = simplify_title(wanted.title)
+    searches = [
+        f"{first} {second}".strip()
+        for first, second in [
+            (wanted.artist, title),
+            (wanted.artist, wanted.title),
+            (title, wanted.artist),
+        ]
+    ]
     return list(
-        dict.fromkeys(
-            f"{first} {second}".strip()
-            for first, second in [
-                (wanted.artist, title),
-                (wanted.artist, wanted.title),
-                (title, wanted.artist),
-            ]
-        )
+        dict.fromkeys([*searches, *filter(None, [normalize_isrc(wanted.isrc)])])
     )
 
 
