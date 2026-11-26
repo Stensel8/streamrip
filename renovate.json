@@ -16,6 +16,8 @@
     "github-actions",
     "nix",
     "dockerfile",
+    "npm",
+    "nodenv",
     "custom.regex"
   ],
   "customManagers": [
@@ -55,6 +57,18 @@
         "BUILDKIT: (?<depName>moby/buildkit):(?<currentValue>v[\\d.]+)@(?<currentDigest>sha256:[0-9a-f]{64})"
       ],
       "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "uv in install.sh and install.ps1: a release and the sha256 of its installer",
+      "managerFilePatterns": [
+        "/(^|/)install\\.(sh|ps1)$/"
+      ],
+      "matchStrings": [
+        "UV_INSTALLER\\s*=\\s*\"?(?<currentValue>[\\d.]+)@sha256:(?<currentDigest>[0-9a-f]{64})"
+      ],
+      "datasourceTemplate": "github-release-attachments",
+      "depNameTemplate": "astral-sh/uv"
     }
   ],
   "labels": [
@@ -126,6 +140,59 @@
           "* 0-5 1-7 * 1"
         ]
       }
+    },
+    {
+      "description": "uv everywhere at once: the installers, the image's uv and the build backend",
+      "matchPackageNames": [
+        "astral-sh/uv",
+        "ghcr.io/astral-sh/uv",
+        "uv_build"
+      ],
+      "groupName": "uv"
+    },
+    {
+      "description": "yt-dlp takes its solver script only at the version it was released with: bumped together",
+      "matchPackageNames": [
+        "yt-dlp",
+        "yt-dlp-ejs"
+      ],
+      "groupName": "yt-dlp"
+    },
+    {
+      "description": "The web interface (frontend/): its packages together. CI fails until `npm run build` is committed with them",
+      "matchManagers": [
+        "npm",
+        "nodenv"
+      ],
+      "groupName": "Web interface",
+      "addLabels": [
+        "frontend"
+      ],
+      "minimumReleaseAge": "3 days"
+    },
+    {
+      "description": "svelte-check takes TypeScript 5 and 6 only, for now",
+      "matchManagers": [
+        "npm"
+      ],
+      "matchPackageNames": [
+        "typescript"
+      ],
+      "allowedVersions": "<7"
+    },
+    {
+      "description": "Node in CI: its long-term releases (the even ones) only",
+      "matchManagers": [
+        "nodenv"
+      ],
+      "allowedVersions": "/^\\d*[02468](\\.|$)/"
+    }
+  ],
+  "hostRules": [
+    {
+      "description": "opencommit.eu is a Forgejo: its actions (the checkout mirror) are looked up with its tags",
+      "matchHost": "opencommit.eu",
+      "hostType": "forgejo"
     }
   ]
 }
