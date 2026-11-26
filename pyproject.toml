@@ -1,6 +1,6 @@
 [project]
 name = "streamrip"
-version = "2.8.1"
+version = "2.8.2"
 description = "Keep the music you pay for. Take your playlists with you. streamrip downloads from Qobuz, Tidal, Deezer, SoundCloud and Spotify, and moves your playlists between Spotify, Tidal and CSV."
 authors = [{ name = "nathom", email = "nathanthomas707@gmail.com" }]
 maintainers = [{ name = "Stensel8", email = "stentijhuis@protonmail.com" }]

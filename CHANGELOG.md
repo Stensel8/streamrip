@@ -3,8 +3,9 @@
 All notable changes in this fork of [nathom/streamrip](https://github.com/nathom/streamrip). Numbers can refer to
 upstream issues and pull requests.
 
-## Unreleased
+## 2.8.2
 
+- fix: the first search after a new Spotify login no longer fails
 - feat: `uninstall.sh` and `uninstall.ps1` remove streamrip and what it keeps
   on the computer; your music stays
 
