@@ -99,6 +99,7 @@ async def _repair(config: Config, interactive: bool) -> int:
         # An album is the way to a failed track (its tags, its folder), not a
         # reason to download the rest of it: only the tracks that failed.
         failed_tracks = {(s, i) for s, kind, i in failed_items if kind == "track"}
+        failed_whole = {(s, i) for s, kind, i in failed_items if kind != "track"}
         if unresolved:
             console.print(
                 f"[yellow]{plural(len(unresolved), 'item')} had no album to retry "
@@ -107,7 +108,11 @@ async def _repair(config: Config, interactive: bool) -> int:
         await main.add_all_by_id(targets + unresolved)
         await main.resolve()
         for item in main.media:
-            if isinstance(item, Album) and item.client is not None:
+            if (
+                isinstance(item, Album)
+                and item.client is not None
+                and (item.client.source, item.meta.info.id) not in failed_whole
+            ):
                 source = item.client.source
                 # Ids as the failures table keeps them: text (an album lists numbers).
                 retry = [t for t in item.tracks if (source, str(t.id)) in failed_tracks]

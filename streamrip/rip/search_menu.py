@@ -285,10 +285,6 @@ class SearchMenu(App[tuple[int, ...] | None]):
             str(index), self._option(index).prompt
         )
 
-    @on(OptionList.OptionSelected)
-    def chosen(self, event: OptionList.OptionSelected):
-        self._accept(int(event.option.id))
-
     @on(Input.Submitted)
     def submitted(self):
         self._accept(self.current)
@@ -345,15 +341,23 @@ class SearchMenu(App[tuple[int, ...] | None]):
 
 
 class _Results(OptionList):
-    """The results. Space and Enter (OptionList's own) are read here, in the
-    list's turn: as the app's keys they ran before arrow keys typed just ahead
-    of them had moved the highlight, and took the row before."""
+    """The results. Space and Enter are read here, in the list's turn: as the
+    app's keys they ran before arrow keys typed just ahead of them had moved
+    the highlight, and took the row before. (Not OptionSelected: a click sends
+    that too, and a click only points at a result.)"""
 
-    BINDINGS: ClassVar = [Binding("space", "toggle_highlighted", "Select")]
+    BINDINGS: ClassVar = [
+        Binding("space", "toggle_highlighted", "Select"),
+        Binding("enter", "accept_highlighted", "Download"),
+    ]
 
     def action_toggle_highlighted(self):
         if (option := self.highlighted_option) is not None:
             self.app.toggle_result(int(option.id))
+
+    def action_accept_highlighted(self):
+        option = self.highlighted_option
+        self.app._accept(None if option is None else int(option.id))
 
 
 async def choose_results(
