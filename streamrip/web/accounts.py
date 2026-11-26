@@ -1,23 +1,12 @@
 """The Accounts page: every login in one place, and the actions behind its buttons."""
 
-from flask import (
-    Blueprint,
-    Response,
-    current_app,
-    flash,
-    jsonify,
-    redirect,
-    render_template,
-    request,
-    url_for,
-)
-lazy from werkzeug.wrappers import Response as WerkzeugResponse
+from flask import Blueprint, Response, current_app, jsonify, request
 
 from ..accounts import BY_ID, LOGIN_IDS, Accounts
 from ..client.soloist import SoloistBackend
 from ..sync.errors import ProviderError
 from ..sync.services import DEVELOPER_DASHBOARDS, LABELS
-from .common import form, get_config, get_runner, get_services, sent, start
+from .common import get_config, get_runner, get_services, payload, sent, spa, start
 from .logins import BrowserLogin, ScriptLogin
 lazy from .jobs import Job
 
@@ -30,9 +19,12 @@ _APP = ", ".join(map(repr, APP_LOGINS))
 _ALL = ", ".join(map(repr, LOGIN_IDS))
 
 
-def _back(message: str, category: str = "ok") -> WerkzeugResponse:
-    flash(message, category)
-    return redirect(url_for("accounts.page"))
+def _given(name: str) -> str:
+    return str(payload().get(name) or "").strip()
+
+
+def _done(message: str) -> Response:
+    return jsonify(message=message)
 
 
 def _soloist(config) -> dict:
@@ -49,20 +41,35 @@ def _soloist(config) -> dict:
 
 
 @accounts_pages.route("")
-def page() -> str:
+@accounts_pages.route("/<any(qobuz, deezer):service>/receive")
+def page(service: str = "") -> Response:
+    """The page, and the one a login script moves its tab to: there the app
+    reads the login after the "#" (it never reaches the server) and hands it
+    to script_capture."""
+    return spa()
+
+
+@accounts_pages.get("/api")
+def data() -> Response:
     services = get_services()
     config = get_config()
-    accounts = {s.login.id: s for s in Accounts(config).all()}
-    return render_template(
-        "accounts.html",
-        accounts=accounts,
+    return jsonify(
+        accounts={
+            s.login.id: {
+                "label": s.login.label,
+                "logged_in": s.logged_in,
+                "guest": s.login.guest,
+                "app_missing": s.app_missing,
+            }
+            for s in Accounts(config).all()
+        },
         dashboards=DEVELOPER_DASHBOARDS,
         redirect_uris={
             login_id: services.redirect_uri(BY_ID[login_id].section)
             for login_id in APP_LOGINS
         },
         soloist=_soloist(config),
-        state_path=config.state.path,
+        state_path=str(config.state.path),
         tidal_secret=bool(services.client_secret("tidal")),
     )
 
@@ -85,12 +92,12 @@ def verify() -> tuple[Response, int]:
 
 
 @accounts_pages.post("/qobuz/login")
-def login_qobuz() -> WerkzeugResponse:
-    user_id, token = form("user_id"), form("auth_token")
+def login_qobuz() -> Response:
+    user_id, token = _given("user_id"), _given("auth_token")
     if not user_id or not token:
-        return _back("Fill in both the user id and the token.", "error")
+        raise ProviderError("Fill in both the user id and the token.")
     get_runner().login_qobuz(user_id, token)
-    return _back("Logged in to Qobuz.")
+    return _done("Logged in to Qobuz.")
 
 
 @accounts_pages.post("/<any(qobuz, deezer):service>/script")
@@ -114,13 +121,6 @@ def script_login(service: str) -> tuple[Response, int]:
     return start("login", f"Log in to {login.label} with a script", work)
 
 
-@accounts_pages.get("/<any(qobuz, deezer):service>/receive")
-def script_receive(service: str) -> str:
-    """Where the script moves the tab to: a page that reads the login after the
-    "#" (it never reaches the server there) and hands it to script_capture."""
-    return render_template("script_receive.html", label=service.title())
-
-
 @accounts_pages.post("/<any(qobuz, deezer):service>/capture")
 def script_capture(service: str) -> tuple[Response, int]:
     """The login, from the receiving page. What lets it in is the challenge of a
@@ -138,19 +138,19 @@ def script_capture(service: str) -> tuple[Response, int]:
 
 
 @accounts_pages.post("/deezer/login")
-def login_deezer() -> WerkzeugResponse:
-    if not (arl := form("arl")):
-        return _back("Paste the ARL cookie first.", "error")
+def login_deezer() -> Response:
+    if not (arl := _given("arl")):
+        raise ProviderError("Paste the ARL cookie first.")
     get_runner().login_deezer(arl)
-    return _back("Logged in to Deezer.")
+    return _done("Logged in to Deezer.")
 
 
 @accounts_pages.post("/soundcloud/login")
-def login_soundcloud() -> WerkzeugResponse:
-    if not (token := form("oauth_token")):
-        return _back("Paste the oauth_token cookie first.", "error")
+def login_soundcloud() -> Response:
+    if not (token := _given("oauth_token")):
+        raise ProviderError("Paste the oauth_token cookie first.")
     get_runner().login_soundcloud(token)
-    return _back("Logged in to SoundCloud.")
+    return _done("Logged in to SoundCloud.")
 
 
 @accounts_pages.post("/tidal/login")
@@ -196,17 +196,16 @@ def soloist_pair() -> tuple[Response, int]:
 
 
 @accounts_pages.post(f"/<any({_APP}):login_id>/app")
-def set_app(login_id: str) -> WerkzeugResponse:
+def set_app(login_id: str) -> Response:
     """The client id (and for Tidal the secret) of the user's developer app."""
     service = BY_ID[login_id].section
-    client_id, secret = form("client_id"), form("client_secret")
+    client_id, secret = _given("client_id"), _given("client_secret")
     services, config = get_services(), get_config()
     if not client_id or (
         service == "tidal" and not secret and not services.client_secret("tidal")
     ):
-        return _back(
-            "Fill in the Client ID" + (" and Secret." if service == "tidal" else "."),
-            "error",
+        raise ProviderError(
+            "Fill in the Client ID" + (" and Secret." if service == "tidal" else ".")
         )
     config.update_logins(
         service,
@@ -221,13 +220,11 @@ def set_app(login_id: str) -> WerkzeugResponse:
     for login in list(current_app.extensions["logins"].values()):
         if isinstance(login, BrowserLogin) and login.oauth.name == service:
             login.cancel()
-    return _back(f"Saved the {LABELS[service]} app. Now log in.")
+    return _done(f"Saved the {LABELS[service]} app. Now log in.")
 
 
 @accounts_pages.post(f"/<any({_ALL}):login_id>/logout")
-def logout(login_id: str) -> WerkzeugResponse:
+def logout(login_id: str) -> Response:
     forgotten = Accounts(get_config()).logout(login_id)
     label = BY_ID[login_id].label
-    return _back(
-        f"Logged out of {label}." if forgotten else f"Not logged in to {label}."
-    )
+    return _done(f"Logged out of {label}." if forgotten else f"Not logged in to {label}.")

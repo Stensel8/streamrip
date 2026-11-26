@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-/* The colours of the other pages (static/style.css), as Tailwind's. */
+/* The colours of streamrip (and of its logo). */
 @theme {
   --color-page: oklch(19.3% 0.037 265.75);
   --color-surface: oklch(20.77% 0.0398 265.75);
@@ -12,28 +12,73 @@
   --color-accent: oklch(67.81% 0.1189 307.96);
   --color-on-accent: oklch(18% 0.02 308);
   --color-ok: oklch(78.45% 0.1325 181.91);
+  --color-warn: oklch(83.24% 0.1396 82.95);
   --color-error: oklch(71.79% 0.1703 13.12);
   --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", Menlo, monospace;
 }
 
 @layer base {
   body {
     @apply bg-page text-text font-sans antialiased;
   }
-  input,
-  select {
-    @apply rounded-lg border border-border bg-line px-3 py-2 text-sm text-text outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/30;
+  input:not([type="checkbox"], [type="radio"], [type="file"]),
+  select,
+  textarea {
+    @apply w-full rounded-lg border border-border bg-line px-3 py-2 text-sm text-text outline-none transition placeholder:text-muted/70 focus:border-accent focus:ring-2 focus:ring-accent/30;
   }
-  select {
-    @apply pr-8;
+  input[type="file"] {
+    @apply w-full text-sm text-muted file:mr-3 file:rounded-lg file:border-0 file:bg-raised file:px-3 file:py-2 file:text-sm file:text-text hover:file:brightness-125;
+  }
+  input[type="checkbox"] {
+    @apply size-4 accent-accent;
+  }
+  code {
+    @apply rounded bg-line px-1.5 py-0.5 font-mono text-[0.85em] break-words;
+  }
+  a.link {
+    @apply text-accent hover:underline;
   }
 }
 
 @layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium transition hover:bg-raised disabled:pointer-events-none disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply border-transparent bg-accent text-on-accent hover:bg-accent hover:brightness-110;
+  }
+  .btn-small {
+    @apply px-2.5 py-1 text-xs;
+  }
+  .card {
+    @apply rounded-2xl border border-border bg-surface p-5 sm:p-6;
+  }
+  .label {
+    @apply mb-1.5 block text-xs font-medium text-muted;
+  }
   /* The wordmark, in the logo's own gradient (demo/logo.svg). */
   .wordmark {
     background: linear-gradient(90deg, #fcaa62 0%, #ef9589 15%, #e588a4 27%, #d17ac7 42%, #ac83d0 53%, #4dbfc8 85%);
     background-clip: text;
     color: transparent;
+  }
+}
+
+/* A bar with no end in sight slides. */
+@keyframes slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}
+.sliding {
+  animation: slide 1.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sliding {
+    animation: none;
   }
 }

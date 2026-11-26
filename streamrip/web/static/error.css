@@ -1,0 +1,4 @@
+/* The error page: the colours of the app, without it. */
+body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: oklch(19.3% 0.037 265.75); color: oklch(84.15% 0.008 265.75); font: 16px/1.5 system-ui, sans-serif; }
+main { max-width: 32rem; padding: 1.5rem; border: 1px solid oklch(71.79% 0.1703 13.12 / 0.4); border-radius: 1rem; background: oklch(71.79% 0.1703 13.12 / 0.08); }
+a { color: oklch(67.81% 0.1189 307.96); }

@@ -1,9 +1,17 @@
-{% extends "base.html" %}
-{% block title %}Error · streamrip{% endblock %}
-
-{% block content %}
-<div class="notice">
-  <div class="alert error"><strong>Error {{ status }}.</strong> {{ message }}</div>
-  <a class="btn" href="{{ url_for('pages.dashboard') }}">Back</a>
-</div>
-{% endblock %}
+{# What a browser that asked for a page (not the app's own requests) gets for an error. #}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Error · streamrip</title>
+  <link rel="icon" href="{{ url_for('static', filename='icon.svg') }}" type="image/svg+xml">
+  <link rel="stylesheet" href="{{ url_for('static', filename='error.css') }}">
+</head>
+<body>
+  <main>
+    <p><strong>Error {{ status }}.</strong> {{ message }}</p>
+    <p><a href="/">Back to streamrip</a></p>
+  </main>
+</body>
+</html>

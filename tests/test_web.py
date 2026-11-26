@@ -184,11 +184,19 @@ def csv_tracks(response) -> list[str]:
 
 def test_the_pages_render(client):
     assert client.get("/health").get_json() == {"status": "ok", "version": __version__}
-    assert "Links" in client.get("/").get_data(as_text=True)
-    assert "Transfer" in client.get("/playlists").get_data(as_text=True)
-    accounts = client.get("/accounts").get_data(as_text=True)
-    assert "Qobuz" in accounts
-    assert "http://127.0.0.1:9900/callback" in accounts
+    for path in (
+        "/",
+        "/playlists",
+        "/accounts",
+        "/library",
+        "/settings",
+        "/settings/file",
+    ):
+        assert '<div id="app">' in client.get(path).get_data(as_text=True), path
+    assert client.get("/download/api").get_json()["sources"]
+    accounts = client.get("/accounts/api").get_json()
+    assert accounts["accounts"]["qobuz"]["label"] == "Qobuz"
+    assert accounts["redirect_uris"]["spotify"] == "http://127.0.0.1:9900/callback"
 
 
 def test_the_pages_need_nothing_the_security_policy_blocks(client):
@@ -210,7 +218,7 @@ def test_only_our_own_host_names_are_answered(client):
 @pytest.mark.parametrize(
     ("headers", "status"),
     [
-        ({}, 302),  # no browser headers: curl or a script
+        ({}, 200),  # no browser headers: curl or a script
         ({"Sec-Fetch-Site": "cross-site"}, 403),
         ({"Sec-Fetch-Site": "same-site"}, 403),  # another port on this machine
         ({"Origin": "https://evil.example"}, 403),
@@ -300,9 +308,10 @@ def test_a_search_that_cannot_go_on_is_explained_and_not_a_dropped_connection(
 
 
 def test_the_search_offers_a_source_only_the_kinds_it_has(client):
-    page = client.get("/").get_data(as_text=True)
-    assert 'value="soundcloud" data-kinds="track playlist"' in page
-    assert 'value="qobuz" data-kinds="track album artist playlist"' in page
+    sources = client.get("/download/api").get_json()["sources"]
+    kinds = {s["name"]: s["kinds"] for s in sources}
+    assert kinds["soundcloud"] == ["track", "playlist"]
+    assert kinds["qobuz"] == ["track", "album", "artist", "playlist"]
 
 
 def test_an_item_is_downloaded_by_its_id(client, runner):
@@ -372,9 +381,9 @@ def test_the_library_page_counts_and_forgets(client, services, tmp_path):
     database.failed_downloads_path = str(tmp_path / "failed.db")
     downloads = db.Downloads(database.downloads_path)
     downloads.add((db.download_key("qobuz", "1"), ""))
-    assert "<strong>1</strong>" in client.get("/library").get_data(as_text=True)
-    assert client.post("/library/clear/downloads").status_code == 302
-    assert "Forgot 1 downloaded track" in client.get("/library").get_data(as_text=True)
+    assert client.get("/library/api").get_json()["downloaded"] == 1
+    cleared = client.post("/library/clear/downloads").get_json()
+    assert cleared["message"] == "Forgot 1 downloaded track."
     assert len(downloads.all()) == 0
 
 
@@ -522,17 +531,17 @@ def test_a_refused_login_leaves_the_one_before(services, monkeypatch):
 
 def test_logins_are_tried_and_kept(client, runner):
     qobuz = {"user_id": "1", "auth_token": "t"}
-    assert client.post("/accounts/qobuz/login", data=qobuz).status_code == 302
-    assert client.post("/accounts/deezer/login", data={"arl": "x"}).status_code == 302
+    assert client.post("/accounts/qobuz/login", json=qobuz).status_code == 200
+    assert client.post("/accounts/deezer/login", json={"arl": "x"}).status_code == 200
     soundcloud = {"oauth_token": "2-1"}
-    assert client.post("/accounts/soundcloud/login", data=soundcloud).status_code == 302
+    assert client.post("/accounts/soundcloud/login", json=soundcloud).status_code == 200
     assert runner.logins == [
         ("qobuz", "1", "t"),
         ("deezer", "x"),
         ("soundcloud", "2-1"),
     ]
-    client.post("/accounts/qobuz/login", data={"user_id": "1"})  # no token
-    assert "Fill in both" in client.get("/accounts").get_data(as_text=True)
+    no_token = client.post("/accounts/qobuz/login", json={"user_id": "1"}, headers=JSON)
+    assert "Fill in both" in no_token.get_json()["message"]
     assert len(runner.logins) == 3
 
 
@@ -551,8 +560,8 @@ def test_an_app_is_saved_in_the_config(client, services):
 def test_logging_out_removes_the_login(client, services):
     services.store.save("tidal", Token("A", "R", time.time() + 100))
     services.config.update_logins("deezer", {"arl": "cookie"})
-    assert client.post("/accounts/tidal-library/logout").status_code == 302
-    assert client.post("/accounts/deezer/logout").status_code == 302
+    assert client.post("/accounts/tidal-library/logout").status_code == 200
+    assert client.post("/accounts/deezer/logout").status_code == 200
     assert services.store.load("tidal") is None
     assert services.config.session.deezer.arl == ""
 
@@ -618,11 +627,10 @@ def test_the_playlist_page_offers_the_services_that_are_logged_in(client, servic
     login = {"client_id": "id", "access_token": "a", "refresh_token": "r"}
     services.config.update_logins("spotify", login)
 
-    page = client.get("/playlists").get_data(as_text=True)
+    playlist_services = client.get("/playlists/api").get_json()["services"]
 
-    # A select of the services to move playlists between, not of the sources.
-    assert page.count('<option value="spotify">Spotify</option>') >= 3
-    assert '<option value="tidal">Tidal</option>' not in page  # not logged in
+    # The services to move playlists between, not the sources; Tidal is not logged in.
+    assert playlist_services == [{"name": "spotify", "label": "Spotify"}]
 
 
 def test_the_accounts_page_says_what_each_login_is_and_gives(client, monkeypatch):
@@ -660,7 +668,7 @@ def test_qobuz_logs_in_with_a_script_run_on_its_web_player(client, runner):
     challenge = re.search(r'challenge: "([^"]+)"', script)[1]
     # Saving another service's app, or pasting an address, leaves it waiting.
     assert (
-        client.post("/accounts/spotify/app", data={"client_id": "x"}).status_code == 302
+        client.post("/accounts/spotify/app", json={"client_id": "x"}).status_code == 200
     )
     paste = client.post(f"/jobs/{job_id}/paste", json={"address": "x"}, headers=JSON)
     assert paste.status_code == 404
@@ -922,7 +930,8 @@ def test_settings_change_the_config_and_a_broken_file_is_not_saved(client, servi
     assert client.post("/settings/api", json=wrong).status_code == 400
 
     before = config.path.read_text()
+    broken = {"text": "[downloads\n"}
     assert (
-        client.post("/settings/file", data={"text": "[downloads\n"}).status_code == 400
+        client.post("/settings/file/api", json=broken, headers=JSON).status_code == 400
     )
     assert config.path.read_text() == before

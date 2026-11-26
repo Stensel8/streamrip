@@ -1,15 +1,20 @@
 """What the pages of the web interface share: the parts of the running app, and
 the way a request starts a background job."""
 
+from pathlib import Path
 lazy from collections.abc import Callable
 
-from flask import Response, abort, current_app, jsonify, request
+from flask import Response, abort, current_app, jsonify, request, send_from_directory
 
 from ..sync.errors import ProviderError
 lazy from ..config import Config
 lazy from ..sync.services import Services
 lazy from .jobs import Job, JobManager
 lazy from .runner import Runner
+
+# The interface itself: the Svelte app frontend/ builds (`npm run build`), served
+# as it is, so running streamrip needs no Node.
+APP = Path(__file__).parent / "static" / "app"
 
 SOURCE_LABELS = frozendict(
     {
@@ -20,6 +25,11 @@ SOURCE_LABELS = frozendict(
         "spotify": "Spotify",
     }
 )
+
+
+def spa() -> Response:
+    """A page of the interface: the app, which asks for the page's data itself."""
+    return send_from_directory(APP, "index.html")
 
 
 def get_services() -> Services:
@@ -58,10 +68,6 @@ def chain(
     for name in names:
         choice(name, sources, "fallback source")
     return ",".join(dict.fromkeys(names)) or None
-
-
-def form(name: str) -> str:
-    return request.form.get(name, "").strip()
 
 
 def choice(value, choices, what: str) -> str:

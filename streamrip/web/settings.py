@@ -4,29 +4,19 @@ template does, and the file itself to edit by hand."""
 import re
 from dataclasses import dataclass, field
 from functools import cache
-from pathlib import Path
 
 from flask import (
     Blueprint,
     Response,
-    flash,
     jsonify,
-    redirect,
-    render_template,
-    request,
-    send_from_directory,
-    url_for,
 )
-lazy from werkzeug.wrappers import Response as WerkzeugResponse
 
 from ..config import BLANK_CONFIG_PATH, ConfigData, write_private
 from ..sync.errors import ProviderError
-from .common import get_config, sent
+from .common import get_config, sent, spa
 
 settings_pages = Blueprint("settings", __name__, url_prefix="/settings")
 
-# The built page (frontend/, `npm run build`): served as it is, no Node needed.
-APP = Path(__file__).parent / "static" / "app"
 
 # An option of the template, set or left commented out at its default.
 _OPTION = re.compile(r"^(?:# )?([a-z_]+) = ")
@@ -204,9 +194,9 @@ def _settings() -> Response:
 
 
 @settings_pages.route("")
+@settings_pages.route("/file")
 def page() -> Response:
-    """The page itself: the Svelte app in static/app (frontend/ builds it)."""
-    return send_from_directory(APP, "index.html")
+    return spa()
 
 
 @settings_pages.get("/api")
@@ -233,30 +223,25 @@ def save() -> Response:
     return _settings()
 
 
-@settings_pages.route("/file")
-def file_page() -> str:
+@settings_pages.get("/file/api")
+def file_text() -> Response:
     path = get_config().path
-    return render_template(
-        "settings_file.html", path=path, text=path.read_text(encoding="utf-8-sig")
-    )
+    return jsonify(path=str(path), text=path.read_text(encoding="utf-8-sig"))
 
 
-@settings_pages.post("/file")
-def save_file() -> WerkzeugResponse | tuple[str, int]:
+@settings_pages.post("/file/api")
+def save_file() -> Response:
     """The file as written by hand, once streamrip can read it."""
-    config, text = get_config(), request.form.get("text", "")
+    config, text = get_config(), str(sent().get("text") or "")
     try:
         unused = ConfigData.from_toml(text).unused
     except Exception as e:
-        message = f"Not saved: {type(e).__name__}: {e}"
-        return render_template(
-            "settings_file.html", path=config.path, text=text, error=message
-        ), 400
+        raise ProviderError(f"Not saved: {type(e).__name__}: {e}") from e
     config.save_file()  # what this run changed (a token) first
     write_private(config.path, text)
     config.reload()
-    if unused:
-        flash(f"Saved. Not options of this streamrip: {', '.join(unused)}.", "error")
-    else:
-        flash("Saved.")
-    return redirect(url_for("settings.file_page"))
+    return jsonify(
+        message=f"Saved. Not options of this streamrip: {', '.join(unused)}."
+        if unused
+        else "Saved."
+    )

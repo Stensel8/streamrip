@@ -1,9 +1,0 @@
-{# Where a login script moves its tab to. static/app.js hands the login over. #}
-{% extends "base.html" %}
-{% block title %}{{ label }} · streamrip{% endblock %}
-
-{% block content %}
-<div class="notice" id="script-receive">
-  <p id="script-receive-text">Handing the {{ label }} login to streamrip…</p>
-</div>
-{% endblock %}

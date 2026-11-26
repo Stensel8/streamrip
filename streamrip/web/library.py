@@ -3,11 +3,11 @@ retry and the clearing of `streamrip repair` and `streamrip database`."""
 
 from pathlib import Path
 
-from flask import Blueprint, Response, flash, redirect, render_template, url_for
+from flask import Blueprint, Response, jsonify
 
 from .. import db
 from ..console import plural
-from .common import get_config, get_runner, sent, start
+from .common import get_config, get_runner, sent, spa, start
 
 library_pages = Blueprint("library", __name__, url_prefix="/library")
 
@@ -31,10 +31,14 @@ def _row(source: str, item_id: str, path: str) -> tuple[str, str, str]:
 
 
 @library_pages.route("")
-def page() -> str:
+def page() -> Response:
+    return spa()
+
+
+@library_pages.get("/api")
+def data() -> Response:
     downloads, failed = _tables()
-    return render_template(
-        "library.html",
+    return jsonify(
         # Counted and limited by sqlite: a library may have many thousands.
         downloaded=downloads.count(),
         recent=[_row(*db.download_row(*row)) for row in downloads.recent(SHOWN)],
@@ -55,10 +59,11 @@ def repair() -> tuple[Response, int]:
 
 
 @library_pages.post("/clear/<any(downloads, failed):table>")
-def clear(table: str):
+def clear(table: str) -> Response:
     """Forget what was downloaded (it is downloaded again), or the failures."""
     downloads, failed = _tables()
     forgotten = (downloads if table == "downloads" else failed).clear()
     what = "downloaded track" if table == "downloads" else "failed download"
-    flash(f"Forgot {plural(forgotten, what)}." if forgotten else "Nothing to forget.")
-    return redirect(url_for("library.page"))
+    return jsonify(
+        message=f"Forgot {plural(forgotten, what)}." if forgotten else "Nothing to forget."
+    )

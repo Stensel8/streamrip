@@ -11,7 +11,6 @@ from flask import (
     abort,
     current_app,
     jsonify,
-    render_template,
     request,
 )
 
@@ -37,6 +36,7 @@ from .common import (
     get_services,
     payload,
     sent,
+    spa,
     start,
 )
 from .runner import MEDIA_TYPES, SOURCES
@@ -121,9 +121,14 @@ def _download_sources() -> list[dict]:
 
 
 @pages.get("/")
-def dashboard() -> str:
-    return render_template(
-        "dashboard.html",
+@pages.get("/playlists")
+def page() -> Response:
+    return spa()
+
+
+@pages.get("/download/api")
+def download_data() -> Response:
+    return jsonify(
         sources=_download_sources(),
         media_types=MEDIA_TYPES,
         id_kinds=ID_KINDS,
@@ -131,11 +136,9 @@ def dashboard() -> str:
     )
 
 
-@pages.get("/playlists")
-def playlists_page() -> str:
-    return render_template(
-        "playlists.html", accounts=_connected_services(), sources=_download_sources()
-    )
+@pages.get("/playlists/api")
+def playlists_data() -> Response:
+    return jsonify(services=_connected_services(), sources=_download_sources())
 
 
 @pages.get("/health")
