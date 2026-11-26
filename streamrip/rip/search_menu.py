@@ -180,7 +180,8 @@ class SearchMenu(App[tuple[int, ...] | None]):
         yield _Results(*(self._option(i) for i in self.visible_indices), id="results")
         with Horizontal(id="preview"):
             yield CoverPane(self.pixel_widget)
-            with VerticalScroll(id="details-scroll"):
+            # Not focusable: Enter and Space belong to the list.
+            with VerticalScroll(id="details-scroll", can_focus=False):
                 yield Static(id="details", markup=False)
 
     def on_mount(self):
