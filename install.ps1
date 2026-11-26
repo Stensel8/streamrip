@@ -12,9 +12,22 @@ Set-Location $PSScriptRoot
 $venvPath = Join-Path $PSScriptRoot ".venv"
 $streamripPath = Join-Path $venvPath "Scripts\streamrip.exe"
 
+# uv's installer: its release, and the sha256 it must have (Patchbot keeps both
+# current). A changed file is not run.
+$UV_INSTALLER = "0.13.10@sha256:5b8e12d392c80cd6ccf0f758b71fa82fe6f5e0dead5871dc94e96afc44876269"
+
 if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
     Write-Host "uv not found, installing it (see https://docs.astral.sh/uv/)..."
-    powershell -ExecutionPolicy ByPass -Command "irm https://astral.sh/uv/install.ps1 | iex"
+    $version, $sha = $UV_INSTALLER -split "@sha256:"
+    $installer = Join-Path ([IO.Path]::GetTempPath()) "uv-installer.ps1"
+    Invoke-WebRequest -UseBasicParsing -OutFile $installer -Uri "https://github.com/astral-sh/uv/releases/download/$version/uv-installer.ps1"
+    if ((Get-FileHash -Algorithm SHA256 $installer).Hash -ne $sha) {
+        Remove-Item $installer
+        Write-Error "The uv installer is not the one expected; not running it."
+        exit 1
+    }
+    powershell -ExecutionPolicy ByPass -File $installer
+    Remove-Item $installer
     $env:Path = "$env:USERPROFILE\.local\bin;$env:Path"
 }
 

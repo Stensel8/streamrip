@@ -15,9 +15,22 @@ cd "$script_dir"
 venv_path="$script_dir/.venv"
 streamrip_path="$venv_path/bin/streamrip"
 
+# uv's installer: its release, and the sha256 it must have (Patchbot keeps both
+# current). A changed file is not run.
+UV_INSTALLER=0.13.10@sha256:51781aafe6950cc659f79873e1bdca55fbb9da6e0ef650bf98093a0f0aaaf453
+
 if ! command -v uv >/dev/null 2>&1; then
     echo "uv not found, installing it (see https://docs.astral.sh/uv/)..."
-    curl -LsSf https://astral.sh/uv/install.sh | sh
+    installer=$(mktemp)
+    curl -LsSf -o "$installer" "https://github.com/astral-sh/uv/releases/download/${UV_INSTALLER%@*}/uv-installer.sh"
+    # sha256sum on Linux, shasum on macOS.
+    hash=$( (sha256sum "$installer" 2>/dev/null || shasum -a 256 "$installer") | cut -d' ' -f1)
+    if [ "$hash" != "${UV_INSTALLER#*sha256:}" ]; then
+        echo "The uv installer is not the one expected; not running it." >&2
+        exit 1
+    fi
+    sh "$installer"
+    rm -f "$installer"
     export PATH="$HOME/.local/bin:$PATH"
 fi
 
