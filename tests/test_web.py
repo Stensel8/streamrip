@@ -903,3 +903,26 @@ def test_everything_can_be_exported_as_m3u8_to_a_folder(client, services, tmp_pa
 def test_a_job_that_is_gone_is_a_404(client):
     assert client.get("/jobs/nope", headers=JSON).status_code == 404
     assert client.get("/jobs/nope/download").status_code == 404
+
+
+def test_settings_change_the_config_and_a_broken_file_is_not_saved(client, services):
+    page = client.get("/settings").get_data(as_text=True)
+    assert "Max connections" in page
+    assert 'name="cli.progress_bars"' in page
+    form = {
+        "downloads.max_connections": "3",
+        "conversion.codec": "FLAC",
+    }  # every switch off
+    assert client.post("/settings", data=form).status_code == 302
+    config = services.config
+    assert (
+        config.session.downloads.max_connections,
+        config.session.cli.progress_bars,
+    ) == (3, False)
+    assert "max_connections = 3" in config.path.read_text()
+
+    before = config.path.read_text()
+    assert (
+        client.post("/settings/file", data={"text": "[downloads\n"}).status_code == 400
+    )
+    assert config.path.read_text() == before

@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Config file · streamrip{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Config file</h1>
+    <p class="lead"><code>{{ path }}</code>, as it is. streamrip reads it through before saving it. The logins are not in it, but in state.toml next to it.</p>
+  </div>
+</div>
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+<form method="post" action="{{ url_for('settings.save_file') }}" class="card">
+  <textarea name="text" class="mono config-text" rows="32" spellcheck="false" aria-label="The config file">{{ text }}</textarea>
+  <div class="actions">
+    <a class="btn" href="{{ url_for('settings.page') }}">Back</a>
+    <button class="btn primary" type="submit">Save</button>
+  </div>
+</form>
+{% endblock %}

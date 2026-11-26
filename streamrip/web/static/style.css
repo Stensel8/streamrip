@@ -38,10 +38,10 @@ hr { margin: 2rem 0; border: 0; border-top: 1px solid var(--border); }
 /* page frame */
 .topbar {
   display: flex; align-items: center; justify-content: space-between;
-  min-height: 4rem; padding: 0.5rem 1rem;
+  flex-wrap: wrap; gap: 0.25rem; min-height: 4rem; padding: 0.5rem 1rem;
   background: var(--surface); box-shadow: 0 1px 3px rgb(0 0 0 / 0.3);
 }
-.topbar nav { display: flex; gap: 0.25rem; }
+.topbar nav { display: flex; flex-wrap: wrap; gap: 0.25rem; }
 .brand, .topbar nav a { padding: 0.5rem 0.75rem; border-radius: 0.5rem; }
 .brand { display: flex; align-items: center; gap: 0.6rem; font-size: 1.25rem; font-weight: 700; }
 /* The wordmark, in the logo's own gradient (demo/logo.svg): warm into the purple and out. */
@@ -269,3 +269,11 @@ form:has([value="m3u8"]:checked) .if-m3u8, form:has([value="m3u8"]:checked) .if-
 form:has([name="playlist"] option[value="*"]:checked) .if-saved { display: flex; }
 .card-head .tools { display: flex; align-items: center; gap: 0.5rem; }
 .icon-btn { width: 1.5rem; padding: 0; font-size: 1rem; line-height: 1; }
+
+/* The Settings page: one option a row, its words under it. */
+.setting { display: flex; flex-direction: column; gap: 0.25rem; padding: 0.6rem 0; border-top: 1px solid var(--border); }
+.setting-group { margin: 1rem 0 0.25rem; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.help-text { margin: 0; white-space: pre-line; }
+.savebar { position: sticky; bottom: 0; padding: 0.75rem 0; margin-top: 1rem; background: var(--page); }
+.config-text { width: 100%; min-height: 60vh; resize: vertical; font-family: ui-monospace, monospace; font-size: 0.85rem; tab-size: 4; }
+@media (max-width: 30rem) { .topbar nav a { padding: 0.4rem 0.5rem; } }

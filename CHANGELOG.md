@@ -15,6 +15,8 @@ upstream issues and pull requests.
   they don't match
 - feat: folder keys {label} {genre} {releasetype} {barcode} {date}
 - feat: the Library page and `database browse` show each download's file
+- feat: a Settings page in `streamrip web`: every option of the config, and the
+  file itself to edit
 - fix: a run with failed tracks exits with 1
 
 ## 2.8.2

@@ -51,7 +51,7 @@ browser.
 - Move your liked songs and playlists between Spotify and Tidal, export them to
   CSV and back, or download them from another source, like a Spotify playlist
   in lossless from Qobuz ([details](docs/playlists.md)).
-- `streamrip web` does all of this in your browser, logins included
+- `streamrip web` does all of this in your browser, logins and settings included
   ([details](docs/web.md)).
 
 ## Why streamrip exists

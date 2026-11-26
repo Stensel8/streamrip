@@ -32,6 +32,7 @@ from .accounts import accounts_pages
 from .jobs import JobManager, explain
 from .library import library_pages
 from .runner import AccountPausedError, Runner
+from .settings import settings_pages
 from .views import pages, playlist_pages
 lazy from ..config import Config
 
@@ -155,4 +156,5 @@ def create_app(
     app.register_blueprint(accounts_pages)
     app.register_blueprint(library_pages)
     app.register_blueprint(playlist_pages)
+    app.register_blueprint(settings_pages)
     return app

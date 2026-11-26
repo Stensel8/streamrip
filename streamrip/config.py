@@ -362,7 +362,15 @@ class Config:
     def __init__(self, path: Path, /):
         """Load the config at path, securing it first if it holds secrets."""
         self.path = path
+        self._saving = threading.Lock()
+        self.reload()
+        if not self._template and self._holds_logins():
+            self._move_logins_out()
 
+    def reload(self):
+        """Read the file, again after it was edited by hand: every option and
+        every login as it now says."""
+        path = self.path
         # utf-8-sig: Notepad and PowerShell 5.1 save "UTF-8" with a BOM, which
         # TOML takes for an empty key.
         with path.open(encoding="utf-8-sig") as toml_file:
@@ -383,8 +391,15 @@ class Config:
         self._stored = self._load_logins()
 
         self.session: ConfigData = copy.deepcopy(self.file)
-        # "~/Music" is in the home folder, not in a folder named "~" where
-        # streamrip happens to be run. The file keeps it as it was written.
+        self._settle_paths()
+        # What the file said when it was read, to tell at saving what this run
+        # changed in self.file (a new token, a fetched app id).
+        self._loaded: ConfigData = copy.deepcopy(self.file)
+
+    def _settle_paths(self):
+        """The session's folders as the file means them. "~/Music" is in the
+        home folder, not in a folder named "~" where streamrip happens to be
+        run; the file keeps it as it was written."""
         downloads, database = self.session.downloads, self.session.database
         downloads.folder = expand_home(downloads.folder)
         database.downloads_path = expand_home(database.downloads_path)
@@ -394,17 +409,22 @@ class Config:
             # streamrip happens to be run in, nor a database gone after the run.
             downloads.folder = downloads.folder or str(DEFAULT_DOWNLOADS_FOLDER)
             database.downloads_path = database.downloads_path or str(
-                path.with_name("downloads.db")
+                self.path.with_name("downloads.db")
             )
             database.failed_downloads_path = database.failed_downloads_path or str(
-                path.with_name("failed_downloads.db")
+                self.path.with_name("failed_downloads.db")
             )
-        # What the file said when it was read, to tell at saving what this run
-        # changed in self.file (a new token, a fetched app id).
-        self._loaded: ConfigData = copy.deepcopy(self.file)
-        self._saving = threading.Lock()
-        if not self._template and self._holds_logins():
-            self._move_logins_out()
+
+    def update_options(self, changes: dict[str, dict]):
+        """Set options, {section: {name: value}}, here and in the file, and save
+        them (the Settings page of `streamrip web`)."""
+        for data in (self.session, self.file):
+            for section, values in changes.items():
+                for name, value in values.items():
+                    setattr(getattr(data, section), name, copy.deepcopy(value))
+        self._settle_paths()
+        self.file.set_modified()
+        self.save_file()
 
     def _holds_logins(self) -> bool:
         """Whether config.toml itself has logins in it, as before 2.8."""

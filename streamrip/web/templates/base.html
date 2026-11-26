@@ -19,6 +19,7 @@
       <a href="{{ url_for('pages.playlists_page') }}"{{ ' aria-current=page' if here == 'pages.playlists_page' }}>Playlists</a>
       <a href="{{ url_for('accounts.page') }}"{{ ' aria-current=page' if here == 'accounts.page' }}>Accounts</a>
       <a href="{{ url_for('library.page') }}"{{ ' aria-current=page' if here == 'library.page' }}>Library</a>
+      <a href="{{ url_for('settings.page') }}"{{ ' aria-current=page' if here and here.startswith('settings.') }}>Settings</a>
     </nav>
   </header>
 
