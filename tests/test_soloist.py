@@ -96,6 +96,7 @@ class FakeBackend:
     """A SoloistBackend that plays at once, and writes the uri as the audio."""
 
     turn = nullcontext()
+    device_name = "streamrip"
 
     def __init__(self, refused=()):
         self.refused = set(refused)
@@ -109,6 +110,9 @@ class FakeBackend:
 
     def paired(self):
         return True
+
+    def ensure_binary(self):
+        return Path("soloist")
 
 
 async def test_the_audio_is_spotifys_own_when_the_backend_is_on(make_client):
@@ -241,13 +245,15 @@ async def test_a_cancelled_download_waits_for_the_play_and_leaves_no_file(tmp_pa
 async def test_pairing_stores_the_key_and_pairs_the_device(make_client, monkeypatch):
     client = make_client(soloist_api_key="")
     monkeypatch.setattr(SoloistBackend, "supported", property(lambda self: True))
-    monkeypatch.setattr(SoloistBackend, "pair", lambda self: f"user of {self.api_key}")
+    monkeypatch.setattr(
+        SoloistBackend, "pair", lambda self, stop: f"user of {self.api_key}"
+    )
 
     assert await client.pair_soloist("NEW") == "user of NEW"
     assert client.config.soloist_api_key == "NEW"
 
 
-async def test_pairing_where_nothing_can_be_recorded_says_so(make_client, monkeypatch):
+async def test_pairing_where_it_cannot_be_done_says_so(make_client, monkeypatch):
     monkeypatch.setattr(SoloistBackend, "supported", property(lambda self: False))
 
     with pytest.raises(AuthenticationError, match="cannot do"):
@@ -784,6 +790,21 @@ async def test_the_prompter_asks_for_the_key_and_pairs_the_device(
     assert asked == [True]  # a secret: not echoed
     prompter.client.pair_soloist.assert_awaited_once_with("NEW-KEY")
     assert prompter.config.session.spotify.soloist_api_key == "NEW-KEY"
+
+
+async def test_a_computer_paired_before_is_not_paired_again_unasked(
+    prompter, monkeypatch
+):
+    # Pairing waits for the Spotify app: it used to start unannounced, and hang.
+    monkeypatch.setattr(
+        prompter_module.Confirm, "ask", lambda prompt, **_: "again" not in prompt
+    )
+    monkeypatch.setattr(prompter_module.Prompt, "ask", lambda *a, **k: "NEW-KEY")
+
+    await prompter._offer_spotify_backend()
+
+    prompter.client.pair_soloist.assert_not_awaited()
+    assert prompter.config.file.spotify.soloist_api_key == "NEW-KEY"
 
 
 async def test_a_failed_pairing_does_not_fail_the_login(prompter):

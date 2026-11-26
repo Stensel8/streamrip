@@ -17,6 +17,7 @@ playlists the user owns or collaborates on can be read.
 
 import asyncio
 import base64
+import contextlib
 import hashlib
 import logging
 import os
@@ -501,7 +502,18 @@ class SpotifyClient(Client):
             raise AuthenticationError(
                 "Spotify's own audio needs a Soloist API key (streamrip login spotify)."
             )
-        return await asyncio.to_thread(backend.pair)
+        stop = threading.Event()
+        pairing = asyncio.ensure_future(asyncio.to_thread(backend.pair, stop))
+        try:
+            return await asyncio.shield(pairing)
+        except asyncio.CancelledError:
+            # Ctrl-C: the thread cannot be cancelled, so tell it to end the
+            # pairing, and wait for that rather than for its 10 minutes.
+            stop.set()
+            while not pairing.done():
+                with contextlib.suppress(asyncio.CancelledError):
+                    await asyncio.wait({pairing})
+            raise
 
     async def close(self):
         """The Spotify backend keeps nothing open between runs: nothing to close."""

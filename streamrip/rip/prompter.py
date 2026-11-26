@@ -421,6 +421,9 @@ class SpotifyPrompter(CredentialPrompter):
 
     async def prompt_and_login(self):
         await self._log_in_app()
+        # Kept now: the pairing after it waits for the Spotify app, and a
+        # Ctrl-C there must not cost the login just made.
+        self._keep()
         await self._offer_spotify_backend()
 
     async def _log_in_app(self):
@@ -483,6 +486,7 @@ class SpotifyPrompter(CredentialPrompter):
             while not key:
                 key = Prompt.ask("Enter the Soloist API key", password=True).strip()
             c.soloist_api_key = key
+            self._keep()  # the key, whatever happens to the pairing
         backend = self.client.soloist_backend
         if backend is None:
             console.print(
@@ -490,14 +494,24 @@ class SpotifyPrompter(CredentialPrompter):
                 "is saved; the audio will come from YouTube Music.[/yellow]"
             )
             return
-        if not backend.paired():
-            console.print(
-                f"\nPair this device once, in the Spotify app on a device on "
-                f"this network:\n"
-                "  1. Open the app and press play\n"
-                "  2. Tap [italic]Connect to a device[/italic]\n"
-                f"  3. Pick [bold]{backend.device_name}[/bold] and play a track"
-            )
+        # Paired before: pairing again waits for the Spotify app, so only when
+        # asked for.
+        if backend.paired() and not Confirm.ask(
+            "This computer is paired with Spotify already. Pair it again?",
+            default=False,
+        ):
+            console.print("Spotify's own audio is set up.")
+            return
+        with console.status("Getting Spotify's official client ready"):
+            await asyncio.to_thread(backend.ensure_binary)  # downloaded once
+        console.print(
+            "\nPair this computer, in the Spotify app on a device on this network:\n"
+            "  1. Open the app and press play\n"
+            "  2. Tap [italic]Connect to a device[/italic]\n"
+            f"  3. Pick [bold]{backend.device_name}[/bold]\n"
+            "streamrip waits for that, up to 10 minutes (Ctrl-C stops; your login "
+            "is kept)."
+        )
         try:
             username = await self.client.pair_soloist(key)
         except Exception as e:
@@ -564,6 +578,18 @@ class SpotifyPrompter(CredentialPrompter):
 
     def save(self):
         """Write the session's Spotify app and login to the config file."""
+        self._copy()
+        self.config.file.set_modified()
+        self._announce_saved()
+
+    def _keep(self):
+        """Write the login as it is now, before a step that can be stopped."""
+        self._copy()
+        self.config.file.set_modified()
+        self.config.save_file()
+
+    def _copy(self):
+        """The session's Spotify app and login, into what is saved."""
         c = self.config.session.spotify
         cf = self.config.file.spotify
         for name in (
@@ -577,8 +603,6 @@ class SpotifyPrompter(CredentialPrompter):
             "soloist_api_key",
         ):
             setattr(cf, name, getattr(c, name))
-        self.config.file.set_modified()
-        self._announce_saved()
 
 
 PROMPTERS = frozendict(

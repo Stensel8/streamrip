@@ -101,6 +101,8 @@ EXPIRED_BUILD = 10
 BUSY = "another session is running"
 BUSY_WAIT = 15.0
 BUSY_TRIES = 20
+# How long a pairing waits for someone to pick the device in the Spotify app.
+PAIR_WAIT = 600.0
 UNSUPPORTED_PLATFORM = (
     "Spotify's own audio is not supported on this platform yet; "
     "the audio comes from YouTube Music"
@@ -208,8 +210,11 @@ def start_cmd(cmd: list[str], quiet: bool = False) -> subprocess.Popen:
     )
 
 
-def _read_until_done(proc: subprocess.Popen, timeout_s: float) -> list[str]:
-    """Every line the process prints until it exits, within `timeout_s`.
+def _read_until_done(
+    proc: subprocess.Popen, timeout_s: float, stop: threading.Event | None = None
+) -> list[str]:
+    """Every line the process prints until it exits, within `timeout_s`, or
+    until `stop` is set (it is killed then).
 
     The lines are read on a thread: a process that goes quiet -- or exits
     quietly -- must not hold the deadline hostage.
@@ -225,8 +230,11 @@ def _read_until_done(proc: subprocess.Popen, timeout_s: float) -> list[str]:
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
         with contextlib.suppress(queue.Empty):
-            lines.append(pending.get(timeout=1.0))
+            lines.append(pending.get(timeout=0.5))
         if proc.poll() is not None and pending.empty():
+            break
+        if stop is not None and stop.is_set():
+            proc.kill()
             break
     else:
         proc.kill()
@@ -416,12 +424,13 @@ class SoloistBackend:
                 "\n".join([*kept, *(f"{k}={v}" for k, v in PREFS.items())]) + "\n"
             )
 
-    def pair(self) -> str:
+    def pair(self, stop: threading.Event | None = None) -> str:
         """Pair the device once, with a Spotify app on this network.
 
-        Blocking: it waits (up to 10 minutes) for the pairing. On success
-        returns the username; on a failure the user can act on, raises
-        AuthenticationError with the end of what Soloist said.
+        Blocking: it waits (up to 10 minutes, or until `stop` is set: a
+        CancelledError then) for the pairing. On success returns the username;
+        on a failure the user can act on, raises AuthenticationError with the
+        end of what Soloist said.
         """
         if not self.supported:
             raise NonStreamableError(UNSUPPORTED_PLATFORM)
@@ -430,12 +439,14 @@ class SoloistBackend:
             [str(binary), "-n", self.device_name, "-k", self.api_key, "-p"]
         )
         try:
-            lines = _read_until_done(proc, timeout_s=600.0)
+            lines = _read_until_done(proc, timeout_s=PAIR_WAIT, stop=stop)
             rc = proc.wait()
         finally:
             if proc.poll() is None:
                 proc.kill()
                 proc.wait()
+        if stop is not None and stop.is_set():
+            raise asyncio.CancelledError
         self.refused.clear()  # a new pairing is a new account
         _, _, username = summarize_log(self._redact(lines), "")
         if rc != 0 or username is None:
