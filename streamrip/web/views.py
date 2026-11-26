@@ -2,6 +2,7 @@
 playlist tools, and the logins of every service."""
 
 import io
+import os
 from pathlib import Path, PureWindowsPath
 from urllib.parse import quote, urlsplit
 
@@ -427,15 +428,18 @@ def _folder(value, what: str, default: Path) -> Path:
         f"Choose a {what} inside your home folder or the downloads folder."
     )
     try:
-        path = Path(str(value or "").strip() or default).expanduser().resolve()
+        path = os.path.realpath(Path(str(value or "").strip() or default).expanduser())
     except (ValueError, RuntimeError) as e:  # a NUL, or "~name" of no user
         raise refused from e
     roots = [Path.home()]
     if downloads := get_config().session.downloads.folder:
         roots.append(Path(downloads).expanduser())
-    if not any(path.is_relative_to(root.resolve()) for root in roots):
+    # Both with their links followed, then compared as text (the check CodeQL
+    # knows): a root itself, or something inside one.
+    real = [os.path.realpath(root) for root in roots]
+    if not any(path == root or path.startswith(root + os.sep) for root in real):
         raise refused
-    return path
+    return Path(path)
 
 
 @playlist_pages.post("/export")

@@ -150,6 +150,8 @@ def parse_csv(text: str, source: str = "the CSV") -> list[MatchTrack]:
     "artist,title". The separator may be a comma, a semicolon (what Excel makes
     in many countries) or a tab.
     """
+    # A file's name, which a browser sends: never a line of its own in the log.
+    source = source.replace("\r", " ").replace("\n", " ")
     try:
         rows = list(_rows(text, _delimiter(text)))
     except csv.Error as e:  # a quote that is never closed, in a big file
