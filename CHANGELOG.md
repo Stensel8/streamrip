@@ -3,8 +3,13 @@
 All notable changes in this fork of [nathom/streamrip](https://github.com/nathom/streamrip). Numbers can refer to
 upstream issues and pull requests.
 
-## Unreleased
+## 2.8.3
 
+A new web interface, and more from each service.
+
+- feat: `streamrip web` is rebuilt: tabs and menus instead of rows of forms, a
+  tab bar on phones, a Settings page with every option (and the file itself),
+  and Tidal's two logins as steps
 - feat: a track of a list (CSV, `playlist download`) is found by its ISRC too,
   on the release it came from
 - feat: composer, lyricist, producer, engineer and mixer tags from Qobuz, Tidal
@@ -13,11 +18,11 @@ upstream issues and pull requests.
   login, and logs in with a script in `streamrip web`
 - feat: FLAC downloads are checked against their MD5, and fetched again when
   they don't match
-- feat: folder keys {label} {genre} {releasetype} {barcode} {date}
-- feat: the Library page and `database browse` show each download's file
-- feat: a Settings page in `streamrip web`: every option of the config, and the
-  file itself to edit
+- feat: folder keys {label} {genre} {releasetype} {barcode} {date}; the Library
+  page and `database browse` show each download's file
 - fix: a run with failed tracks exits with 1
+- chore: the installers check uv's installer against a pinned checksum, and
+  every dependency is pinned and kept current
 
 ## 2.8.2
 
