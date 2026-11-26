@@ -14,6 +14,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import requests
 from playlist_support import ISRC_A, FakeProvider, FakeServices, track
 
 from streamrip import __version__, db, progress
@@ -27,7 +28,7 @@ from streamrip.sync.csvio import parse_csv
 from streamrip.sync.errors import ApiError
 from streamrip.sync.models import Track
 from streamrip.verify import Result as Verified
-from streamrip.web import _secret_key, create_app
+from streamrip.web import _secret_key, create_app, serve
 from streamrip.web import runner as runner_module
 from streamrip.web.jobs import Job, JobManager
 from streamrip.web.runner import Result, Runner
@@ -936,3 +937,26 @@ def test_settings_change_the_config_and_a_broken_file_is_not_saved(client, servi
         client.post("/settings/file/api", json=broken, headers=JSON).status_code == 400
     )
     assert config.path.read_text() == before
+
+
+def test_the_server_stops_when_asked_with_its_token(tmp_path, monkeypatch, services):
+    monkeypatch.setattr(serve, "STATE", tmp_path / "web.json")
+    monkeypatch.setattr(serve, "LOG", tmp_path / "web.log")
+    app = create_app(
+        services.config, services=services, runner=FakeRunner(services.config)
+    )
+    server = threading.Thread(target=serve.serve, args=(app, "127.0.0.1", 0))
+    server.start()
+    for _ in range(50):
+        if serve.running():
+            break
+        time.sleep(0.1)
+    port = serve.running()["port"]
+    wrong = requests.post(
+        f"http://127.0.0.1:{port}/stop", headers={serve.TOKEN_HEADER: "guess"}
+    )
+    assert wrong.status_code == 403
+    assert serve.stop()
+    server.join(5)
+    assert not server.is_alive()
+    assert not (tmp_path / "web.json").exists()

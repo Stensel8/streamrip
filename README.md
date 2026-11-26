@@ -166,6 +166,9 @@ streamrip --quality 2 url <link>                                # CD quality at 
 streamrip repair                                                # retry what failed
 streamrip config open                                           # every option, explained
 streamrip web                                                   # all of it in your browser
+streamrip web --background                                      # the same, with the terminal free
+streamrip web --log                                             # what it does, as it does it
+streamrip web --stop                                            # stop it
 ```
 
 And for playlists ([details](docs/playlists.md)):

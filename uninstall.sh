@@ -35,6 +35,10 @@ else
     for path in ${paths[@]+"${paths[@]}"}; do echo "  $path"; done
     for tool in ${tools[@]+"${tools[@]}"}; do echo "  streamrip, installed with $tool"; done
     if [ "$yes" = -y ] || ask "Go ahead?"; then
+        # A server in the background (streamrip web --background) stops first.
+        for bin in "$script_dir/.venv/bin/streamrip" "$(command -v streamrip || true)"; do
+            if [ -x "$bin" ] && "$bin" web --stop >/dev/null 2>&1; then break; fi
+        done
         # The sink Spotify's own audio plays into, while PulseAudio or PipeWire runs.
         if command -v pactl >/dev/null; then
             for module in $(pactl list short modules 2>/dev/null | awk '/sink_name=soloist_cap/ {print $1}' || true); do

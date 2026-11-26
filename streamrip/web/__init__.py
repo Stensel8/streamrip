@@ -29,7 +29,8 @@ from ..rip.spotify_login import SpotifyLoginError
 from ..sync.errors import SyncError
 from ..sync.services import Services
 from .accounts import accounts_pages
-from .jobs import JobManager, explain
+from .common import get_config, get_jobs
+from .jobs import JobManager, activity, explain
 from .library import library_pages
 from .runner import AccountPausedError, Runner
 from .settings import settings_pages
@@ -95,6 +96,13 @@ def _reject_cross_origin():
         abort(403, "Request from another website refused.")
 
 
+def _follow_files():
+    """Go on with what a command or an editor changed in the config or the
+    logins since, unless a job runs on what was read before."""
+    if get_jobs().running() is None and get_config().reload_if_changed():
+        activity.info("The config or the logins changed on disk: read them again.")
+
+
 def _security_headers(response: Response) -> Response:
     response.headers["Content-Security-Policy"] = CONTENT_SECURITY_POLICY
     response.headers["X-Content-Type-Options"] = "nosniff"
@@ -148,6 +156,7 @@ def create_app(
     app.extensions["logins"] = {}
 
     app.before_request(_reject_cross_origin)
+    app.before_request(_follow_files)
     app.after_request(_security_headers)
     app.register_error_handler(SecurityError, _unknown_host)
     for error in (*EXPLAINED, HTTPException):

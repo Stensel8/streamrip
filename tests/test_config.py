@@ -143,6 +143,21 @@ def test_saving_keeps_what_was_changed_in_the_file_meanwhile(config_path):
     assert saved.tidal.access_token == "the-other-run's"
 
 
+def test_a_server_takes_on_what_another_program_wrote(config_path):
+    server = Config(config_path)
+    server.file.cli.max_search_results = 7
+    server.file.set_modified()
+    server.save_file()
+    assert not server.reload_if_changed()  # its own saving is no news
+
+    command = Config(config_path)  # `streamrip login` saves a login meanwhile
+    command.update_logins("deezer", {"arl": "from-the-command-line"})
+
+    assert server.reload_if_changed()
+    assert server.session.deezer.arl == "from-the-command-line"
+    assert server.session.cli.max_search_results == 7
+
+
 def test_saving_leaves_a_commented_option_commented(config_path):
     # Written beside the commented line, it would make uncommenting that a
     # duplicate key, and the config would not load.

@@ -482,10 +482,10 @@ def export(service: str) -> tuple[Response, int]:
             service=service,
             m3u8=m3u8,
             library=library,
-            say=lambda line: job.log.append(("info", line)),
+            say=job.say,
         )
         for line in lines:
-            job.log.append(("info", line))
+            job.say(line)
         return f"{plural(len(lines), 'file')} written in {folder}." + (
             f" {len(missing)} tracks are not in the music folder." if missing else ""
         )

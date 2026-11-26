@@ -31,6 +31,10 @@ if (-not $paths -and -not $tools) {
     $paths | ForEach-Object { Write-Host "  $_" }
     $tools | ForEach-Object { Write-Host "  streamrip, installed with $_" }
     if ($Yes -or (Ask "Go ahead?")) {
+        # A server in the background (streamrip web --background) stops first.
+        foreach ($bin in @((Join-Path $PSScriptRoot ".venv\Scripts\streamrip.exe"), (Get-Command streamrip -ErrorAction SilentlyContinue).Source)) {
+            if ($bin -and (Test-Path $bin)) { & $bin web --stop *> $null; if ($LASTEXITCODE -eq 0) { break } }
+        }
         if ($tools -contains "uv") { uv tool uninstall streamrip | Out-Null }
         if ($tools -contains "pipx") { pipx uninstall streamrip | Out-Null }
         $paths | ForEach-Object { Remove-Item -Recurse -Force -LiteralPath $_ }

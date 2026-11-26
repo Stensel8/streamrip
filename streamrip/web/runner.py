@@ -145,7 +145,7 @@ class Runner:
         with self._working(job):
             items, accounts, summary = self.call(self._plan(job, add))
         for line in [*items, *accounts]:
-            job.log.append(("info", line))
+            job.say(line)
         return summary if items else "Nothing new to download."
 
     async def _plan(
@@ -289,9 +289,9 @@ class Runner:
             level = {"ok": "info", "guest": "info", "failed": "error"}.get(
                 r.state, "warning"
             )
-            job.log.append((level, text))
+            job.say(text, level)
             if r.hint:
-                job.log.append(("warning", f"{label}: {r.hint}"))
+                job.say(f"{label}: {r.hint}", "warning")
         good = sum(r.state in {"ok", "guest"} for r in results)
         bad = [BY_ID[r.id].label for r in results if r.state == "failed"]
         summary = f"{good} of {len(results)} are fine"
@@ -353,12 +353,12 @@ class Runner:
         client (twice with the hi-res one)."""
 
         def show(link: str, minutes: int, which: str):
-            job.link = link
             job.enter(
                 "hires" if which == "hi-res" else "cd",
                 f"Open the link and log in to Tidal within {minutes} minutes "
                 f"(the {which} login).",
             )
+            job.offer(link)
 
         async def log_in():
             client = TidalClient(self.config)

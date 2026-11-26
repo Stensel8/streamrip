@@ -395,6 +395,21 @@ class Config:
         # What the file said when it was read, to tell at saving what this run
         # changed in self.file (a new token, a fetched app id).
         self._loaded: ConfigData = copy.deepcopy(self.file)
+        self._written = self._stamps()
+
+    def _stamps(self) -> tuple[int, ...]:
+        """When config.toml and state.toml were last written."""
+        paths = (self.path, self.state.path)
+        return tuple(p.stat().st_mtime_ns if p and p.exists() else 0 for p in paths)
+
+    def reload_if_changed(self) -> bool:
+        """Read the files again when another program wrote them since (a
+        command, an editor): whether they were. A server that runs for long
+        so goes on with the settings and logins the command line has."""
+        if self._template or self._stamps() == self._written:
+            return False
+        self.reload()
+        return True
 
     def _settle_paths(self):
         """The session's folders as the file means them. "~/Music" is in the
@@ -509,6 +524,7 @@ class Config:
             return  # the packaged template is nobody's config to write
         with self._saving:
             self._save_file()
+            self._written = self._stamps()  # its own writing is no news to it
 
     def _save_file(self):
         # The logins first: they are out of config.toml once that is written.

@@ -18,6 +18,10 @@ from ..sync.engine import Miss, Step, remaining
 lazy from ..sync.models import Match, Track
 
 logger = logging.getLogger("streamrip")
+# What the jobs do, said in the terminal (or the log of `streamrip web
+# --background`), the same as the page shows it: started, each step, a login's
+# page, how far, how it ended. Kept out of the jobs' own logs, which have it.
+activity = logging.getLogger("streamrip.web")
 
 # The steps each kind of job goes through, in order. The page shows them as a
 # row of numbered steps.
@@ -87,17 +91,34 @@ class Job:
     finished: float | None = None
 
     def enter(self, phase: str, text: str | None = None):
-        """Go on to `phase` (if not already there), saying `text`."""
+        """Go on to `phase` (if not already there), saying `text`: a new step
+        is said in the terminal too."""
         if phase != self.phase:
             self.phase, self.phase_started, self.current = phase, time.monotonic(), ""
             self.done, self.total = 0, None
+            if text:
+                activity.info("%s: %s", self.title, text)
         if text is not None:
             self.text = text
 
+    def say(self, line: str, level: str = "info"):
+        """A line of the job's log, which the terminal gets too."""
+        self.log.append((level, line))
+        activity.log(
+            logging.getLevelNamesMapping()[level.upper()], "%s: %s", self.title, line
+        )
+
+    def offer(self, link: str, *, script: str = "", pasteable: bool = False):
+        """A login's page (and the script to run there): on the page, and in
+        the terminal, where it can be opened just as well."""
+        self.link, self.script, self.pasteable = link, script, pasteable
+        then = ", then run the script the Accounts page shows" if script else ""
+        activity.info("%s: log in at %s%s", self.title, link, then)
+
     def progress(self, step: Step):
         """The progress callback of the playlist tools. The page polls what it sets."""
-        self.enter(step.phase)
-        self.text, self.done, self.total = step.text, step.done, step.total
+        self.enter(step.phase, step.text)
+        self.done, self.total = step.done, step.total
         if step.phase == "match" and step.track:
             self.current, self.found = str(step.track), step.found
             if step.miss:
@@ -188,7 +209,9 @@ class JobObserver(Observer):
         job.total = (job.total or 0) + n
 
     def overall_advance(self, n: int):
-        self.job.done += n
+        job = self.job
+        job.done += n
+        activity.info("%s: %s of %s tracks", job.title, job.done, job.total)
 
     def title(self, key: int, title: str | None):
         if title is None:
@@ -208,6 +231,8 @@ class JobLog(logging.Handler):
         self.job = job
 
     def emit(self, record: logging.LogRecord):
+        if record.name == activity.name:
+            return  # the terminal's lines about the job, which the job has
         try:
             self.job.log.append((record.levelname.lower(), record.getMessage()))
         except Exception:
@@ -235,6 +260,7 @@ class JobManager:
         """Run `work(job)` on a thread. What it returns is the summary shown
         once the job is done."""
         job = Job(id=secrets.token_urlsafe(8), kind=kind, title=title)
+        activity.info("%s", title)
         with self._lock:
             self._jobs[job.id] = job
             # Forget the oldest that are over; never one still going, which a
@@ -259,6 +285,10 @@ class JobManager:
             )
         job.rows.clear()
         job.finished = time.monotonic()
+        took = round(job.finished - job.started)
+        (activity.info if status == "done" else activity.error)(
+            "%s: %s (took %d:%02d)", job.title, job.message, took // 60, took % 60
+        )
         job.status = status  # last: everything else is set before the page sees it end
 
     def get(self, job_id: str) -> Job | None:

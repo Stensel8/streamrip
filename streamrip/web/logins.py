@@ -50,7 +50,7 @@ class BrowserLogin:
         """Wait for the browser to come back, then trade the code for tokens."""
         label = self.oauth.label
         job.enter("login", f"Log in to {label} in the tab that opened.")
-        job.link, job.pasteable = self.url, True
+        job.offer(self.url, pasteable=True)
         params: dict[str, str] = {}
         try:
             params = self._wait()
@@ -128,7 +128,7 @@ class ScriptLogin:
     def run(self, job: Job, finish) -> str:
         """Wait for the script's hand-over, then log in with it (`finish`)."""
         job.enter("login", f"Log in to {self.label} in three steps:")
-        job.link, job.script = self.url, self.script
+        job.offer(self.url, script=self.script)
         self._arrived.wait(LOGIN_TIMEOUT)
         job.script = ""
         if self._cancelled:

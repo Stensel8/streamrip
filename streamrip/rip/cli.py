@@ -1,3 +1,4 @@
+import contextlib
 import json
 import logging
 import os
@@ -44,7 +45,7 @@ lazy from ..exceptions import (
 )
 lazy from ..media.csv_playlist import read_tracks
 lazy from ..utils.ssl_utils import print_ssl_error_help
-lazy from ..web import create_app
+lazy from ..web import create_app, serve
 lazy from .interactive import Confirm, Prompt
 lazy from .main import Main, open_table
 lazy from .prompter import has_screen, launch
@@ -1185,16 +1186,63 @@ LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
     ),
 )
 @click.option("--no-browser", is_flag=True, help="Do not open the page in a browser.")
+@click.option(
+    "--background",
+    is_flag=True,
+    help="Run in the background and give the terminal back: --log follows it, --stop stops it.",
+)
+@click.option(
+    "--log", "follow_log", is_flag=True, help="Follow what the running server does."
+)
+@click.option("--stop", "stop_it", is_flag=True, help="Stop the running server.")
 @click.pass_context
-def web(ctx, port, host, no_browser):
+def web(ctx, port, host, no_browser, background, follow_log, stop_it):
     """Downloads, search, playlists and logins in your browser.
 
     A page on this computer with what the commands do: download links, search
     and pick, download a CSV list, move and download playlists, and log in to
-    every service. It has no password: it only answers to 127.0.0.1 and
-    localhost, and must not be reachable from a network.
+    every service. What it does shows in the terminal too, or with --log. It
+    has no password: it only answers to 127.0.0.1 and localhost, and must not
+    be reachable from a network.
     """
+    if stop_it:
+        console.print(
+            "Stopped streamrip web."
+            if serve.stop()
+            else "streamrip web is not running."
+        )
+        return
+    if follow_log:
+        if not serve.LOG.is_file():
+            console.print("streamrip web has not run yet: nothing to follow.")
+            return
+        with contextlib.suppress(KeyboardInterrupt):
+            serve.follow()
+        return
     config = _require_config(ctx)
+    open_page = not no_browser and host in LOOPBACK_HOSTS and has_screen()
+    if state := serve.running():
+        url = f"http://127.0.0.1:{state['port']}"
+        console.print(f"streamrip web runs already: [bold]{url}[/bold]")
+        if open_page:
+            launch(url)
+        return
+    if background:
+        try:
+            state = serve.start_background(ctx.obj["config_path"], host, port)
+        except RuntimeError as e:
+            err_console.print(
+                f"streamrip web did not start: {escape(str(e))}", style="red"
+            )
+            ctx.exit(1)
+        url = f"http://127.0.0.1:{state['port']}"
+        console.print(
+            f"streamrip web runs in the background: [bold]{url}[/bold]\n"
+            "[dim]streamrip web --log[/dim] follows it, [dim]streamrip web --stop[/dim] stops it."
+        )
+        if open_page:
+            launch(url)
+        return
     app = create_app(config)
     if host not in LOOPBACK_HOSTS:
         err_console.print(
@@ -1203,8 +1251,8 @@ def web(ctx, port, host, no_browser):
         )
     url = f"http://127.0.0.1:{port}"
     console.print(f"streamrip web: [bold]{url}[/bold]  (Ctrl+C to stop)")
-    if not no_browser and host in LOOPBACK_HOSTS and has_screen():
+    if open_page:
         threading.Timer(1.0, launch, [url]).start()
     # Not a line per request (the page asks how a job is doing twice a second).
     logging.getLogger("werkzeug").setLevel(logging.WARNING)
-    app.run(host=host, port=port, debug=False, threaded=True)
+    serve.serve(app, host, port)
