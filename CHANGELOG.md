@@ -3,6 +3,12 @@
 All notable changes in this fork of [nathom/streamrip](https://github.com/nathom/streamrip). Numbers can refer to
 upstream issues and pull requests.
 
+## 2.8.1
+
+- fix: `streamrip login spotify` no longer waits unseen for the Spotify app on a
+  computer that was set up before, says what it waits for, keeps the login when
+  stopped with Ctrl-C, and stops at once
+
 ## 2.8.0
 
 Music-Sync is part of streamrip, and the web interface and the command line do

@@ -731,7 +731,7 @@ wheels = [
 
 [[package]]
 name = "streamrip"
-version = "2.8.0"
+version = "2.8.1"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
