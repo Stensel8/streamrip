@@ -371,7 +371,7 @@ def test_the_library_page_counts_and_forgets(client, services, tmp_path):
     database.downloads_path = str(tmp_path / "downloads.db")
     database.failed_downloads_path = str(tmp_path / "failed.db")
     downloads = db.Downloads(database.downloads_path)
-    downloads.add((db.download_key("qobuz", "1"),))
+    downloads.add((db.download_key("qobuz", "1"), ""))
     assert "<strong>1</strong>" in client.get("/library").get_data(as_text=True)
     assert client.post("/library/clear/downloads").status_code == 302
     assert "Forgot 1 downloaded track" in client.get("/library").get_data(as_text=True)

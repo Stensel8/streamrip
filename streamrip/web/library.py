@@ -1,7 +1,7 @@
 """The Library page: what streamrip has downloaded and what failed, with the
 retry and the clearing of `streamrip repair` and `streamrip database`."""
 
-from itertools import starmap
+from pathlib import Path
 
 from flask import Blueprint, Response, flash, redirect, render_template, url_for
 
@@ -19,6 +19,17 @@ def _tables() -> tuple[db.Downloads, db.Failed]:
     return db.Downloads(c.downloads_path), db.Failed(c.failed_downloads_path)
 
 
+def _row(source: str, item_id: str, path: str) -> tuple[str, str, str]:
+    """A downloads row as the page shows it: the file within the music folder."""
+    folder = Path(get_config().session.downloads.folder)
+    file = Path(path)
+    return (
+        source,
+        item_id,
+        str(file.relative_to(folder)) if file.is_relative_to(folder) else path,
+    )
+
+
 @library_pages.route("")
 def page() -> str:
     downloads, failed = _tables()
@@ -26,7 +37,7 @@ def page() -> str:
         "library.html",
         # Counted and limited by sqlite: a library may have many thousands.
         downloaded=downloads.count(),
-        recent=list(starmap(db.split_download_key, downloads.recent(SHOWN))),
+        recent=[_row(*db.download_row(*row)) for row in downloads.recent(SHOWN)],
         failed=failed.count(),
         failures=failed.recent(SHOWN),
         shown=SHOWN,

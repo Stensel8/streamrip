@@ -187,7 +187,7 @@ def seeded(cfg, tmp_path):
     downloads = db.Downloads(str(tmp_path / "downloads.db"))
     failed = db.Failed(str(tmp_path / "failed.db"))
     for key in ("qobuz_1", "tidal_2"):
-        downloads.add((key,))
+        downloads.add((key, ""))
     failed.add(("tidal", "track", "3"))
     return cfg, downloads, failed
 
@@ -226,7 +226,7 @@ def test_database_browse_failed_lines_up_with_its_headers(seeded, capsys):
 
 def test_database_browse_downloads_shows_each_rows_source(seeded, capsys):
     cfg, downloads, _ = seeded
-    downloads.add(("soundcloud_9",))
+    downloads.add(("soundcloud_9", ""))
 
     result = _rip(cfg, "database", "browse", "downloads")
 
@@ -409,7 +409,7 @@ def _repair(monkeypatch, cfg, downloaded):
 def test_repair_matches_failures_by_source_and_id(seeded, monkeypatch, capsys):
     cfg, downloads, failed = seeded
     failed.add(("qobuz", "track", "3"))  # the same id as the Tidal failure
-    downloads.add(("tidal_3",))  # marked downloaded, though it failed
+    downloads.add(("tidal_3", ""))  # marked downloaded, though it failed
 
     result = _repair(monkeypatch, cfg, [("tidal", "3")])
 

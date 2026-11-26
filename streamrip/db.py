@@ -2,7 +2,7 @@
 
 import logging
 import sqlite3
-from contextlib import closing, contextmanager
+from contextlib import closing, contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 lazy from collections.abc import Generator
@@ -31,10 +31,11 @@ def download_key(source: str, item_id: str) -> str:
     return f"{source}_{track_id(source, item_id)}"
 
 
-def split_download_key(key: str) -> tuple[str, str]:
-    """The (source, id) a downloads row holds."""
+def download_row(key: str, path: str = "") -> tuple[str, str, str]:
+    """The (source, id, file) a downloads row holds; no file for a row from
+    before 2.9."""
     source, _, item_id = key.partition("_")
-    return source, item_id
+    return source, item_id, path
 
 
 class Dummy:
@@ -107,6 +108,15 @@ class DatabaseBase:
         logger.debug("executing %s", command)
         with self._connect() as conn:
             conn.execute(command)
+            # A table from before a column came gets it, empty in its old rows.
+            have = {row[1] for row in conn.execute(f"PRAGMA table_info({self.name})")}
+            for key in self.structure.keys() - have:
+                kind = " ".join(map(str.upper, self.structure[key]))
+                with suppress(sqlite3.OperationalError):  # another run was first
+                    conn.execute(
+                        f"ALTER TABLE {self.name} ADD COLUMN {key} {kind} "
+                        "NOT NULL DEFAULT ''"
+                    )
 
     def contains(self, **items) -> bool:
         """Whether a row has every column=value given."""
@@ -161,10 +171,11 @@ class DatabaseBase:
 
 
 class Downloads(DatabaseBase):
-    """A table that stores the downloaded IDs, as `download_key`s."""
+    """A table that stores the downloaded IDs, as `download_key`s, and the file
+    each became."""
 
     name = "downloads"
-    structure = frozendict({"id": ("text", "unique")})
+    structure = frozendict({"id": ("text", "unique"), "path": ("text",)})
 
 
 class Failed(DatabaseBase):
@@ -196,9 +207,11 @@ class Database:
         """Whether a track of `source` is in the library."""
         return self.downloads.contains(id=download_key(source, item_id))
 
-    def set_downloaded(self, source: str, item_id: str, new: bool = True):
-        """Record a track as in the library; new: downloaded by this run."""
-        self.downloads.add((download_key(source, item_id),))
+    def set_downloaded(
+        self, source: str, item_id: str, new: bool = True, path: Path | str = ""
+    ):
+        """Record a track as in the library, at `path`; new: downloaded by this run."""
+        self.downloads.add((download_key(source, item_id), str(path)))
         self.downloaded_now += new
         # And no failure any more. `repair` forgets the download of every
         # failed track before it retries: left in the table, a track that

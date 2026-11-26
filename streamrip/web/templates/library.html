@@ -27,7 +27,7 @@
   <section class="card">
     <div class="card-head"><h2>Downloaded</h2></div>
     <div class="stats"><div class="stat"><strong>{{ "{:,}".format(downloaded) }}</strong><span>tracks</span></div></div>
-    {{ rows("Downloaded", recent, ["Source", "Id"]) }}
+    {{ rows("Downloaded", recent, ["Source", "Id", "File"]) }}
     {% if downloaded %}
     <form method="post" action="{{ url_for('library.clear', table='downloads') }}" class="actions" data-confirm="Forget {{ downloaded }} downloaded tracks? They will be downloaded again.">
       <button class="btn" type="submit">Forget them</button>

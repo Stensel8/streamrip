@@ -930,7 +930,7 @@ async def test_a_fallback_track_is_recorded_under_the_requested_id(
     await track.postprocess()
 
     assert track.meta.title == "Served"  # tags still come from the served track
-    pending.db.set_downloaded.assert_called_once_with("deezer", "7")
+    assert pending.db.set_downloaded.call_args.args == ("deezer", "7")
 
 
 def _write(tmp_path, text, encoding="utf-8"):

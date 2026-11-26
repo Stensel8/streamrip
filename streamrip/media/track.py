@@ -419,7 +419,9 @@ class Track(Media):
                 )
 
         self._remove_lossy_copies()
-        self.db.set_downloaded(self.downloadable.source, self.meta.info.id)
+        self.db.set_downloaded(
+            self.downloadable.source, self.meta.info.id, path=self.download_path
+        )
 
     async def _look_up_lyrics(self):
         """The track's lyrics from its source or else from LRCLIB.

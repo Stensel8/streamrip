@@ -750,10 +750,8 @@ def database_browse(ctx, table):
     cfg = _require_config(ctx)
 
     if table == "downloads":
-        t = Table("Row", "Source", "ID", title="Downloads database")
-        rows = list(
-            starmap(db.split_download_key, open_table(cfg, "downloads_path").all())
-        )
+        t = Table("Row", "Source", "ID", "File", title="Downloads database")
+        rows = list(starmap(db.download_row, open_table(cfg, "downloads_path").all()))
     else:
         t = Table(
             "Row", "Source", "Media Type", "ID", title="Failed downloads database"

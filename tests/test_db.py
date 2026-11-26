@@ -1,5 +1,7 @@
 import gc
+import sqlite3
 import warnings
+from contextlib import closing
 
 import pytest
 
@@ -18,13 +20,13 @@ def database(tmp_path) -> db.Database:
 
 def test_clear_empties_a_table_that_stays_usable(database):
     for key in ("2", "3", "1"):  # the last added, not the highest
-        database.downloads.add((key,))
+        database.downloads.add((key, ""))
     assert database.downloads.count() == 3
-    assert database.downloads.recent(2) == [("1",), ("3",)]
+    assert database.downloads.recent(2) == [("1", ""), ("3", "")]
 
     assert database.downloads.clear() == 3
     assert database.downloads.all() == []
-    database.downloads.add(("1",))
+    database.downloads.add(("1", ""))
     assert database.downloads.contains(id="1")
 
 
@@ -90,7 +92,17 @@ def test_a_database_in_a_folder_that_is_not_there_makes_the_folder(tmp_path):
     path = tmp_path / "home" / "someone" / ".config" / "streamrip" / "downloads.db"
 
     database = db.Downloads(str(path))
-    database.add(("an-id",))
+    database.add(("an-id", ""))
 
     assert path.is_file()
     assert database.contains(id="an-id")
+
+
+def test_a_downloads_table_from_before_files_gets_the_column(tmp_path):
+    path = tmp_path / "downloads.db"
+    with closing(sqlite3.connect(path)) as conn, conn:
+        conn.execute("CREATE TABLE downloads (id TEXT UNIQUE NOT NULL)")
+        conn.execute("INSERT INTO downloads VALUES ('qobuz_1')")
+    table = db.Downloads(str(path))
+    table.add(("qobuz_2", "/music/a.flac"))
+    assert table.all() == [("qobuz_1", ""), ("qobuz_2", "/music/a.flac")]
