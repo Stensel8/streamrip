@@ -83,6 +83,34 @@ def _choose_login(service: str, options: list[tuple[str, str]], default: str) ->
     return keys[int(choice) - 1]
 
 
+async def browser_code(url: str, redirect_uri: str, state: str, label: str) -> str:
+    """Send the user to `url` to log in, and take the code back: caught on
+    this computer, or pasted from a browser elsewhere."""
+    console.print(
+        f"\nHow do you want to log in to {label}?\n"
+        "  1. In the browser on this computer: streamrip catches the login itself\n"
+        "  2. In a browser on another device (streamrip runs on a server, say):\n"
+        "     open the link there and paste the address you end up on\n"
+    )
+    choice = Prompt.ask(
+        "Choose", choices=["1", "2"], default="1" if has_screen() else "2"
+    )
+    if choice == "1":
+        console.print(
+            f"\nOpening your browser. If nothing opens, go to:\n{url}\n"
+            f"{label} must send you back to [bold]{redirect_uri}[/bold]; add that "
+            "to your app as a redirect URI if it says it is not allowed."
+        )
+        _open_login_link(url)
+        return await capture_code(redirect_uri, state, label)
+    console.print(f"\nOpen this link and log in:\n{url}\n")
+    console.print(
+        "The page you end up on will not load: that is as it should be. "
+        "Copy its whole address from the address bar."
+    )
+    return code_from_redirect_url(Prompt.ask("Paste the address"), state, label)
+
+
 class CredentialPrompter(ABC):
     client: Client
 
@@ -548,48 +576,16 @@ class SpotifyPrompter(CredentialPrompter):
         """One browser login: send the user to Spotify and take the code back."""
         url, state, verifier = self.client.authorization_url()
         redirect_uri = self.config.session.spotify.redirect_uri
-        console.print(
-            "\nHow do you want to log in to Spotify?\n"
-            "  1. In the browser on this computer: streamrip catches the login itself\n"
-            "  2. In a browser on another device (streamrip runs on a server, say):\n"
-            "     open the link there and paste the address you end up on\n"
-        )
-        # Spotify sends the browser back to 127.0.0.1, which only a browser on
-        # this machine can reach.
-        default = "1" if has_screen() else "2"
-        choice = Prompt.ask("Choose", choices=["1", "2"], default=default)
-        if choice == "1":
-            console.print(
-                f"\nOpening your browser. If nothing opens, go to:\n{url}\n"
-                f"Spotify must send you back to [bold]{redirect_uri}[/bold]; "
-                "if it says INVALID_CLIENT, add that as a Redirect URI to your app."
-            )
-            _open_login_link(url)
-            code = await capture_code(redirect_uri, state)
-        else:
-            console.print(f"\nOpen this link and log in:\n{url}\n")
-            console.print(
-                "The page you end up on will not load: that is as it should be. "
-                "Copy its whole address from the address bar."
-            )
-            address = Prompt.ask("Paste the address")
-            code = code_from_redirect_url(address, state)
+        code = await browser_code(url, redirect_uri, state, "Spotify")
         await self.client.finish_login(code, verifier)
 
     def save(self):
         """Write the session's Spotify app and login to the config file."""
-        self._copy()
-        self.config.file.set_modified()
+        self._keep()
         self._announce_saved()
 
     def _keep(self):
         """Write the login as it is now, before a step that can be stopped."""
-        self._copy()
-        self.config.file.set_modified()
-        self.config.save_file()
-
-    def _copy(self):
-        """The session's Spotify app and login, into what is saved."""
         c = self.config.session.spotify
         cf = self.config.file.spotify
         for name in (
@@ -603,6 +599,8 @@ class SpotifyPrompter(CredentialPrompter):
             "soloist_api_key",
         ):
             setattr(cf, name, getattr(c, name))
+        self.config.file.set_modified()
+        self.config.save_file()
 
 
 PROMPTERS = frozendict(

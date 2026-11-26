@@ -1,6 +1,7 @@
 """`streamrip playlist`: the playlist commands."""
 
 import csv
+from unittest.mock import AsyncMock
 
 import pytest
 from click.testing import CliRunner
@@ -270,7 +271,7 @@ def test_the_tidal_api_login_asks_for_the_app_and_keeps_the_login(
     answers = iter(["my-client-id", "my-secret"])
     monkeypatch.setattr(accounts_cli.Prompt, "ask", lambda *_a, **_k: next(answers))
     monkeypatch.setattr(accounts_cli, "launch", lambda _url: None)
-    monkeypatch.setattr(accounts_cli, "_browser_code", lambda url, *_: "CODE")
+    monkeypatch.setattr(accounts_cli, "browser_code", AsyncMock(return_value="CODE"))
     monkeypatch.setattr(FakeServices, "oauth", Services.oauth)  # a Tidal login
     token = Token("ACCESS", "REFRESH", 4_000_000_000)
     monkeypatch.setattr(TidalOAuth, "exchange", lambda self, code, verifier: token)

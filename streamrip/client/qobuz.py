@@ -334,14 +334,46 @@ class QobuzClient(Client):
         return resp
 
     async def search(self, media_type: str, query: str, limit: int = 500) -> list[dict]:
+        """Search response pages, bounded by the caller's result limit."""
         self.check_search_type(media_type)
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit < 0:
+            raise ValueError("Qobuz search limit must be a non-negative integer")
+        # Config values are tomlkit Integer subclasses. Normalize before using
+        # the limit as a fallback for strictly validated API pagination metadata.
+        limit = int(limit)
+        if limit == 0:
+            return []
 
-        params = {
-            "query": query,
-        }
         epoint = f"{media_type}/search"
+        params = {"query": query, "limit": limit, "offset": 0}
+        page = await self._request_ok(epoint, params)
+        logger.debug("paginate: initial request succeeded")
+        items = page.get(f"{media_type}s", {})
+        total = items.get("total", 0)
+        if type(total) is not int or total < 0:
+            raise APIError("Qobuz search returned an invalid pagination total")
+        total = min(total, limit)
 
-        return await self._paginate(epoint, params, limit=limit)
+        logger.debug("paginate: %d total items requested", total)
+
+        if total == 0:
+            logger.debug("Nothing found from %s epoint", epoint)
+            return []
+
+        page_size = items.get("limit", min(500, limit))
+        if type(page_size) is not int or not 0 < page_size <= limit:
+            raise APIError("Qobuz search returned an invalid pagination limit")
+
+        # Qobuz may cap the requested page size. Keep that validated size,
+        # but never use response offsets to control progress or allocate a
+        # batch of requests from response metadata.
+        return [page] + [
+            await self._request_ok(
+                epoint,
+                {**params, "offset": offset, "limit": min(page_size, total - offset)},
+            )
+            for offset in range(page_size, total, page_size)
+        ]
 
     async def get_downloadable(self, item_id: str, quality: int) -> Downloadable:
         """Ask Qobuz for a track's file URL at `quality` (1 to 4)."""
@@ -401,16 +433,9 @@ class QobuzClient(Client):
         return downloadable
 
     async def _request_ok(self, epoint: str, params: dict) -> dict:
-        """_api_request that insists on HTTP 200, retrying once if search blips.
-
-        Qobuz's search backend fails intermittently -- a 400 reading
-        "Impossible to connect, please check your Algolia Application Id."
-        that succeeds moments later. A 400 isn't something _api_request
-        retries (common 5xx already are), so one short retry here absorbs it
-        and preserves the fallback for other 5xx statuses;
-        anything else is raised with Qobuz's own message rather than a bare
-        AssertionError.
-        """
+        """_api_request that insists on HTTP 200, asking once more after a blip:
+        a 5xx it leaves alone, or the 400 of Qobuz's search ("...check your
+        Algolia Application Id.") that works moments later."""
         for attempt in (1, 2):
             status, page = await self._api_request(epoint, params)
             if status == 200:
@@ -432,53 +457,6 @@ class QobuzClient(Client):
         raise APIError(
             f"Qobuz {epoint} failed (HTTP {status}): {message or 'no message'}"
         )
-
-    async def _paginate(
-        self,
-        epoint: str,
-        params: dict,
-        limit: int = 500,
-    ) -> list[dict]:
-        """Return search response pages, bounded by the caller's result limit."""
-        if isinstance(limit, bool) or not isinstance(limit, int) or limit < 0:
-            raise ValueError("Qobuz search limit must be a non-negative integer")
-        # Config values are tomlkit Integer subclasses. Normalize before using
-        # the limit as a fallback for strictly validated API pagination metadata.
-        limit = int(limit)
-        if limit == 0:
-            return []
-
-        params = {**params, "limit": limit, "offset": 0}
-        page = await self._request_ok(epoint, params)
-        logger.debug("paginate: initial request succeeded")
-        # albums, tracks, etc.
-        key = epoint.partition("/")[0] + "s"
-        items = page.get(key, {})
-        total = items.get("total", 0)
-        if type(total) is not int or total < 0:
-            raise APIError("Qobuz search returned an invalid pagination total")
-        total = min(total, limit)
-
-        logger.debug("paginate: %d total items requested", total)
-
-        if total == 0:
-            logger.debug("Nothing found from %s epoint", epoint)
-            return []
-
-        page_size = items.get("limit", min(500, limit))
-        if type(page_size) is not int or not 0 < page_size <= limit:
-            raise APIError("Qobuz search returned an invalid pagination limit")
-
-        # Qobuz may cap the requested page size. Keep that validated size,
-        # but never use response offsets to control progress or allocate a
-        # batch of requests from response metadata.
-        return [page] + [
-            await self._request_ok(
-                epoint,
-                {**params, "offset": offset, "limit": min(page_size, total - offset)},
-            )
-            for offset in range(page_size, total, page_size)
-        ]
 
     async def _get_app_id_and_secrets(self) -> tuple[str, list[str]]:
         async with QobuzSpoofer(

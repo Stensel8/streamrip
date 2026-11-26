@@ -65,15 +65,6 @@ def generate_temp_path(url: str) -> Path:
     )
 
 
-def _plain_headers(headers) -> dict[str, str]:
-    """Copy (aiohttp multidict) headers into a plain str dict for requests.
-
-    requests rejects multidict's ``istr`` keys/values ("Header part ... must be
-    of type str or bytes", upstream #941).
-    """
-    return {str(k): str(v) for k, v in dict(headers or {}).items()}
-
-
 def _content_range(
     value: str | None,
 ) -> tuple[int | None, int | None, int | None]:
@@ -226,12 +217,6 @@ def _threadsafe(callback):
     return report
 
 
-def _verifies(session: aiohttp.ClientSession) -> bool:
-    """Whether `session` checks certificates (verify_ssl, --no-ssl-verify)."""
-    # aiohttp keeps what a connection is checked with here: False is "not".
-    return getattr(session.connector, "_ssl", None) is not False
-
-
 async def fast_async_download(
     path: Path, url, headers, callback, resume: bool = False, verify: bool = True
 ):
@@ -248,7 +233,8 @@ async def fast_async_download(
             _blocking_download,
             path,
             url,
-            _plain_headers(headers),
+            # requests rejects multidict's istr keys and values (upstream #941)
+            {str(k): str(v) for k, v in dict(headers or {}).items()},
             _threadsafe(callback),
             stop,
             resume,
@@ -291,6 +277,14 @@ class Downloadable(ABC):
                 self._size = int(response.headers.get("Content-Length", 0))
         return self._size
 
+    async def _fetch(self, path: Path, callback, resume: bool = False):
+        """The url into `path`, checking certificates as the session does."""
+        # aiohttp keeps that here: False is "not" (verify_ssl, --no-ssl-verify).
+        verify = getattr(self.session.connector, "_ssl", None) is not False
+        await fast_async_download(
+            path, self.url, self.session.headers, callback, resume, verify
+        )
+
     @abstractmethod
     async def _download(self, path: Path, callback: Callable[[int], None]):
         raise NotImplementedError
@@ -313,14 +307,7 @@ class BasicDownloadable(Downloadable):
         self.source = source or "Unknown"
 
     async def _download(self, path: Path, callback):
-        await fast_async_download(
-            path,
-            self.url,
-            self.session.headers,
-            callback,
-            resume=self.resume,
-            verify=_verifies(self.session),
-        )
+        await self._fetch(path, callback, self.resume)
 
 
 class DeezerDownloadable(Downloadable):
@@ -386,14 +373,7 @@ class DeezerDownloadable(Downloadable):
 
             if self.is_encrypted.search(self.url) is None:
                 logger.debug("Deezer file at %s not encrypted.", self.url)
-                await fast_async_download(
-                    path,
-                    self.url,
-                    self.session.headers,
-                    callback,
-                    resume=self.resume,
-                    verify=_verifies(self.session),
-                )
+                await self._fetch(path, callback, self.resume)
             else:
                 blowfish_key = self._generate_blowfish_key(self.id)
                 logger.debug(
@@ -474,14 +454,7 @@ class TidalDownloadable(Downloadable):
 
     async def _download(self, path: Path, callback):
         """Download the file, and decrypt it if Tidal encrypted it (MQA)."""
-        await fast_async_download(
-            path,
-            self.url,
-            self.session.headers,
-            callback,
-            resume=self.resume,
-            verify=_verifies(self.session),
-        )
+        await self._fetch(path, callback, self.resume)
         if self.enc_key is not None:
             dec_bytes = await self._decrypt_mqa_file(path, self.enc_key)
             await asyncio.to_thread(Path(path).write_bytes, dec_bytes)
@@ -614,13 +587,7 @@ class SoundcloudDownloadable(Downloadable):
         if self.file_type == "hls":
             await self._download_hls(path, callback)
             return
-        await fast_async_download(
-            path,
-            self.url,
-            self.session.headers,
-            callback,
-            verify=_verifies(self.session),
-        )
+        await self._fetch(path, callback)
         if self.file_type == "original":
             await converter.FLAC(path).convert()
 

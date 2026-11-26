@@ -240,14 +240,8 @@ class Track(Media):
                     )
                 ):
                     try:
-                        if tier is None:
-                            tier_now = getattr(
-                                self.config.session, self.client.source
-                            ).quality
-                        else:
-                            tier_now = tier
                         fresh = await self.client.get_downloadable(
-                            self.meta.info.id, tier_now
+                            self.meta.info.id, tier or self._configured_tier()
                         )
                         fresh.resolved_at = time.time()
                         self.downloadable = fresh

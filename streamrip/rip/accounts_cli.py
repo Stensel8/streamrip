@@ -20,8 +20,8 @@ lazy from ..verify import FAILED
 lazy from ..verify import verify as run_verify
 lazy from .cli import _require_config, coro
 lazy from .interactive import Prompt
-lazy from .prompter import get_prompter, has_screen, launch
-lazy from .spotify_login import SpotifyLoginError, capture_code, code_from_redirect_url
+lazy from .prompter import browser_code, get_prompter, launch
+lazy from .spotify_login import SpotifyLoginError
 
 LOGIN = click.Choice(LOGIN_IDS, case_sensitive=False)
 
@@ -199,34 +199,6 @@ async def _log_in(config: Config, source: str):
 # --- Tidal's official API ----------------------------------------------------
 
 
-def _browser_code(url: str, redirect_uri: str, state: str, label: str) -> str:
-    """Send the user to `url` to log in, and take the code back: caught on
-    this computer, or pasted from a browser elsewhere."""
-    console.print(
-        f"\nHow do you want to log in to {label}?\n"
-        "  1. In the browser on this computer: streamrip catches the login itself\n"
-        "  2. In a browser on another device (streamrip runs on a server, say):\n"
-        "     open the link there and paste the address you end up on\n"
-    )
-    choice = Prompt.ask(
-        "Choose", choices=["1", "2"], default="1" if has_screen() else "2"
-    )
-    if choice == "1":
-        console.print(
-            f"\nOpening your browser. If nothing opens, go to:\n{url}\n"
-            f"{label} must send you back to [bold]{redirect_uri}[/bold]; add that "
-            "to your app as a redirect URI if it says it is not allowed."
-        )
-        launch(url)
-        return asyncio.run(capture_code(redirect_uri, state, label))
-    console.print(f"\nOpen this link and log in:\n{url}\n")
-    console.print(
-        "The page you end up on will not load: that is as it should be. "
-        "Copy its whole address from the address bar."
-    )
-    return code_from_redirect_url(Prompt.ask("Paste the address"), state, label)
-
-
 def _tidal_app(services: Services):
     """Ask for the Tidal developer app, unless there is one."""
     tidal = services.config.session.tidal
@@ -263,7 +235,6 @@ def _log_in_to_tidal_library(services: Services):
     oauth = services.oauth("tidal")
     verifier, challenge = pkce_pair()
     state = secrets.token_urlsafe(16)
-    code = _browser_code(
-        oauth.authorize_url(state, challenge), oauth.redirect_uri, state, "Tidal"
-    )
+    url = oauth.authorize_url(state, challenge)
+    code = asyncio.run(browser_code(url, oauth.redirect_uri, state, "Tidal"))
     services.store.save("tidal", oauth.exchange(code, verifier))

@@ -56,8 +56,6 @@ class QobuzConfig(ServiceLimits):
 
 @dataclass(slots=True)
 class TidalConfig(ServiceLimits):
-    """Tidal section of the config file."""
-
     user_id: str
     country_code: str
     access_token: str
@@ -85,8 +83,6 @@ class TidalConfig(ServiceLimits):
 
 @dataclass(slots=True)
 class DeezerConfig(ServiceLimits):
-    """Deezer section of the config file."""
-
     arl: str
     quality: int
     lower_quality_if_not_available: bool
@@ -94,8 +90,6 @@ class DeezerConfig(ServiceLimits):
 
 @dataclass(slots=True)
 class SoundcloudConfig(ServiceLimits):
-    """SoundCloud section of the config file."""
-
     client_id: str
     app_version: str
     # The oauth_token cookie of a soundcloud.com login: better quality and
@@ -107,15 +101,10 @@ class SoundcloudConfig(ServiceLimits):
 
 @dataclass(slots=True)
 class SpotifyConfig(ServiceLimits):
-    """Spotify section of the config file."""
-
     client_id: str
     redirect_uri: str
-    # The file format of what is downloaded: "m4a" (AAC) or "mp3".
     audio_format: str
-    # kbps, for audio that has to be re-encoded to audio_format.
     audio_bitrate: int
-    # Accept a YouTube music video when there is no matching "song".
     match_videos: bool
     access_token: str
     refresh_token: str
@@ -123,18 +112,8 @@ class SpotifyConfig(ServiceLimits):
     # What the login allows (Spotify says so); the playlist tools need more
     # than downloading does.
     scope: str = ""
-    # Where the audio comes from: "spotify" plays the track with Spotify's
-    # own headless client (Soloist), at the account's quality, and streamrip
-    # records the local audio as lossless FLAC (real time); "youtube" is the
-    # same recording matched on YouTube Music. A track the Spotify backend
-    # cannot serve is routed to YouTube Music either way.
     backend: str = "spotify"
-    # The name of the device streamrip pairs and signs in as.
     device_name: str = "streamrip"
-    # The Soloist API key the spotify backend plays with: one per person,
-    # generated at developer.spotify.com/dashboard/soloist (a Premium
-    # account). A secret, like a password: streamrip fills it in and keeps
-    # it here, and Spotify will not say to which account it belongs.
     soloist_api_key: str = ""
     # The quality of the audio, where the source serves it in more than one:
     # 0 is the one quality Spotify has (its own client follows the account
@@ -161,8 +140,6 @@ class ConversionConfig:
 
 @dataclass(slots=True)
 class ArtistFilterConfig:
-    """Filters applied when downloading an artist's discography."""
-
     extras: bool
     repeats: bool
     non_albums: bool
@@ -172,8 +149,6 @@ class ArtistFilterConfig:
 
 @dataclass(slots=True)
 class ArtworkConfig:
-    """Cover art embedding and saving options."""
-
     embed: bool
     embed_size: str
     embed_max_width: int
@@ -183,8 +158,6 @@ class ArtworkConfig:
 
 @dataclass(slots=True)
 class MetadataConfig:
-    """Tag-writing options that don't fit under a single source."""
-
     set_playlist_to_album: bool
     renumber_playlist_tracks: bool
     exclude: list[str]
@@ -194,8 +167,6 @@ class MetadataConfig:
 
 @dataclass(slots=True)
 class FilepathsConfig:
-    """Filename and folder naming options."""
-
     add_singles_to_folder: bool
     folder_format: str
     track_format: str
@@ -205,8 +176,6 @@ class FilepathsConfig:
 
 @dataclass(slots=True)
 class DownloadsConfig:
-    """Download destination, concurrency, and connection options."""
-
     folder: str
     source_subdirectories: bool
     disc_subdirectories: bool
@@ -226,16 +195,12 @@ class DownloadsConfig:
 
 @dataclass(slots=True)
 class LastFmConfig:
-    """Last.fm playlist import options."""
-
     source: str
     fallback_source: str
 
 
 @dataclass(slots=True)
 class CliConfig:
-    """Command-line interface display options."""
-
     progress_bars: bool
     max_search_results: int
     # Not in the config unless the user adds it: see the template.
@@ -552,7 +517,7 @@ class Config:
                         setattr(theirs, field.name, copy.deepcopy(value))
             data = current
         data.update_toml()
-        _write_config(self.path, data.toml)
+        write_private(self.path, dumps(data.toml))
         # What this run changed is in the file now. A later save compares with
         # that, or a value set back to what it was at loading (a logout, a
         # token cleared) would never be written.
@@ -570,16 +535,10 @@ class Config:
         self.save_file()
 
 
-def _write_config(path: Path, toml: TOMLDocument):
-    """Write toml to path in one step, private from its first byte (see
-    state.write_private)."""
-    write_private(path, dumps(toml))
-
-
 def set_user_defaults(path: Path, /):
     """Update the TOML file at the path with user-specific default values."""
     toml = parse(BLANK_CONFIG_PATH.read_text())
     toml["downloads"]["folder"] = str(DEFAULT_DOWNLOADS_FOLDER)  # type: ignore
     toml["database"]["downloads_path"] = str(DEFAULT_DOWNLOADS_DB_PATH)  # type: ignore
     toml["database"]["failed_downloads_path"] = str(DEFAULT_FAILED_DOWNLOADS_DB_PATH)  # type: ignore
-    _write_config(path, toml)
+    write_private(path, dumps(toml))

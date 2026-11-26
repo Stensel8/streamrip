@@ -221,12 +221,14 @@ def _matching(data) -> tuple[bool, float]:
     return bool(data.get("dry_run")), score
 
 
-def _download_or_preview(title: str, add, preview: bool) -> tuple[Response, int]:
-    """Download what `add` brings, or only say what that would do."""
+def _download_or_preview(title: str, add, data) -> tuple[Response, int]:
+    """Download what `add` brings, or only say what that would do (`plan`)."""
     runner = get_runner()
-    if preview:
+    if data.get("plan"):
         return start("plan", f"Preview: {title}", lambda job: runner.plan(job, add))
-    return start("download", title, lambda job: runner.download(job, add))
+    return start(
+        "download", f"Downloading {title}", lambda job: runner.download(job, add)
+    )
 
 
 def _links_in(data: dict) -> list[str]:
@@ -241,7 +243,6 @@ def _links_in(data: dict) -> list[str]:
 def download() -> tuple[Response, int]:
     """Download links, typed or from a file, or search results ({"items": [...]})."""
     data = payload()
-    preview = bool(data.get("plan"))
     if items := data.get("items"):
         try:
             chosen = [
@@ -270,9 +271,7 @@ def download() -> tuple[Response, int]:
             await main.add_all(urls)
 
         title = f"{len(urls)} link{'s' * (len(urls) > 1)}"
-    return _download_or_preview(
-        title if preview else f"Downloading {title}", add, preview
-    )
+    return _download_or_preview(title, add, data)
 
 
 @pages.post("/download/id")
@@ -288,10 +287,7 @@ def download_by_id() -> tuple[Response, int]:
         await main.add_by_id(source, media_type, item_id)
 
     title = f"{media_type} {item_id[:40]} from {SOURCE_LABELS[source]}"
-    preview = bool(data.get("plan"))
-    return _download_or_preview(
-        title if preview else f"Downloading {title}", add, preview
-    )
+    return _download_or_preview(title, add, data)
 
 
 @pages.post("/download/lastfm")
@@ -309,11 +305,8 @@ def download_lastfm() -> tuple[Response, int]:
         lastfm.source, lastfm.fallback_source = source, fallback or ""
         await main.resolve_lastfm(url)
 
-    preview = bool(data.get("plan"))
     title = f"a last.fm playlist from {SOURCE_LABELS[source]}"
-    return _download_or_preview(
-        title if preview else f"Downloading {title}", add, preview
-    )
+    return _download_or_preview(title, add, data)
 
 
 @pages.post("/download/csv")
@@ -327,11 +320,8 @@ def download_csv() -> tuple[Response, int]:
     async def add(main: Main):
         await main.resolve_csv(name, tracks, source, fallback)
 
-    preview = bool(data.get("plan"))
     title = f"{name} from {SOURCE_LABELS[source]}"
-    return _download_or_preview(
-        title if preview else f"Downloading {title}", add, preview
-    )
+    return _download_or_preview(title, add, data)
 
 
 @pages.post("/search")
@@ -504,24 +494,13 @@ def import_csv(service: str) -> tuple[Response, int]:
     provider = services.provider(service)
 
     def work(job: Job) -> str:
+        how = {"min_score": min_score, "dry_run": dry_run, "progress": job.progress}
         if albums:
-            result = import_albums(
-                provider,
-                tracks,
-                min_score=min_score,
-                dry_run=dry_run,
-                progress=job.progress,
-            )
+            result = import_albums(provider, tracks, **how)
         else:
             destination = None if into_favorites else playlist
             result = import_tracks(
-                provider,
-                tracks,
-                destination,
-                min_score=min_score,
-                dry_run=dry_run,
-                progress=job.progress,
-                musicbrainz=services.musicbrainz(),
+                provider, tracks, destination, musicbrainz=services.musicbrainz(), **how
             )
         job.matched = result.matched
         return result.summary()

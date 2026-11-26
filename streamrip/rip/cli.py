@@ -265,12 +265,8 @@ def _update_check_disabled(config_path: Path) -> bool:
     that cannot be read leaves the check on: `rip()` is what reports a broken
     config.
     """
-    if os.environ.get("STREAMRIP_NO_UPDATE_CHECK", "").lower() not in {
-        "",
-        "0",
-        "false",
-        "no",
-    }:
+    flag = os.environ.get("STREAMRIP_NO_UPDATE_CHECK", "").lower()
+    if flag not in {"", "0", "false", "no"}:
         return True
     try:
         with config_path.open("rb") as f:
@@ -418,11 +414,9 @@ class _StreamripGroup(_ColoredHelp, click.Group):
                     ),
                     closing(latest_streamrip_version()) as check,
                 ):
-                    latest_version, notes, is_release, host, wheel_url = asyncio.run(
-                        check
-                    )
-                if is_newer_version(latest_version):
-                    notice = (latest_version, notes, is_release, host, wheel_url)
+                    found = asyncio.run(check)
+                if is_newer_version(found[0]):
+                    notice = found
             except Exception as exc:
                 logger.debug("Could not check for updates: %s", exc)
         try:
@@ -1068,10 +1062,7 @@ _RELEASE_WHEEL = re.compile(
 def is_newer_version(latest: str | None, current: str = __version__) -> bool:
     if not latest or not _PLAIN_VERSION.fullmatch(latest):
         return False
-    try:
-        return _version_tuple(latest) > _version_tuple(current)
-    except ValueError:
-        return False
+    return _version_tuple(latest) > _version_tuple(current)
 
 
 # host, its releases API, and its raw-file URL for a path on DEFAULT_BRANCH.
@@ -1140,13 +1131,8 @@ async def latest_streamrip_version(
     even answer would just fail again. Within a host, a release's wheel
     beats the version in pyproject.toml on the default branch, used when the
     repository has no releases yet. Network problems are never fatal: the
-    check is simply skipped (upstream PR #995).
-
-    Args:
-        verify_ssl: Whether to verify SSL certificates
-
-    Returns:
-        (version, release notes, is a release, host, wheel url)
+    check is simply skipped (upstream PR #995). Returns (version, release
+    notes, is a release, host, wheel url).
     """
     try:
         # One limit over every request: on a network that drops packets each
@@ -1179,10 +1165,6 @@ async def latest_streamrip_version(
     except Exception as e:
         logger.debug("Could not check for updates: %s", e)
     return __version__, None, False, GITHUB_HOST, None
-
-
-if __name__ == "__main__":
-    rip()
 
 
 rip.add_command(playlist)

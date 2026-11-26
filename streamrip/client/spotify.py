@@ -1,10 +1,9 @@
 """Spotify: the track lists, tags and covers, and the audio.
 
 The track lists, tags and covers come from Spotify's Web API. The audio comes
-from one of two backends (the config's `backend`): "spotify" plays the track
-with Spotify's own headless client (Soloist, see `soloist`), at the account's
-quality, and streamrip records the local audio as lossless FLAC; "youtube"
-finds the same recording on YouTube Music (see `ytmusic`) for yt-dlp to
+from one of two backends (the config's `backend`): "spotify" is Spotify's own
+audio through its official client (Soloist, see `soloist`), at the account's
+quality; "youtube" finds the same recording on YouTube Music (see `ytmusic`) for yt-dlp to
 download, the way spotDL does. A track the Spotify backend cannot serve is
 routed to YouTube Music either way.
 
@@ -431,7 +430,7 @@ def _token_from(payload: dict) -> Token:
 
 class SpotifyClient(Client):
     """Spotify: the user's own Spotify app; the audio from Spotify itself
-    (the `spotify` backend, its official client, recorded locally) or a
+    (the `spotify` backend, through its official client) or a
     YouTube Music match (the `youtube` one)."""
 
     source = "spotify"
@@ -458,8 +457,8 @@ class SpotifyClient(Client):
 
     def _audio(self) -> dict:
         """What an album's files are, for its folder name and labels: the
-        container, and for Spotify's own audio the 24-bit/44.1 kHz it is
-        recorded and saved as (the YouTube download is lossy: no bits to name)."""
+        container, and for Spotify's own audio its bit depth and rate (a YouTube
+        download has none to name)."""
         if self.soloist_backend is None:
             return {"container": self.container}
         return {"container": "FLAC", "bit_depth": 24, "sampling_rate": 44.1}
@@ -469,8 +468,8 @@ class SpotifyClient(Client):
     @property
     def soloist_backend(self):
         """This client's Soloist backend, or None: the backend off, the
-        Soloist API key not in the config, or a computer that cannot record
-        (a container has no sound server), and then the audio goes to
+        Soloist API key not saved, or a computer without a sound server (a
+        container), and then the audio goes to
         YouTube Music instead."""
         c = self.config
         if c.backend != "spotify" or not c.soloist_api_key:
@@ -520,7 +519,9 @@ class SpotifyClient(Client):
         """The pace and the hourly line are for files that come fast: YouTube
         Music's. Spotify's own audio plays as long as it lasts, one track at a
         time, so it keeps none. A CDN backend would be paced again."""
-        return self.soloist_backend is None
+        backend = self.soloist_backend
+        # Not paired yet (or never): every track comes from YouTube Music.
+        return backend is None or not backend.paired()
 
     async def close(self):
         """The Spotify backend keeps nothing open between runs: nothing to close."""
@@ -811,8 +812,7 @@ class SpotifyClient(Client):
 
     async def get_downloadable(self, item_id: str, quality: int):
         """The audio of a track: from Spotify itself where the backend is
-        `spotify` (its official client plays the track, streamrip records
-        it), else its best match on YouTube Music, for yt-dlp."""
+        `spotify` (through its official client), else its best match on YouTube Music, for yt-dlp."""
         track = await self._get_track(plain_id(item_id))
         # The backend remembers the tracks Spotify refused to play; those go
         # straight to YouTube Music, even mid-run.

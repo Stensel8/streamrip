@@ -422,26 +422,6 @@ class AlbumMetadata:
         )
 
     @classmethod
-    def from_tidal_playlist_track_resp(cls, resp: dict) -> AlbumMetadata | None:
-        """Album metadata from a track response, when the album's own could
-        not be fetched. That only carries the album's id, title and cover, so
-        the rest is taken from the track itself.
-        """
-        return cls.from_tidal(
-            resp["album"]
-            | {
-                "allowStreaming": resp.get("allowStreaming", False),
-                "audioQuality": resp.get("audioQuality", "LOW"),
-                "explicit": resp.get("explicit"),
-                "releaseDate": resp.get("streamStartDate"),
-                "copyright": resp.get("copyright"),
-                "artists": resp.get("artists"),
-                "artist": resp.get("artist"),
-                "numberOfVolumes": resp.get("volumeNumber", 1),
-            }
-        )
-
-    @classmethod
     def from_track_resp(cls, resp: dict, source: str) -> AlbumMetadata | None:
         """The album metadata inside a track response, as `source` gives it."""
         if source == "qobuz":
@@ -450,7 +430,20 @@ class AlbumMetadata:
             if "numberOfTracks" in resp["album"]:
                 # The album's own response (TidalClient._album_of).
                 return cls.from_tidal(resp["album"])
-            return cls.from_tidal_playlist_track_resp(resp)
+            # Only the album's id, title and cover: the rest from the track.
+            return cls.from_tidal(
+                resp["album"]
+                | {
+                    "allowStreaming": resp.get("allowStreaming", False),
+                    "audioQuality": resp.get("audioQuality", "LOW"),
+                    "explicit": resp.get("explicit"),
+                    "releaseDate": resp.get("streamStartDate"),
+                    "copyright": resp.get("copyright"),
+                    "artists": resp.get("artists"),
+                    "artist": resp.get("artist"),
+                    "numberOfVolumes": resp.get("volumeNumber", 1),
+                }
+            )
         if source == "soundcloud":
             return cls.from_soundcloud(resp)
         if source == "deezer":

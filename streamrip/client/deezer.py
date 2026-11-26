@@ -367,8 +367,7 @@ class DeezerClient(Client):
     async def _get_playlist(self, item_id: str) -> dict:
         item_id = str(item_id)
         if item_id.startswith("favorites:"):
-            user_id = item_id.removeprefix("favorites:")
-            return await self._get_user_favorites(user_id)
+            return await self._get_user_favorites()
         try:
             pl_metadata, pl_tracks = await asyncio.gather(
                 self.client.api.get_playlist(item_id),
@@ -407,46 +406,22 @@ class DeezerClient(Client):
             "track_total": len(tracks),
         }
 
-    async def _get_user_favorites(self, user_id: str) -> dict:
-        """Fetch the loved tracks for the authenticated Deezer account.
-
-        ``song.getFavoriteIds`` silently caps responses at roughly 25 entries per
-        call regardless of the ``nb`` parameter; the ``start`` parameter must be
-        advanced by the actual count returned to paginate through all favorites.
-
-        ``song.getFavoriteIds`` carries no ``user_id`` parameter — it always
-        returns the authenticated user's favorites. Comparing ``user_id`` against
-        the logged-in account to detect "other user" is unreliable for family
-        accounts: ``change_account()`` shifts ``current_user`` to a child profile
-        whose id differs from the main account's USER_ID that authenticated the
-        ARL. The ``user_id`` argument is accepted for URL-routing compatibility
-        but is not forwarded to the GW call.
-
-        Args:
-            user_id: The Deezer user ID from the profile URL. Accepted for
-                routing compatibility; the GW call always uses the authenticated
-                account.
-
-        Returns:
-            Playlist-shaped dict with "title", "tracks", and "track_total".
-        """
-        page_size = 100
-        all_entries: list[dict] = []
-        start = 0
-        while len(all_entries) < self.max_favorites:
-            response = await self.client.gw.get_user_favorite_ids(
-                limit=page_size, start=start
+    async def _get_user_favorites(self) -> dict:
+        """The loved tracks of the account the ARL logged in to: the gateway
+        takes no user, so the id in a favorites URL is not used. It answers
+        about 25 at a time whatever `nb` says; `start` moves on by those."""
+        entries: list[dict] = []
+        while len(entries) < self.max_favorites:
+            page = await self.client.gw.get_user_favorite_ids(
+                limit=100, start=len(entries)
             )
-            entries: list[dict] = response.get("data", [])
-            if not entries:
+            if not (more := page.get("data", [])):
                 break
-            all_entries.extend(entries)
-            start += len(entries)
-
+            entries += more
         return {
             "title": "Loved Tracks",
-            "tracks": [{"id": str(entry["SNG_ID"])} for entry in all_entries],
-            "track_total": len(all_entries),
+            "tracks": [{"id": str(entry["SNG_ID"])} for entry in entries],
+            "track_total": len(entries),
         }
 
     async def _get_user_favorite_albums(self, user_id: str) -> dict:

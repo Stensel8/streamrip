@@ -373,19 +373,10 @@ class SoloistBackend:
                     return
                 self._unload_sink()
                 break
-        loaded = run_cmd(
-            [
-                "pactl",
-                "load-module",
-                "module-null-sink",
-                f"sink_name={SINK}",
-                f"rate={RATE}",
-                "format=float32le",
-                "channels=2",
-                # Quoted twice: PulseAudio (not PipeWire) fails the module on a bare space.
-                "sink_properties=\"device.description='streamrip'\"",
-            ]
-        )
+        sink = [f"sink_name={SINK}", f"rate={RATE}", "format=float32le", "channels=2"]
+        # Quoted twice: PulseAudio (not PipeWire) fails the module on a bare space.
+        sink.append("sink_properties=\"device.description='streamrip'\"")
+        loaded = run_cmd(["pactl", "load-module", "module-null-sink", *sink])
         if loaded.returncode != 0:
             said = loaded.stderr.strip()[:300]
             raise NonStreamableError(f"Could not set up Spotify's own audio: {said}")
@@ -555,42 +546,16 @@ class SoloistBackend:
             # ffmpeg's own pulse input is fixed at 16-bit and 48 kHz, so the
             # recording is parec's: raw 32-bit float at the sink's rate. The
             # small blocks (--latency-msec) are what a stop at the end loses.
-            recorder = start_cmd(
-                [
-                    "parec",
-                    "-d",
-                    f"{SINK}.monitor",
-                    "--format=float32le",
-                    f"--rate={RATE}",
-                    "--channels=2",
-                    "--latency-msec=20",
-                    "--raw",
-                    str(capture),
-                ],
-                quiet=True,
-            )
+            parec = ["parec", "-d", f"{SINK}.monitor", "--format=float32le"]
+            parec += [f"--rate={RATE}", "--channels=2", "--latency-msec=20", "--raw"]
+            recorder = start_cmd([*parec, str(capture)], quiet=True)
             t_recorder = time.monotonic()
             time.sleep(2)
-            # -v: only its verbose log says what it plays (codec, bitrate).
-            player = start_cmd(
-                [
-                    str(binary),
-                    "-v",
-                    "-n",
-                    self.device_name,
-                    "-k",
-                    self.api_key,
-                    "-d",
-                    SINK,
-                    "-i",
-                    "100",
-                    # Its smallest cache: without a limit it keeps every track it played.
-                    "-z",
-                    "100",
-                    "-s",
-                    uri,
-                ]
-            )
+            # -v: only its verbose log says what it plays (codec, bitrate); -z 100
+            # is its smallest cache: without a limit it keeps every track it played.
+            argv = [str(binary), "-v", "-n", self.device_name, "-k", self.api_key]
+            argv += ["-d", SINK, "-i", "100", "-z", "100", "-s", uri]
+            player = start_cmd(argv)
             lines, t_playing = self._follow(player, uri, duration_s, report, stop)
             rc = player.wait()
             if rc == EXPIRED_BUILD:
@@ -772,42 +737,15 @@ class SoloistBackend:
         """
         # The capture is raw (parec's), so its format is said here; the flac
         # encoder takes s16 or s32, and s32 at 24 bits is the 24-bit FLAC.
-        cmd = [
-            ffmpeg,
-            "-nostdin",
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-y",
-            "-f",
-            "f32le",
-            "-ar",
-            str(RATE),
-            "-ac",
-            "2",
-        ]
+        length = f"{max(duration_s, 0.0):.3f}"
+        cmd = [ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error", "-y"]
+        cmd += ["-f", "f32le", "-ar", str(RATE), "-ac", "2"]
         if offset is not None:
-            cmd += [
-                "-ss",
-                f"{max(offset, 0.0):.3f}",
-                "-t",
-                f"{max(duration_s, 0.0):.3f}",
-            ]
+            cmd += ["-ss", f"{max(offset, 0.0):.3f}", "-t", length]
         else:
-            cmd += ["-sseof", f"-{max(duration_s, 0.0):.3f}"]
-        cmd += [
-            "-i",
-            str(capture),
-            "-c:a",
-            "flac",
-            "-sample_fmt",
-            "s32",
-            "-bits_per_raw_sample",
-            "24",
-            "-compression_level",
-            "5",
-            str(out_path),
-        ]
+            cmd += ["-sseof", f"-{length}"]
+        cmd += ["-i", str(capture), "-c:a", "flac", "-sample_fmt", "s32"]
+        cmd += ["-bits_per_raw_sample", "24", "-compression_level", "5", str(out_path)]
         result = run_cmd(cmd, timeout=max(duration_s, 60.0) + 120.0)
         if result.returncode != 0 or not out_path.is_file():
             out_path.unlink(missing_ok=True)
@@ -824,18 +762,8 @@ class SoloistBackend:
             raise NonStreamableError(
                 "ffprobe is missing, and the track cannot be checked"
             )
-        probed = run_cmd(
-            [
-                ffprobe,
-                "-v",
-                "error",
-                "-show_entries",
-                "format=duration",
-                "-of",
-                "default=noprint_wrappers=1:nokey=1",
-                str(out_path),
-            ]
-        )
+        probe = [ffprobe, "-v", "error", "-show_entries", "format=duration", "-of"]
+        probed = run_cmd([*probe, "default=noprint_wrappers=1:nokey=1", str(out_path)])
         try:
             got = float(probed.stdout.strip())
         except ValueError:
@@ -845,19 +773,8 @@ class SoloistBackend:
                 f"the file is {got:.1f}s, the track is {duration_s:.1f}s: "
                 "it is not the track"
             )
-        volume = run_cmd(
-            [
-                ffmpeg,
-                "-hide_banner",
-                "-i",
-                str(out_path),
-                "-af",
-                "volumedetect",
-                "-f",
-                "null",
-                "-",
-            ]
-        )
+        volumedetect = ["-af", "volumedetect", "-f", "null", "-"]
+        volume = run_cmd([ffmpeg, "-hide_banner", "-i", str(out_path), *volumedetect])
         m = re.search(r"mean_volume:\s*(-?[\d.]+)\s*dB", volume.stderr)
         if m is None or float(m.group(1)) <= -50.0:
             raise NonStreamableError("the file is silent: it is not the track")
