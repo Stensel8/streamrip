@@ -7,10 +7,13 @@ upstream issues and pull requests.
 
 - feat: a track of a list (CSV, `playlist download`) is found by its ISRC too,
   on the release it came from
+- feat: composer, lyricist, producer, engineer and mixer tags from Qobuz, Tidal
+  and Deezer, and synced lyrics from Deezer
+- feat: Tidal mixes and Qobuz favorites as links; Deezer searches without a
+  login, and logs in with a script in `streamrip web`
 - feat: FLAC downloads are checked against their MD5, and fetched again when
   they don't match
-- feat: folder keys {label} {genre} {releasetype} {barcode} {date}; producer,
-  engineer and mixer tags from Qobuz; Deezer searches without a login
+- feat: folder keys {label} {genre} {releasetype} {barcode} {date}
 - fix: a run with failed tracks exits with 1
 
 ## 2.8.2
