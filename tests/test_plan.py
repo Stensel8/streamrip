@@ -13,6 +13,7 @@ def planned(monkeypatch, media, seconds=600.0):
 
     class Client:  # hashable, as the real ones are
         source = "qobuz"
+        paced = True
 
         def pace(self, *_):
             pass

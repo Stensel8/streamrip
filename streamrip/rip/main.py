@@ -346,7 +346,7 @@ class Main:
         planned = planned_tracks(self.media)
         for client, count in planned.items():
             client.pace(self.config.session.downloads.pacing, count)
-        clients = list(planned)
+        clients = [client for client in planned if client.paced]
         bars = self.config.session.cli.progress_bars
 
         def time_for(tracks: int) -> float | None:
@@ -354,7 +354,8 @@ class Main:
             times = (c.time_for(tracks) for c in clients)
             return max((t for t in times if t is not None), default=None)
 
-        show_load(lambda: load_table(clients), bars, time_for)
+        # Nothing to show when no account keeps a pace (only Spotify, say).
+        show_load((lambda: load_table(clients)) if clients else None, bars, time_for)
         failed_items = 0
         for i, item in enumerate(self.media):
             # An artist or label logs a whole discography's worth of lines;

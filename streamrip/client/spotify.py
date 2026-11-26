@@ -515,6 +515,12 @@ class SpotifyClient(Client):
                     await asyncio.wait({pairing})
             raise
 
+    # The pace and the hourly line are for files straight from a CDN; this
+    # audio plays as long as it lasts, or comes from YouTube Music, and the
+    # limit is the app's, waited out (_pause_requests). A CDN backend would
+    # be paced again.
+    paced = False
+
     async def close(self):
         """The Spotify backend keeps nothing open between runs: nothing to close."""
         await super().close()

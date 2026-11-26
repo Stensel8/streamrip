@@ -60,6 +60,8 @@ def show_plan(main: Main):
 
 def _account(client: Client, count: int) -> str:
     """What one account would do: its tracks, the time at its pace and its hour."""
+    if not client.paced:
+        return f"{client.source.capitalize()}: {plural(count, 'track')}"
     load = client.load()
     seconds = client.time_for(count)
     how = (

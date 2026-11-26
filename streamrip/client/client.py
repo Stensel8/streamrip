@@ -365,6 +365,10 @@ class RequestClient:
     source: str
     session: aiohttp.ClientSession
     rate_limiter: aiolimiter.AsyncLimiter | contextlib.nullcontext
+    # Whether its tracks keep to a pace and an hourly line (see before_track):
+    # what a service that hands out files fast needs, not one whose audio
+    # plays as long as it lasts.
+    paced: bool = True
     # time.monotonic() before which no API request is sent (set by a 429)
     _retry_at: float = 0.0
     # seconds between requests while the account is being rate limited, and
@@ -529,6 +533,8 @@ class RequestClient:
     def pace(self, pace: str, planned: int):
         """Set the account's pace (config.PACES) for a run that brings
         `planned` tracks, and say what it is and why."""
+        if not self.paced:
+            return
         owner = self._paced_owner()
         name = self.source.capitalize()
         recent = len(_within(owner._track_starts, time.time(), FAST_WINDOW))
@@ -663,6 +669,8 @@ class RequestClient:
         tier: its PACE_GAP_MEAN apart (wider after 429s) while the hour has
         room, then its PACE_TRACKS_PER_HOUR an hour. None at full speed,
         where the downloads themselves set the time."""
+        if not self.paced:
+            return None
         owner = self._paced_owner()
         if owner._tier == "fast":
             return None
@@ -764,6 +772,8 @@ class RequestClient:
         pacing outlives a run: every run of the account shares it, so a
         ripper starting streamrip job after job counts as one run.
         """
+        if not self.paced:
+            return
         wait = self._reserve_track_start()
         if wait:
             await asyncio.sleep(wait)
