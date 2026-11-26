@@ -723,9 +723,7 @@ def test_an_album_is_lossy_and_says_which_container():
     )
     assert (meta.tracktotal, meta.info.container) == (13, "AAC")
     assert (meta.info.bit_depth, meta.info.sampling_rate) == (None, None)
-    assert meta.get_copyright() == (
-        "© 2013 Daft Life Limited; ℗ 2013 Daft Life Limited"
-    )
+    assert meta.get_copyright() == "℗ & © 2013 Daft Life Limited"  # once
     # So its folder has no empty quality bracket.
     folder = meta.format_folder_path(
         "{albumartist} - {title} ({year}) [{container}] [{bit_depth}B-{sampling_rate}kHz]"

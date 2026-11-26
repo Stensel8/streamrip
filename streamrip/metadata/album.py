@@ -117,7 +117,12 @@ class AlbumMetadata:
             return twice[1]
         # (P) and (C) as the symbols they stand for
         phonographic = re.sub(r"(?i)\(P\)", PHON_COPYRIGHT, self.copyright)
-        return re.sub(r"(?i)\(C\)", COPYRIGHT, phonographic)
+        text = re.sub(r"(?i)\(C\)", COPYRIGHT, phonographic)
+        # Both for the same year and holder: once, as sleeves have it.
+        both = re.fullmatch(r"([©℗])\s*(.+?)[;,]?\s+([©℗])\s*\2", text.strip())
+        if both and both[1] != both[3]:
+            return f"{PHON_COPYRIGHT} & {COPYRIGHT} {both[2]}"
+        return text
 
     def format_folder_path(self, formatter: str, restrict: bool = False) -> Path:
         """Render `formatter` into this album's folder name."""
