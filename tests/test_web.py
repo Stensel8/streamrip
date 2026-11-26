@@ -906,20 +906,20 @@ def test_a_job_that_is_gone_is_a_404(client):
 
 
 def test_settings_change_the_config_and_a_broken_file_is_not_saved(client, services):
-    page = client.get("/settings").get_data(as_text=True)
-    assert "Max connections" in page
-    assert 'name="cli.progress_bars"' in page
-    form = {
-        "downloads.max_connections": "3",
-        "conversion.codec": "FLAC",
-    }  # every switch off
-    assert client.post("/settings", data=form).status_code == 302
+    options = {
+        (s["name"], o["name"]): o
+        for s in client.get("/settings/api").get_json()["sections"]
+        for o in s["options"]
+    }
+    assert options["downloads", "max_connections"]["kind"] == "int"
+    changes = {"downloads": {"max_connections": 3}, "cli": {"progress_bars": False}}
+    assert client.post("/settings/api", json={"changes": changes}).status_code == 200
     config = services.config
-    assert (
-        config.session.downloads.max_connections,
-        config.session.cli.progress_bars,
-    ) == (3, False)
+    assert config.session.downloads.max_connections == 3
+    assert config.session.cli.progress_bars is False
     assert "max_connections = 3" in config.path.read_text()
+    wrong = {"changes": {"conversion": {"codec": "WMA"}}}  # not one of its values
+    assert client.post("/settings/api", json=wrong).status_code == 400
 
     before = config.path.read_text()
     assert (

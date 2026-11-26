@@ -1,0 +1,39 @@
+@import "tailwindcss";
+
+/* The colours of the other pages (static/style.css), as Tailwind's. */
+@theme {
+  --color-page: oklch(19.3% 0.037 265.75);
+  --color-surface: oklch(20.77% 0.0398 265.75);
+  --color-raised: oklch(24% 0.04 265.75);
+  --color-line: oklch(17.86% 0.0342 265.75);
+  --color-text: oklch(84.15% 0.008 265.75);
+  --color-muted: oklch(84.15% 0.008 265.75 / 0.6);
+  --color-border: oklch(84.15% 0.008 265.75 / 0.14);
+  --color-accent: oklch(67.81% 0.1189 307.96);
+  --color-on-accent: oklch(18% 0.02 308);
+  --color-ok: oklch(78.45% 0.1325 181.91);
+  --color-error: oklch(71.79% 0.1703 13.12);
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+@layer base {
+  body {
+    @apply bg-page text-text font-sans antialiased;
+  }
+  input,
+  select {
+    @apply rounded-lg border border-border bg-line px-3 py-2 text-sm text-text outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/30;
+  }
+  select {
+    @apply pr-8;
+  }
+}
+
+@layer components {
+  /* The wordmark, in the logo's own gradient (demo/logo.svg). */
+  .wordmark {
+    background: linear-gradient(90deg, #fcaa62 0%, #ef9589 15%, #e588a4 27%, #d17ac7 42%, #ac83d0 53%, #4dbfc8 85%);
+    background-clip: text;
+    color: transparent;
+  }
+}

@@ -4,14 +4,29 @@ template does, and the file itself to edit by hand."""
 import re
 from dataclasses import dataclass, field
 from functools import cache
+from pathlib import Path
 
-from flask import Blueprint, flash, redirect, render_template, request, url_for
+from flask import (
+    Blueprint,
+    Response,
+    flash,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    send_from_directory,
+    url_for,
+)
 lazy from werkzeug.wrappers import Response as WerkzeugResponse
 
 from ..config import BLANK_CONFIG_PATH, ConfigData, write_private
-from .common import get_config
+from ..sync.errors import ProviderError
+from .common import get_config, sent
 
 settings_pages = Blueprint("settings", __name__, url_prefix="/settings")
+
+# The built page (frontend/, `npm run build`): served as it is, no Node needed.
+APP = Path(__file__).parent / "static" / "app"
 
 # An option of the template, set or left commented out at its default.
 _OPTION = re.compile(r"^(?:# )?([a-z_]+) = ")
@@ -55,12 +70,22 @@ def _choices(text: str) -> list[tuple[str | int, str]]:
 
 
 def _help(lines: list[str]) -> str:
-    """Comment lines as text: wrapped lines joined, indented ones (a list) kept."""
-    text = ""
+    """Comment lines as text: prose joined, a list ("  "auto"  small jobs ...")
+    an item a line, with the lines that go on indented further."""
+    text, item = "", 0  # the indent of the list item the lines are in; 0: prose
     for line in lines:
-        indented = line.startswith("  ")
-        text += ("\n" if indented or not text else " ") + line.strip()
-    return text.strip()
+        indent = len(line) - len(line.lstrip())
+        if indent >= 2 and (not item or indent <= item):
+            sep, item = "\n", indent  # a list item
+        elif item and indent > item:
+            sep = " "  # the item going on
+        else:
+            sep, item = (
+                ("\n" if item else " "),
+                0,
+            )  # prose, after a list on a line of its own
+        text += (sep if text else "") + line.strip()
+    return text
 
 
 @cache
@@ -100,55 +125,112 @@ def layout() -> list[Section]:
     return sections
 
 
-def _value(option: Option, current):
-    """What the form sent for `option`, as the type the config has it. A switch
-    that is off sends nothing; any other option left out stays as it is."""
-    key = f"{option.section}.{option.name}"
-    if isinstance(current, bool):
-        return request.form.get(key) == "on"
-    if (sent := request.form.get(key)) is None:
-        return current
-    if isinstance(current, int):
-        try:
-            return int(sent)
-        except ValueError:
-            raise ValueError(f"{option.label}: a number, not {sent!r}") from None
-    if isinstance(current, list):
-        return [item.strip() for item in sent.split(",") if item.strip()]
-    return sent.strip()
+# Options most people never change: the page folds them away.
+ADVANCED = frozenset(
+    {
+        "downloads.requests_per_minute",
+        "downloads.verify_ssl",
+        "tidal.client_id",
+        "tidal.client_secret",
+        "tidal.api_redirect_uri",
+        "spotify.device_name",
+        "spotify.redirect_uri",
+        "database.downloads_path",
+        "database.failed_downloads_path",
+        "filepaths.truncate_to",
+        "cli.max_search_results",
+    }
+)
+
+
+def _kind(option: Option, value) -> str:
+    """What the page shows for an option of this value: a switch, a number, ..."""
+    match value:
+        case bool():
+            return "bool"
+        case int():
+            return "int"
+        case list():
+            return "list"
+    return "secret" if "secret" in option.name else "text"
+
+
+def _checked(option: Option, value, current):
+    """`value` for `option`, if it is of the config's own type and, where the
+    template lists them, one of its values."""
+    kind = _kind(option, current)
+    fits = {
+        "bool": lambda: isinstance(value, bool),
+        "int": lambda: isinstance(value, int) and not isinstance(value, bool),
+        "list": lambda: (
+            isinstance(value, list) and all(isinstance(v, str) for v in value)
+        ),
+    }.get(kind, lambda: isinstance(value, str))()
+    if not fits or (option.choices and value not in [v for v, _ in option.choices]):
+        raise ProviderError(f"{option.label}: {value!r} is not one of its values.")
+    return value.strip() if isinstance(value, str) else value
+
+
+def _settings() -> Response:
+    """Every option with its words and its value, for the page."""
+    config = get_config()
+    return jsonify(
+        path=str(config.path),
+        sections=[
+            {
+                "name": s.name,
+                "title": s.title,
+                "about": s.about,
+                "options": [
+                    {
+                        "name": o.name,
+                        "label": o.label,
+                        "group": o.group,
+                        "help": o.help,
+                        "choices": o.choices,
+                        "kind": _kind(
+                            o, value := getattr(getattr(config.file, s.name), o.name)
+                        ),
+                        "advanced": f"{s.name}.{o.name}" in ADVANCED,
+                        "value": value,
+                    }
+                    for o in s.options
+                ],
+            }
+            for s in layout()
+            if s.options
+        ],
+    )
 
 
 @settings_pages.route("")
-def page() -> str:
-    config = get_config().file
-    values = {
-        (s.name, o.name): getattr(getattr(config, s.name), o.name)
-        for s in layout()
-        for o in s.options
-    }
-    return render_template("settings.html", sections=layout(), values=values)
+def page() -> Response:
+    """The page itself: the Svelte app in static/app (frontend/ builds it)."""
+    return send_from_directory(APP, "index.html")
 
 
-@settings_pages.post("")
-def save() -> WerkzeugResponse:
-    """Take every option the form sent that differs from the config."""
-    config = get_config()
+@settings_pages.get("/api")
+def get_settings() -> Response:
+    return _settings()
+
+
+@settings_pages.post("/api")
+def save() -> Response:
+    """Take the changes the page sent, {section: {name: value}}, and save them."""
+    config, sent_changes = get_config(), sent().get("changes")
+    if not isinstance(sent_changes, dict):
+        raise ProviderError("No changes sent.")
+    options = {(s.name, o.name): o for s in layout() for o in s.options}
     changes: dict[str, dict] = {}
-    try:
-        for section in layout():
-            current = getattr(config.file, section.name)
-            for option in section.options:
-                value = _value(option, getattr(current, option.name))
-                if value != getattr(current, option.name):
-                    changes.setdefault(section.name, {})[option.name] = value
-    except ValueError as e:
-        flash(str(e), "error")
-        return redirect(url_for("settings.page"))
+    for section, values in sent_changes.items():
+        for name, value in (values if isinstance(values, dict) else {}).items():
+            if (option := options.get((section, name))) is None:
+                raise ProviderError(f"No option {name} in [{section}].")
+            current = getattr(getattr(config.file, section), name)
+            changes.setdefault(section, {})[name] = _checked(option, value, current)
     if changes:
         config.update_options(changes)
-    count = sum(map(len, changes.values()))
-    flash(f"Saved {count} change{'s' * (count != 1)}." if count else "Nothing changed.")
-    return redirect(url_for("settings.page"))
+    return _settings()
 
 
 @settings_pages.route("/file")
@@ -177,4 +259,4 @@ def save_file() -> WerkzeugResponse | tuple[str, int]:
         flash(f"Saved. Not options of this streamrip: {', '.join(unused)}.", "error")
     else:
         flash("Saved.")
-    return redirect(url_for("settings.page"))
+    return redirect(url_for("settings.file_page"))
