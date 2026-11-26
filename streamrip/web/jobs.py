@@ -78,8 +78,10 @@ class Job:
     # can be pasted (a browser login, not Tidal's device login).
     link: str = ""
     pasteable: bool = False
-    # A login's script, to run on the page the link opens (Qobuz).
+    # A login's script, to run on the page the link opens (Qobuz, Deezer).
     script: str = ""
+    # Its own steps, where they are not its kind's: Tidal's one login per lane.
+    steps: tuple[str, ...] = ()
     started: float = field(default_factory=time.monotonic)
     phase_started: float = field(default_factory=time.monotonic)
     finished: float | None = None
@@ -119,7 +121,7 @@ class Job:
             "kind": self.kind,
             "title": self.title,
             "status": self.status,
-            "phases": PHASES[self.kind],
+            "phases": self.steps or PHASES[self.kind],
             "phase": self.phase,
             "text": self.text,
             "done": self.done,

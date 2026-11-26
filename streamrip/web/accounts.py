@@ -18,7 +18,7 @@ from ..client.soloist import SoloistBackend
 from ..sync.errors import ProviderError
 from ..sync.services import DEVELOPER_DASHBOARDS, LABELS
 from .common import form, get_config, get_runner, get_services, sent, start
-from .logins import BrowserLogin, QobuzScriptLogin
+from .logins import BrowserLogin, ScriptLogin
 lazy from .jobs import Job
 
 accounts_pages = Blueprint("accounts", __name__, url_prefix="/accounts")
@@ -93,45 +93,43 @@ def login_qobuz() -> WerkzeugResponse:
     return _back("Logged in to Qobuz.")
 
 
-@accounts_pages.post("/qobuz/script")
-def qobuz_script() -> tuple[Response, int]:
-    """Qobuz by a script: the page shows it, and run on the web player it posts
-    the token back to qobuz_capture."""
-    login = QobuzScriptLogin(f"{request.host_url}accounts/qobuz/receive")
+@accounts_pages.post("/<any(qobuz, deezer):service>/script")
+def script_login(service: str) -> tuple[Response, int]:
+    """A login by a script: the page shows it, and run on the service's site it
+    hands the login back to script_capture."""
+    login = ScriptLogin(service, f"{request.host_url}accounts/{service}/receive")
     logins = current_app.extensions["logins"]
     for earlier in list(logins.values()):
         earlier.cancel()
     runner = get_runner()
+    finish = runner.login_qobuz if service == "qobuz" else runner.login_deezer
 
     def work(job: Job) -> str:
         logins[job.id] = login
         try:
-            return login.run(job, runner.login_qobuz)
+            return login.run(job, finish)
         finally:
             logins.pop(job.id, None)
 
-    return start("login", "Log in to Qobuz with a script", work)
+    return start("login", f"Log in to {login.label} with a script", work)
 
 
-@accounts_pages.get("/qobuz/receive")
-def qobuz_receive() -> str:
-    """Where the script moves the tab to: a page that reads the token after the
-    "#" (it never reaches the server there) and hands it to qobuz_capture."""
-    return render_template("qobuz_receive.html")
+@accounts_pages.get("/<any(qobuz, deezer):service>/receive")
+def script_receive(service: str) -> str:
+    """Where the script moves the tab to: a page that reads the login after the
+    "#" (it never reaches the server there) and hands it to script_capture."""
+    return render_template("script_receive.html", label=service.title())
 
 
-@accounts_pages.post("/qobuz/capture")
-def qobuz_capture() -> tuple[Response, int]:
-    """The token, from the receiving page. What lets it in is the challenge of a
+@accounts_pages.post("/<any(qobuz, deezer):service>/capture")
+def script_capture(service: str) -> tuple[Response, int]:
+    """The login, from the receiving page. What lets it in is the challenge of a
     login that is waiting: only the script that login showed has it."""
     data = sent()
     taken = any(
-        isinstance(login, QobuzScriptLogin)
-        and login.receive(
-            str(data.get("challenge") or ""),
-            str(data.get("user_id") or ""),
-            str(data.get("token") or ""),
-        )
+        isinstance(login, ScriptLogin)
+        and login.service == service
+        and login.receive(str(data.get("challenge") or ""), data)
         for login in list(current_app.extensions["logins"].values())
     )
     if not taken:

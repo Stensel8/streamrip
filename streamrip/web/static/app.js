@@ -14,7 +14,7 @@ async function api(url, init = {}) {
 }
 
 const postJson = (body) => ({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-const PHASES = { read: 'Read', match: 'Match', check: 'Compare', add: 'Add', find: 'Look up', download: 'Download', login: 'Log in' };
+const PHASES = { read: 'Read', match: 'Match', check: 'Compare', add: 'Add', find: 'Look up', download: 'Download', login: 'Log in', cd: 'CD quality', hires: 'Hi-res' };
 const pageTitle = document.title;
 
 // Jobs the person closed. Kept for this tab, so a reload does not bring one back.
@@ -117,7 +117,6 @@ function render(id, job) {
     $('job-paste-box').hidden = !(running && job.pasteable);
     $('job-cancel').hidden = !(running && (job.pasteable || job.script));
     $('job-script').hidden = $('job-script-run').hidden = !(running && job.script);
-    $('job-link').textContent = job.script ? 'Open Qobuz' : 'Open the login page';
     if (job.script && $('job-script-text').value !== job.script) $('job-script-text').value = job.script;
     $('job-paste').dataset.job = id;
     $('job-cancel').dataset.job = id;
@@ -382,22 +381,24 @@ async function showPlans() {
 }
 showPlans();
 $('tidal-login')?.addEventListener('click', () => start('/accounts/tidal/login'));
-$('qobuz-script')?.addEventListener('click', () => start('/accounts/qobuz/script'));
+for (const button of document.querySelectorAll('[data-script-login]')) {
+  button.addEventListener('click', () => start(`/accounts/${button.dataset.scriptLogin}/script`));
+}
 
-// The page the Qobuz script moves its tab to: the token comes after the "#", which never
+// The page a login script moves its tab to: the login comes after the "#", which never
 // leaves the browser. It is taken out of the address (and the history) and handed over.
-async function receiveQobuz() {
-  const text = $('qobuz-receive-text');
+async function receiveLogin() {
+  const text = $('script-receive-text');
   try {
     const given = JSON.parse(decodeURIComponent(location.hash.slice(1)));
     history.replaceState(null, '', location.pathname);
-    await api('/accounts/qobuz/capture', postJson(given));
+    await api(location.pathname.replace(/receive$/, 'capture'), postJson(given));
     text.textContent = 'Got it. You can close this tab and go back to streamrip.';
   } catch (err) {
-    text.textContent = err instanceof SyntaxError ? 'Run the script from the Qobuz tab: this page gets the token from it.' : err.message;
+    text.textContent = err instanceof SyntaxError ? 'Run the script from the tab you logged in on: this page gets the login from it.' : err.message;
   }
 }
-if ($('qobuz-receive')) receiveQobuz();
+if ($('script-receive')) receiveLogin();
 $('job-script-copy')?.addEventListener('click', async (e) => {
   const box = $('job-script-text');
   box.select();

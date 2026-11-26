@@ -354,15 +354,17 @@ class Runner:
 
         def show(link: str, minutes: int, which: str):
             job.link = link
-            job.text = (
+            job.enter(
+                "hires" if which == "hi-res" else "cd",
                 f"Open the link and log in to Tidal within {minutes} minutes "
-                f"(the {which} login)."
+                f"(the {which} login).",
             )
 
         async def log_in():
             client = TidalClient(self.config)
             prompter = TidalPrompter(self.config, client)
             prompter.show_link = show
+            job.steps = ("cd", "hires")[: len(client.lanes())]
             try:
                 for lane in client.lanes():
                     await prompter._device_login(lane)

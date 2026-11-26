@@ -1,4 +1,5 @@
-"""Logging in to Spotify, or to Tidal's official API, from the web interface.
+"""Logging in to Spotify, or to Tidal's official API, from the web interface;
+and to Qobuz and Deezer by a script.
 
 The browser login of the command line (rip/spotify_login.py), with one's own
 app: the service sends the browser back to a port on this computer, caught
@@ -12,6 +13,7 @@ import threading
 import time
 
 from ..exceptions import AuthenticationError
+from ..rip.deezer_arl_capture import DEEZER_LOGIN_URL, deezer_navigate_snippet
 from ..rip.qobuz_token_capture import qobuz_navigate_snippet
 from ..rip.spotify_login import (
     LOGIN_TIMEOUT,
@@ -84,47 +86,60 @@ class BrowserLogin:
         self._stop.set()
 
 
-QOBUZ_LOGIN_URL = "https://play.qobuz.com/login"
+# Per service that logs in by a script: its login page, its script, and what
+# the script hands back.
+SCRIPT_LOGINS = frozendict(
+    {
+        "qobuz": (
+            "https://play.qobuz.com/login",
+            qobuz_navigate_snippet,
+            ("user_id", "token"),
+        ),
+        "deezer": (DEEZER_LOGIN_URL, deezer_navigate_snippet, ("arl",)),
+    }
+)
 
 
-class QobuzScriptLogin:
-    """Qobuz by a short script, run on play.qobuz.com once you are logged in
-    there: it reads the user id and token the web player keeps, and posts them
-    back. Only a post with this login's challenge is taken, once."""
+class ScriptLogin:
+    """A login by a short script, run on the service's site once you are logged
+    in there: it reads the login the site keeps (Qobuz's token, Deezer's arl)
+    and hands it back. Only one with this login's challenge is taken, once."""
 
-    def __init__(self, callback_url: str):
+    def __init__(self, service: str, callback_url: str):
+        self.service, self.label = service, service.title()
+        self.url, snippet, self.fields = SCRIPT_LOGINS[service]
         self.challenge = secrets.token_urlsafe(16)
-        self.script = qobuz_navigate_snippet(callback_url, self.challenge)
+        self.script = snippet(callback_url, self.challenge)
         self._arrived = threading.Event()
-        self._credentials: tuple[str, str] | None = None
+        self._credentials: tuple[str, ...] | None = None
         self._cancelled = False
 
-    def receive(self, challenge: str, user_id: str, token: str) -> bool:
-        """The script's post. True when it is this login's, and the first."""
-        if not (user_id and token) or self._credentials is not None:
+    def receive(self, challenge: str, given: dict) -> bool:
+        """The script's hand-over. True when it is this login's, and the first."""
+        credentials = tuple(str(given.get(name) or "") for name in self.fields)
+        if not all(credentials) or self._credentials is not None:
             return False
         if not secrets.compare_digest(challenge.encode(), self.challenge.encode()):
             return False
-        self._credentials = (user_id, token)
+        self._credentials = credentials
         self._arrived.set()
         return True
 
     def run(self, job: Job, finish) -> str:
-        """Wait for the script's post, then log in with it (`finish`)."""
-        job.enter(
-            "login",
-            "Log in to Qobuz in three steps:",
-        )
-        job.link, job.script = QOBUZ_LOGIN_URL, self.script
+        """Wait for the script's hand-over, then log in with it (`finish`)."""
+        job.enter("login", f"Log in to {self.label} in three steps:")
+        job.link, job.script = self.url, self.script
         self._arrived.wait(LOGIN_TIMEOUT)
         job.script = ""
         if self._cancelled:
-            raise AuthenticationError("The Qobuz login was cancelled.")
+            raise AuthenticationError(f"The {self.label} login was cancelled.")
         if self._credentials is None:
-            raise AuthenticationError("No Qobuz token came back within 5 minutes.")
-        job.text = "Checking the Qobuz login"
+            raise AuthenticationError(
+                f"Nothing came back from {self.label} within 5 minutes."
+            )
+        job.text = f"Checking the {self.label} login"
         finish(*self._credentials)
-        return "Logged in to Qobuz."
+        return f"Logged in to {self.label}."
 
     def cancel(self):
         self._cancelled = True

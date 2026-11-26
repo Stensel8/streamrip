@@ -41,7 +41,7 @@
     <p class="muted small">A subscription, or the albums you bought.</p>
     <div class="actions">
       {{ logout('qobuz') }}
-      <button class="btn primary" id="qobuz-script" data-job-button>{{ "Log in again" if accounts.qobuz.logged_in else "Log in with a script" }}</button>
+      <button class="btn primary" data-script-login="qobuz" data-job-button>{{ "Log in again" if accounts.qobuz.logged_in else "Log in with a script" }}</button>
     </div>
     <p class="tiny muted">You log in at Qobuz in your own browser, and a short script gives the token back here. streamrip never sees your password.</p>
     <details class="help"><summary>Or enter it by hand</summary>
@@ -67,15 +67,19 @@
   <section class="card" id="deezer">
     <div class="card-head"><h2>Deezer</h2>{{ badge('deezer') }}</div>
     <p class="plan" data-plan="deezer"></p>
-    <p class="muted small">A subscription. Streamrip needs the cookie of your login.</p>
-    <details class="help"><summary>Where do I find it?</summary>
+    <p class="muted small">A subscription.</p>
+    <div class="actions">
+      {{ logout('deezer') }}
+      <button class="btn primary" data-script-login="deezer" data-job-button>{{ "Log in again" if accounts.deezer.logged_in else "Log in with a script" }}</button>
+    </div>
+    <p class="tiny muted">You log in at Deezer in your own browser, and a short script gives the login cookie back here. streamrip never sees your password.</p>
+    <details class="help"><summary>Or enter it by hand</summary>
       <p class="small muted">Log in at <a class="link" href="https://www.deezer.com/login" target="_blank" rel="noopener noreferrer">deezer.com</a>, open DevTools → Application (or Storage) → Cookies and copy the value of the <strong>arl</strong> cookie.</p>
+      <form method="post" action="{{ url_for('accounts.login_deezer') }}" class="fields">
+        {% call field("ARL", "wide") %}<input name="arl" type="password" required autocomplete="off">{% endcall %}
+        <div class="actions"><button class="btn primary" type="submit">Log in</button></div>
+      </form>
     </details>
-    <form method="post" action="{{ url_for('accounts.login_deezer') }}" class="fields">
-      {% call field("ARL", "wide") %}<input name="arl" type="password" required autocomplete="off">{% endcall %}
-      <div class="actions"><button class="btn primary" type="submit">Log in</button></div>
-    </form>
-    <div class="actions">{{ logout('deezer') }}</div>
   </section>
 
   <section class="card" id="soundcloud">
