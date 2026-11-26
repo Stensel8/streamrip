@@ -5,22 +5,14 @@ upstream issues and pull requests.
 
 ## 2.8.1
 
-- fix: `streamrip login spotify` no longer waits unseen for the Spotify app on a
-  computer that was set up before, says what it waits for, keeps the login when
-  stopped with Ctrl-C, and stops at once
-- fix: Spotify's own audio keeps no pace and no hourly count: those are for files
-  that come fast (YouTube Music's still do), and its tracks take as long as they last
-- fix: a copyright and a phonographic line for the same year and holder are
-  tagged once, as `℗ & © 2025 Label`
-- fix: the Spotify note points at `streamrip playlist download`, not at a tool of
-  its own
-- fix: the search menu downloads the row you end on, also when Enter follows the
-  arrow keys at once; `repair` retries only the tracks that failed, not their
-  whole albums
-- fix: the Qobuz script in the terminal is not broken across lines, a 30-second
-  preview is not taken for the track, a YouTube Music file is whole without an
-  ffmpeg of the system's own, an artist's compilations are part of it, and a
-  wrong address at `login tidal-library` is one plain message
+A release of fixes, mostly for Spotify.
+
+- fix: `streamrip login spotify` says what it waits for, keeps the login when it
+  is stopped, and only pairs again when asked; Spotify's own audio no longer
+  keeps a pace or an hourly count
+- fix: the search menu downloads the row you pick, `repair` retries only what
+  failed, and a Qobuz preview is no longer taken for the track
+- fix: smaller things in tags, logins and messages
 
 ## 2.8.0
 
