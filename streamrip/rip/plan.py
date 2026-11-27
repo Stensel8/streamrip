@@ -12,23 +12,33 @@ def _minutes(seconds: float) -> str:
 
 
 def _line(item) -> str | None:
-    """One resolved item as a line: its name, quality and how many tracks."""
+    """One resolved item as a line: what it is and its name, its quality, and
+    its tracks."""
     match item:
         case Album():
-            info = item.meta.info
+            meta, info = item.meta, item.meta.info
             quality = format_quality(info.container, info.bit_depth, info.sampling_rate)
-            skipped = (
-                f", {item.skipped_tracks} already downloaded"
+            tracks = plural(len(item.tracks), "track")
+            before = (
+                f" ({item.skipped_tracks} downloaded before)"
                 if item.skipped_tracks
                 else ""
             )
-            return f"{item.meta.album} {quality}: {plural(len(item.tracks), 'track')}{skipped}"
-        case Playlist():
-            return f"{item.name}: {plural(len(item.tracks), 'track')}"
-        case Artist() | Label():
-            return f"{plural(len(item.albums), 'album')}: about {len(item.albums) * ALBUM_TRACKS} tracks"
+            return (
+                f"Album: {meta.albumartist} - {meta.album} {quality}, {tracks}{before}"
+            )
         case Track():
-            return "1 track"
+            meta, info = item.meta, item.meta.album.info
+            quality = format_quality(info.container, info.bit_depth, info.sampling_rate)
+            return f"Track: {meta.artist} - {meta.title} {quality}"
+        case Playlist():
+            return f"Playlist: {item.name}, {plural(len(item.tracks), 'track')}"
+        case Artist() | Label():
+            albums = plural(len(item.albums), "album")
+            about = len(item.albums) * ALBUM_TRACKS
+            return (
+                f"{type(item).__name__}: {item.name}, {albums} (about {about} tracks)"
+            )
     return None
 
 
@@ -76,5 +86,5 @@ def _account(client: Client, count: int) -> str:
         if seconds is None
         else f"{_minutes(seconds)} at its {load.tier} pace"
     )
-    already = f" ({load.this_hour} already this hour)" if load.this_hour else ""
-    return f"{client.source.capitalize()}: {plural(count, 'track')}, {how}{already}"
+    earlier = f" ({load.this_hour} earlier this hour)" if load.this_hour else ""
+    return f"{client.source.capitalize()}: {plural(count, 'track')}, {how}{earlier}"

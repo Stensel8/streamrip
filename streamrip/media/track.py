@@ -643,7 +643,7 @@ async def fetch_track_meta(
     source = client.source
     if db.downloaded(source, track_id):
         logger.info(
-            "Skipping track %s. Marked as downloaded in the database.", track_id
+            "%s track %s was downloaded before: skipped.", source.capitalize(), track_id
         )
         db.skipped_now += 1
         return None
