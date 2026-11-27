@@ -34,17 +34,17 @@
   let given = $state<Record<string, string>>({});
 
   const load = () => api<Data>("/accounts/api").then((d) => (data = d));
-  // What each login is (Free or Paid) and gives. It asks the services, so the
-  // page is shown first.
-  const loadPlans = (refresh = false) =>
-    api<Record<string, Plan>>(`/accounts/overview${refresh ? "?refresh=1" : ""}`)
+  // What each login is (Free or Paid) and gives, as the last check found:
+  // only the Check button asks the services.
+  const loadPlans = () =>
+    api<Record<string, Plan>>("/accounts/overview")
       .then((p) => (plans = p))
       .catch(() => {});
 
   const slot = new JobSlot("login verify", (job) => {
     if (job.status !== "done") return;
     load();
-    loadPlans(job.kind === "verify");
+    loadPlans();
   });
 
   load().then(() => loadPlans());
@@ -57,7 +57,7 @@
       for (const f of fields) given[f] = "";
       open = {};
       await load();
-      loadPlans(true);
+      loadPlans();
     } catch (e) {
       say((e as Error).message, true);
     }

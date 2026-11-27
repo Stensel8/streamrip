@@ -635,7 +635,9 @@ def test_the_playlist_page_offers_the_services_that_are_logged_in(client, servic
     assert playlist_services == [{"name": "spotify", "label": "Spotify"}]
 
 
-def test_the_accounts_page_says_what_each_login_is_and_gives(client, monkeypatch):
+def test_the_accounts_page_shows_the_last_check_and_asks_only_when_told(
+    client, monkeypatch
+):
     from streamrip.verify import Result
 
     asked = []
@@ -651,9 +653,11 @@ def test_the_accounts_page_says_what_each_login_is_and_gives(client, monkeypatch
 
     monkeypatch.setattr(runner_module, "verify_logins", check)
 
+    assert client.get("/accounts/overview", headers=JSON).get_json() == {}
+    for _ in range(runner_module.CHECKS):
+        run(client, "/accounts/verify")
     first = client.get("/accounts/overview", headers=JSON).get_json()
-    client.get("/accounts/overview", headers=JSON)  # the last check is still good
-    client.get("/accounts/overview?refresh=1", headers=JSON)
+    again = client.post("/accounts/verify", headers=JSON)
 
     assert first["qobuz"] == {
         "state": "ok",
@@ -661,7 +665,9 @@ def test_the_accounts_page_says_what_each_login_is_and_gives(client, monkeypatch
         "formats": "FLAC up to 24-bit/192 kHz",
     }
     assert first["deezer"]["plan"] == "Free"
-    assert len(asked) == 2  # the second answer came from the first check
+    assert again.status_code == 429
+    assert "Try again in 15 minutes" in again.get_json()["message"]
+    assert len(asked) == runner_module.CHECKS  # the page itself asked nothing
 
 
 def test_qobuz_logs_in_with_a_script_run_on_its_web_player(client, runner):

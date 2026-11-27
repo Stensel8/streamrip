@@ -1,9 +1,12 @@
 """The Accounts page: every login in one place, and the actions behind its buttons."""
 
-from flask import Blueprint, Response, current_app, jsonify, request
+import math
+
+from flask import Blueprint, Response, abort, current_app, jsonify, request
 
 from ..accounts import BY_ID, LOGIN_IDS, Accounts
 from ..client.soloist import SoloistBackend
+from ..console import plural
 from ..sync.errors import ProviderError
 from ..sync.services import DEVELOPER_DASHBOARDS, LABELS
 from .common import get_config, get_runner, get_services, payload, sent, spa, start
@@ -76,15 +79,23 @@ def data() -> Response:
 
 @accounts_pages.get("/overview")
 def overview() -> Response:
-    """What every login is and gives, for the lines on the cards. A check asks
-    the services, so the page asks for it after it is shown."""
-    return jsonify(get_runner().overview(request.args.get("refresh") == "1"))
+    """What every login is and gives, for the lines on the cards: what the last
+    check said. The page does not ask the services by itself."""
+    return jsonify(get_runner().overview())
 
 
 @accounts_pages.post("/verify")
 def verify() -> tuple[Response, int]:
-    """Ask every service whether its login works."""
+    """Ask every service whether its login works, unless that was asked a few
+    times just now."""
     runner = get_runner()
+    if wait := runner.check_wait():
+        minutes = plural(math.ceil(wait / 60), "minute")
+        abort(
+            429,
+            "You checked a few times just now. Take it easy: checking too often "
+            f"can get an account banned. Try again in {minutes}.",
+        )
     return start("verify", "Checking every login", runner.verify)
 
 

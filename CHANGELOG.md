@@ -15,6 +15,8 @@ A new web interface, and more from each service.
   {label} and {genre}
 - fix: clearer previews, exit code 1 when tracks fail, a plain message when
   Qobuz blocks an account, and stricter checks on what the web page sends
+- fix: easier on the services: Qobuz logs in without test requests, streamrip
+  stays the same browser for a week, and the Accounts page checks only when asked
 - chore: every dependency is pinned and kept current
 
 ## 2.8.2

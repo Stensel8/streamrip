@@ -84,7 +84,7 @@
   <section transition:fly={{ y: -8, duration: 150 }} class="card mb-6" aria-live="polite">
     <div class="flex items-start justify-between gap-4">
       <h2 class="min-w-0 font-semibold">
-        {job?.title ?? (slot.error ? "Something went wrong" : "Starting…")}
+        {job?.title ?? (slot.later ? "Not just now" : slot.error ? "Something went wrong" : "Starting…")}
       </h2>
       <div class="flex shrink-0 items-center gap-3">
         {#if job}<span class="text-xs text-muted tabular-nums">{clock(job.elapsed)}</span>{/if}
@@ -123,7 +123,7 @@
       </ol>
     {/if}
 
-    <p class="mt-3 text-sm {failed || (slot.error && !job) ? 'text-error' : ''}">
+    <p class="mt-3 text-sm {failed || (slot.error && !slot.later && !job) ? 'text-error' : ''}">
       {job ? (running ? job.text : job.message) : slot.error}
     </p>
 

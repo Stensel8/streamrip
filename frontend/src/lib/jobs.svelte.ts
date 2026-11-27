@@ -1,7 +1,7 @@
 // A background job of `streamrip web` (web/jobs.py): started by a page, then
 // asked how it is getting on until it ends.
 
-import { api, post } from "./api";
+import { ApiError, api, post } from "./api";
 
 export interface Job {
   kind: string;
@@ -45,6 +45,8 @@ export class JobSlot {
   id = $state<string | null>(null);
   job = $state<Job | null>(null);
   error = $state("");
+  // The error is a "not now" (HTTP 429): asked too often, nothing broke.
+  later = $state(false);
   starting = $state(false);
   busy = $derived(this.starting || this.job?.status === "running");
 
@@ -56,6 +58,7 @@ export class JobSlot {
   /** Start a job and follow it to the end. */
   async start(url: string, body?: unknown) {
     this.error = "";
+    this.later = false;
     this.job = null;
     this.starting = true;
     try {
@@ -64,6 +67,7 @@ export class JobSlot {
       await this.follow(id);
     } catch (e) {
       this.error = (e as Error).message;
+      this.later = e instanceof ApiError && e.status === 429;
     } finally {
       this.starting = false;
     }
