@@ -15,6 +15,7 @@ from playwright.async_api import Error as PlaywrightError
 from streamrip.client.qobuz import QobuzClient, file_url_signature
 from streamrip.config import Config
 from streamrip.exceptions import (
+    AccountHalt,
     APIError,
     AuthenticationError,
     MissingCredentialsError,
@@ -145,6 +146,16 @@ async def test_a_region_locked_track_is_not_streamable():
     restricted = {"restrictions": [{"code": "TrackRestrictedByTerritory"}]}
     with pytest.raises(NonStreamableError):
         await _logged_in((200, restricted)).get_downloadable("1", 3)
+
+
+async def test_a_blocked_account_stops_the_run_with_qobuzs_word():
+    # Seen 2026-11-27: the signature was right, and the account got a 403.
+    c = _logged_in()
+    c.download_only = False
+    del c._request_file_url  # the real one, over an API that answers so
+    c._api_request = AsyncMock(return_value=(403, {"message": "Account is blocked"}))
+    with pytest.raises(AccountHalt, match="blocked"):
+        await c.get_downloadable("1", 3)
 
 
 async def test_a_purchased_track_steps_down_to_the_quality_it_was_sold_in():

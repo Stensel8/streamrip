@@ -17,6 +17,7 @@ from .. import db, lyrics
 from ..client import CLIENTS, Client
 from ..console import console, plural
 from ..exceptions import (
+    AccountBlockedError,
     APIError,
     AuthenticationError,
     MissingCredentialsError,
@@ -270,6 +271,8 @@ class Main:
                     with console.status(f"[cyan]Logging into {source}", spinner="dots"):
                         # Log into client using credentials from config
                         await client.login()
+                except AccountBlockedError:
+                    raise  # no new login unblocks it
                 except (AuthenticationError, MissingCredentialsError) as e:
                     # has_creds() only checks that something is *stored*, not
                     # that it still works. Saved tokens expire, so the usual

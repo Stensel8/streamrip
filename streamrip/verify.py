@@ -10,7 +10,11 @@ from dataclasses import dataclass
 from .accounts import LOGIN_IDS, Accounts
 from .client import spotify
 from .client.spotify import SpotifyAuthError
-from .exceptions import AuthenticationError, MissingCredentialsError
+from .exceptions import (
+    AccountBlockedError,
+    AuthenticationError,
+    MissingCredentialsError,
+)
 from .sync.errors import ApiError, NotLoggedInError, QuotaExceededError
 lazy from .client import DeezerClient, QobuzClient, SoundcloudClient, TidalClient
 lazy from .client.soloist import SoloistBackend
@@ -176,6 +180,8 @@ async def _verify_one(config: Config, accounts: Accounts, login_id: str) -> Resu
         detail, hint, plan, formats = await asyncio.wait_for(
             _check(config, login_id), TIMEOUT
         )
+    except AccountBlockedError as e:
+        return Result(login_id, FAILED, str(e))
     except (AuthenticationError, MissingCredentialsError, NotLoggedInError) as e:
         # The error already says "Run: streamrip login x"; the fix is shown apart.
         why = str(e).split(" Run: ")[0]

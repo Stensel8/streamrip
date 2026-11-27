@@ -7,6 +7,10 @@ class AuthenticationError(Exception):
     """AuthenticationError."""
 
 
+class AccountBlockedError(AuthenticationError):
+    """The service blocked the account: logging in again does not help."""
+
+
 class AccountHalt(BaseException):
     """The whole run stops for the account's sake: the service keeps rate
     limiting streamrip, or refused its login mid-run.

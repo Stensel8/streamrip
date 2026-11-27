@@ -46,7 +46,7 @@ LOGIN_CHECK = """
 import asyncio, sys
 from pathlib import Path
 from streamrip.config import Config
-from streamrip.exceptions import AuthenticationError, MissingCredentialsError
+from streamrip.exceptions import AccountBlockedError, AuthenticationError, MissingCredentialsError
 from streamrip.rip.main import Main
 from streamrip.rip.prompter import get_prompter
 
@@ -58,6 +58,9 @@ async def check(path, source):
             return 2
         try:
             await main.get_logged_in_client(source)
+        except AccountBlockedError as e:
+            print(e)  # no new login unblocks it
+            return 3
         except (AuthenticationError, MissingCredentialsError) as e:
             reason = e.__cause__ or e
             print(f"its login no longer works ({reason}); log in again, pass the new config and its state.toml")

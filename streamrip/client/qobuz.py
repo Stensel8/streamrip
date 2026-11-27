@@ -7,6 +7,8 @@ import time
 from collections import OrderedDict
 
 from ..exceptions import (
+    AccountBlockedError,
+    AccountHalt,
     APIError,
     AuthenticationError,
     InvalidAppIdError,
@@ -18,6 +20,8 @@ from ..exceptions import (
 from .client import RETRY_STATUSES, Client, RequestClient, new_session
 from .downloadable import BasicDownloadable, Downloadable
 lazy from ..config import Config
+
+BLOCKED = "Qobuz blocked this account; logging in again won't help."
 
 logger = logging.getLogger("streamrip")
 
@@ -400,7 +404,12 @@ class QobuzClient(Client):
         # Qobuz has no quality 0 (128 kbps); clamp instead of asserting so
         # `streamrip --quality 0` still works for mixed-source downloads.
         quality = max(1, min(quality, self.max_quality))
-        status, resp_json = await self._request_file_url(item_id, quality, self.secret)
+        try:
+            status, resp_json = await self._request_file_url(
+                item_id, quality, self.secret
+            )
+        except AccountBlockedError as e:
+            raise AccountHalt(str(e)) from e  # every next track would get the same
         if status != 200:
             raise NonStreamableError(
                 f"Could not get a download URL (HTTP {status}): "
@@ -526,7 +535,11 @@ class QobuzClient(Client):
             "format_id": format_id,
             "intent": intent,
         }
-        return await self._api_request("track/getFileUrl", params)
+        status, resp = await self._api_request("track/getFileUrl", params)
+        # The signature was right (a wrong secret is a 400): it is the account.
+        if status == 403 and "blocked" in str(resp.get("message", "")).lower():
+            raise AccountBlockedError(BLOCKED)
+        return status, resp
 
     async def _api_request(self, epoint: str, params: dict) -> tuple[int, dict]:
         """GET a Qobuz API endpoint: (status, JSON body), whatever the status."""
