@@ -81,7 +81,15 @@
 </script>
 
 {#if slot.starting || slot.error || job}
-  <section transition:fly={{ y: -8, duration: 150 }} class="card mb-6" aria-live="polite">
+  <section transition:fly={{ y: -8, duration: 150 }} class="card relative mb-6 overflow-hidden" aria-live="polite">
+    <div
+      class="absolute inset-x-0 top-0 h-0.5 {failed || (slot.error && !slot.later && !job)
+        ? 'bg-error'
+        : slot.later
+          ? 'bg-warn'
+          : 'bg-flow'}"
+      aria-hidden="true"
+    ></div>
     <div class="flex items-start justify-between gap-4">
       <h2 class="min-w-0 font-semibold">
         {job?.title ?? (slot.later ? "Not just now" : slot.error ? "Something went wrong" : "Starting…")}

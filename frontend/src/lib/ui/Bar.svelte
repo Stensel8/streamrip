@@ -7,8 +7,13 @@
 
 <div class="h-1.5 w-full overflow-hidden rounded-full bg-border" role="progressbar" aria-valuenow={share ?? undefined}>
   {#if share === null}
-    <div class="sliding h-full w-2/5 rounded-full bg-accent"></div>
+    <div class="sliding h-full w-2/5 rounded-full bg-flow"></div>
   {:else}
-    <div class="h-full rounded-full bg-accent transition-[width] duration-300" style:width="{share}%"></div>
+    <!-- The gradient spans the whole bar: it shows more of it as it fills. -->
+    <div
+      class="h-full rounded-full bg-flow transition-[width] duration-300"
+      style:width="{share}%"
+      style:background-size="{10000 / Math.max(share, 1)}% 100%"
+    ></div>
   {/if}
 </div>

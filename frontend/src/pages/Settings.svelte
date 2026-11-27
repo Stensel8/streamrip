@@ -5,6 +5,7 @@
   import { say } from "../lib/notice.svelte";
   import { leaving } from "../lib/router.svelte";
   import OptionRow from "../lib/OptionRow.svelte";
+  import Bar from "../lib/ui/Bar.svelte";
   import PageHead from "../lib/ui/PageHead.svelte";
 
   let sections = $state<Section[]>([]);
@@ -155,7 +156,10 @@
       {#if failed}
         <p class="rounded-xl border border-error/40 bg-error/10 p-4 text-sm">{failed}</p>
       {:else if !sections.length}
-        <p class="text-sm text-muted">Loading…</p>
+        <div class="max-w-sm space-y-2">
+          <p class="text-sm text-muted">Loading…</p>
+          <Bar />
+        </div>
       {:else if !shown.length}
         <p class="text-sm text-muted">No setting matches “{query}”.</p>
       {/if}

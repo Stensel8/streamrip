@@ -65,6 +65,12 @@
   }
 }
 
+/* The cool end of that gradient, from lavender to teal: the bars, and the line
+   over a job. */
+@utility bg-flow {
+  background-image: linear-gradient(90deg, #ac83d0, #4dbfc8);
+}
+
 /* A bar with no end in sight slides. */
 @keyframes slide {
   from {
