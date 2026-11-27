@@ -152,10 +152,10 @@
     {#snippet qobuz()}
       <p class="text-sm text-muted">A subscription, or the albums you bought.</p>
       <div class="flex flex-wrap items-center gap-3">
-        <button type="button" class="btn btn-primary" disabled={slot.busy} onclick={() => slot.start("/accounts/qobuz/script")}
-          >{a.qobuz.logged_in ? "Log in again" : "Log in with a script"}</button
+        <button type="button" class="btn btn-primary" disabled={slot.busy} onclick={() => slot.start("/accounts/qobuz/oauth")}
+          >{a.qobuz.logged_in ? "Log in again" : "Log in"}</button
         >
-        <p class="text-xs text-muted">You log in at Qobuz yourself; streamrip never sees your password.</p>
+        <p class="text-xs text-muted">You log in on Qobuz's own page; streamrip never sees your password.</p>
       </div>
       {#snippet help()}
         Log in at <a class="link" href="https://play.qobuz.com/login" target="_blank" rel="noopener noreferrer"
@@ -165,7 +165,10 @@
       {/snippet}
       {@render byHand("qobuz", "/accounts/qobuz/login", [["user_id", "User id", false], ["auth_token", "Token", true]], help)}
     {/snippet}
-    {#snippet qobuzMenu()}<MenuItem text="Enter the token by hand" onclick={() => (open.qobuz = true)} />{/snippet}
+    {#snippet qobuzMenu()}
+      <MenuItem text="Log in with a script" onclick={() => slot.start("/accounts/qobuz/script")} />
+      <MenuItem text="Enter the token by hand" onclick={() => (open.qobuz = true)} />
+    {/snippet}
     {@render card("qobuz", qobuz, qobuzMenu)}
 
     {#snippet tidal()}

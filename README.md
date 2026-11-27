@@ -216,7 +216,7 @@ the config. If a login stops working, it asks again.
 
 | Source | What you need |
 | --- | --- |
-| Qobuz | A subscription, or albums you bought. Log in through an isolated browser window, your own browser, or by hand. |
+| Qobuz | A subscription, or albums you bought. Log in on Qobuz's own login page, through an isolated browser window, your own browser, or by hand. |
 | Tidal | A subscription. You log in with a link on any device (twice for hi-res). |
 | Deezer | The `arl` cookie of a logged-in session, from an isolated browser window or by hand. |
 | SoundCloud | Nothing: it works as a guest. A login (the `oauth_token` cookie) gives better quality and higher limits. |

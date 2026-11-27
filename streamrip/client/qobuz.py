@@ -5,6 +5,7 @@ import logging
 import re
 import time
 from collections import OrderedDict
+from urllib.parse import urlencode
 
 from ..exceptions import (
     AccountBlockedError,
@@ -22,10 +23,13 @@ from .downloadable import BasicDownloadable, Downloadable
 lazy from ..config import Config
 
 BLOCKED = "Qobuz blocked this account; logging in again won't help."
+LOGGED_OUT = "Qobuz no longer takes this login: log in to Qobuz again."
 
 logger = logging.getLogger("streamrip")
 
 QOBUZ_BASE_URL = "https://www.qobuz.com/api.json/0.2"
+# Qobuz's own login page, the one its web player sends you to.
+OAUTH_URL = "https://www.qobuz.com/signin/oauth"
 # Qobuz's format_id for quality 1 to 4: MP3 320, FLAC 16/44.1, 24/96, 24/192.
 FORMAT_IDS = (5, 6, 7, 27)
 
@@ -52,6 +56,8 @@ BUNDLE_URL_RE = re.compile(
     r'<script src="(/resources/\d+\.\d+\.\d+-[a-z]\d{3}/bundle\.js)"></script>'
 )
 APP_ID_RE = re.compile(r'production:{api:{appId:"(?P<app_id>\d{9})",appSecret:"\w{32}')
+# What the web player trades the code of its login page with.
+PRIVATE_KEY_RE = re.compile(r'privateKey:"(?P<key>\w+)"')
 SEED_RE = re.compile(
     r'[a-z]\.initialSeed\("(?P<seed>[\w=]+)",window\.utimezone\.(?P<timezone>[a-z]+)\)'
 )
@@ -72,6 +78,7 @@ class QobuzSpoofer(RequestClient):
         self.session = None
         self.verify_ssl = verify_ssl
         self.client = client
+        self.private_key = ""
         self.rate_limiter = (
             client.rate_limiter if client is not None else self.get_rate_limiter(0)
         )
@@ -88,6 +95,8 @@ class QobuzSpoofer(RequestClient):
         app_id = APP_ID_RE.search(bundle)
         if app_id is None:
             raise InvalidAppIdError("Could not find Qobuz's app id.")
+        key = PRIVATE_KEY_RE.search(bundle)
+        self.private_key = key.group("key") if key else ""
 
         secrets = OrderedDict(
             (m.group("timezone"), [m.group("seed")]) for m in SEED_RE.finditer(bundle)
@@ -149,6 +158,8 @@ class QobuzClient(Client):
         self.download_only: bool = False
         # Held while a track finds the app secret that works (see _file_url).
         self._finding_secret = asyncio.Lock()
+        # The web player's key for its login page's code (oauth_link).
+        self._private_key = ""
 
     async def login(self):
         """Log in with the user id and user_auth_token saved in the config."""
@@ -187,6 +198,26 @@ class QobuzClient(Client):
 
         self.logged_in = True
 
+    async def oauth_link(self, redirect: str) -> str:
+        """Qobuz's own login page, which sends the browser to `redirect` with a
+        code: the web player's login, with its app id."""
+        await self._refresh_app_id_and_secrets()
+        query = urlencode({"ext_app_id": self.config.app_id, "redirect_url": redirect})
+        return f"{OAUTH_URL}?{query}"
+
+    async def oauth_token(self, code: str) -> tuple[str, str]:
+        """The user id and token for the code the login page sent back."""
+        self._ensure_session()
+        self._login_headers["X-App-Id"] = str(self.config.app_id)
+        status, resp = await self._api_request(
+            "oauth/callback", {"code": code, "private_key": self._private_key}
+        )
+        if status != 200 or not resp.get("token") or not resp.get("user_id"):
+            raise AuthenticationError(
+                f"Qobuz did not take the login (HTTP {status}): log in again."
+            )
+        return str(resp["user_id"]), str(resp["token"])
+
     async def _refresh_app_id_and_secrets(self):
         c = self.config
         c.app_id, c.secrets = await self._get_app_id_and_secrets()
@@ -199,13 +230,9 @@ class QobuzClient(Client):
     async def _attempt_login(self):
         c = self.config
         self._login_headers["X-App-Id"] = str(c.app_id)
-
-        params = {
-            "user_id": c.user_id,
-            "user_auth_token": c.auth_token,
-            "app_id": str(c.app_id),
-        }
-        status, resp = await self._api_request("user/login", params)
+        # As the web player logs in: the token in a header, not in the address.
+        self._login_headers["X-User-Auth-Token"] = c.auth_token
+        status, resp = await self._api_request("user/login", {}, "extra=partner")
         # The response carries the user_auth_token and the account profile.
         logger.debug("Login response keys: %s", sorted(resp))
 
@@ -494,7 +521,9 @@ class QobuzClient(Client):
         async with QobuzSpoofer(
             verify_ssl=self.global_config.session.downloads.verify_ssl, client=self
         ) as spoofer:
-            return await spoofer.get_app_id_and_secrets()
+            found = await spoofer.get_app_id_and_secrets()
+            self._private_key = spoofer.private_key
+            return found
 
     async def _file_url(self, track_id: str, quality: int) -> tuple[int, dict]:
         """track/getFileUrl, signed with the app secret that worked last.
@@ -562,11 +591,18 @@ class QobuzClient(Client):
             raise AccountBlockedError(BLOCKED)
         return status, resp
 
-    async def _api_request(self, epoint: str, params: dict) -> tuple[int, dict]:
-        """GET a Qobuz API endpoint: (status, JSON body), whatever the status."""
-        # Only the endpoint: params carry credentials (user_auth_token)
-        # and the request signature.
+    async def _api_request(
+        self, epoint: str, params: dict, data: str | None = None
+    ) -> tuple[int, dict]:
+        """GET a Qobuz API endpoint (POST `data`): (status, JSON body), whatever
+        the status."""
+        # Only the endpoint: params can carry the request signature.
         logger.debug("api_request: endpoint=%s", epoint)
-        return await self._get_json(
-            f"{QOBUZ_BASE_URL}/{epoint}", params, self._login_headers
+        status, resp = await self._get_json(
+            f"{QOBUZ_BASE_URL}/{epoint}", params, self._login_headers, data
         )
+        # The login is gone, and every next request would hear the same. (A
+        # file URL's 401 can be the plan's: this track may not be streamed.)
+        if status == 401 and self.logged_in and epoint != "track/getFileUrl":
+            raise AccountHalt(LOGGED_OUT)
+        return status, resp

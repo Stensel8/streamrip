@@ -12,6 +12,7 @@ import threading
 import time
 from pathlib import Path
 from types import SimpleNamespace
+from urllib.parse import parse_qs, urlencode, urlsplit
 
 import pytest
 import requests
@@ -92,6 +93,10 @@ class FakeRunner(Runner):
 
     def login_qobuz(self, user_id, token):
         self.logins.append(("qobuz", user_id, token))
+
+    def qobuz_oauth(self, redirect):
+        query = urlencode({"redirect_url": redirect})
+        return f"https://www.qobuz.com/signin/oauth?{query}", lambda c: ("42", f"T-{c}")
 
     def login_deezer(self, arl):
         self.logins.append(("deezer", arl))
@@ -668,6 +673,22 @@ def test_the_accounts_page_shows_the_last_check_and_asks_only_when_told(
     assert again.status_code == 429
     assert "Try again in 15 minutes" in again.get_json()["message"]
     assert len(asked) == runner_module.CHECKS  # the page itself asked nothing
+
+
+def test_qobuz_logs_in_on_its_own_page_which_sends_the_browser_back(client, runner):
+    job_id = started(client.post("/accounts/qobuz/oauth", json={}, headers=JSON))
+    link = wait_for(client, job_id, lambda job: job["link"])["link"]
+    back = urlsplit(parse_qs(urlsplit(link).query)["redirect_url"][0]).path
+    # Qobuz sends no state back: the path is what only this login knows.
+    guess = client.get("/accounts/qobuz/oauth/guess?code_autorisation=X")
+    assert guess.status_code == 404
+
+    landed = client.get(f"{back}?code_autorisation=CODE")
+
+    assert (landed.status_code, landed.headers["Location"]) == (302, "/accounts")
+    done = wait_for(client, job_id)
+    assert (done["status"], done["message"]) == ("done", "Logged in to Qobuz.")
+    assert runner.logins == [("qobuz", "42", "T-CODE")]
 
 
 def test_qobuz_logs_in_with_a_script_run_on_its_web_player(client, runner):

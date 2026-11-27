@@ -28,28 +28,30 @@ log in by hand, and for Spotify you paste the address.
 
 ## Qobuz
 
-You need a subscription, or albums you bought. Qobuz has no device login like
-Tidal, but once you're logged in on the website it stores a login token, and
-streamrip offers three ways to get it:
+You need a subscription, or albums you bought. streamrip offers four ways in:
 
-1. **An isolated browser window.** You log in, and streamrip grabs the token by
+1. **Qobuz's own login page**, the one its web player uses. Log in there and
+   Qobuz sends the browser back to streamrip with a login of its own. On
+   another device (a server, say), paste the address you end up on. In
+   [the web interface](web.md) this is the *Log in* button.
+2. **An isolated browser window.** You log in, and streamrip grabs the token by
    itself. It uses a Chrome-family browser you already have (Chrome, Edge,
    Brave, Chromium, ...) with a throwaway profile, so there's no existing
    session in the way and nothing gets downloaded. If you only have Firefox or
    LibreWolf, it asks before downloading Playwright's own small browser.
-2. **Your own browser**, opened at [the login page](https://play.qobuz.com/login).
+3. **Your own browser**, opened at [the login page](https://play.qobuz.com/login).
    Log in first, *then* paste the short script streamrip prints into the console
    (F12). Qobuz reloads the page when you log in, which would stop a script you
    pasted earlier. The script reads the token Qobuz's web player already keeps
    in `localStorage`. It's just a few lines of JavaScript in the browser you
    already have open. The Accounts page of [the web interface](web.md) does this
-   too: press *Log in with a script*, log in on the tab that opens, and run the
+   too, under *Log in with a script* in the card's menu: log in on the tab that opens, and run the
    script it shows. The tab then moves to a page of streamrip, which takes the
    token and has nothing left of it in the address bar.
-3. **By hand.** Copy `user.id` and `user_auth_token` from DevTools → Network
+4. **By hand.** Copy `user.id` and `user_auth_token` from DevTools → Network
    yourself.
 
-If nothing comes in within a few minutes, options 1 and 2 fall back to entering
+If nothing comes in within a few minutes, the first three fall back to entering
 it by hand. Either way, the login is saved.
 
 ## Tidal

@@ -885,7 +885,9 @@ async def test_the_browser_login_catches_the_code_itself(prompter, monkeypatch):
     monkeypatch.setattr(prompter_module, "_open_login_link", opened.append)
     questions = ask_with(monkeypatch, "1")
     monkeypatch.setattr(
-        prompter_module, "capture_code", AsyncMock(return_value="CAUGHT")
+        prompter_module,
+        "wait_for_redirect",
+        AsyncMock(return_value={"code": "CAUGHT", "state": "S"}),
     )
 
     await prompter.prompt_and_login()
@@ -923,8 +925,13 @@ async def test_a_failed_login_can_be_tried_again(prompter, monkeypatch, again):
     monkeypatch.setattr(prompter_module.Confirm, "ask", lambda *a, **k: again)
     monkeypatch.setattr(
         prompter_module,
-        "code_from_redirect_url",
-        MagicMock(side_effect=[SpotifyLoginError("no login in it"), "GOOD-CODE"]),
+        "redirect_params",
+        MagicMock(
+            side_effect=[
+                SpotifyLoginError("no login in it"),
+                {"code": "GOOD-CODE", "state": "S"},
+            ]
+        ),
     )
 
     if again:

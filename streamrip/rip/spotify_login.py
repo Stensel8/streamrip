@@ -88,10 +88,8 @@ def check_redirect(
     return params["code"]
 
 
-def code_from_redirect_url(
-    address: str, expected_state: str, service: str = "Spotify"
-) -> str:
-    """The code in a redirect URL the user pasted."""
+def redirect_params(address: str) -> dict[str, str]:
+    """The query of a redirect URL the user pasted."""
     query = urlsplit(address.strip()).query
     params = {key: values[0] for key, values in parse_qs(query).items()}
     if not params:
@@ -99,7 +97,14 @@ def code_from_redirect_url(
             "That address has no login in it. Paste the whole address of the page "
             "you ended up on, starting with the redirect URI."
         )
-    return check_redirect(params, expected_state, service)
+    return params
+
+
+def code_from_redirect_url(
+    address: str, expected_state: str, service: str = "Spotify"
+) -> str:
+    """The code in a redirect URL the user pasted."""
+    return check_redirect(redirect_params(address), expected_state, service)
 
 
 def _wait_for_redirect(
@@ -137,17 +142,23 @@ def _wait_for_redirect(
     return server.params
 
 
-async def capture_code(
-    redirect_uri: str, expected_state: str, service: str = "Spotify"
-) -> str:
-    """Wait for the browser to come back to redirect_uri, and return the code."""
+async def wait_for_redirect(redirect_uri: str) -> dict[str, str]:
+    """Wait for the browser to come back to redirect_uri: its query."""
     # A cancelled await leaves its thread running: Ctrl-C would wait out the
     # whole LOGIN_TIMEOUT, with the port still taken, unless it is told to stop.
     stop = threading.Event()
     try:
-        params = await asyncio.to_thread(
+        return await asyncio.to_thread(
             _wait_for_redirect, redirect_uri, LOGIN_TIMEOUT, stop
         )
     finally:
         stop.set()
-    return check_redirect(params, expected_state, service)
+
+
+async def capture_code(
+    redirect_uri: str, expected_state: str, service: str = "Spotify"
+) -> str:
+    """Wait for the browser to come back to redirect_uri, and return the code."""
+    return check_redirect(
+        await wait_for_redirect(redirect_uri), expected_state, service
+    )

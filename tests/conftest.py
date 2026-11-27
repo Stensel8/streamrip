@@ -140,7 +140,7 @@ async def serve():
     async def start(handlers: dict) -> str:
         app = web.Application()
         for path, handler in handlers.items():
-            app.router.add_get(path, handler)
+            app.router.add_route("*", path, handler)
         runner = web.AppRunner(app, access_log=None)
         await runner.setup()
         runners.append(runner)

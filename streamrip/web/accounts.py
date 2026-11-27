@@ -1,8 +1,9 @@
 """The Accounts page: every login in one place, and the actions behind its buttons."""
 
 import math
+lazy from collections.abc import Callable
 
-from flask import Blueprint, Response, abort, current_app, jsonify, request
+from flask import Blueprint, Response, abort, current_app, jsonify, redirect, request
 
 from ..accounts import BY_ID, LOGIN_IDS, Accounts
 from ..client.soloist import SoloistBackend
@@ -10,7 +11,7 @@ from ..console import plural
 from ..sync.errors import ProviderError
 from ..sync.services import DEVELOPER_DASHBOARDS, LABELS
 from .common import get_config, get_runner, get_services, payload, sent, spa, start
-from .logins import BrowserLogin, ScriptLogin
+from .logins import BrowserLogin, QobuzLogin, ScriptLogin
 lazy from .jobs import Job
 
 accounts_pages = Blueprint("accounts", __name__, url_prefix="/accounts")
@@ -28,6 +29,23 @@ def _given(name: str) -> str:
 
 def _done(message: str) -> Response:
     return jsonify(message=message)
+
+
+def _login_job(login, title: str, run: Callable[[Job], str]) -> tuple[Response, int]:
+    """Start a login as a job. One at a time: one given up on would keep its
+    port, or its script, for minutes."""
+    logins = current_app.extensions["logins"]
+    for earlier in list(logins.values()):
+        earlier.cancel()
+
+    def work(job: Job) -> str:
+        logins[job.id] = login
+        try:
+            return run(job)
+        finally:
+            logins.pop(job.id, None)
+
+    return start("login", title, work)
 
 
 def _soloist(config) -> dict:
@@ -116,20 +134,29 @@ def script_login(service: str) -> tuple[Response, int]:
     """A login by a script: the page shows it, and run on the service's site it
     hands the login back to script_capture."""
     login = ScriptLogin(service, f"{request.host_url}accounts/{service}/receive")
-    logins = current_app.extensions["logins"]
-    for earlier in list(logins.values()):
-        earlier.cancel()
     runner = get_runner()
     finish = runner.login_qobuz if service == "qobuz" else runner.login_deezer
+    title = f"Log in to {login.label} with a script"
+    return _login_job(login, title, lambda job: login.run(job, finish))
 
-    def work(job: Job) -> str:
-        logins[job.id] = login
-        try:
-            return login.run(job, finish)
-        finally:
-            logins.pop(job.id, None)
 
-    return start("login", f"Log in to {login.label} with a script", work)
+@accounts_pages.post("/qobuz/oauth")
+def qobuz_oauth() -> tuple[Response, int]:
+    """Qobuz's own login page, as its web player logs in."""
+    login, runner = QobuzLogin(request.host_url), get_runner()
+    return _login_job(login, "Log in to Qobuz", lambda job: login.run(job, runner))
+
+
+@accounts_pages.get("/qobuz/oauth/<secret>")
+def qobuz_oauth_back(secret: str) -> Response:
+    """Where Qobuz's login page sends the browser back, with the code."""
+    params = request.args.to_dict()
+    if not any(
+        isinstance(login, QobuzLogin) and login.receive(secret, params)
+        for login in list(current_app.extensions["logins"].values())
+    ):
+        abort(404, "No Qobuz login waits for this address.")
+    return redirect("/accounts")
 
 
 @accounts_pages.post("/<any(qobuz, deezer):service>/capture")
@@ -176,20 +203,8 @@ def browser_login(login_id: str) -> tuple[Response, int]:
     service = BY_ID[login_id].section
     services = get_services()
     login = BrowserLogin(services.oauth(service), services.store)
-    logins = current_app.extensions["logins"]
-    # One login at a time: one given up on would keep the port for minutes.
-    for earlier in list(logins.values()):
-        earlier.cancel()
-
-    def work(job: Job) -> str:
-        logins[job.id] = login
-        try:
-            return login.run(job)
-        finally:
-            logins.pop(job.id, None)
-
     what = "" if service == "spotify" else " (playlists)"
-    return start("login", f"Log in to {LABELS[service]}{what}", work)
+    return _login_job(login, f"Log in to {LABELS[service]}{what}", login.run)
 
 
 @accounts_pages.post("/soloist/pair")

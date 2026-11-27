@@ -1,7 +1,11 @@
 """Capture a Qobuz user id and user_auth_token from a browser.
 
+The way of choice is Qobuz's own login page, as its web player logs in
+(OAuth): it sends the browser back with a code, which QobuzClient.oauth_token
+trades for a login of streamrip's own. See qobuz_oauth_code.
+
 Qobuz's web login has no server-side device-code flow to poll (unlike
-Tidal's). It does, however, save a working `user_auth_token` for itself in
+Tidal's). Its web player does, however, save a working `user_auth_token` in
 `localStorage["localuser"].token` the moment you're logged in -- and keeps
 it there for as long as the session lasts, verified 2026-09-30 to be the
 same token the api.json/0.2 login endpoint hands out. Two ways to read
@@ -23,6 +27,7 @@ import asyncio
 import json
 import logging
 import secrets
+import socket
 
 lazy from aiohttp import web
 lazy from playwright.async_api import Error as PlaywrightError
@@ -34,6 +39,7 @@ from .browser_login import (
     login_page,
     wait_for_login,
 )
+from .spotify_login import SpotifyLoginError
 
 logger = logging.getLogger("streamrip")
 
@@ -92,6 +98,25 @@ _NAVIGATE_TEMPLATE = """\
   const id = setInterval(() => {{ if (tryRead()) clearInterval(id); }}, 1000);
 }})();\
 """
+
+
+def oauth_redirect() -> str:
+    """Where Qobuz's login page sends the browser back to on this computer: a
+    free port, and a path no other login knows. Qobuz sends no OAuth state
+    back, so the path stands in for it."""
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    return f"http://localhost:{port}/qobuz/{secrets.token_urlsafe(16)}"
+
+
+def qobuz_oauth_code(params: dict[str, str]) -> str:
+    """The code in the query Qobuz's login page sent the browser back with."""
+    if error := params.get("error"):
+        raise SpotifyLoginError(f"Qobuz refused the login: {error}")
+    if not (code := params.get("code_autorisation")):
+        raise SpotifyLoginError("Qobuz sent no login code; log in again.")
+    return code
 
 
 def qobuz_navigate_snippet(callback_url: str, challenge: str) -> str:

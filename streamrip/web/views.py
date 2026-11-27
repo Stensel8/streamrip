@@ -44,7 +44,7 @@ from .runner import MEDIA_TYPES, SOURCES
 lazy from ..rip.main import Main
 lazy from ..sync.models import Track
 lazy from .jobs import Job
-lazy from .logins import BrowserLogin
+lazy from .logins import BrowserLogin, QobuzLogin
 
 pages = Blueprint("pages", __name__)
 # What belongs to one playlist service lives under /playlists/spotify/... or
@@ -204,7 +204,8 @@ def job_paste(job_id: str) -> Response:
     """The address a browser login ended up on, pasted by hand."""
     find_job(job_id)
     login = current_app.extensions["logins"].get(job_id)
-    if not isinstance(login, BrowserLogin):  # over, or one without an address (Qobuz)
+    # Over, or one without an address (a script's).
+    if not isinstance(login, BrowserLogin | QobuzLogin):
         abort(404, "No login here waits for an address.")
     login.paste(str(sent().get("address") or ""))
     return jsonify(status="ok")

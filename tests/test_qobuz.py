@@ -71,6 +71,7 @@ async def test_the_login_goes_with_api_requests_only(serve, monkeypatch, tmp_pat
     login = {"user": {"credential": {"parameters": {"hires": True}}}}
 
     async def answer(request):
+        assert TOKEN not in request.query_string  # in a header, as the web player
         seen[f"{request.method} {request.path}"] = {
             name.lower() for name in request.headers
         }
@@ -94,7 +95,7 @@ async def test_the_login_goes_with_api_requests_only(serve, monkeypatch, tmp_pat
         await client.close()
 
     credentials = {"x-app-id", "x-user-auth-token"}
-    assert credentials <= seen["GET /track/getFileUrl"]
+    assert credentials <= seen["POST /user/login"] & seen["GET /track/getFileUrl"]
     assert not credentials & (seen["HEAD /file"] | seen["GET /file"])
     assert (tmp_path / "track.flac").read_bytes() == b"audio" * 100
 
@@ -167,6 +168,37 @@ async def test_a_wrong_secret_gives_way_to_the_one_that_works_and_stays_first():
     signed = [call.args[2] for call in c._request_file_url.await_args_list]
     assert signed == ["s1", "s2", "s3"]
     assert c.config.secrets[0] == c.secret == "s3"
+
+
+async def test_a_login_gone_mid_run_stops_the_run():
+    # Seen 2026-11-26: once Qobuz dropped the login, every request got a 401.
+    c = _logged_in()
+    c._get_json = AsyncMock(return_value=(401, {"message": "User authentication"}))
+    with pytest.raises(AccountHalt, match="log in"):
+        await c.get_metadata("1", "album")
+
+
+async def test_the_login_page_code_is_traded_as_the_web_player_does():
+    c = _with_creds()
+
+    async def bundle():  # what the web player's bundle says
+        c._private_key = "KEY"
+        return "798273057", ["s3"]
+
+    c._get_app_id_and_secrets = bundle
+    link = await c.oauth_link("http://127.0.0.1:5000/qobuz/abc")
+    assert link == (
+        "https://www.qobuz.com/signin/oauth?ext_app_id=798273057"
+        "&redirect_url=http%3A%2F%2F127.0.0.1%3A5000%2Fqobuz%2Fabc"
+    )
+    c._api_request = AsyncMock(return_value=(200, {"token": "T", "user_id": 42}))
+    try:
+        assert await c.oauth_token("CODE") == ("42", "T")
+    finally:
+        await c.close()
+    c._api_request.assert_awaited_once_with(
+        "oauth/callback", {"code": "CODE", "private_key": "KEY"}
+    )
 
 
 async def test_a_purchased_track_steps_down_to_the_quality_it_was_sold_in():
@@ -295,7 +327,7 @@ async def test_a_long_playlist_is_paged_without_track_ids():
 
 @pytest.fixture
 def captures(monkeypatch):
-    """A desktop, where all three ways are offered; both captures fail."""
+    """A desktop, where every way is offered; each of them fails."""
     monkeypatch.setattr("streamrip.rip.prompter.browser_login_available", lambda: True)
     monkeypatch.setattr("streamrip.rip.prompter.has_screen", lambda: True)
     script = AsyncMock(side_effect=capture.QobuzTokenCaptureError("timed out"))
@@ -304,7 +336,9 @@ def captures(monkeypatch):
     monkeypatch.setattr(
         "streamrip.rip.prompter.capture_qobuz_auth_token_via_browser", window
     )
-    return SimpleNamespace(script=script, window=window)
+    oauth = AsyncMock(side_effect=AuthenticationError("Qobuz did not take it"))
+    monkeypatch.setattr("streamrip.rip.prompter.QobuzPrompter._oauth", oauth)
+    return SimpleNamespace(script=script, window=window, oauth=oauth)
 
 
 @pytest.fixture
@@ -338,7 +372,7 @@ async def test_the_token_by_hand_when_the_script_gets_nothing(
     launch.configure_mock(**{key: opened})
     printed = MagicMock()
     monkeypatch.setattr("streamrip.rip.prompter.console.print", printed)
-    prompt = _ask(monkeypatch, "2", " 123 ", " test-token ")
+    prompt = _ask(monkeypatch, "3", " 123 ", " test-token ")
 
     await prompter.prompt_and_login()
     prompter.save()
@@ -351,7 +385,9 @@ async def test_the_token_by_hand_when_the_script_gets_nothing(
 
 
 @pytest.mark.login
-@pytest.mark.parametrize(("choice", "way"), [("1", "window"), ("2", "script")])
+@pytest.mark.parametrize(
+    ("choice", "way"), [("1", "oauth"), ("2", "window"), ("3", "script")]
+)
 async def test_a_captured_token_needs_no_typing(
     monkeypatch, prompter, captures, launch, choice, way
 ):
@@ -378,18 +414,19 @@ async def test_saved_credentials_skip_every_prompt(monkeypatch, prompter, launch
 
 
 @pytest.mark.login
-async def test_without_a_screen_it_goes_straight_to_entering_it_by_hand(
+async def test_without_a_screen_it_is_qobuzs_own_page_or_by_hand(
     monkeypatch, prompter, captures, launch
 ):
-    # In a container or over SSH the browser is elsewhere: nothing to choose.
+    # In a container or over SSH the browser is elsewhere: no script, no window.
     monkeypatch.setattr("streamrip.rip.prompter.browser_login_available", lambda: False)
     monkeypatch.setattr("streamrip.rip.prompter.has_screen", lambda: False)
-    prompt = _ask(monkeypatch, "123", "token")
+    prompt = _ask(monkeypatch, "2", "123", "token")
 
     await prompter.prompt_and_login()
     prompter.save()
 
-    assert prompt.call_count == 2
+    assert prompt.call_args_list[0].kwargs["choices"] == ["1", "2"]
+    assert prompt.call_count == 3
     captures.script.assert_not_awaited()
     captures.window.assert_not_awaited()
     cfg = prompter.config.file.qobuz

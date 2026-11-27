@@ -2,6 +2,7 @@
 
 import asyncio
 import contextlib
+import functools
 import json
 import logging
 import math
@@ -843,8 +844,10 @@ class RequestClient:
         read: Callable[[aiohttp.ClientResponse], Awaitable[T]],
         params: dict | None = None,
         headers: dict | None = None,
+        data: str | None = None,
     ) -> T:
-        """GET an API url, retrying what is likely to work a moment later.
+        """GET an API url (POST `data` to it), retrying what is likely to work
+        a moment later.
 
         Connection errors, timeouts, 5xx and 429 are retried with backoff, up to
         `api_attempts`. A 429 holds back every request, not just this one,
@@ -884,9 +887,13 @@ class RequestClient:
                     if owner._retry_at > time.monotonic():
                         continue
                     attempt += 1
-                    async with self.session.get(
-                        # api_headers also swaps in the next identity when
-                        # the current one's time is up.
+                    send = (
+                        self.session.get
+                        if data is None
+                        else functools.partial(self.session.post, data=data)
+                    )
+                    async with send(
+                        # api_headers also looks whether the identity changed.
                         url,
                         params=params,
                         headers=api_headers(headers),
@@ -947,7 +954,11 @@ class RequestClient:
         return await self._get_with_retries(url, read)
 
     async def _get_json(
-        self, url: str, params: dict | None = None, headers: dict | None = None
+        self,
+        url: str,
+        params: dict | None = None,
+        headers: dict | None = None,
+        data: str | None = None,
     ) -> tuple[int, Any]:
         """GET an API url with retries: (status, JSON body), whatever the status.
 
@@ -966,7 +977,7 @@ class RequestClient:
                 body = {"message": f"non-JSON response ({resp.content_type})"}
             return resp.status, body
 
-        return await self._get_with_retries(url, read, params, headers)
+        return await self._get_with_retries(url, read, params, headers, data)
 
 
 class Client(RequestClient, ABC):

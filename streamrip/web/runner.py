@@ -232,6 +232,22 @@ class Runner:
 
     # --- logging in to the download sources --------------------------------
 
+    def qobuz_oauth(
+        self, redirect: str
+    ) -> tuple[str, Callable[[str], tuple[str, str]]]:
+        """Qobuz's own login page, which sends the browser to `redirect`, and
+        what trades the code it brings for a user id and token."""
+        client = QobuzClient(self.config)
+        url = self.call(client.oauth_link(redirect))
+
+        def token(code: str) -> tuple[str, str]:
+            try:
+                return self.call(client.oauth_token(code))
+            finally:
+                self.call(client.close())
+
+        return url, token
+
     def login_qobuz(self, user_id: str, token: str):
         """Log in to Qobuz with a user id and token, and keep them if they work."""
         values = {"user_id": user_id, "auth_token": token}

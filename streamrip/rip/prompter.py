@@ -20,11 +20,14 @@ from .qobuz_token_capture import (
     QobuzTokenCaptureError,
     capture_qobuz_auth_token,
     capture_qobuz_auth_token_via_browser,
+    oauth_redirect,
+    qobuz_oauth_code,
 )
 from .spotify_login import (
     SpotifyLoginError,
-    capture_code,
-    code_from_redirect_url,
+    check_redirect,
+    redirect_params,
+    wait_for_redirect,
 )
 lazy from ..client import (
     Client,
@@ -83,9 +86,20 @@ def _choose_login(service: str, options: list[tuple[str, str]], default: str) ->
     return keys[int(choice) - 1]
 
 
-async def browser_code(url: str, redirect_uri: str, state: str, label: str) -> str:
+async def browser_code(
+    url: str,
+    redirect_uri: str,
+    state: str,
+    label: str,
+    read: Callable[[dict[str, str]], str] | None = None,
+) -> str:
     """Send the user to `url` to log in, and take the code back: caught on
-    this computer, or pasted from a browser elsewhere."""
+    this computer, or pasted from a browser elsewhere. `read` takes the code
+    from the redirect's query; by default an OAuth code of the user's own app,
+    whose `state` it checks."""
+    own_app = read is None
+    if read is None:
+        read = lambda params: check_redirect(params, state, label)  # noqa: E731
     console.print(
         f"\nHow do you want to log in to {label}?\n"
         "  1. In the browser on this computer: streamrip catches the login itself\n"
@@ -96,19 +110,20 @@ async def browser_code(url: str, redirect_uri: str, state: str, label: str) -> s
         "Choose", choices=["1", "2"], default="1" if has_screen() else "2"
     )
     if choice == "1":
-        console.print(
-            f"\nOpening your browser. If nothing opens, go to:\n{url}\n"
-            f"{label} must send you back to [bold]{redirect_uri}[/bold]; add that "
-            "to your app as a redirect URI if it says it is not allowed."
-        )
+        console.print(f"\nOpening your browser. If nothing opens, go to:\n{url}\n")
+        if own_app:
+            console.print(
+                f"{label} must send you back to [bold]{redirect_uri}[/bold]; add "
+                "that to your app as a redirect URI if it says it is not allowed."
+            )
         _open_login_link(url)
-        return await capture_code(redirect_uri, state, label)
+        return read(await wait_for_redirect(redirect_uri))
     console.print(f"\nOpen this link and log in:\n{url}\n")
     console.print(
         "The page you end up on will not load: that is as it should be. "
         "Copy its whole address from the address bar."
     )
-    return code_from_redirect_url(Prompt.ask("Paste the address"), state, label)
+    return read(redirect_params(Prompt.ask("Paste the address")))
 
 
 class CredentialPrompter(ABC):
@@ -163,14 +178,27 @@ class QobuzPrompter(CredentialPrompter):
             except MissingCredentialsError:
                 await self._prompt_creds_and_set_session_config()
 
-    async def _prompt_creds_and_set_session_config(self):
-        """Ask for a user id + user_auth_token.
+    async def _oauth(self) -> tuple[str, str]:
+        """Qobuz's own login page, as its web player logs in."""
+        redirect = oauth_redirect()
+        url = await self.client.oauth_link(redirect)
+        code = await browser_code(url, redirect, "", "Qobuz", qobuz_oauth_code)
+        return await self.client.oauth_token(code)
 
-        The token from a logged-in browser session is the only login Qobuz
-        still accepts; offer the two ways to capture it automatically (see
-        qobuz_token_capture) before asking for it outright.
+    async def _prompt_creds_and_set_session_config(self):
+        """Ask for a user id + user_auth_token: from Qobuz's own login page
+        first, else from a logged-in browser (see qobuz_token_capture), else
+        by hand.
         """
-        options = []
+        options = [
+            (
+                "oauth",
+                (
+                    "Log in on Qobuz's own page, here or on another device:\n"
+                    "     streamrip gets a login of its own"
+                ),
+            )
+        ]
         if browser_login_available():
             options.append(
                 (
@@ -195,9 +223,17 @@ class QobuzPrompter(CredentialPrompter):
                 )
             )
         options.append(("hand", "Copy the user id and token from your browser by hand"))
-        choice = _choose_login("Qobuz", options, default="script" if screen else "hand")
+        choice = _choose_login("Qobuz", options, default="oauth")
 
-        if choice == "window":
+        if choice == "oauth":
+            try:
+                user_id, token = await self._oauth()
+            except (SpotifyLoginError, AuthenticationError) as e:
+                console.print(str(e), style="yellow", markup=False)
+            else:
+                self._set_session_creds(user_id, token)
+                return
+        elif choice == "window":
             try:
                 user_id, token = await capture_qobuz_auth_token_via_browser()
             except QobuzTokenCaptureError as e:

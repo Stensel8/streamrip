@@ -1,5 +1,5 @@
 """Logging in to Spotify, or to Tidal's official API, from the web interface;
-and to Qobuz and Deezer by a script.
+to Qobuz on its own login page; and to Qobuz and Deezer by a script.
 
 The browser login of the command line (rip/spotify_login.py), with one's own
 app: the service sends the browser back to a port on this computer, caught
@@ -14,17 +14,19 @@ import time
 
 from ..exceptions import AuthenticationError
 from ..rip.deezer_arl_capture import DEEZER_LOGIN_URL, deezer_navigate_snippet
-from ..rip.qobuz_token_capture import qobuz_navigate_snippet
+from ..rip.qobuz_token_capture import qobuz_navigate_snippet, qobuz_oauth_code
 from ..rip.spotify_login import (
     LOGIN_TIMEOUT,
     SpotifyLoginError,
     _wait_for_redirect,
     check_redirect,
     code_from_redirect_url,
+    redirect_params,
 )
 from ..sync.auth import pkce_pair
 lazy from ..sync.auth import ConfigTokenStore, OAuthClient
 lazy from .jobs import Job
+lazy from .runner import Runner
 
 # Tries to take the login port, half a second apart.
 BIND_ATTEMPTS = 6
@@ -84,6 +86,52 @@ class BrowserLogin:
 
     def cancel(self):
         self._stop.set()
+
+
+class QobuzLogin:
+    """Qobuz's own login page, as its web player logs in: Qobuz sends the
+    browser back here with a code. It sends no OAuth state back, so a random
+    path stands in for it: only this login's address is taken, once."""
+
+    def __init__(self, host_url: str):
+        self.secret = secrets.token_urlsafe(16)
+        self.redirect = f"{host_url}accounts/qobuz/oauth/{self.secret}"
+        self._arrived = threading.Event()
+        self._params: dict[str, str] | None = None
+        self._cancelled = False
+
+    def receive(self, secret: str, params: dict[str, str]) -> bool:
+        """Qobuz's redirect. True when it is this login's, and the first."""
+        if self._params is not None:
+            return False
+        if not secrets.compare_digest(secret.encode(), self.secret.encode()):
+            return False
+        self._params = params
+        self._arrived.set()
+        return True
+
+    def paste(self, address: str):
+        """The address the browser ended up on, given by hand."""
+        self._params = redirect_params(address)
+        self._arrived.set()
+
+    def run(self, job: Job, runner: Runner) -> str:
+        job.enter("login", "Getting Qobuz's login page")
+        url, token = runner.qobuz_oauth(self.redirect)
+        job.text = "Open Qobuz's login page and log in there."
+        job.offer(url, pasteable=True)
+        self._arrived.wait(LOGIN_TIMEOUT)
+        if self._cancelled:
+            raise AuthenticationError("The Qobuz login was cancelled.")
+        if self._params is None:
+            raise AuthenticationError("Nothing came back from Qobuz within 5 minutes.")
+        job.text = "Finishing the Qobuz login"
+        runner.login_qobuz(*token(qobuz_oauth_code(self._params)))
+        return "Logged in to Qobuz."
+
+    def cancel(self):
+        self._cancelled = True
+        self._arrived.set()
 
 
 # Per service that logs in by a script: its login page, its script, and what
