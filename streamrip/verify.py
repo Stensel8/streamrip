@@ -66,7 +66,7 @@ def _spotify_files(config: Config) -> str:
     c = config.session.spotify
     backend = SoloistBackend(c)
     if c.backend == "spotify" and c.soloist_api_key and backend.paired():
-        return "Spotify's own, at the account's quality"
+        return "FLAC up to 24-bit/44.1 kHz"  # what streamrip makes of it
     return "AAC or MP3 (from YouTube Music)"
 
 
