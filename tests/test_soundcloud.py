@@ -259,10 +259,11 @@ async def test_a_login_is_sent_and_a_refused_one_means_guest():
     config = Config.defaults()
     config.session.soundcloud.oauth_token = "2-1234"
     client = SoundcloudClient(config)
-    client._get_json = AsyncMock(return_value=(200, {"username": "sten", "plan": "Go"}))
+    go_plus = {"consumer_subscription": {"product": {"id": "consumer-high-tier"}}}
+    client._get_json = AsyncMock(return_value=(200, {"username": "sten", **go_plus}))
     await client._sign_in()
     assert client._get_json.call_args.args[2] == {"Authorization": "OAuth 2-1234"}
-    assert await client.account_plan() == ("sten, Go", None)
+    assert await client.account_plan() == ("sten, Go+", 2)
 
     client._get_json = AsyncMock(return_value=(401, {"message": "no"}))
     await client._sign_in()

@@ -44,6 +44,8 @@ FILES = {
         3: "FLAC up to 24-bit/192 kHz",
     },
     "deezer": {0: "MP3 128", 1: "MP3 320", 2: "FLAC 16-bit/44.1 kHz"},
+    # Go+ streams in high quality; free and Go do not.
+    "soundcloud": {0: "AAC 160 or MP3 128", 1: "AAC 160 or MP3 128", 2: "AAC 256"},
 }
 
 
@@ -56,9 +58,9 @@ def describe(source: str, plan: str, best: int | None) -> tuple[str, str]:
         return ("Paid" if best is not None else "Purchases only"), files
     if source == "tidal":
         return ("" if best is None else "Free" if kind == "free" else "Paid"), files
-    if source == "deezer":
+    if source in {"deezer", "soundcloud"}:
         return ("" if best is None else "Free" if best == 0 else "Paid"), files
-    return "", "AAC or MP3" if source == "soundcloud" else ""
+    return "", ""
 
 
 def _spotify_files(config: Config) -> str:
@@ -173,7 +175,7 @@ async def _verify_one(config: Config, accounts: Accounts, login_id: str) -> Resu
                 "works without a login; one gives better quality and higher limits",
                 f"streamrip login {login_id}",
                 plan="Guest",
-                formats="AAC or MP3",
+                formats=FILES[login_id][0],
             )
         return Result(login_id, NOT_LOGGED_IN, "", f"streamrip login {login_id}")
     try:

@@ -83,10 +83,20 @@ class SoundcloudClient(Client):
         logger.warning("%s: going on as a guest", self.guest_reason)
 
     async def account_plan(self) -> tuple[str, int | None]:
+        """The subscription: 0 free, 1 Go, 2 Go+ ("consumer-high-tier", seen
+        2026-11-27: it adds AAC 256, which _stream takes where it isn't DRM).
+        Only a word for the page: SoundCloud has one quality to ask for."""
         if not self.username:
             return "guest", None
-        plan = str((getattr(self, "_me", None) or {}).get("plan") or "")
-        return f"{self.username}, {plan}" if plan else self.username, None
+        me = getattr(self, "_me", None) or {}
+        product = str(
+            ((me.get("consumer_subscription") or {}).get("product") or {}).get("id")
+            or ""
+        )
+        if not product:
+            return self.username, None
+        tier = 0 if product == "free" else 2 if "high" in product else 1
+        return f"{self.username}, {('Free', 'Go', 'Go+')[tier]}", tier
 
     async def get_metadata(self, item_id: str, media_type: str) -> dict:
         """A track (by its custom id), or a playlist with its tracks' ids made

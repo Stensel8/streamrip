@@ -168,7 +168,8 @@ async def test_a_saved_soundcloud_login_that_is_not_taken_is_reported(
         ("tidal", "Free, up to AAC 96", 0, ("Free", "AAC")),
         ("deezer", "lossless (FLAC)", 2, ("Paid", "FLAC 16-bit/44.1 kHz")),
         ("deezer", "free (MP3 128)", 0, ("Free", "MP3 128")),
-        ("soundcloud", "sten", None, ("", "AAC or MP3")),
+        ("soundcloud", "sten, Free", 0, ("Free", "AAC 160 or MP3 128")),
+        ("soundcloud", "sten, Go+", 2, ("Paid", "AAC 256")),
     ],
 )
 def test_a_plan_is_described_as_free_or_paid_with_the_files_it_gives(
