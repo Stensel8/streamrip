@@ -40,6 +40,9 @@ class SoundcloudClient(Client):
     search_types = ("track", "playlist")  # it has no albums or artists to look up
 
     NON_STREAMABLE = "_non_streamable"
+    # Streams only with DRM: what SoundCloud does with labels' tracks (seen
+    # 2026-11-27, Go+ too), and streamrip does not download.
+    DRM_ONLY = "_drm_only"
     ORIGINAL_DOWNLOAD = "_original_download"
 
     # The login in use: the saved one once SoundCloud has taken it.
@@ -136,14 +139,19 @@ class SoundcloudClient(Client):
 
     async def get_downloadable(self, item_id: str, quality: int):
         # item_id is the custom id _get_custom_id made: "id|how", how being
-        # NON_STREAMABLE, ORIGINAL_DOWNLOAD or a stream (see _stream). A track
+        # NON_STREAMABLE, DRM_ONLY, ORIGINAL_DOWNLOAD or a stream (see _stream). A track
         # recorded by its bare id (a failed one, for `repair`) is looked up.
         track_id, _, how = item_id.partition("|")
         if not how:
             how = self._get_custom_id(await self._get_track(track_id)).partition("|")[2]
 
+        if how == self.DRM_ONLY:
+            raise NonStreamableError(
+                "SoundCloud streams this track only with DRM, which streamrip "
+                "does not download."
+            )
         if how == self.NON_STREAMABLE:
-            raise NonStreamableError(item_id)
+            raise NonStreamableError("SoundCloud has no full stream of this track.")
 
         if how == self.ORIGINAL_DOWNLOAD:
             status, resp = await self._api_request(f"tracks/{track_id}/download")
@@ -258,7 +266,13 @@ class SoundcloudClient(Client):
         if resp["downloadable"] and resp["has_downloads_left"]:
             return f"{item_id}|{cls.ORIGINAL_DOWNLOAD}"
 
-        return f"{item_id}|{cls._stream(resp) or cls.NON_STREAMABLE}"
+        if stream := cls._stream(resp):
+            return f"{item_id}|{stream}"
+        drm = any(
+            "encrypted" in tc["format"].get("protocol", "")
+            for tc in (resp.get("media") or {}).get("transcodings") or []
+        )
+        return f"{item_id}|{cls.DRM_ONLY if drm else cls.NON_STREAMABLE}"
 
     @staticmethod
     def _stream(resp: dict) -> str | None:

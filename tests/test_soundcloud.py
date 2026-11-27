@@ -133,10 +133,14 @@ async def test_client_id_is_found_in_the_newest_script():
                 _tc("hls", 'audio/ogg; codecs="opus"', "https://x/opus"),
                 _tc("ctr-encrypted-hls", AAC, "https://x/drm"),
             ],
+            "1|_drm_only",
+        ),
+        (
+            [_tc("hls", 'audio/ogg; codecs="opus"', "https://x/opus")],
             "1|_non_streamable",
         ),
     ],
-    ids=["progressive first", "aac over mp3", "no previews", "nothing to download"],
+    ids=["progressive first", "aac over mp3", "no previews", "drm only", "nothing"],
 )
 def test_the_best_stream_is_chosen(transcodings, expected):
     assert SoundcloudClient._get_custom_id(_track(*transcodings)) == expected
