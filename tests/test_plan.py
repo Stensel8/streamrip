@@ -34,13 +34,14 @@ def planned(monkeypatch, media, seconds=600.0):
 def test_plan_says_quality_new_tracks_and_time(monkeypatch):
     album = _album([object()] * 9)
     album.meta.albumartist, album.meta.album = "Massive Attack", "Blue Lines"
+    album.client = SimpleNamespace(source="qobuz")
     album.meta.info.bit_depth, album.meta.info.sampling_rate = 24, 96
     album.skipped_tracks = 3
 
     text = planned(monkeypatch, [album])
 
     assert (
-        "Album: Massive Attack - Blue Lines [FLAC 24B-96kHz], 9 tracks "
+        "Album from Qobuz: Massive Attack - Blue Lines [FLAC 24B-96kHz], 9 tracks "
         "(3 downloaded before)" in text
     )
     assert (

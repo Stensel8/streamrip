@@ -11,6 +11,12 @@ def _minutes(seconds: float) -> str:
     return f"about {max(round(seconds / 60), 1)} min"
 
 
+def _what(item, kind: str) -> str:
+    """ "Track from Tidal": what the item is, and the source it comes from."""
+    client = getattr(item, "client", None)
+    return f"{kind} from {client.source.capitalize()}" if client else kind
+
+
 def _line(item) -> str | None:
     """One resolved item as a line: what it is and its name, its quality, and
     its tracks."""
@@ -24,21 +30,20 @@ def _line(item) -> str | None:
                 if item.skipped_tracks
                 else ""
             )
-            return (
-                f"Album: {meta.albumartist} - {meta.album} {quality}, {tracks}{before}"
-            )
+            name = f"{meta.albumartist} - {meta.album} {quality}"
+            return f"{_what(item, 'Album')}: {name}, {tracks}{before}"
         case Track():
             meta, info = item.meta, item.meta.album.info
             quality = format_quality(info.container, info.bit_depth, info.sampling_rate)
-            return f"Track: {meta.artist} - {meta.title} {quality}"
+            return f"{_what(item, 'Track')}: {meta.artist} - {meta.title} {quality}"
         case Playlist():
-            return f"Playlist: {item.name}, {plural(len(item.tracks), 'track')}"
+            tracks = plural(len(item.tracks), "track")
+            return f"{_what(item, 'Playlist')}: {item.name}, {tracks}"
         case Artist() | Label():
             albums = plural(len(item.albums), "album")
             about = len(item.albums) * ALBUM_TRACKS
-            return (
-                f"{type(item).__name__}: {item.name}, {albums} (about {about} tracks)"
-            )
+            what = _what(item, type(item).__name__)
+            return f"{what}: {item.name}, {albums} (about {about} tracks)"
     return None
 
 
