@@ -867,12 +867,8 @@ async def test_a_source_is_announced_once_however_often_it_is_used():
     assert len(screen.print.call_args_list) == 1
 
 
-@pytest.mark.parametrize(
-    ("can_record", "says"), [(True, "Spotify's own"), (False, "from YouTube Music")]
-)
-async def test_the_spotify_notice_says_where_the_audio_really_comes_from(
-    can_record, says
-):
+@pytest.mark.parametrize(("can_record", "notices"), [(True, 0), (False, 1)])
+async def test_only_youtube_musics_audio_for_spotify_is_announced(can_record, notices):
     # A container has the key in its config, but nothing to record with.
     main = _main()
     main.config.session.spotify.backend = "spotify"
@@ -889,7 +885,9 @@ async def test_the_spotify_notice_says_where_the_audio_really_comes_from(
     ):
         await main.get_logged_in_client("spotify")
 
-    assert says in screen.print.call_args.args[0]
+    assert len(screen.print.call_args_list) == notices
+    if notices:
+        assert "from YouTube Music" in screen.print.call_args.args[0]
 
 
 def test_pyproject_and_the_package_have_the_same_version():

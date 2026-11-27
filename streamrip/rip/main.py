@@ -287,8 +287,9 @@ class Main:
         return client
 
     def _announce(self, source: str, client):
-        """Tell the user what they should know about `source`, the first time."""
-        if source in self._announced:
+        """Tell the user what they should know about `source`, the first time:
+        in a terminal, not on the web page, which says it in its own words."""
+        if source in self._announced or not self.interactive:
             return
         self._announced.add(source)
         # Without a key, or on a machine that cannot record (a container), the
