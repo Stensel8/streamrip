@@ -3,6 +3,7 @@ SSL verification, and the browser streamrip presents itself as."""
 
 import asyncio
 import base64
+import itertools
 import re
 import ssl
 from datetime import date
@@ -420,16 +421,27 @@ def test_every_identity_agrees_with_itself():
         assert identity["Sec-CH-UA"] in {_sec_ch_ua(major), _sec_ch_ua(major, "Brave")}
 
 
-async def test_sessions_follow_the_identity_as_it_rotates(clock):
+def test_every_run_on_a_computer_is_the_same_browser_for_a_week(clock, monkeypatch):
+    monkeypatch.setattr(client_module.platform, "node", lambda: "pc")
+    picks = []
+    for hour in range(4 * 7 * 24):  # four weeks
+        clock.now = hour * 3600.0
+        picks.append(client_module._pick_identity())  # a run started this hour
+    assert sum(a != b for a, b in itertools.pairwise(picks)) <= 4
+
+
+async def test_sessions_follow_the_identity_when_it_changes(clock, monkeypatch):
+    first, second = identities()[0], identities()[-1]
+    monkeypatch.setattr(client_module, "_pick_identity", lambda: first)
     async with (
         new_session() as followed,
         new_session(user_agent="streamrip/test") as own_agent,
     ):
         before = dict(followed.headers)
-        assert before == browser_headers()
-        assert before in identities()
+        assert before == browser_headers() == first
 
-        clock.now += 3 * 60 * 60  # past any identity's time
+        monkeypatch.setattr(client_module, "_pick_identity", lambda: second)
+        clock.now += 60 * 60  # it is looked at again every hour
 
         assert browser_headers() != before
         assert dict(followed.headers) == browser_headers()

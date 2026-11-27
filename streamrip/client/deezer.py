@@ -269,7 +269,7 @@ class DeezerClient(Client):
     def __init__(self, config: Config):
         super().__init__(config)
         self.client = _Deezer(self)
-        # Registered to follow the browser identity as it rotates.
+        # Registered to follow the browser identity when it changes.
         register_header_dict(self.client.http_headers)
         self._album_cache: dict[str, asyncio.Task[dict]] = {}
         self._quality_warned = False

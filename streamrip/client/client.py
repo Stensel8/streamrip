@@ -6,6 +6,7 @@ import json
 import logging
 import math
 import os
+import platform
 import random
 import time
 import weakref
@@ -33,15 +34,15 @@ logger = logging.getLogger("streamrip")
 #
 # Every request claims to be a current desktop Chrome, complete with the
 # low-entropy Client Hints a real one sends beside its user agent. Which
-# Chrome it is rotates every so often, so a long run does not show a
-# service one fixed fingerprint. Within one identity nothing contradicts
+# Chrome it is changes about once a week, the same for every run on this
+# computer: a browser that updates, not one that hops between devices with
+# every command. Within one identity nothing contradicts
 # anything: the Sec-CH-UA brand list is computed from the user agent's
 # major version the way Chromium does it, so hints and user agent age
 # together.
 
-# Seconds one identity serves: a uniform pick between these, so the swap
-# falls into no rhythm.
-ROTATE_AFTER = (45 * 60, 110 * 60)
+# Days one identity serves. Each computer switches at a moment of its own.
+IDENTITY_DAYS = 7
 
 # Chromium's Sec-CH-UA recipe: a greasy filler brand (name and version
 # picked from the major version), Chromium, and the browser's own brand,
@@ -129,8 +130,8 @@ def identities(today: date | None = None) -> tuple[dict[str, str], ...]:
     )
 
 
-# The identity of the moment, and when it gives way. _rotate_at starts at
-# 0 so the first use picks one.
+# The identity of the moment, and when to look at it again. _rotate_at
+# starts at 0 so the first use picks one.
 _identity: dict[str, str] = {}
 _rotate_at = 0.0
 # Live sessions presenting the identity, and plain header dicts kept on
@@ -141,10 +142,11 @@ _header_dicts: list[dict[str, str]] = []
 
 
 def _pick_identity() -> dict[str, str]:
-    """Another identity than the current one."""
-    return random.choice(
-        [identity for identity in identities() if identity != _identity]
-    )
+    """This computer's identity for this period: the same in every run."""
+    machine = platform.node()
+    period = IDENTITY_DAYS * 86400
+    turn = int((time.time() + random.Random(machine).uniform(0, period)) // period)
+    return random.Random(f"{machine}:{turn}").choice(identities())
 
 
 def _apply_identity():
@@ -161,12 +163,13 @@ def _apply_identity():
 
 
 def _current_identity() -> dict[str, str]:
-    """The identity of the moment, swapped for another when its time is up."""
+    """The identity of the moment, looked at again every hour."""
     global _identity, _rotate_at
     if time.monotonic() >= _rotate_at:
-        _identity = _pick_identity()
-        _rotate_at = time.monotonic() + random.uniform(*ROTATE_AFTER)
-        _apply_identity()
+        _rotate_at = time.monotonic() + 3600
+        if (identity := _pick_identity()) != _identity:
+            _identity = identity
+            _apply_identity()
     return _identity
 
 
@@ -182,7 +185,7 @@ def api_headers(headers: dict | None = None) -> dict[str, str]:
 
 
 def register_header_dict(headers: dict[str, str]):
-    """Keep a plain header dict on the rotating identity: the Deezer client's,
+    """Keep a plain header dict on the current identity: the Deezer client's,
     which its API and GW calls send with each request. See _apply_identity for what it
     gets."""
     _header_dicts.append(headers)
@@ -1060,8 +1063,8 @@ def new_session(
 ) -> aiohttp.ClientSession:
     """An HTTP session; every request streamrip makes goes through one.
 
-    It presents the current browser identity and follows it as identities
-    rotate. A `user_agent` (LRCLIB's, which says what is really asking)
+    It presents the current browser identity and follows it when it
+    changes. A `user_agent` (LRCLIB's, which says what is really asking)
     replaces the identity outright.
     """
     if timeout is None:
