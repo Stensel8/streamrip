@@ -37,6 +37,7 @@ from ..rip.prompter import (
     TidalPrompter,
 )
 from ..rip.repair import repair_downloads
+from ..verify import describe
 from ..verify import verify as verify_logins
 from .jobs import JobLog, JobObserver
 lazy from ..config import Config
@@ -270,6 +271,13 @@ class Runner:
         section = getattr(self.config.session, login.section)
         return tuple(getattr(section, name) for group in login.needs for name in group)
 
+    def _note_plan(self, login_id: str, plan: str, best: int | None):
+        """What a login made here said of the account, for the Accounts page:
+        it needs no check of its own."""
+        kind, formats = describe(login_id, plan, best)
+        answer = {"state": "ok", "plan": kind, "formats": formats}
+        self._overview[login_id] = (self._saved(login_id), answer)
+
     def overview(self) -> dict:
         """What every login is (Free or Paid) and gives, as the last check said.
         Nothing asks the services here; a login saved since is left out."""
@@ -330,6 +338,7 @@ class Runner:
             await client.login()
             if reason := getattr(client, "guest_reason", ""):
                 raise AuthenticationError(reason)  # SoundCloud did not take it
+            plan, best = await client.account_plan()  # what the login said
         except Exception:
             for name, value in before.items():
                 setattr(c, name, value)
@@ -338,6 +347,7 @@ class Runner:
             await client.close()
         prompter_type(self.config, client).save()
         self.config.save_file()
+        self._note_plan(section, plan, best)
 
     def pair_soloist(self, job: Job, api_key: str) -> str:
         """Pair Spotify's own audio (Soloist) once: Spotify's app on this
@@ -385,11 +395,13 @@ class Runner:
                 for lane in client.lanes():
                     await prompter._device_login(lane)
                 client.logged_in = True
+                found = await client.account_plan()
             finally:
                 await client.close()
             prompter.save()
             self.config.save_file()
+            return found
 
         job.enter("login", "Asking Tidal for a login link")
-        self.call(log_in())
+        self._note_plan("tidal", *self.call(log_in()))
         return "Logged in to Tidal."

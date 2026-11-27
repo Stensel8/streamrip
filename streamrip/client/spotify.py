@@ -180,9 +180,11 @@ TOKEN_URL = "https://accounts.spotify.com/api/token"
 # DEFAULT_CLIENT_ID = "65b708073fc0480ea92a077233ca87bd"  # noqa: ERA001
 # What an app of your own asks for: reading the user's own and shared
 # playlists, for downloads (tracks, albums, artists and search need no
-# scope); and reading and changing the liked songs and playlists, for the
-# playlist tools. One login does both.
+# scope); reading and changing the liked songs and playlists, for the
+# playlist tools; and the plan (Free or Premium), for the Accounts page. One
+# login does all of it.
 SCOPES = (
+    "user-read-private",
     "playlist-read-private",
     "playlist-read-collaborative",
     "user-library-read",

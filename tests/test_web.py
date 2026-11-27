@@ -536,6 +536,30 @@ def test_a_refused_login_leaves_the_one_before(services, monkeypatch):
     assert (qobuz.user_id, qobuz.auth_token) == ("old-id", "old-token")
 
 
+def test_a_login_says_what_the_account_is_without_a_check(services, monkeypatch):
+    class Accepting:
+        def __init__(self, config):
+            pass
+
+        async def login(self):
+            pass
+
+        async def account_plan(self):
+            return "Studio, hi-res", 4
+
+        async def close(self):
+            pass
+
+    monkeypatch.setattr(runner_module, "QobuzClient", Accepting)
+    runner = Runner(services.config)
+    runner.login_qobuz("new-id", "new-token")
+    assert runner.overview()["qobuz"] == {
+        "state": "ok",
+        "plan": "Paid",
+        "formats": "FLAC up to 24-bit/192 kHz",
+    }
+
+
 def test_logins_are_tried_and_kept(client, runner):
     qobuz = {"user_id": "1", "auth_token": "t"}
     assert client.post("/accounts/qobuz/login", json=qobuz).status_code == 200

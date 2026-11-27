@@ -90,7 +90,7 @@
         {#if plan.state === "failed" || plan.plan || plan.formats}
           <p class="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-muted">
             {#if plan.state === "failed"}<Badge tone="warn" text="The login doesn't work" />{/if}
-            {#if plan.plan}<Badge tone={plan.plan === "Paid" ? "ok" : "plain"} text={plan.plan} />{/if}
+            {#if plan.plan}<Badge tone={plan.plan === "Paid" ? "ok" : "free"} text={plan.plan} />{/if}
             {plan.formats ?? ""}
           </p>
         {/if}
