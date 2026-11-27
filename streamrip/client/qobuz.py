@@ -225,7 +225,10 @@ class QobuzClient(Client):
 
     async def _refresh_app_id_and_secrets(self):
         c = self.config
+        kept = c.secrets[0] if c.secrets else None
         c.app_id, c.secrets = await self._get_app_id_and_secrets()
+        if kept in c.secrets:  # the one that worked stays first (_keep_secret)
+            c.secrets = [kept, *(s for s in c.secrets if s != kept)]
         # In this session, and in the config file written on exit.
         f = self.global_config.file
         f.qobuz.app_id = c.app_id
