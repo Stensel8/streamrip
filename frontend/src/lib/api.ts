@@ -49,7 +49,8 @@ export interface Option {
   label: string;
   group: string;
   help: string;
-  kind: "bool" | "int" | "list" | "text" | "secret";
+  // "many": one or more of the choices, in turn, as "tidal,deezer".
+  kind: "bool" | "int" | "list" | "many" | "text" | "secret";
   // The values to choose from, with their labels, where the config lists them.
   choices: [Value, string][];
   // Seldom changed: folded away until asked for.

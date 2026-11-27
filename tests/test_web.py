@@ -973,14 +973,24 @@ def test_settings_change_the_config_and_a_broken_file_is_not_saved(client, servi
         for o in s["options"]
     }
     assert options["downloads", "max_connections"]["kind"] == "int"
-    changes = {"downloads": {"max_connections": 3}, "cli": {"progress_bars": False}}
+    assert options["lastfm", "fallback_source"]["kind"] == "many"
+    changes = {
+        "downloads": {"max_connections": 3},
+        "cli": {"progress_bars": False},
+        "lastfm": {"fallback_source": " tidal, deezer"},
+    }
     assert client.post("/settings/api", json={"changes": changes}).status_code == 200
     config = services.config
     assert config.session.downloads.max_connections == 3
     assert config.session.cli.progress_bars is False
+    assert config.session.lastfm.fallback_source == "tidal,deezer"
     assert "max_connections = 3" in config.path.read_text()
-    wrong = {"changes": {"conversion": {"codec": "WMA"}}}  # not one of its values
-    assert client.post("/settings/api", json=wrong).status_code == 400
+    for wrong in (
+        {"conversion": {"codec": "WMA"}},
+        {"lastfm": {"fallback_source": "x"}},
+    ):
+        # not one of its values
+        assert client.post("/settings/api", json={"changes": wrong}).status_code == 400
 
     reset = client.post("/settings/reset").get_json()
     assert "back to its default" in reset["message"]

@@ -381,9 +381,10 @@ truncate_to = 120
 # Options: "qobuz", "tidal", "deezer", "soundcloud", "spotify"
 source = "qobuz"
 
-# Where to search for what the source above doesn't have. Several are tried in
-# turn, comma separated: "tidal,deezer".
-# Options: one or more of the sources above, or empty
+# Where to search for what the source above doesn't have, in turn: "tidal,deezer"
+# tries Tidal, then Deezer.
+# Options: one or more of "qobuz", "tidal", "deezer", "soundcloud", "spotify",
+# or empty
 fallback_source = ""
 
 

@@ -33,6 +33,8 @@ class Option:
     help: str
     # The values to choose from with their labels, where the template lists them.
     choices: list[tuple[str | int, str]]
+    # Whether one or more of them are picked, in turn: "tidal,deezer".
+    many: bool = False
 
     @property
     def label(self) -> str:
@@ -47,16 +49,21 @@ class Section:
     options: list[Option] = field(default_factory=list)
 
 
-def _choices(text: str) -> list[tuple[str | int, str]]:
+def _choices(text: str) -> tuple[list[tuple[str | int, str]], bool]:
     """The values `text` (an "Options:" line) lists, or none where it says them
-    in words ("a folder path")."""
+    in words ("a folder path"); and whether one or more of them are picked
+    ('one or more of "a", "b", or empty')."""
+    text = text.strip().rstrip(",")
+    many = text.startswith("one or more of ")
+    if many:
+        text = text.removeprefix("one or more of ").removesuffix(", or empty")
     found = []
-    for item in re.split(r",\s+(?![^()]*\))", text.strip().rstrip(",")):
+    for item in re.split(r",\s+(?![^()]*\))", text):
         if (m := _CHOICE.match(item)) is None:
-            return []
+            return [], False
         value = m[1] if m[1] is not None else int(m[2])
         found.append((value, f"{value} ({m[3]})" if m[3] else str(value)))
-    return found
+    return found, many
 
 
 def _help(lines: list[str]) -> str:
@@ -102,7 +109,7 @@ def layout() -> list[Section]:
         elif m := _OPTION.match(line):
             sections[-1].options.append(
                 Option(
-                    sections[-1].name, m[1], group, _help(comment), _choices(options)
+                    sections[-1].name, m[1], group, _help(comment), *_choices(options)
                 )
             )
             comment = []  # the words are said once, of options that share them
@@ -135,6 +142,8 @@ ADVANCED = frozenset(
 
 def _kind(option: Option, value) -> str:
     """What the page shows for an option of this value: a switch, a number, ..."""
+    if option.many:
+        return "many"
     match value:
         case bool():
             return "bool"
@@ -156,9 +165,14 @@ def _checked(option: Option, value, current):
             isinstance(value, list) and all(isinstance(v, str) for v in value)
         ),
     }.get(kind, lambda: isinstance(value, str))()
-    if not fits or (option.choices and value not in [v for v, _ in option.choices]):
-        raise ProviderError(f"{option.label}: {value!r} is not one of its values.")
-    return value.strip() if isinstance(value, str) else value
+    listed = [v for v, _ in option.choices]
+    if fits and kind == "many":
+        picked = [item.strip() for item in value.split(",") if item.strip()]
+        if all(item in listed for item in picked):
+            return ",".join(picked)
+    elif fits and (not listed or value in listed):
+        return value.strip() if isinstance(value, str) else value
+    raise ProviderError(f"{option.label}: {value!r} is not one of its values.")
 
 
 def _settings(**extra) -> Response:
