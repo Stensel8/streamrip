@@ -430,19 +430,24 @@ def _folder(value, what: str, default: Path) -> Path:
     refused = ProviderError(
         f"Choose a {what} inside your home folder or the downloads folder."
     )
-    try:
-        path = os.path.realpath(Path(str(value or "").strip() or default).expanduser())
-    except (ValueError, RuntimeError) as e:  # a NUL, or "~name" of no user
-        raise refused from e
+    # Normalized as text, and checked, before it is made a Path: what CodeQL
+    # takes as the check. With a separator at the end, a root is in itself and
+    # "/home/sten2" is not in "/home/sten".
+    given = str(value or "").strip() or str(default)
+    path = os.path.abspath(os.path.expanduser(given)) + os.sep  # noqa: PTH100, PTH111
     roots = [Path.home()]
     if downloads := get_config().session.downloads.folder:
         roots.append(Path(downloads).expanduser())
-    # Both with their links followed, then compared as text (the check CodeQL
-    # knows): a root itself, or something inside one.
-    real = [os.path.realpath(root) for root in roots]
-    if not any(path == root or path.startswith(root + os.sep) for root in real):
-        raise refused
-    return Path(path)
+    # Each root as written and with its links followed: a music folder can be a
+    # link to another disk.
+    for root in {
+        f(r).rstrip(os.sep) + os.sep
+        for r in roots
+        for f in (os.path.abspath, os.path.realpath)
+    }:
+        if "\0" not in path and path.startswith(root):
+            return Path(path)
+    raise refused
 
 
 @playlist_pages.post("/export")

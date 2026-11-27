@@ -23,6 +23,13 @@ logger = logging.getLogger("streamrip")
 # page, how far, how it ended. Kept out of the jobs' own logs, which have it.
 activity = logging.getLogger("streamrip.web")
 
+
+def _one_line(text: object) -> str:
+    """Text that came from a page or a file (a CSV's name, a playlist's), as
+    one line of the log: never a line of its own that looks like streamrip's."""
+    return str(text).replace("\r", " ").replace("\n", " ")
+
+
 # The steps each kind of job goes through, in order. The page shows them as a
 # row of numbered steps.
 PHASES = frozendict(
@@ -97,7 +104,7 @@ class Job:
             self.phase, self.phase_started, self.current = phase, time.monotonic(), ""
             self.done, self.total = 0, None
             if text:
-                activity.info("%s: %s", self.title, text)
+                activity.info("%s: %s", _one_line(self.title), _one_line(text))
         if text is not None:
             self.text = text
 
@@ -105,7 +112,10 @@ class Job:
         """A line of the job's log, which the terminal gets too."""
         self.log.append((level, line))
         activity.log(
-            logging.getLevelNamesMapping()[level.upper()], "%s: %s", self.title, line
+            logging.getLevelNamesMapping()[level.upper()],
+            "%s: %s",
+            _one_line(self.title),
+            _one_line(line),
         )
 
     def offer(self, link: str, *, script: str = "", pasteable: bool = False):
@@ -113,7 +123,9 @@ class Job:
         the terminal, where it can be opened just as well."""
         self.link, self.script, self.pasteable = link, script, pasteable
         then = ", then run the script the Accounts page shows" if script else ""
-        activity.info("%s: log in at %s%s", self.title, link, then)
+        activity.info(
+            "%s: log in at %s%s", _one_line(self.title), _one_line(link), then
+        )
 
     def progress(self, step: Step):
         """The progress callback of the playlist tools. The page polls what it sets."""
@@ -211,7 +223,7 @@ class JobObserver(Observer):
     def overall_advance(self, n: int):
         job = self.job
         job.done += n
-        activity.info("%s: %s of %s tracks", job.title, job.done, job.total)
+        activity.info("%s: %s of %s tracks", _one_line(job.title), job.done, job.total)
 
     def title(self, key: int, title: str | None):
         if title is None:
@@ -260,7 +272,7 @@ class JobManager:
         """Run `work(job)` on a thread. What it returns is the summary shown
         once the job is done."""
         job = Job(id=secrets.token_urlsafe(8), kind=kind, title=title)
-        activity.info("%s", title)
+        activity.info("%s", _one_line(title))
         with self._lock:
             self._jobs[job.id] = job
             # Forget the oldest that are over; never one still going, which a
@@ -287,7 +299,11 @@ class JobManager:
         job.finished = time.monotonic()
         took = round(job.finished - job.started)
         (activity.info if status == "done" else activity.error)(
-            "%s: %s (took %d:%02d)", job.title, job.message, took // 60, took % 60
+            "%s: %s (took %d:%02d)",
+            _one_line(job.title),
+            _one_line(job.message),
+            took // 60,
+            took % 60,
         )
         job.status = status  # last: everything else is set before the page sees it end
 
