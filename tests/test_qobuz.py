@@ -118,7 +118,6 @@ async def test_an_account_that_cannot_stream_is_download_only(
     c = _with_creds()
     login = {"user": {"credential": {"parameters": parameters}}, "user_auth_token": "u"}
     c._api_request = AsyncMock(return_value=(200, login))
-    c._get_valid_secret = AsyncMock(return_value="s1")
     await c.login()
     assert (c.logged_in, c.download_only) == (True, download_only)
 
@@ -156,6 +155,18 @@ async def test_a_blocked_account_stops_the_run_with_qobuzs_word():
     c._api_request = AsyncMock(return_value=(403, {"message": "Account is blocked"}))
     with pytest.raises(AccountHalt, match="blocked"):
         await c.get_downloadable("1", 3)
+
+
+async def test_a_wrong_secret_gives_way_to_the_one_that_works_and_stays_first():
+    # Of the web player's three the last one worked (2026-11-27). None is tested
+    # at login: a wrong one shows at the first file URL, and only then.
+    wrong = (400, {"message": "Invalid Request Signature parameter (request_sig)"})
+    c = _logged_in(wrong, wrong, (200, {"url": "https://cdn/x.flac", "format_id": 6}))
+    c.config.secrets = ["s1", "s2", "s3"]
+    await c.get_downloadable("1", 2)
+    signed = [call.args[2] for call in c._request_file_url.await_args_list]
+    assert signed == ["s1", "s2", "s3"]
+    assert c.config.secrets[0] == c.secret == "s3"
 
 
 async def test_a_purchased_track_steps_down_to_the_quality_it_was_sold_in():

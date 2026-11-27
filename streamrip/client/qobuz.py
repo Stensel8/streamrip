@@ -57,6 +57,11 @@ SEED_RE = re.compile(
 )
 
 
+def _wrong_signature(status: int, resp: dict) -> bool:
+    """Qobuz's answer to a request signed with a wrong app secret."""
+    return status == 400 and "signature" in str(resp.get("message", "")).lower()
+
+
 class QobuzSpoofer(RequestClient):
     """Spoofs the information required to stream tracks from Qobuz."""
 
@@ -142,6 +147,8 @@ class QobuzClient(Client):
         # download content it has *purchased* from the Qobuz download store.
         # When set, file-url requests use intent=download instead of stream.
         self.download_only: bool = False
+        # Held while a track finds the app secret that works (see _file_url).
+        self._finding_secret = asyncio.Lock()
 
     async def login(self):
         """Log in with the user id and user_auth_token saved in the config."""
@@ -167,13 +174,12 @@ class QobuzClient(Client):
             )
             await self._refresh_app_id_and_secrets()
 
-        # A stale app_id/secret pair (e.g. hardcoded in the config after Qobuz
-        # rotated its app secret) fails with InvalidAppIdError or
-        # InvalidAppSecretError. Re-fetch a fresh pair from the bundle and retry
-        # once before giving up.
+        # A stale app id (Qobuz changed it) fails with InvalidAppIdError:
+        # fetch the bundle's again and retry once. Stale secrets show only at
+        # a file URL (_file_url).
         try:
             await self._attempt_login()
-        except (InvalidAppIdError, InvalidAppSecretError) as e:
+        except InvalidAppIdError as e:
             logger.warning("Login failed with %s, refetching app id/secrets", e)
             self._login_headers.pop("X-User-Auth-Token", None)
             await self._refresh_app_id_and_secrets()
@@ -232,7 +238,8 @@ class QobuzClient(Client):
 
         self._login_headers["X-User-Auth-Token"] = resp["user_auth_token"]
 
-        self.secret = await self._get_valid_secret(c.secrets)
+        # The one that worked last time: _file_url keeps it first.
+        self.secret = c.secrets[0]
         await self._fit_quality()
 
     async def account_plan(self) -> tuple[str, int | None]:
@@ -405,9 +412,7 @@ class QobuzClient(Client):
         # `streamrip --quality 0` still works for mixed-source downloads.
         quality = max(1, min(quality, self.max_quality))
         try:
-            status, resp_json = await self._request_file_url(
-                item_id, quality, self.secret
-            )
+            status, resp_json = await self._file_url(item_id, quality)
         except AccountBlockedError as e:
             raise AccountHalt(str(e)) from e  # every next track would get the same
         if status != 200:
@@ -491,27 +496,43 @@ class QobuzClient(Client):
         ) as spoofer:
             return await spoofer.get_app_id_and_secrets()
 
-    async def _test_secret(self, secret: str) -> str | None:
-        status, _ = await self._request_file_url("19512574", 4, secret)
-        if status == 400:
-            return None
-        if status in {200, 401}:
-            return secret
-        logger.warning("Got status %d when testing secret", status)
-        return None
+    async def _file_url(self, track_id: str, quality: int) -> tuple[int, dict]:
+        """track/getFileUrl, signed with the app secret that worked last.
 
-    async def _get_valid_secret(self, secrets: list[str]) -> str:
-        results = await asyncio.gather(
-            *[self._test_secret(secret) for secret in secrets],
-        )
-        working_secrets = [r for r in results if r is not None]
-        if len(working_secrets) == 0:
-            # Not the secrets themselves: this message is logged and shown.
-            raise InvalidAppSecretError(
-                f"Qobuz accepted none of the {len(secrets)} app secrets"
-            )
+        One of the web player's secrets works. The others are only tried when
+        Qobuz calls the signature wrong, never just to test them, and the one
+        that works is kept first for the next run.
+        """
+        first = self.secret
+        status, resp = await self._request_file_url(track_id, quality, first)
+        if not _wrong_signature(status, resp):
+            return status, resp
+        async with self._finding_secret:  # one track finds it, the rest use it
+            tried = {first}
+            for fetch in (False, True):
+                if fetch:  # Qobuz changed them: the web player's own again
+                    await self._refresh_app_id_and_secrets()
+                    await self._attempt_login()
+                for secret in self.config.secrets:
+                    if secret in tried:
+                        continue
+                    tried.add(secret)
+                    status, resp = await self._request_file_url(
+                        track_id, quality, secret
+                    )
+                    if not _wrong_signature(status, resp):
+                        self._keep_secret(secret)
+                        return status, resp
+        # Every next track would ask in vain too.
+        raise AccountHalt("Qobuz took none of its web player's app secrets.")
 
-        return working_secrets[0]
+    def _keep_secret(self, secret: str):
+        """Sign with `secret` from now on: first in the config, for the next run."""
+        c = self.config
+        c.secrets = [secret, *(s for s in c.secrets if s != secret)]
+        self.global_config.file.qobuz.secrets = c.secrets
+        self.global_config.file.set_modified()
+        self.secret = secret
 
     async def _request_file_url(
         self,
