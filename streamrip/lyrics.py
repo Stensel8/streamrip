@@ -17,7 +17,7 @@ import re
 
 lazy import aiohttp
 
-from . import __version__
+from . import USER_AGENT
 from .client import new_session
 from .client.audio_match import MatchTrack, rank, score, simplify_title
 
@@ -41,11 +41,6 @@ class LyricsUnavailableError(Exception):
 
     That says nothing about the lyrics of a track: LRCLIB may well have them.
     """
-
-
-def _user_agent() -> str:
-    """What LRCLIB asks for: a User-Agent that says what is asking."""
-    return f"streamrip/{__version__} (https://opencommit.eu/Stensel8/streamrip)"
 
 
 def _without_timestamps(synced: str) -> str:
@@ -105,7 +100,7 @@ class Lrclib:
         self._session = new_session(
             verify_ssl=verify_ssl,
             timeout=aiohttp.ClientTimeout(total=15, sock_connect=10),
-            user_agent=_user_agent(),
+            user_agent=USER_AGENT,  # what LRCLIB asks for
         )
         self._slots = asyncio.Semaphore(CONCURRENCY)
         self._records: dict[tuple, dict | None] = {}

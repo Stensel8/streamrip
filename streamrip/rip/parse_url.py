@@ -2,6 +2,7 @@ import logging
 import re
 from abc import ABC, abstractmethod
 
+from .. import USER_AGENT
 from ..client import Client, SoundcloudClient, new_session
 from ..media import Pending, PendingArtist, pending_item
 lazy from ..config import Config
@@ -118,7 +119,8 @@ class QobuzInterpreterURL(URL):
         url = url.replace("http://", "https://", 1)
         # Do not let a redirect downgrade the request to plaintext HTTP.
         async with (
-            new_session(verify_ssl=verify_ssl) as session,
+            # streamrip says what it is to Qobuz (see QobuzClient.user_agent).
+            new_session(verify_ssl=verify_ssl, user_agent=USER_AGENT) as session,
             session.get(url, allow_redirects=False) as resp,
         ):
             if 300 <= resp.status < 400:

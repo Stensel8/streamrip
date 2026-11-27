@@ -13,7 +13,7 @@ import time
 
 import requests
 
-from .. import __version__
+from .. import USER_AGENT
 from ..client.audio_match import score, version_tags
 from .models import Track
 
@@ -21,7 +21,6 @@ logger = logging.getLogger("streamrip")
 
 API = "https://musicbrainz.org/ws/2"
 # MusicBrainz asks every program to say what it is and where to read about it.
-USER_AGENT = f"streamrip/{__version__} (https://opencommit.eu/Stensel8/streamrip)"
 INTERVAL = 1.1  # seconds between requests
 SURE = 0.9  # how well a recording found by text must match the track
 GAP = 5000  # ms: how far a recording's length may be from the track's

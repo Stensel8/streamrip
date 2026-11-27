@@ -7,6 +7,7 @@ import time
 from collections import OrderedDict
 from urllib.parse import urlencode
 
+from .. import USER_AGENT
 from ..exceptions import (
     AccountBlockedError,
     AccountHalt,
@@ -72,6 +73,7 @@ class QobuzSpoofer(RequestClient):
     """Spoofs the information required to stream tracks from Qobuz."""
 
     source = "qobuz"
+    user_agent = USER_AGENT  # streamrip says what it is to Qobuz
 
     def __init__(self, verify_ssl: bool = True, client: Client | None = None):
         """Create a Spoofer."""
@@ -129,7 +131,9 @@ class QobuzSpoofer(RequestClient):
 
     async def __aenter__(self):
         """Open the spoofer's own HTTP session."""
-        self.session = new_session(verify_ssl=self.verify_ssl)
+        self.session = new_session(
+            verify_ssl=self.verify_ssl, user_agent=self.user_agent
+        )
         return self
 
     async def __aexit__(self, *_):
@@ -144,6 +148,7 @@ class QobuzClient(Client):
 
     source = "qobuz"
     max_quality = 4
+    user_agent = USER_AGENT  # streamrip says what it is to Qobuz
 
     def __init__(self, config: Config):
         super().__init__(config)

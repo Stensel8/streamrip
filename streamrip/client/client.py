@@ -33,7 +33,8 @@ logger = logging.getLogger("streamrip")
 
 # --- the browser streamrip presents itself as --------------------------
 #
-# Every request claims to be a current desktop Chrome, complete with the
+# Every request (but those of a client with a user_agent of its own, like
+# Qobuz's) claims to be a current desktop Chrome, complete with the
 # low-entropy Client Hints a real one sends beside its user agent. Which
 # Chrome it is changes about once a week, the same for every run on this
 # computer: a browser that updates, not one that hops between devices with
@@ -404,6 +405,9 @@ class RequestClient:
     _pacing_state_loaded: bool = False
     # tries of an API request that is worth another attempt
     api_attempts: int = MAX_API_ATTEMPTS
+    # What it says it is instead of the browser identity, if anything: it
+    # then sends nothing of a browser's.
+    user_agent: str | None = None
 
     @staticmethod
     def get_rate_limiter(
@@ -893,10 +897,12 @@ class RequestClient:
                         else functools.partial(self.session.post, data=data)
                     )
                     async with send(
-                        # api_headers also looks whether the identity changed.
                         url,
                         params=params,
-                        headers=api_headers(headers),
+                        # api_headers also looks whether the identity changed.
+                        headers=api_headers(headers)
+                        if self.user_agent is None
+                        else {"User-Agent": self.user_agent, **(headers or {})},
                     ) as resp:
                         if resp.status == 429:
                             self._pause_requests(retry_after(resp, attempt))
@@ -1016,7 +1022,8 @@ class Client(RequestClient, ABC):
         """Open the HTTP session, unless there is an open one."""
         if getattr(self, "session", None) is None or self.session.closed:
             self.session = new_session(
-                verify_ssl=self.global_config.session.downloads.verify_ssl
+                verify_ssl=self.global_config.session.downloads.verify_ssl,
+                user_agent=self.user_agent,
             )
 
     async def close(self):

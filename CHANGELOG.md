@@ -13,7 +13,8 @@ A new web interface, and more from each service.
   lyrics in the tags; Tidal mixes and Qobuz favorites as links
 - feat: FLAC downloads are checked against their MD5; new folder keys such as
   {label} and {genre}
-- feat: Qobuz logs in on its own login page, as its web player does
+- feat: Qobuz logs in on its own login page, as its web player does, and streamrip
+  says what it is to Qobuz instead of passing for a browser
 - fix: clearer previews, exit code 1 when tracks fail, a plain message when
   Qobuz blocks an account, and stricter checks on what the web page sends
 - fix: easier on the services: Qobuz logs in without test requests and stops at a

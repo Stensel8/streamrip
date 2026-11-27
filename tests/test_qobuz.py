@@ -72,6 +72,8 @@ async def test_the_login_goes_with_api_requests_only(serve, monkeypatch, tmp_pat
 
     async def answer(request):
         assert TOKEN not in request.query_string  # in a header, as the web player
+        # streamrip says what it is, and nothing of a browser's.
+        assert request.headers["User-Agent"].startswith("streamrip/")
         seen[f"{request.method} {request.path}"] = {
             name.lower() for name in request.headers
         }
@@ -97,6 +99,7 @@ async def test_the_login_goes_with_api_requests_only(serve, monkeypatch, tmp_pat
     credentials = {"x-app-id", "x-user-auth-token"}
     assert credentials <= seen["POST /user/login"] & seen["GET /track/getFileUrl"]
     assert not credentials & (seen["HEAD /file"] | seen["GET /file"])
+    assert not any("sec-ch-ua" in names for names in seen.values())
     assert (tmp_path / "track.flac").read_bytes() == b"audio" * 100
 
 
