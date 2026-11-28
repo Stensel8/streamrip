@@ -5,24 +5,28 @@ upstream issues and pull requests.
 
 ## 2.8.3
 
-A new web interface, and more from each service.
+A rebuilt web interface, an easier Qobuz login, and fewer requests to the
+services.
 
-- feat: `streamrip web` is rebuilt: easier on a phone, a Settings page, Deezer's
-  login by script, and it can run in the background (`--background`)
-- feat: tracks of a list are found by their ISRC; credits and Deezer's synced
-  lyrics in the tags; Tidal mixes and Qobuz favorites as links
-- feat: FLAC downloads are checked against their MD5; new folder keys such as
-  {label} and {genre}
-- feat: the Accounts page says of every login whether it is paid or free, and
-  what it gives at best
-- feat: Qobuz logs in on its own login page, as its web player does, and streamrip
-  says what it is to Qobuz instead of passing for a browser
-- fix: clearer previews, exit code 1 when tracks fail, a plain message when
-  Qobuz blocks an account, and stricter checks on what the web page sends
-- fix: easier on the services: Qobuz logs in without test requests and stops at a
-  login that is gone, streamrip stays the same browser for a week, and the
-  Accounts page checks only when asked
-- chore: every dependency is pinned and kept current
+- feat: the web interface is rebuilt: better on a phone, with a Settings page,
+  and it can run in the background (`streamrip web --background`)
+- feat: log in to Qobuz on Qobuz's own login page, and to Deezer with a short
+  script
+- feat: the Accounts page shows whether each login is paid or free, and its
+  best quality
+- feat: playlist tracks are matched by ISRC
+- feat: more tags: credits, and synced lyrics from Deezer
+- feat: download Tidal mixes and Qobuz favorites by their link
+- feat: FLAC files are checked against their MD5 after downloading
+- feat: new folder name keys, such as `{label}` and `{genre}`
+- fix: fewer requests to Qobuz, and streamrip tells Qobuz its own name instead
+  of posing as a browser
+- fix: the Accounts page only checks logins when you press Check, and asks you
+  to wait if you press it too often
+- fix: clearer previews and messages, also when Qobuz blocks an account
+- fix: exit code 1 when tracks fail, and stricter checks on what the web page
+  sends
+- chore: all dependencies are pinned and up to date
 
 ## 2.8.2
 
