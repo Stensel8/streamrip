@@ -7,13 +7,10 @@ import json
 import logging
 import math
 import os
-import platform
 import random
 import time
-import weakref
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from datetime import date, timedelta
 from typing import Any
 lazy from collections import Counter
 lazy from collections.abc import Awaitable, Callable
@@ -23,6 +20,7 @@ lazy from pathlib import Path
 lazy import aiohttp
 lazy import aiolimiter
 
+from .. import USER_AGENT
 from ..console import plural
 from ..exceptions import AccountHalt, SearchTypeError
 from ..utils.ssl_utils import get_aiohttp_connector_kwargs
@@ -30,170 +28,6 @@ lazy from ..config import Config
 lazy from .downloadable import Downloadable
 
 logger = logging.getLogger("streamrip")
-
-# --- the browser streamrip presents itself as --------------------------
-#
-# Every request (but those of a client with a user_agent of its own, like
-# Qobuz's) claims to be a current desktop Chrome, complete with the
-# low-entropy Client Hints a real one sends beside its user agent. Which
-# Chrome it is changes about once a week, the same for every run on this
-# computer: a browser that updates, not one that hops between devices with
-# every command. Within one identity nothing contradicts
-# anything: the Sec-CH-UA brand list is computed from the user agent's
-# major version the way Chromium does it, so hints and user agent age
-# together.
-
-# Days one identity serves. Each computer switches at a moment of its own.
-IDENTITY_DAYS = 7
-
-# Chromium's Sec-CH-UA recipe: a greasy filler brand (name and version
-# picked from the major version), Chromium, and the browser's own brand,
-# arranged in the order that major version gets.
-_GREASE_CHARS = " (:-./);=?_"
-_GREASE_VERSIONS = ("8", "99", "24")
-_BRAND_ORDERS = ((0, 1, 2), (0, 2, 1), (1, 0, 2), (1, 2, 0), (2, 0, 1), (2, 1, 0))
-
-# What a web player's fetch of its own API sends; the services' API hosts
-# all sit on the site the player runs on.
-_FETCH_HEADERS = {
-    "Sec-Fetch-Site": "same-site",
-    "Sec-Fetch-Mode": "cors",
-    "Sec-Fetch-Dest": "empty",
-}
-
-# The frozen user agent tokens: Windows 10 and 11 both say 10.0, every
-# Mac says 10_15_7, and the versions after the major one are always 0.
-_UA_PLATFORMS = {
-    "Windows": "Windows NT 10.0; Win64; x64",
-    "macOS": "Macintosh; Intel Mac OS X 10_15_7",
-}
-
-
-def _sec_ch_ua(major: int, brand: str = "Google Chrome") -> str:
-    """The Sec-CH-UA header for a Chrome `major` version."""
-    grease = f"Not{_GREASE_CHARS[major % 11]}A{_GREASE_CHARS[(major + 1) % 11]}Brand"
-    brands = (
-        f'"{grease}";v="{_GREASE_VERSIONS[major % 3]}"',
-        f'"Chromium";v="{major}"',
-        f'"{brand}";v="{major}"',
-    )
-    placed = [None, None, None]
-    for position, entry in zip(_BRAND_ORDERS[major % 6], brands, strict=True):
-        placed[position] = entry
-    return ", ".join(placed)
-
-
-def _chrome(
-    major: int, platform: str, accept_language: str, brand: str = "Google Chrome"
-) -> dict[str, str]:
-    """One coherent identity: what it says it is, everywhere it says it."""
-    return {
-        "User-Agent": (
-            f"Mozilla/5.0 ({_UA_PLATFORMS[platform]}) AppleWebKit/537.36 "
-            f"(KHTML, like Gecko) Chrome/{major}.0.0.0 Safari/537.36"
-        ),
-        "Sec-CH-UA": _sec_ch_ua(major, brand),
-        "Sec-CH-UA-Mobile": "?0",
-        "Sec-CH-UA-Platform": f'"{platform}"',
-        "Accept-Language": accept_language,
-    }
-
-
-# Chrome ships a new major version every two weeks: 158 went stable on
-# 17 November 2026. The version follows from the calendar, so nobody has to
-# bump it by hand; if Google changes its pace, it is a version or two off,
-# which is what a browser that has not updated yet looks like anyway.
-CHROME_STABLE = (158, date(2026, 11, 17))
-CHROME_EVERY = timedelta(weeks=2)
-
-
-def chrome_major(today: date) -> int:
-    """The stable Chrome major version on `today`."""
-    major, since = CHROME_STABLE
-    return major + (today - since) // CHROME_EVERY
-
-
-def identities(today: date | None = None) -> tuple[dict[str, str], ...]:
-    """The identities to pick from: the stable Chrome, the one before it that
-    lingers with late updaters, and Brave, which sends its own brand in the
-    same list. A repeated identity weighs heavier in the pick."""
-    now = chrome_major(today or date.today())
-    return (
-        _chrome(now, "Windows", "en-US,en;q=0.9"),
-        _chrome(now, "Windows", "en-US,en;q=0.9"),
-        _chrome(now, "Windows", "en-US,en;q=0.9"),
-        _chrome(now, "Windows", "nl-NL,nl;q=0.9,en-US;q=0.8,en;q=0.7"),
-        _chrome(now, "macOS", "en-US,en;q=0.9"),
-        _chrome(now, "macOS", "en-US,en;q=0.9"),
-        _chrome(now - 1, "Windows", "en-US,en;q=0.9"),
-        _chrome(now - 1, "Windows", "en-US,en;q=0.9"),
-        _chrome(now - 1, "macOS", "en-GB,en;q=0.9"),
-        _chrome(now, "Windows", "en-US,en;q=0.9", brand="Brave"),
-    )
-
-
-# The identity of the moment, and when to look at it again. _rotate_at
-# starts at 0 so the first use picks one.
-_identity: dict[str, str] = {}
-_rotate_at = 0.0
-# Live sessions presenting the identity, and plain header dicts kept on
-# it (see register_header_dict). Sessions are held weakly: a closed one
-# drops out of the rotation on its own.
-_browser_sessions = weakref.WeakSet()
-_header_dicts: list[dict[str, str]] = []
-
-
-def _pick_identity() -> dict[str, str]:
-    """This computer's identity for this period: the same in every run."""
-    machine = platform.node()
-    period = IDENTITY_DAYS * 86400
-    turn = int((time.time() + random.Random(machine).uniform(0, period)) // period)
-    return random.Random(f"{machine}:{turn}").choice(identities())
-
-
-def _apply_identity():
-    """Move every live session and registered header dict onto the current
-    identity."""
-    for session in _browser_sessions:
-        session.headers.update(_identity)
-    for headers in _header_dicts:
-        # API calls only, so the fetch headers come along. The account's
-        # own language, set at login, is the truer Accept-Language, so
-        # the identity's is left out rather than written over it.
-        headers.update({k: v for k, v in _identity.items() if k != "Accept-Language"})
-        headers.update(_FETCH_HEADERS)
-
-
-def _current_identity() -> dict[str, str]:
-    """The identity of the moment, looked at again every hour."""
-    global _identity, _rotate_at
-    if time.monotonic() >= _rotate_at:
-        _rotate_at = time.monotonic() + 3600
-        if (identity := _pick_identity()) != _identity:
-            _identity = identity
-            _apply_identity()
-    return _identity
-
-
-def browser_headers() -> dict[str, str]:
-    """The current identity's headers, a copy ready to send."""
-    return dict(_current_identity())
-
-
-def api_headers(headers: dict | None = None) -> dict[str, str]:
-    """The current identity plus what a web player's API fetch carries, with
-    `headers` (an authorization, say) on top of that."""
-    return {**_current_identity(), **_FETCH_HEADERS, **(headers or {})}
-
-
-def register_header_dict(headers: dict[str, str]):
-    """Keep a plain header dict on the current identity: the Deezer client's,
-    which its API and GW calls send with each request. See _apply_identity for what it
-    gets."""
-    _header_dicts.append(headers)
-    _current_identity()
-    _apply_identity()
-
 
 # Rate limiting and server errors are worth another attempt; other 4xx are not.
 RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
@@ -405,9 +239,6 @@ class RequestClient:
     _pacing_state_loaded: bool = False
     # tries of an API request that is worth another attempt
     api_attempts: int = MAX_API_ATTEMPTS
-    # What it says it is instead of the browser identity, if anything: it
-    # then sends nothing of a browser's.
-    user_agent: str | None = None
 
     @staticmethod
     def get_rate_limiter(
@@ -899,10 +730,7 @@ class RequestClient:
                     async with send(
                         url,
                         params=params,
-                        # api_headers also looks whether the identity changed.
-                        headers=api_headers(headers)
-                        if self.user_agent is None
-                        else {"User-Agent": self.user_agent, **(headers or {})},
+                        headers=headers,
                     ) as resp:
                         if resp.status == 429:
                             self._pause_requests(retry_after(resp, attempt))
@@ -1022,8 +850,7 @@ class Client(RequestClient, ABC):
         """Open the HTTP session, unless there is an open one."""
         if getattr(self, "session", None) is None or self.session.closed:
             self.session = new_session(
-                verify_ssl=self.global_config.session.downloads.verify_ssl,
-                user_agent=self.user_agent,
+                verify_ssl=self.global_config.session.downloads.verify_ssl
             )
 
     async def close(self):
@@ -1075,16 +902,10 @@ class Client(RequestClient, ABC):
 
 
 def new_session(
-    verify_ssl: bool = True,
-    timeout: aiohttp.ClientTimeout | None = None,
-    user_agent: str | None = None,
+    verify_ssl: bool = True, timeout: aiohttp.ClientTimeout | None = None
 ) -> aiohttp.ClientSession:
-    """An HTTP session; every request streamrip makes goes through one.
-
-    It presents the current browser identity and follows it when it
-    changes. A `user_agent` (LRCLIB's, which says what is really asking)
-    replaces the identity outright.
-    """
+    """An HTTP session; every request streamrip makes goes through one. It
+    says it is streamrip, to every service."""
     if timeout is None:
         # Fail a stalled connection after 30s of silence, not aiohttp's default 5 minutes.
         timeout = aiohttp.ClientTimeout(total=None, sock_connect=15, sock_read=30)
@@ -1094,12 +915,9 @@ def new_session(
     )
     # trust_env: honour HTTP(S)_PROXY / ALL_PROXY like requests already
     # does for the audio downloads (upstream #961).
-    session = aiohttp.ClientSession(
-        headers=browser_headers() if user_agent is None else {"User-Agent": user_agent},
+    return aiohttp.ClientSession(
+        headers={"User-Agent": USER_AGENT},
         connector=connector,
         timeout=timeout,
         trust_env=True,
     )
-    if user_agent is None:
-        _browser_sessions.add(session)
-    return session

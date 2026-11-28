@@ -52,6 +52,7 @@ lazy from collections.abc import Callable
 
 lazy import requests
 
+from .. import USER_AGENT
 from ..exceptions import AuthenticationError, NonStreamableError
 from ..utils.ffmpeg_utils import require_ffmpeg
 lazy from ..config import SpotifyConfig
@@ -326,7 +327,9 @@ class SoloistBackend:
         scratch = Path(tempfile.mkdtemp(prefix="__streamrip_soloist_", dir=path.parent))
         try:
             archive = scratch / name
-            with requests.get(url, stream=True, timeout=30) as resp:
+            with requests.get(
+                url, headers={"User-Agent": USER_AGENT}, stream=True, timeout=30
+            ) as resp:
                 if resp.status_code != 200:
                     raise NonStreamableError(
                         f"Could not download Soloist: HTTP {resp.status_code} "

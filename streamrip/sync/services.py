@@ -9,6 +9,7 @@ import re
 
 import requests
 
+from .. import USER_AGENT
 from .auth import (
     ClientCredentials,
     ConfigTokenStore,
@@ -103,6 +104,7 @@ class Services:
         """A requests session that checks certificates as the config says."""
         session = requests.Session()
         session.verify = self.config.session.downloads.verify_ssl
+        session.headers["User-Agent"] = USER_AGENT
         return session
 
     def oauth(self, service: str) -> OAuthClient:

@@ -29,6 +29,7 @@ from urllib.parse import urlencode
 
 import requests
 
+from .. import USER_AGENT
 from ..console import plural
 from ..exceptions import (
     APIError,
@@ -392,7 +393,9 @@ def _post(
     if verify is not None:
         session.verify = verify
     try:
-        resp = session.post(url, data=data, timeout=AUTH_TIMEOUT)
+        resp = session.post(
+            url, data=data, headers={"User-Agent": USER_AGENT}, timeout=AUTH_TIMEOUT
+        )
     except requests.RequestException as e:
         raise AuthServerDownError(
             f"could not reach the Spotify login server: {e}"

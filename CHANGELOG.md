@@ -5,8 +5,7 @@ upstream issues and pull requests.
 
 ## 2.8.3
 
-A rebuilt web interface, an easier Qobuz login, and fewer requests to the
-services.
+A rebuilt web interface, an easier Qobuz login, and fewer requests to the services.
 
 - feat: the web interface is rebuilt: better on a phone, with a Settings page,
   and it can run in the background (`streamrip web --background`)
@@ -19,13 +18,11 @@ services.
 - feat: download Tidal mixes and Qobuz favorites by their link
 - feat: FLAC files are checked against their MD5 after downloading
 - feat: new folder name keys, such as `{label}` and `{genre}`
-- fix: fewer requests to Qobuz, and streamrip tells Qobuz its own name instead
-  of posing as a browser
+- fix: fewer requests to Qobuz, and streamrip tells every service its own name instead of posing as a browser
 - fix: the Accounts page only checks logins when you press Check, and asks you
   to wait if you press it too often
 - fix: clearer previews and messages, also when Qobuz blocks an account
-- fix: exit code 1 when tracks fail, and stricter checks on what the web page
-  sends
+- fix: exit code 1 when tracks fail, and stricter checks on what the web page sends
 - chore: all dependencies are pinned and up to date
 
 ## 2.8.2

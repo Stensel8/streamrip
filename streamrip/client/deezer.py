@@ -13,7 +13,7 @@ from ..exceptions import (
     NonStreamableError,
 )
 from .audio_match import normalize_isrc
-from .client import Client, register_header_dict
+from .client import Client
 from .downloadable import DeezerDownloadable
 lazy from ..config import Config
 
@@ -47,7 +47,6 @@ class _Deezer:
 
     def __init__(self, owner: DeezerClient):
         self._owner = owner
-        # Follows the rotating browser identity (register_header_dict).
         self.http_headers: dict[str, str] = {}
         self.current_user: dict = {}
         self.api = _PublicAPI(self)
@@ -269,8 +268,6 @@ class DeezerClient(Client):
     def __init__(self, config: Config):
         super().__init__(config)
         self.client = _Deezer(self)
-        # Registered to follow the browser identity when it changes.
-        register_header_dict(self.client.http_headers)
         self._album_cache: dict[str, asyncio.Task[dict]] = {}
         self._quality_warned = False
         # The website's own data of a track (its credits, its stream), from its

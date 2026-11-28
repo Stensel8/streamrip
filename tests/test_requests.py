@@ -1,18 +1,16 @@
 """API requests: retries, rate limits and lapsed logins, the bootstrap pages,
-SSL verification, and the browser streamrip presents itself as."""
+SSL verification, and the name streamrip gives every service."""
 
 import asyncio
 import base64
-import itertools
-import re
 import ssl
-from datetime import date
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
 import certifi
 import pytest
 
+from streamrip import USER_AGENT
 from streamrip.client import client as client_module
 from streamrip.client import new_session
 from streamrip.client.client import (
@@ -23,12 +21,6 @@ from streamrip.client.client import (
     SLOWDOWN_EASING,
     SLOWDOWN_MAX,
     SLOWDOWN_START,
-    _sec_ch_ua,
-    api_headers,
-    browser_headers,
-    chrome_major,
-    identities,
-    register_header_dict,
 )
 from streamrip.client.qobuz import QobuzClient, QobuzSpoofer
 from streamrip.client.soundcloud import SoundcloudClient
@@ -136,14 +128,6 @@ def sleeps(clock, monkeypatch):
     """asyncio.sleep without the wait: the delays asked for."""
     monkeypatch.setattr(asyncio, "sleep", clock.sleep)
     return clock.slept
-
-
-@pytest.fixture(autouse=True)
-def identity_state(monkeypatch):
-    """A fresh browser identity, no deadline served yet, nothing registered."""
-    monkeypatch.setattr(client_module, "_identity", {})
-    monkeypatch.setattr(client_module, "_rotate_at", 0.0)
-    monkeypatch.setattr(client_module, "_header_dicts", [])
 
 
 @pytest.mark.parametrize(
@@ -399,66 +383,6 @@ def test_certificate_error_in_any_command_prints_help(capsys):
     assert "--no-ssl-verify" in capsys.readouterr().out
 
 
-@pytest.mark.parametrize(
-    ("major", "brand", "expected"),
-    [
-        (156, "Google Chrome", '"Not:A-Brand";v="8", "Chromium";v="156", "Google Chrome";v="156"'),
-        (156, "Brave", '"Not:A-Brand";v="8", "Chromium";v="156", "Brave";v="156"'),
-    ],
-)  # fmt: skip
-def test_sec_ch_ua_is_chromiums_for_that_version(major, brand, expected):
-    assert _sec_ch_ua(major, brand) == expected  # as measured from real builds
-
-
-def test_every_identity_agrees_with_itself():
-    # A Windows user agent that claims macOS in its hints gives a fake browser away.
-    for identity in identities():
-        match = re.search(r"\(([^)]+)\).*Chrome/(\d+)\.", identity["User-Agent"])
-        assert match is not None
-        os_token, major = match.group(1), int(match.group(2))
-        platform = {t: p for p, t in client_module._UA_PLATFORMS.items()}[os_token]
-        assert identity["Sec-CH-UA-Platform"] == f'"{platform}"'
-        assert identity["Sec-CH-UA"] in {_sec_ch_ua(major), _sec_ch_ua(major, "Brave")}
-
-
-def test_every_run_on_a_computer_is_the_same_browser_for_a_week(clock, monkeypatch):
-    monkeypatch.setattr(client_module.platform, "node", lambda: "pc")
-    picks = []
-    for hour in range(4 * 7 * 24):  # four weeks
-        clock.now = hour * 3600.0
-        picks.append(client_module._pick_identity())  # a run started this hour
-    assert sum(a != b for a, b in itertools.pairwise(picks)) <= 4
-
-
-async def test_sessions_follow_the_identity_when_it_changes(clock, monkeypatch):
-    first, second = identities()[0], identities()[-1]
-    monkeypatch.setattr(client_module, "_pick_identity", lambda: first)
-    async with (
-        new_session() as followed,
-        new_session(user_agent="streamrip/test") as own_agent,
-    ):
-        before = dict(followed.headers)
-        assert before == browser_headers() == first
-
-        monkeypatch.setattr(client_module, "_pick_identity", lambda: second)
-        clock.now += 60 * 60  # it is looked at again every hour
-
-        assert browser_headers() != before
-        assert dict(followed.headers) == browser_headers()
-        assert dict(own_agent.headers) == {"User-Agent": "streamrip/test"}
-
-
-def test_a_registered_header_dict_follows_but_keeps_its_own_language(clock):
-    headers = {"User-Agent": "Chrome/79", "Accept-Language": "fr_FR"}
-    register_header_dict(headers)
-
-    clock.now += 3 * 60 * 60
-
-    assert headers.pop("Accept-Language") == "fr_FR"
-    assert headers == {k: v for k, v in api_headers().items() if k != "Accept-Language"}
-
-
-def test_the_chrome_version_follows_the_release_calendar():
-    assert chrome_major(date(2026, 11, 16)) == 157
-    assert chrome_major(date(2026, 11, 17)) == 158  # the day 158 went stable
-    assert chrome_major(date(2026, 12, 1)) == 159  # two weeks on
+async def test_every_session_says_it_is_streamrip():
+    async with new_session() as session:
+        assert dict(session.headers) == {"User-Agent": USER_AGENT}
