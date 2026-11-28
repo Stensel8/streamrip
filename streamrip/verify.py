@@ -103,6 +103,8 @@ async def _download_login(config: Config, source: str) -> tuple[str, str, str, s
         if reason := getattr(client, "guest_reason", ""):
             raise AuthenticationError(reason)  # a saved login that is not in use
         plan, best = await client.account_plan()
+        if source == "qobuz" and best is not None:
+            await client.check_blocked()
     finally:
         await client.close()
     # What was asked, not what a client lowered it to for the run.

@@ -9,8 +9,9 @@ from streamrip import verify as verify_module
 from streamrip.accounts import Accounts
 from streamrip.client import QobuzClient
 from streamrip.client import spotify as spotify_module
+from streamrip.client.qobuz import BLOCKED
 from streamrip.config import Config, set_user_defaults
-from streamrip.exceptions import AuthenticationError
+from streamrip.exceptions import AccountBlockedError, AuthenticationError
 from streamrip.rip import accounts_cli
 from streamrip.rip.cli import rip
 from streamrip.sync.errors import ApiError
@@ -42,6 +43,9 @@ class FakeClient:
 
     async def account_plan(self):
         return self.plan
+
+    async def check_blocked(self):
+        pass
 
     async def close(self):
         pass
@@ -81,6 +85,19 @@ async def test_a_working_login_shows_its_plan(config, monkeypatch, plan, hint):
     (found,) = await verify_module.verify(config, ("qobuz",))
     assert (found.state, found.detail) == ("ok", plan[0])
     assert hint in found.hint
+
+
+async def test_a_blocked_qobuz_account_fails_the_check(config, monkeypatch):
+    # Qobuz still takes a blocked account's login: only a file URL says so.
+    log_in_to_qobuz(config)
+
+    class Blocked(FakeClient):
+        async def check_blocked(self):
+            raise AccountBlockedError(BLOCKED)
+
+    monkeypatch.setattr(verify_module, "QobuzClient", Blocked)
+    (found,) = await verify_module.verify(config, ("qobuz",))
+    assert (found.state, found.detail) == ("failed", BLOCKED)
 
 
 async def test_the_quality_hint_compares_with_what_was_asked(config, monkeypatch):

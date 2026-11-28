@@ -32,6 +32,8 @@ QOBUZ_BASE_URL = "https://www.qobuz.com/api.json/0.2"
 OAUTH_URL = "https://www.qobuz.com/signin/oauth"
 # Qobuz's format_id for quality 1 to 4: MP3 320, FLAC 16/44.1, 24/96, 24/192.
 FORMAT_IDS = (5, 6, 7, 27)
+# A track whose file URL a check asks for, as a download would.
+CHECK_TRACK = "19512574"
 
 
 def file_url_signature(
@@ -197,6 +199,11 @@ class QobuzClient(Client):
             await self._attempt_login()
 
         self.logged_in = True
+
+    async def check_blocked(self):
+        """Ask one file URL at the lowest quality: Qobuz still takes the login
+        of a blocked account, and says so only there (AccountBlockedError)."""
+        await self._file_url(CHECK_TRACK, 1)
 
     async def oauth_link(self, redirect: str) -> str:
         """Qobuz's own login page, which sends the browser to `redirect` with a
