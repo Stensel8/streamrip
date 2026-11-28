@@ -9,6 +9,7 @@ import pytest
 import responses
 from playlist_support import config_at, sent_form
 
+from streamrip.client.spotify import pkce_pair
 from streamrip.config import Config
 from streamrip.sync.auth import (
     ClientCredentials,
@@ -16,7 +17,6 @@ from streamrip.sync.auth import (
     OAuthClient,
     StoredToken,
     Token,
-    pkce_pair,
 )
 from streamrip.sync.errors import LoginError, NetworkError, NotLoggedInError
 

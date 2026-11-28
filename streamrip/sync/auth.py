@@ -10,10 +10,7 @@ The browser comes back to a port on this computer, caught as the Spotify
 download login catches it (rip/spotify_login.py).
 """
 
-import base64
-import hashlib
 import logging
-import os
 import threading
 import time
 from dataclasses import dataclass
@@ -104,13 +101,6 @@ class ConfigTokenStore:
                 "scope": token.scope,
             },
         )
-
-
-def pkce_pair() -> tuple[str, str]:
-    """A PKCE (code verifier, code challenge) pair (RFC 7636, method S256)."""
-    verifier = base64.urlsafe_b64encode(os.urandom(64)).rstrip(b"=").decode()
-    digest = hashlib.sha256(verifier.encode()).digest()
-    return verifier, base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
 
 
 class OAuthClient:

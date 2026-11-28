@@ -12,6 +12,7 @@ import secrets
 import threading
 import time
 
+from ..client.spotify import pkce_pair
 from ..exceptions import AuthenticationError
 from ..rip.deezer_arl_capture import DEEZER_LOGIN_URL, deezer_navigate_snippet
 from ..rip.qobuz_token_capture import qobuz_navigate_snippet, qobuz_oauth_code
@@ -23,7 +24,6 @@ from ..rip.spotify_login import (
     code_from_redirect_url,
     redirect_params,
 )
-from ..sync.auth import pkce_pair
 lazy from ..sync.auth import ConfigTokenStore, OAuthClient
 lazy from .jobs import Job
 lazy from .runner import Runner

@@ -11,9 +11,9 @@ import click
 
 from ..accounts import BY_ID, LOGIN_IDS, Accounts
 lazy from ..client import CLIENTS
+lazy from ..client.spotify import pkce_pair
 lazy from ..config import Config
 lazy from ..console import console
-lazy from ..sync.auth import pkce_pair
 lazy from ..sync.errors import SyncError
 lazy from ..sync.services import DEVELOPER_DASHBOARDS, Services
 lazy from ..verify import FAILED
