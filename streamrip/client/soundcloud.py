@@ -269,7 +269,7 @@ class SoundcloudClient(Client):
         if stream := cls._stream(resp):
             return f"{item_id}|{stream}"
         drm = any(
-            "encrypted" in tc["format"].get("protocol", "")
+            "encrypted" in ((tc.get("format") or {}).get("protocol") or "")
             for tc in (resp.get("media") or {}).get("transcodings") or []
         )
         return f"{item_id}|{cls.DRM_ONLY if drm else cls.NON_STREAMABLE}"

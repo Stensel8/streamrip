@@ -283,7 +283,7 @@ class Runner:
         Nothing asks the services here; a login saved since is left out."""
         return {
             login_id: answer
-            for login_id, (saved, answer) in self._overview.items()
+            for login_id, (saved, answer) in list(self._overview.items())
             if saved == self._saved(login_id)
         }
 
